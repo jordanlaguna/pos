@@ -1,0 +1,28 @@
+# Finales de línea.
+#
+# En Windows, `core.autocrlf=true` convierte a CRLF al sacar los archivos del
+# repositorio. Para el código da igual, pero `wait-for-db.sh` es el CMD del
+# contenedor: con CRLF, su primera línea queda `#!/bin/sh\r` y Linux responde
+# "no such file or directory" al arrancar. El backend no levantaría, y el error
+# no dice nada del final de línea.
+#
+# Con esto el repositorio guarda LF siempre y el árbol de trabajo también, sin
+# depender de la configuración de cada máquina.
+
+* text=auto eol=lf
+
+# Explícito para lo que corre dentro de un contenedor Linux.
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.sql  text eol=lf
+Dockerfile text eol=lf
+
+# Binarios: que git no intente convertir nada.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.avif binary
+*.pdf  binary
+*.docx binary
+*.ico  binary
