@@ -99,6 +99,20 @@ Para desarrollar sin backend: `POS_MOCK=1` en `frontend/.env`.
 - Al terminar: `cd frontend && npm run check` en 0 errores y 0 advertencias,
   `npm test` y `cd backend && pytest` en verde.
 
+## Git
+
+- **El autor de los commits es el usuario, nunca Claude.** Sin línea
+  `Co-Authored-By`, sin mención en el cuerpo, sin `--author`. Es su repositorio y
+  su autoría; el trailer haría que GitHub muestre a Claude como coautor en todo
+  el historial.
+- **Identidad por repositorio, no global.** Acá va la cuenta personal
+  (`jordanlaguna` / `jordanlaguna10@gmail.com`); la global de la máquina es la
+  del trabajo y no se toca.
+- El remoto lleva el usuario en la URL
+  (`https://jordanlaguna@github.com/…`). Sin eso, git reutiliza el token del
+  trabajo en silencio y GitHub responde `404 Repository not found` —no `403`—
+  cuando el repositorio personal no le es visible.
+
 ## Trampas conocidas
 
 - El puerto de la API es **8001**, no 8000 (el compose publica `"8001:80"`).
