@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FacturaElectronica xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica" xsi:schemaLocation="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica https://tribunet.hacienda.go.cr/docs/esquemas/2017/v4.4/facturaElectronica.xsd">
+	<Clave>50624032600310134122000100001010000009627100009627</Clave>
+	<ProveedorSistemas>3101702934</ProveedorSistemas>
+	<CodigoActividadEmisor>2220.9</CodigoActividadEmisor>
+	<NumeroConsecutivo>00100001010000009627</NumeroConsecutivo>
+	<FechaEmision>2026-03-24T08:11:28-06:00</FechaEmision>
+	<Emisor>
+		<Nombre>Plastipol de Costa Rica R V S.A.</Nombre>
+		<Identificacion>
+			<Tipo>02</Tipo>
+			<Numero>3101341220</Numero>
+		</Identificacion>
+		<NombreComercial>Plastipol de Costa Rica RV S.A.</NombreComercial>
+		<Ubicacion>
+			<Provincia>1</Provincia>
+			<Canton>18</Canton>
+			<Distrito>01</Distrito>
+			<Barrio>Prado</Barrio>
+			<OtrasSenas>Barrio San Jose del Motel la Fuente 300 metros sobre carretera principal, contiguo a Puentes Prefa</OtrasSenas>
+		</Ubicacion>
+		<Telefono>
+			<CodigoPais>506</CodigoPais>
+			<NumTelefono>22714371</NumTelefono>
+		</Telefono>
+		<CorreoElectronico>facturacion@plastipolcr.com</CorreoElectronico>
+	</Emisor>
+	<Receptor>
+		<Nombre>COCA COLA FEMSA DE COSTA RICA S.A.</Nombre>
+		<Identificacion>
+			<Tipo>02</Tipo>
+			<Numero>3101005212</Numero>
+		</Identificacion>
+		<NombreComercial>COCA COLA FEMSA DE COSTA RICA S.A.</NombreComercial>
+		<Telefono>
+			<CodigoPais>506</CodigoPais>
+			<NumTelefono>22472800</NumTelefono>
+		</Telefono>
+		<CorreoElectronico>factura.proveedorescr@kof.com</CorreoElectronico>
+	</Receptor>
+	<CondicionVenta>02</CondicionVenta>
+	<PlazoCredito>30</PlazoCredito>
+	<DetalleServicio>
+		<LineaDetalle>
+			<NumeroLinea>1</NumeroLinea>
+			<CodigoCABYS>3641001999900</CodigoCABYS>
+			<CodigoComercial>
+				<Tipo>01</Tipo>
+				<Codigo>1303</Codigo>
+			</CodigoComercial>
+			<Cantidad>404.150</Cantidad>
+			<UnidadMedida>Kg</UnidadMedida>
+			<UnidadMedidaComercial>Kilo</UnidadMedidaComercial>
+			<Detalle>BOBINA TERMO ENCOGIBLE 24 PACK MIXTO MINILATA PS</Detalle>
+			<PrecioUnitario>4.4800</PrecioUnitario>
+			<MontoTotal>1810.5900</MontoTotal>
+			<SubTotal>1810.5900</SubTotal>
+			<BaseImponible>1810.5900</BaseImponible>
+			<Impuesto>
+				<Codigo>01</Codigo>
+				<CodigoTarifaIVA>08</CodigoTarifaIVA>
+				<Tarifa>13.00</Tarifa>
+				<Monto>235.3800</Monto>
+			</Impuesto>
+			<ImpuestoAsumidoEmisorFabrica>0.0000</ImpuestoAsumidoEmisorFabrica>
+			<ImpuestoNeto>235.3800</ImpuestoNeto>
+			<MontoTotalLinea>2045.9700</MontoTotalLinea>
+		</LineaDetalle>
+	</DetalleServicio>
+	<ResumenFactura>
+		<CodigoTipoMoneda>
+			<CodigoMoneda>USD</CodigoMoneda>
+			<TipoCambio>468.29000</TipoCambio>
+		</CodigoTipoMoneda>
+		<TotalServGravados>0.0000</TotalServGravados>
+		<TotalServExentos>0.0000</TotalServExentos>
+		<TotalMercanciasGravadas>1810.5900</TotalMercanciasGravadas>
+		<TotalMercanciasExentas>0.0000</TotalMercanciasExentas>
+		<TotalGravado>1810.5900</TotalGravado>
+		<TotalExento>0.0000</TotalExento>
+		<TotalVenta>1810.5900</TotalVenta>
+		<TotalDescuentos>0.0000</TotalDescuentos>
+		<TotalVentaNeta>1810.5900</TotalVentaNeta>
+		<TotalDesgloseImpuesto>
+			<Codigo>01</Codigo>
+			<CodigoTarifaIVA>08</CodigoTarifaIVA>
+			<TotalMontoImpuesto>235.3800</TotalMontoImpuesto>
+		</TotalDesgloseImpuesto>
+		<TotalImpuesto>235.3800</TotalImpuesto>
+		<TotalComprobante>2045.9700</TotalComprobante>
+	</ResumenFactura>
+	<Otros>
+		<OtroTexto codigo="OrdenCompra">4402151874</OtroTexto>
+	</Otros>
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="Signature-ba9250cd-f299-44d0-99c6-da20c42a49f3"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" /><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" /><ds:Reference Id="Reference-4b35f91c-59db-48af-8b30-2ebb21194460" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>Zr3QNVlsCI1Ez8vYR9COtwfXlX72IrT7MmAt0aBR+Wk=</ds:DigestValue></ds:Reference><ds:Reference Id="ReferenceKeyInfo" URI="#KeyInfoId-Signature-ba9250cd-f299-44d0-99c6-da20c42a49f3"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>mURyvQe6Q0efJBt0AhfY5zLEjDdH2j13NLVb3Oug3kQ=</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#SignedProperties-Signature-ba9250cd-f299-44d0-99c6-da20c42a49f3"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>GG+LpTztkJoBPBp4JgwsByqTgh9UUqr5IiXN54d8Rz4=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue Id="SignatureValue-ba9250cd-f299-44d0-99c6-da20c42a49f3">NDsLnrztH9mcL21Lu/w0NTcapHSpE7Q3YfGoudxNUu00qZSkbTHKFEDXD9kFPicOY6euoKRJ+gJRNlazr8DQfMmSwOl6x15p+R+FtRo3LDUyr2GdgIzmMbIFU2zo6NsACOEHN9NOKWxyX6v3UTm3cfsJhcjehuIA5z7R6iYiz92JFHnCjkZf8bvB5WYFOokTqE0wJm8xByTSxuXmoscAUKaLjmgaN7AF922Sn3yA7h9BNbqjtMoyqqdw3pxG/cqWncYIyKkZNiKGoDzRN214C7bgVLPGJvjI7k4Vs5x5WfplR7PziXr21is5Ig6k3GFM3YbYmLh8Kf4+cxyZnjqMrA==</ds:SignatureValue><ds:KeyInfo Id="KeyInfoId-Signature-ba9250cd-f299-44d0-99c6-da20c42a49f3"><ds:X509Data><ds:X509Certificate>MIIFLjCCAxagAwIBAgIGAYPNCKG/MA0GCSqGSIb3DQEBCwUAMFoxCzAJBgNVBAYTAkNSMR8wHQYDVQQKDBZNSU5JU1RFUklPIERFIEhBQ0lFTkRBMQwwCgYDVQQLDANER1QxHDAaBgNVBAMME0NBIFBFUlNPTkEgSlVSSURJQ0EwHhcNMjIxMDEyMTYzMDM4WhcNMjYxMDExMTYzMDM4WjCBiDEZMBcGA1UEBRMQQ1BKLTMtMTAxLTM0MTIyMDELMAkGA1UEBhMCQ1IxGTAXBgNVBAoMEFBFUlNPTkEgSlVSSURJQ0ExDDAKBgNVBAsMA0NQSjE1MDMGA1UEAwwsUExBU1RJUE9MIERFIENPU1RBIFJJQ0EgUiBWIFNPQ0lFREFEIEFOT05JTUEwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDAL2m26ZbVqdgDOI7MbjPtvCKtHHmm7qK9X28qftwnx2uMZrweb2Dcy4BDv9bBVJy43jzmSHeCj+VLH0sNVI1H3Cm/W5ecos43qJYwI5VZ38SPTZSALwPanzDPAINA6pK7DyxWVIMvVpOoP36nPYbAhi2osG/18gWy03dCyG1y2fE7t24myRtEH0vsu34D6GZyr5DRp9l+adu/bRYipJO5n1c3oEybyi+ZzgDDSfiFtDjV9zX2JNXvg2CMLrP+8udSjaqc667IqibbsQjUq2Y1NWB5DbEBl6QHVdFym69o6PQTl/JZzCQFXXEel1Skorav/YFd8Ax8jp8uvrVU5EaTAgMBAAGjgcowgccwHwYDVR0jBBgwFoAUO21X9dZ86Z4QAiBB470azM+zTpUwHQYDVR0OBBYEFHJ6iDAD2umefbAchwNiFTh6cgtyMAsGA1UdDwQEAwIGwDATBgNVHSUEDDAKBggrBgEFBQcDBDBjBggrBgEFBQcBAQRXMFUwUwYIKwYBBQUHMAKGR2h0dHBzOi8vcGtpLmNvbXByb2JhbnRlc2VsZWN0cm9uaWNvcy5nby5jci9wcm9kL2ludGVybWVkaWF0ZS1wai1wZW0uY3J0MA0GCSqGSIb3DQEBCwUAA4ICAQB4KRxQd5S3bkw+992gp/HMpmlAkVPyfKwi8Xjn2/QW957ahEmZ00qiodgKFbvOYOx6/kV7NAyHduv5E9NG2Y+n6p77YGVk+hou3BHZUVVs5VrebsC48I5miiA2RoU31e6m9oRG6rmR9qnwqWkBlLqUzzPm4oIWtcsajGjJjfKobqHoxpObxcFySqMB5RkX8h3KyNIIROFIev+yp5B5K6MQAWIOMUa6BeRrWAKGeNkleC7N9eGTHp2B2ud8uPZ2ioIfAyRz/g1RK0jOnUGCEJlkRLwhclZ3msLLoaDsFS4gr1T7jc+Q3LFhQgO8aWEzLOGXRQFNwTXV3Ag7Gla/vIFJKdf10d2jZZqBwcmNmMJWazD0ItqCAWHJd1epkU/FOulRIEoCqgLQbz9EM7tDteswqW8fUbajwjmatc6VT0m5sj7rXa8I0TufnbWPWWRJSlKe0gpAo0mIigrg/ix90zfCnBEWrPLFd5G1lljlplT67I4P1vRG7iRgqvbIXyleYF1I/vi974Z0xuTKaJNzIzrxQZTgXjCTW/r5dfmS+615kAw+TeMLJWC3oSbiORDYkg68Gqjn1nPdjdAPNEyuCXUTEagfpJPj3X2XeVvsDjmImzSVOUXbJgf08f5xMMsIgsdkKbZtmaxJfEdByIHrkoVJNBAgMX1ATc9710y7t8vBKA==</ds:X509Certificate></ds:X509Data><ds:KeyValue><ds:RSAKeyValue><ds:Modulus>wC9ptumW1anYAziOzG4z7bwirRx5pu6ivV9vKn7cJ8drjGa8Hm9g3MuAQ7/WwVScuN485kh3go/lSx9LDVSNR9wpv1uXnKLON6iWMCOVWd/Ej02UgC8D2p8wzwCDQOqSuw8sVlSDL1aTqD9+pz2GwIYtqLBv9fIFstN3QshtctnxO7duJskbRB9L7Lt+A+hmcq+Q0afZfmnbv20WIqSTuZ9XN6BMm8ovmc4Aw0n4hbQ41fc19iTV74NgjC6z/vLnUo2qnOuuyKom27EI1KtmNTVgeQ2xAZekB1XRcpuvaOj0E5fyWcwkBV1xHpdUpKK2r/2BXfAMfI6fLr61VORGkw==</ds:Modulus><ds:Exponent>AQAB</ds:Exponent></ds:RSAKeyValue></ds:KeyValue></ds:KeyInfo><ds:Object Id="XadesObjectId-00f77442-ad08-4afb-9966-94e2d33308fd"><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="QualifyingProperties-f5dbb502-5853-4d02-9c65-d65a0d1805f3" Target="#Signature-ba9250cd-f299-44d0-99c6-da20c42a49f3"><xades:SignedProperties Id="SignedProperties-Signature-ba9250cd-f299-44d0-99c6-da20c42a49f3"><xades:SignedSignatureProperties><xades:SigningTime>2026-03-24T08:11:49-06:00</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>vwDsSg3g6WoeMtdwVSxY6NH7V9NDsPgsPkzcDoXFfBk=</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName>CN=CA PERSONA JURIDICA, OU=DGT, O=MINISTERIO DE HACIENDA, C=CR</ds:X509IssuerName><ds:X509SerialNumber>1665592238527</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate><SignaturePolicyIdentifier xmlns="http://uri.etsi.org/01903/v1.3.2#"><SignaturePolicyId><SigPolicyId><xades:Identifier>https://tribunet.hacienda.go.cr/docs/esquemas/2016/v4.1/Resolucion_Comprobantes_Electronicos_DGT-R-48-2016.pdf</xades:Identifier><Description /></SigPolicyId><xades:SigPolicyHash><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>NmI5Njk1ZThkNzI0MmIzMGJmZDAyNDc4YjUwNzkzODM2NTBiOWUxNTBkMmI2YjgzYzZjM2I5NTZlNDQ4OWQzMQ==</ds:DigestValue></xades:SigPolicyHash></SignaturePolicyId></SignaturePolicyIdentifier></xades:SignedSignatureProperties><xades:SignedDataObjectProperties><xades:DataObjectFormat ObjectReference="#Reference-4b35f91c-59db-48af-8b30-2ebb21194460"><xades:MimeType>application/octet-stream</xades:MimeType></xades:DataObjectFormat></xades:SignedDataObjectProperties></xades:SignedProperties></xades:QualifyingProperties></ds:Object></ds:Signature></FacturaElectronica>

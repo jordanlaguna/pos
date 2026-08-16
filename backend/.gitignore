@@ -1,0 +1,6 @@
+# Credenciales y clave de firma: nunca al repositorio.
+.env
+
+# Dumps que se cargan al inicializar la base; suelen traer datos reales.
+initdb/*.sql
+!initdb/.gitkeep

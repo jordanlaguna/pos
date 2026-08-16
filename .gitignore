@@ -1,0 +1,22 @@
+# Credenciales del backend: contraseñas de la base y clave de firma de los JWT.
+backend/.env
+
+# Dumps que se cargan al inicializar la base; suelen traer datos reales.
+backend/initdb/*.sql
+!backend/initdb/.gitkeep
+
+# Variables del POS (incluye la IP de la VM).
+frontend/.env
+# Base del modo mock: datos de prueba que se regeneran solos.
+frontend/.data/
+
+# Despliegue viejo, en desuso: tiene el .env real y una copia del backend.
+deploy/
+
+node_modules/
+__pycache__/
+*.py[cod]
+
+# Compilados
+frontend/.svelte-kit/
+frontend/build/

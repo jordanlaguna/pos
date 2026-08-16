@@ -1,0 +1,126 @@
+# Reemplaza tu docker-compose.yml.
+#
+# Toda la configuración vive en el archivo `.env` de esta misma carpeta, que
+# Compose carga solo. Acá no queda ninguna credencial escrita.
+#
+# Las variables usan la forma `${VAR:?mensaje}`: si falta alguna, Compose se
+# niega a levantar y dice cuál. Es a propósito — con valores por defecto, un
+# despliegue al que se le olvidó el .env arranca igual, con la contraseña de
+# ejemplo y la clave de firma pública, y nadie se entera.
+#
+# Cambios respecto del original, explicados en el README:
+#   1. SECRET_KEY llega al contenedor. Sin esto los JWT se firman con la clave
+#      por defecto, que está publicada en el repositorio.
+#   2. `db` tiene healthcheck y `fastapi` espera a que esté sana de verdad, no a
+#      que el puerto acepte conexiones: MySQL abre el 3306 varios segundos antes
+#      de poder autenticar, y por eso el primer arranque fallaba a veces.
+#   3. Se quita `version:`, obsoleto en Compose v2 (solo emitía un warning).
+#   4. MySQL y Adminer dejan de estar expuestos a toda la red.
+#   5. El dump inicial se monta como carpeta, así no rompe si el archivo no está.
+
+# Nombre fijo del proyecto.
+#
+# Sin esto, Compose lo toma del nombre de la carpeta, y ese nombre es el prefijo
+# del volumen de datos. Mover o renombrar la carpeta cambiaría `X_db_data` por
+# `Y_db_data`: MySQL arrancaría contra un volumen vacío y parecería que se
+# perdió la base. Fijándolo acá, el stack es el mismo desde donde sea que se
+# levante.
+name: ventasys
+
+services:
+  db:
+    image: mysql:8
+    container_name: mysql_db_api
+    restart: unless-stopped
+    environment:
+      # Misma zona que el resto del sistema: DATE() y las agrupaciones por día
+      # de los reportes se calculan sobre el valor guardado.
+      TZ: ${TZ:?Falta TZ en .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Falta MYSQL_ROOT_PASSWORD en .env}
+      MYSQL_DATABASE: ${DB_NAME:?Falta DB_NAME en .env}
+      MYSQL_USER: ${DB_USER:?Falta DB_USER en .env}
+      MYSQL_PASSWORD: ${DB_PASS:?Falta DB_PASS en .env}
+    volumes:
+      - db_data:/var/lib/mysql
+      # Carpeta en vez de archivo suelto: si `postsys.sql` no existe, un bind
+      # mount de archivo hace que Docker cree un DIRECTORIO con ese nombre y
+      # MySQL falla al leerlo. Con una carpeta, vacía simplemente no hace nada.
+      # Ojo: MySQL solo ejecuta esto la PRIMERA vez, con el volumen vacío.
+      - ./initdb:/docker-entrypoint-initdb.d
+    ports:
+      # Solo accesible desde la propia VM. Antes escuchaba en todas las
+      # interfaces: cualquiera en la red podía probar la contraseña de MySQL.
+      - "127.0.0.1:3306:3306"
+    networks:
+      - backend-net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u",
+          "root",
+          "-p${MYSQL_ROOT_PASSWORD}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  adminer:
+    image: adminer
+    container_name: adminer_db
+    restart: unless-stopped
+    ports:
+      # Adminer da acceso completo a la base con solo la contraseña. Se deja
+      # atado a la VM; para entrar desde afuera, túnel SSH:
+      #   ssh -L 8080:localhost:8080 usuario@ip_de_la_vm
+      - "127.0.0.1:8080:8080"
+    networks:
+      - backend-net
+    depends_on:
+      - db
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastapi_app
+    restart: unless-stopped
+    environment:
+      # CRÍTICO. Un contenedor sin TZ corre en UTC, y el backend sella las
+      # ventas, los turnos de caja y las devoluciones con `datetime.now()`. Con
+      # UTC-6, una venta de las 19:00 quedaba registrada a la 01:00 del día
+      # siguiente: el arqueo del turno de noche se partía en dos y los reportes
+      # diarios salían corridos seis horas.
+      TZ: ${TZ:?Falta TZ en .env}
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:?Falta DB_USER en .env}
+      DB_PASS: ${DB_PASS:?Falta DB_PASS en .env}
+      DB_NAME: ${DB_NAME:?Falta DB_NAME en .env}
+      SECRET_KEY: ${SECRET_KEY:?Falta SECRET_KEY en .env. Generala con python -c "import secrets; print(secrets.token_urlsafe(48))"}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      # El POS habla server-a-server, así que normalmente va vacío.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    ports:
+      # 80 dentro del contenedor, ${API_PORT} en la VM. El POS apunta acá:
+      #   API_BASE_URL=http://IP_DE_LA_VM:8001
+      - "${API_PORT:-8001}:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend-net
+
+volumes:
+  db_data:
+    # Nombre explícito, por la misma razón que `name:` arriba: los datos de la
+    # base no deben depender de cómo se llame la carpeta desde la que se levanta.
+    name: ventasys_db_data
+
+networks:
+  backend-net:

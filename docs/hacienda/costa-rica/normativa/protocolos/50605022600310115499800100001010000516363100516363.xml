@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FacturaElectronica xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica" xsi:schemaLocation="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica https://tribunet.hacienda.go.cr/docs/esquemas/2017/v4.4/facturaElectronica.xsd">
+	<Clave>50605022600310115499800100001010000516363100516363</Clave>
+	<ProveedorSistemas>3101702934</ProveedorSistemas>
+	<CodigoActividadEmisor>8690.9</CodigoActividadEmisor>
+	<CodigoActividadReceptor>7020.0</CodigoActividadReceptor>
+	<NumeroConsecutivo>00100001010000516363</NumeroConsecutivo>
+	<FechaEmision>2026-02-05T11:15:49-06:00</FechaEmision>
+	<Emisor>
+		<Nombre>Emergencias Médicas del Continente S.A.</Nombre>
+		<Identificacion>
+			<Tipo>02</Tipo>
+			<Numero>3101154998</Numero>
+		</Identificacion>
+		<NombreComercial>Emergencias Médicas</NombreComercial>
+		<Ubicacion>
+			<Provincia>1</Provincia>
+			<Canton>01</Canton>
+			<Distrito>07</Distrito>
+			<OtrasSenas>Costado Sur del cruce de la Bomba Delta, edificio Emergencias Médicas. La Uruca, San José,Costa Rica.</OtrasSenas>
+		</Ubicacion>
+		<Telefono>
+			<CodigoPais>506</CodigoPais>
+			<NumTelefono>22904444</NumTelefono>
+		</Telefono>
+		<CorreoElectronico>fe@emergenciasmedicas.com</CorreoElectronico>
+	</Emisor>
+	<Receptor>
+		<Nombre>KIMBERLY - CLARK TRADING AND SERVICES LIMITADA</Nombre>
+		<Identificacion>
+			<Tipo>02</Tipo>
+			<Numero>3102511731</Numero>
+		</Identificacion>
+		<Ubicacion>
+			<Provincia>4</Provincia>
+			<Canton>07</Canton>
+			<Distrito>01</Distrito>
+			<OtrasSenas>HEREDIA-BELEN SAN ANTONIO DE LA ENTRADA NORTE DEL POLIDEPORTIVO 25 METROS AL OESTE</OtrasSenas>
+		</Ubicacion>
+		<CorreoElectronico>facturas.costarica@pl.erp.kcc.com</CorreoElectronico>
+	</Receptor>
+	<CondicionVenta>02</CondicionVenta>
+	<PlazoCredito>30</PlazoCredito>
+	<DetalleServicio>
+		<LineaDetalle>
+			<NumeroLinea>1</NumeroLinea>
+			<CodigoCABYS>9310100000100</CodigoCABYS>
+			<CodigoComercial>
+				<Tipo>01</Tipo>
+				<Codigo>001</Codigo>
+			</CodigoComercial>
+			<Cantidad>1.000</Cantidad>
+			<UnidadMedida>Os</UnidadMedida>
+			<UnidadMedidaComercial>Otro tipo Servicio</UnidadMedidaComercial>
+			<Detalle>1 mensualidad de servicio médico Extrahospitalario</Detalle>
+			<PrecioUnitario>187884.6200</PrecioUnitario>
+			<MontoTotal>187884.6200</MontoTotal>
+			<SubTotal>187884.6200</SubTotal>
+			<BaseImponible>187884.6200</BaseImponible>
+			<Impuesto>
+				<Codigo>01</Codigo>
+				<CodigoTarifaIVA>04</CodigoTarifaIVA>
+				<Tarifa>4.00</Tarifa>
+				<Monto>7515.3800</Monto>
+				<Exoneracion>
+					<TipoDocumentoEX1>08</TipoDocumentoEX1>
+					<NumeroDocumento>LEY 7210 REGIMEN DE ZONAS FRANCAS</NumeroDocumento>
+					<Articulo>17</Articulo>
+					<Inciso>1</Inciso>
+					<NombreInstitucion>99</NombreInstitucion>
+					<NombreInstitucionOtros>PROCOMER</NombreInstitucionOtros>
+					<FechaEmisionEX>2023-01-13T00:00:00-06:00</FechaEmisionEX>
+					<TarifaExonerada>4</TarifaExonerada>
+					<MontoExoneracion>7515.3800</MontoExoneracion>
+				</Exoneracion>
+			</Impuesto>
+			<ImpuestoAsumidoEmisorFabrica>0.0000</ImpuestoAsumidoEmisorFabrica>
+			<ImpuestoNeto>0.0000</ImpuestoNeto>
+			<MontoTotalLinea>187884.6200</MontoTotalLinea>
+		</LineaDetalle>
+	</DetalleServicio>
+	<ResumenFactura>
+		<CodigoTipoMoneda>
+			<CodigoMoneda>CRC</CodigoMoneda>
+			<TipoCambio>1.00000</TipoCambio>
+		</CodigoTipoMoneda>
+		<TotalServGravados>0.0000</TotalServGravados>
+		<TotalServExentos>0.0000</TotalServExentos>
+		<TotalServExonerado>187884.6200</TotalServExonerado>
+		<TotalMercanciasGravadas>0.0000</TotalMercanciasGravadas>
+		<TotalMercanciasExentas>0.0000</TotalMercanciasExentas>
+		<TotalGravado>0.0000</TotalGravado>
+		<TotalExento>0.0000</TotalExento>
+		<TotalExonerado>187884.6200</TotalExonerado>
+		<TotalVenta>187884.6200</TotalVenta>
+		<TotalDescuentos>0.0000</TotalDescuentos>
+		<TotalVentaNeta>187884.6200</TotalVentaNeta>
+		<TotalDesgloseImpuesto>
+			<Codigo>01</Codigo>
+			<CodigoTarifaIVA>04</CodigoTarifaIVA>
+			<TotalMontoImpuesto>0.0000</TotalMontoImpuesto>
+		</TotalDesgloseImpuesto>
+		<TotalImpuesto>0.0000</TotalImpuesto>
+		<TotalComprobante>187884.6200</TotalComprobante>
+	</ResumenFactura>
+	<Otros>
+		<OtroTexto codigo="OC">L000298431</OtroTexto>
+		<OtroTexto codigo="NoRecepcion">363278</OtroTexto>
+	</Otros>
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="Signature-1df05fcf-e974-4f9f-aab3-22cd7eb89471"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" /><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" /><ds:Reference Id="Reference-182c691a-6bc6-40dc-be45-3e2e08b1010d" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>ry8E2CC2k/BhswX15a9DcDl6TJfiCbANJRhfZoLMrmg=</ds:DigestValue></ds:Reference><ds:Reference Id="ReferenceKeyInfo" URI="#KeyInfoId-Signature-1df05fcf-e974-4f9f-aab3-22cd7eb89471"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>6V4tOiraT2OmLpX4fA6mFgeqgOBnrUwcJ/5cHmvMBkc=</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#SignedProperties-Signature-1df05fcf-e974-4f9f-aab3-22cd7eb89471"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>S3/i6aF0522QsRapxu3Z1LmtmbviAy23csTPbUJbqkY=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue Id="SignatureValue-1df05fcf-e974-4f9f-aab3-22cd7eb89471">S84WQEwnTpaMQYTOKDrgnVD+LjZ8c3h1InCk3mH1QlpTBh0hOfg8LXiEvpXFd0kabW+pix14n9yhzdt0c48BUS1GKOHbcr7krvTHnAO93nyWsN8xkuEF0/A/JxP6KW9OTGqHZqaOO7Mv9HfP3Q+8UfMrE2Dfi3ioL7YLg20CTuSKXA1eyYqohNCFpv8/ATHaq1tf0G3NhxuYTDHfOmyI2UXEnHkulKrsTHEbbqJrNEpfxzU9IH5ABT2S6F2qNDJ5kdJmW4b0hP4Ef1+ax7sbHxJbR7Ci1xFy+W2+GurHQtujn95wDxNdxCCbVUXoMCZLy6at1QOLG7gpD8cb8TI3OQ==</ds:SignatureValue><ds:KeyInfo Id="KeyInfoId-Signature-1df05fcf-e974-4f9f-aab3-22cd7eb89471"><ds:X509Data><ds:X509Certificate>MIIFNTCCAx2gAwIBAgIGAZeJMvmUMA0GCSqGSIb3DQEBCwUAMFoxCzAJBgNVBAYTAkNSMR8wHQYDVQQKDBZNSU5JU1RFUklPIERFIEhBQ0lFTkRBMQwwCgYDVQQLDANER1QxHDAaBgNVBAMME0NBIFBFUlNPTkEgSlVSSURJQ0EwHhcNMjUwNjE5MTcxODI4WhcNMjkwNjE4MTcxODI4WjCBjzEZMBcGA1UEBRMQQ1BKLTMtMTAxLTE1NDk5ODELMAkGA1UEBhMCQ1IxGTAXBgNVBAoMEFBFUlNPTkEgSlVSSURJQ0ExDDAKBgNVBAsMA0NQSjE8MDoGA1UEAwwzRU1FUkdFTkNJQVMgTUVESUNBUyBERUwgQ09OVElORU5URSBTT0NJRURBRCBBTk9OSU1BMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoulJHVLqLyO5jSgikarFXYzdWiDkOoIhso/Qc2RmdMnL1hfa/Tv9DlnT1TmdPx12oiIsu1r6XD2NQbuLemjXneR2rQzBc+cvT6Qoggol6bSnBS30FdOglYi1URQjsaY21DzFkPCyTFHrJCHhIWCNUQjTe7Vnu4GU4t0N3mPQXvl6mfStfb1Knko3RNtPy0Lnu4wffNDlm2m0ynwvCd09EusjFm2FYGaBO74xBHU7J6VPwkMgil8AVxY1t5bbewLe7Dyd4erRpATT2PKJcZewOlZJjT9xDWdtlOP7dmqLTktEDrx2CdbYBpzb3uE2wpgOKf5i3zNI8buR6AXeQLzO3QIDAQABo4HKMIHHMB8GA1UdIwQYMBaAFDttV/XWfOmeEAIgQeO9GszPs06VMB0GA1UdDgQWBBSOU+Q3UrFs0h8U1EZxjWvXQkCitjALBgNVHQ8EBAMCBsAwEwYDVR0lBAwwCgYIKwYBBQUHAwQwYwYIKwYBBQUHAQEEVzBVMFMGCCsGAQUFBzAChkdodHRwczovL3BraS5jb21wcm9iYW50ZXNlbGVjdHJvbmljb3MuZ28uY3IvcHJvZC9pbnRlcm1lZGlhdGUtcGotcGVtLmNydDANBgkqhkiG9w0BAQsFAAOCAgEAXfR/lS84UAwUxa1d1cdeinfUpChsf82U7CSbc4iPnog1dqUYqcABAlXTJvAod+//oQTW24alQczJTjRAEOetKFlE+NXya658H8G7m1PJ0YBLX0e4SaMD5U/EqExMHZ8PVcQFjzOSC9VhQx+97y2NShKG6fvMgY+M8CMh2SuHnA4lJ2V40FY5PEvpkjNWmJuf59yCmzX8y6EU734YD7Ao43HJf0P9vh0ps/U4rjy4tTKsep75vgKOzhGUXaAchOiu/AjtlM2E7ErYE0v5q+bfjbZBezoHAOv9umb+9fY3U3oRD6ecybRmujUVdPiw2tBBxdDZe7LB+1jKEzmDi59xyaBJKV8DTmxAf1Ra8nK1X80IWHIvj9pOwpQH7z73GEljH8LRef+fjyQxAFUWACOyjBtylgXpraq2KOKgBNjZnDKuo3Gg/ltlfKGTFErXmm3Igq9p3W8f4i8LuaTEVrW+dhporZcaOj0G4x6L3U9z+jdRvGW4Up3rxCFWU+PEP48sDhJJj2/CP8YTVE8CfHZ0vym5JsQnbaw1hWaOFA6Y1HiK/LjLdJT7EEMWF5U43ZLA8f9QC2xFh3LyEYB1EbXxL0GkZEGeLhTmoZSWNjeTDeTTq4Z+XBd3zYmQfySDLUZEhXFG4YjvVbirwI2bz328tV+WWbS8y4y8y0yJmkFCCZg=</ds:X509Certificate></ds:X509Data><ds:KeyValue><ds:RSAKeyValue><ds:Modulus>oulJHVLqLyO5jSgikarFXYzdWiDkOoIhso/Qc2RmdMnL1hfa/Tv9DlnT1TmdPx12oiIsu1r6XD2NQbuLemjXneR2rQzBc+cvT6Qoggol6bSnBS30FdOglYi1URQjsaY21DzFkPCyTFHrJCHhIWCNUQjTe7Vnu4GU4t0N3mPQXvl6mfStfb1Knko3RNtPy0Lnu4wffNDlm2m0ynwvCd09EusjFm2FYGaBO74xBHU7J6VPwkMgil8AVxY1t5bbewLe7Dyd4erRpATT2PKJcZewOlZJjT9xDWdtlOP7dmqLTktEDrx2CdbYBpzb3uE2wpgOKf5i3zNI8buR6AXeQLzO3Q==</ds:Modulus><ds:Exponent>AQAB</ds:Exponent></ds:RSAKeyValue></ds:KeyValue></ds:KeyInfo><ds:Object Id="XadesObjectId-f139346c-0afa-433a-8a4b-c19f185090dd"><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="QualifyingProperties-a2a58384-fa37-4abf-a3ea-af003070d9e5" Target="#Signature-1df05fcf-e974-4f9f-aab3-22cd7eb89471"><xades:SignedProperties Id="SignedProperties-Signature-1df05fcf-e974-4f9f-aab3-22cd7eb89471"><xades:SignedSignatureProperties><xades:SigningTime>2026-02-05T11:16:04-06:00</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>ymMXIfrX8gzRH1F4Fvmeoec4gLynPO2SWIdhJ572YfY=</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName>CN=CA PERSONA JURIDICA, OU=DGT, O=MINISTERIO DE HACIENDA, C=CR</ds:X509IssuerName><ds:X509SerialNumber>1750353508756</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate><SignaturePolicyIdentifier xmlns="http://uri.etsi.org/01903/v1.3.2#"><SignaturePolicyId><SigPolicyId><xades:Identifier>https://tribunet.hacienda.go.cr/docs/esquemas/2016/v4.1/Resolucion_Comprobantes_Electronicos_DGT-R-48-2016.pdf</xades:Identifier><Description /></SigPolicyId><xades:SigPolicyHash><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>NmI5Njk1ZThkNzI0MmIzMGJmZDAyNDc4YjUwNzkzODM2NTBiOWUxNTBkMmI2YjgzYzZjM2I5NTZlNDQ4OWQzMQ==</ds:DigestValue></xades:SigPolicyHash></SignaturePolicyId></SignaturePolicyIdentifier></xades:SignedSignatureProperties><xades:SignedDataObjectProperties><xades:DataObjectFormat ObjectReference="#Reference-182c691a-6bc6-40dc-be45-3e2e08b1010d"><xades:MimeType>application/octet-stream</xades:MimeType></xades:DataObjectFormat></xades:SignedDataObjectProperties></xades:SignedProperties></xades:QualifyingProperties></ds:Object></ds:Signature></FacturaElectronica>

@@ -1,0 +1,30 @@
+# Lo que no debe entrar en la imagen.
+#
+# Sin esto, `COPY ./app ./app` arrastra los __pycache__ del host —compilados con
+# otra versión de Python— y, peor, el .env se colaba dentro de la imagen: quien
+# tuviera acceso a ella tendría las credenciales, aunque el contenedor las reciba
+# por variables de entorno.
+
+.env
+.env.*
+!.env.example
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+.git/
+.gitignore
+.dockerignore
+
+initdb/
+*.sql
+
+*.db
+*.sqlite3
+
+.vscode/
+.idea/
+README.md

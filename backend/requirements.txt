@@ -1,0 +1,17 @@
+# Las versiones van acotadas a propósito: sin fijarlas, `pip install` en una
+# máquina nueva instala lo último y el sistema se rompe sin que nadie toque el
+# código. Fue justo lo que pasó con passlib + bcrypt.
+
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+sqlalchemy>=2.0,<3.0
+pymysql>=1.1,<2.0
+cryptography>=42.0
+python-dotenv>=1.0
+
+# bcrypt directo, sin passlib. passlib 1.7.4 (2020) no es compatible con
+# bcrypt >= 4.1 y hace fallar el registro y el login. Ver app/utils/security.py.
+bcrypt>=4.1,<6.0
+
+python-jose[cryptography]>=3.3,<4.0
+reportlab>=4.0,<5.0

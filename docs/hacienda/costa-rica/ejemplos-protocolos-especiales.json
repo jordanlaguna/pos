@@ -1,0 +1,589 @@
+{
+  "_meta": {
+    "titulo": "Ejemplos de payloads - Protocolos especiales CR (v4.4)",
+    "importante_para_QA": "NO se agrego ningun campo nuevo al canonico. Todos los protocolos usan campos ya existentes: 'otros[]' y 'references[]'. El contrato del API es identico al anterior.",
+    "campos_usados": {
+      "otros[]": "element (OtroTexto|OtroContenido), code (atributo codigo, opcional), text",
+      "references[]": "referenceType, referenceTypeOther?, referenceId, referenceDate, reasonCode, reasonCodeOther?, reason"
+    },
+    "como_probar": [
+      "POST http://<host>/api/documents con headers: Authorization: Bearer <apiKey>, X-Issuer-Id: <issuerId>, Content-Type: application/json.",
+      "officialId.consecutive DEBE ser unico por envio (si se repite, Hacienda responde -99).",
+      "issueDate DEBE ser la hora actual de Costa Rica (offset -06:00).",
+      "receiver y el issuer autenticado deben ser entidades reales registradas ante Hacienda para lograr ACEPTADO.",
+      "Consultar el estado con GET /api/documents/{id} hasta Accepted/Rejected (flujo asincrono)."
+    ],
+    "forma_NO_soportada": "Complemento anidado retail:Complemento dentro de <OtroContenido> (Gessa 003 / PriceSmart 005/105). Hacienda lo RECHAZA con -1 (cvc-complex-type.2.2: OtroContenido no admite elementos hijos). Debe entregarse al retailer fuera de banda, no embebido en el comprobante fiscal."
+  },
+  "ejemplos": [
+    {
+      "protocolo": "A) ICE / Sur Quimica (InformacionReferencia)",
+      "resultado_stag_2026_07_20": "ACEPTADO",
+      "nota": "El nodo <Razon> (reason) es OBLIGATORIO (-131 si falta). ICE FI/MM/FT y Sur Quimica cambian solo el texto de referenceId/reason.",
+      "payload": {
+        "schemaVersion": "1.0",
+        "countryCode": "CR",
+        "documentType": "FE",
+        "externalKey": "QA:<UNICO-POR-ENVIO>",
+        "officialId": {
+          "consecutive": "00100001010000000001",
+          "situation": "1"
+        },
+        "issueDate": "2026-07-20T10:00:00-06:00",
+        "currency": "CRC",
+        "receiver": {
+          "taxIdType": "02",
+          "taxId": "3101702934",
+          "name": "SWS SOFTWARE SOCIEDAD ANONIMA",
+          "email": "prueba@test.cr",
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "lines": [
+          {
+            "lineNumber": 1,
+            "description": "Servicios profesionales de prueba",
+            "quantity": "1.00",
+            "unitOfMeasure": "Sp",
+            "unitPrice": "1000.00",
+            "subtotal": "1000.00",
+            "taxes": [
+              {
+                "code": "01",
+                "rateCode": "08",
+                "rate": "13.00",
+                "base": "1000.00",
+                "amount": "130.00"
+              }
+            ],
+            "lineTotal": "1130.00",
+            "countrySpecific": {
+              "cabysCode": "8399000000000"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1000.00",
+          "totalDiscounts": "0.00",
+          "totalTaxes": "130.00",
+          "totalExempt": "0.00",
+          "grandTotal": "1130.00"
+        },
+        "payments": [
+          {
+            "methodCode": "01",
+            "amount": "1130.00",
+            "currency": "CRC"
+          }
+        ],
+        "countrySpecific": {
+          "saleCondition": "01",
+          "economicActivityCode": "4741.0"
+        },
+        "emisor": {
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "references": [
+          {
+            "referenceType": "99",
+            "referenceTypeOther": "Orden de compra ICE",
+            "referenceId": "MM-45000123456",
+            "referenceDate": "2026-07-20T10:00:00-06:00",
+            "reasonCode": "06",
+            "reason": "Venta al ICE - Cadena de Abastecimiento"
+          }
+        ]
+      }
+    },
+    {
+      "protocolo": "B) Walmart / Grupo Pelon (Otros/OtroTexto codigo)",
+      "resultado_stag_2026_07_20": "ACEPTADO",
+      "nota": "Automercado, CMI, Sigma, Femsa, Unilever, Nutresa, Millicom, Kimberly, Numar, DHL, La Nacion = misma forma, solo cambian los codigo/valores.",
+      "payload": {
+        "schemaVersion": "1.0",
+        "countryCode": "CR",
+        "documentType": "FE",
+        "externalKey": "QA:<UNICO-POR-ENVIO>",
+        "officialId": {
+          "consecutive": "00100001010000000001",
+          "situation": "1"
+        },
+        "issueDate": "2026-07-20T10:00:00-06:00",
+        "currency": "CRC",
+        "receiver": {
+          "taxIdType": "02",
+          "taxId": "3101702934",
+          "name": "SWS SOFTWARE SOCIEDAD ANONIMA",
+          "email": "prueba@test.cr",
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "lines": [
+          {
+            "lineNumber": 1,
+            "description": "Servicios profesionales de prueba",
+            "quantity": "1.00",
+            "unitOfMeasure": "Sp",
+            "unitPrice": "1000.00",
+            "subtotal": "1000.00",
+            "taxes": [
+              {
+                "code": "01",
+                "rateCode": "08",
+                "rate": "13.00",
+                "base": "1000.00",
+                "amount": "130.00"
+              }
+            ],
+            "lineTotal": "1130.00",
+            "countrySpecific": {
+              "cabysCode": "8399000000000"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1000.00",
+          "totalDiscounts": "0.00",
+          "totalTaxes": "130.00",
+          "totalExempt": "0.00",
+          "grandTotal": "1130.00"
+        },
+        "payments": [
+          {
+            "methodCode": "01",
+            "amount": "1130.00",
+            "currency": "CRC"
+          }
+        ],
+        "countrySpecific": {
+          "saleCondition": "01",
+          "economicActivityCode": "4741.0"
+        },
+        "emisor": {
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "otros": [
+          {
+            "element": "OtroTexto",
+            "code": "WMNumeroVendedor",
+            "text": "027313900"
+          },
+          {
+            "element": "OtroTexto",
+            "code": "WMEnviarGLN",
+            "text": "7407001010862"
+          },
+          {
+            "element": "OtroTexto",
+            "code": "WMNumeroOrden",
+            "text": "1200666682"
+          }
+        ]
+      }
+    },
+    {
+      "protocolo": "D) BCCR - Banco Central (009)",
+      "resultado_stag_2026_07_20": "ACEPTADO",
+      "payload": {
+        "schemaVersion": "1.0",
+        "countryCode": "CR",
+        "documentType": "FE",
+        "externalKey": "QA:<UNICO-POR-ENVIO>",
+        "officialId": {
+          "consecutive": "00100001010000000001",
+          "situation": "1"
+        },
+        "issueDate": "2026-07-20T10:00:00-06:00",
+        "currency": "CRC",
+        "receiver": {
+          "taxIdType": "02",
+          "taxId": "3101702934",
+          "name": "SWS SOFTWARE SOCIEDAD ANONIMA",
+          "email": "prueba@test.cr",
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "lines": [
+          {
+            "lineNumber": 1,
+            "description": "Servicios profesionales de prueba",
+            "quantity": "1.00",
+            "unitOfMeasure": "Sp",
+            "unitPrice": "1000.00",
+            "subtotal": "1000.00",
+            "taxes": [
+              {
+                "code": "01",
+                "rateCode": "08",
+                "rate": "13.00",
+                "base": "1000.00",
+                "amount": "130.00"
+              }
+            ],
+            "lineTotal": "1130.00",
+            "countrySpecific": {
+              "cabysCode": "8399000000000"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1000.00",
+          "totalDiscounts": "0.00",
+          "totalTaxes": "130.00",
+          "totalExempt": "0.00",
+          "grandTotal": "1130.00"
+        },
+        "payments": [
+          {
+            "methodCode": "01",
+            "amount": "1130.00",
+            "currency": "CRC"
+          }
+        ],
+        "countrySpecific": {
+          "saleCondition": "01",
+          "economicActivityCode": "4741.0"
+        },
+        "emisor": {
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "otros": [
+          {
+            "element": "OtroTexto",
+            "code": "BCCR_CUENTA_CLIENTE",
+            "text": "CR88010200009010873205"
+          },
+          {
+            "element": "OtroTexto",
+            "code": "BCCR_ORDEN_PEDIDO",
+            "text": "4200005460"
+          },
+          {
+            "element": "OtroTexto",
+            "code": "BCCR_CODIGO_FACTURA",
+            "text": "0010000010516559"
+          },
+          {
+            "element": "OtroTexto",
+            "code": "BCCR_PERIODO",
+            "text": "Mensualidad del 01/01/26 al 31/01/26"
+          }
+        ]
+      }
+    },
+    {
+      "protocolo": "E) BNCR - Banco Nacional (015) - OtroTexto SIN codigo",
+      "resultado_stag_2026_07_20": "ACEPTADO",
+      "nota": "OtroTexto sin atributo codigo: se omite 'code'. Tambien se puede usar el campo top-level 'notes'.",
+      "payload": {
+        "schemaVersion": "1.0",
+        "countryCode": "CR",
+        "documentType": "FE",
+        "externalKey": "QA:<UNICO-POR-ENVIO>",
+        "officialId": {
+          "consecutive": "00100001010000000001",
+          "situation": "1"
+        },
+        "issueDate": "2026-07-20T10:00:00-06:00",
+        "currency": "CRC",
+        "receiver": {
+          "taxIdType": "02",
+          "taxId": "3101702934",
+          "name": "SWS SOFTWARE SOCIEDAD ANONIMA",
+          "email": "prueba@test.cr",
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "lines": [
+          {
+            "lineNumber": 1,
+            "description": "Servicios profesionales de prueba",
+            "quantity": "1.00",
+            "unitOfMeasure": "Sp",
+            "unitPrice": "1000.00",
+            "subtotal": "1000.00",
+            "taxes": [
+              {
+                "code": "01",
+                "rateCode": "08",
+                "rate": "13.00",
+                "base": "1000.00",
+                "amount": "130.00"
+              }
+            ],
+            "lineTotal": "1130.00",
+            "countrySpecific": {
+              "cabysCode": "8399000000000"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1000.00",
+          "totalDiscounts": "0.00",
+          "totalTaxes": "130.00",
+          "totalExempt": "0.00",
+          "grandTotal": "1130.00"
+        },
+        "payments": [
+          {
+            "methodCode": "01",
+            "amount": "1130.00",
+            "currency": "CRC"
+          }
+        ],
+        "countrySpecific": {
+          "saleCondition": "01",
+          "economicActivityCode": "4741.0"
+        },
+        "emisor": {
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "otros": [
+          {
+            "element": "OtroTexto",
+            "text": "Agrupamiento FEBN-0001-0225. Orden pedido No. 0822025161000054. Servicios profesionales."
+          }
+        ]
+      }
+    },
+    {
+      "protocolo": "F) Nota de Credito (Walmart NC typing + referencia a clave)",
+      "resultado_stag_2026_07_20": "ACEPTADO",
+      "nota": "referenceId debe ser la clave de 50 digitos de un FE ACEPTADO real. reasonCode 01 = Anula.",
+      "payload": {
+        "schemaVersion": "1.0",
+        "countryCode": "CR",
+        "documentType": "NC",
+        "externalKey": "QA:<UNICO-POR-ENVIO>",
+        "officialId": {
+          "consecutive": "00100001030000000001",
+          "situation": "1"
+        },
+        "issueDate": "2026-07-20T10:00:00-06:00",
+        "currency": "CRC",
+        "receiver": {
+          "taxIdType": "02",
+          "taxId": "3101702934",
+          "name": "SWS SOFTWARE SOCIEDAD ANONIMA",
+          "email": "prueba@test.cr",
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "lines": [
+          {
+            "lineNumber": 1,
+            "description": "Servicios profesionales de prueba",
+            "quantity": "1.00",
+            "unitOfMeasure": "Sp",
+            "unitPrice": "1000.00",
+            "subtotal": "1000.00",
+            "taxes": [
+              {
+                "code": "01",
+                "rateCode": "08",
+                "rate": "13.00",
+                "base": "1000.00",
+                "amount": "130.00"
+              }
+            ],
+            "lineTotal": "1130.00",
+            "countrySpecific": {
+              "cabysCode": "8399000000000"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1000.00",
+          "totalDiscounts": "0.00",
+          "totalTaxes": "130.00",
+          "totalExempt": "0.00",
+          "grandTotal": "1130.00"
+        },
+        "payments": [
+          {
+            "methodCode": "01",
+            "amount": "1130.00",
+            "currency": "CRC"
+          }
+        ],
+        "countrySpecific": {
+          "saleCondition": "01",
+          "economicActivityCode": "4741.0"
+        },
+        "emisor": {
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "references": [
+          {
+            "referenceType": "01",
+            "referenceId": "<CLAVE-50-DIGITOS-DEL-FE-ACEPTADO>",
+            "referenceDate": "2026-07-20T10:00:00-06:00",
+            "reasonCode": "01",
+            "reason": "Anulacion de factura de referencia"
+          }
+        ],
+        "otros": [
+          {
+            "element": "OtroTexto",
+            "code": "TipoNota",
+            "text": "NCCLAIM"
+          },
+          {
+            "element": "OtroTexto",
+            "code": "WMNumeroReclamo",
+            "text": "1234567890"
+          }
+        ]
+      }
+    },
+    {
+      "protocolo": "G) SMOKE combinado (varios OtroTexto + una referencia en un mismo FE)",
+      "resultado_stag_2026_07_20": "ACEPTADO",
+      "nota": "Prueba que el mecanismo emite N OtroTexto + InformacionReferencia a la vez.",
+      "payload": {
+        "schemaVersion": "1.0",
+        "countryCode": "CR",
+        "documentType": "FE",
+        "externalKey": "QA:<UNICO-POR-ENVIO>",
+        "officialId": {
+          "consecutive": "00100001010000000001",
+          "situation": "1"
+        },
+        "issueDate": "2026-07-20T10:00:00-06:00",
+        "currency": "CRC",
+        "receiver": {
+          "taxIdType": "02",
+          "taxId": "3101702934",
+          "name": "SWS SOFTWARE SOCIEDAD ANONIMA",
+          "email": "prueba@test.cr",
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "lines": [
+          {
+            "lineNumber": 1,
+            "description": "Servicios profesionales de prueba",
+            "quantity": "1.00",
+            "unitOfMeasure": "Sp",
+            "unitPrice": "1000.00",
+            "subtotal": "1000.00",
+            "taxes": [
+              {
+                "code": "01",
+                "rateCode": "08",
+                "rate": "13.00",
+                "base": "1000.00",
+                "amount": "130.00"
+              }
+            ],
+            "lineTotal": "1130.00",
+            "countrySpecific": {
+              "cabysCode": "8399000000000"
+            }
+          }
+        ],
+        "totals": {
+          "subtotal": "1000.00",
+          "totalDiscounts": "0.00",
+          "totalTaxes": "130.00",
+          "totalExempt": "0.00",
+          "grandTotal": "1130.00"
+        },
+        "payments": [
+          {
+            "methodCode": "01",
+            "amount": "1130.00",
+            "currency": "CRC"
+          }
+        ],
+        "countrySpecific": {
+          "saleCondition": "01",
+          "economicActivityCode": "4741.0"
+        },
+        "emisor": {
+          "address": {
+            "provinceCode": "1",
+            "cantonCode": "01",
+            "districtCode": "05",
+            "otherSigns": "Zapote"
+          }
+        },
+        "references": [
+          {
+            "referenceType": "99",
+            "referenceTypeOther": "Orden de compra",
+            "referenceId": "OC-000123",
+            "referenceDate": "2026-07-20T10:00:00-06:00",
+            "reasonCode": "06",
+            "reason": "Venta con orden de compra"
+          }
+        ],
+        "otros": [
+          {
+            "element": "OtroTexto",
+            "code": "OrdenCompra",
+            "text": "4402151874"
+          },
+          {
+            "element": "OtroTexto",
+            "code": "NumeroRecepcion",
+            "text": "363278"
+          },
+          {
+            "element": "OtroTexto",
+            "text": "Observacion libre sin codigo"
+          }
+        ]
+      }
+    }
+  ]
+}

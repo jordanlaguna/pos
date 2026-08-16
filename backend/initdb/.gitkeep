@@ -1,0 +1,1 @@
+# MySQL ejecuta los .sql de esta carpeta SOLO la primera vez que se crea la base (volumen vacío). Poné acá tu postsys.sql si querés datos iniciales.

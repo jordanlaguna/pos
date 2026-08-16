@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FacturaElectronica xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica" xsi:schemaLocation="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica https://tribunet.hacienda.go.cr/docs/esquemas/2017/v4.4/facturaElectronica.xsd">
+	<Clave>50611062600310116629200100001010000007218100007218</Clave>
+	<ProveedorSistemas>3101702934</ProveedorSistemas>
+	<CodigoActividadEmisor>4669.9</CodigoActividadEmisor>
+	<CodigoActividadReceptor>2022.0</CodigoActividadReceptor>
+	<NumeroConsecutivo>00100001010000007218</NumeroConsecutivo>
+	<FechaEmision>2026-06-11T08:25:08-06:00</FechaEmision>
+	<Emisor>
+		<Nombre>PROLAB DE COSTA RICA SA</Nombre>
+		<Identificacion>
+			<Tipo>02</Tipo>
+			<Numero>3101166292</Numero>
+		</Identificacion>
+		<NombreComercial>PROLAB DE COSTA RICA SA</NombreComercial>
+		<Ubicacion>
+			<Provincia>1</Provincia>
+			<Canton>11</Canton>
+			<Distrito>01</Distrito>
+			<Barrio>Monte Azul</Barrio>
+			<OtrasSenas>Coronado, 400 sureste de Combustibles Coronado, Bodegas San Francisco, Local #15</OtrasSenas>
+		</Ubicacion>
+		<Telefono>
+			<CodigoPais>506</CodigoPais>
+			<NumTelefono>22945252</NumTelefono>
+		</Telefono>
+		<CorreoElectronico>prolabcr@gmail.com</CorreoElectronico>
+	</Emisor>
+	<Receptor>
+		<Nombre>SUR QUIMICA S.A.</Nombre>
+		<Identificacion>
+			<Tipo>02</Tipo>
+			<Numero>3101022435</Numero>
+		</Identificacion>
+		<NombreComercial>SUR QUIMICA S.A.</NombreComercial>
+		<Ubicacion>
+			<Provincia>1</Provincia>
+			<Canton>01</Canton>
+			<Distrito>07</Distrito>
+			<OtrasSenas>LA URUCA DEL BANCO NACIONAL 100 OESTE Y 125 SUR APTDO POSTAL # 234-1150 LA URUCA</OtrasSenas>
+		</Ubicacion>
+		<Telefono>
+			<CodigoPais>506</CodigoPais>
+			<NumTelefono>22113700</NumTelefono>
+		</Telefono>
+		<CorreoElectronico>RecepcionFESQ@Gruposur.com</CorreoElectronico>
+	</Receptor>
+	<CondicionVenta>02</CondicionVenta>
+	<PlazoCredito>30</PlazoCredito>
+	<DetalleServicio>
+		<LineaDetalle>
+			<NumeroLinea>1</NumeroLinea>
+			<CodigoCABYS>3338000999900</CodigoCABYS>
+			<CodigoComercial>
+				<Tipo>01</Tipo>
+				<Codigo>1596350</Codigo>
+			</CodigoComercial>
+			<Cantidad>24.000</Cantidad>
+			<UnidadMedida>Unid</UnidadMedida>
+			<UnidadMedidaComercial>Unidad</UnidadMedidaComercial>
+			<Detalle>LUB. P/CABLES Y CADENAS CD-1000 SP. 350 ml.</Detalle>
+			<PrecioUnitario>9766.5000</PrecioUnitario>
+			<MontoTotal>234396.0000</MontoTotal>
+			<SubTotal>234396.0000</SubTotal>
+			<BaseImponible>234396.0000</BaseImponible>
+			<Impuesto>
+				<Codigo>01</Codigo>
+				<CodigoTarifaIVA>08</CodigoTarifaIVA>
+				<Tarifa>13.00</Tarifa>
+				<Monto>30471.4800</Monto>
+			</Impuesto>
+			<ImpuestoAsumidoEmisorFabrica>0.0000</ImpuestoAsumidoEmisorFabrica>
+			<ImpuestoNeto>30471.4800</ImpuestoNeto>
+			<MontoTotalLinea>264867.4800</MontoTotalLinea>
+		</LineaDetalle>
+		<LineaDetalle>
+			<NumeroLinea>2</NumeroLinea>
+			<CodigoCABYS>3338000019900</CodigoCABYS>
+			<CodigoComercial>
+				<Tipo>01</Tipo>
+				<Codigo>1283400</Codigo>
+			</CodigoComercial>
+			<Cantidad>5.000</Cantidad>
+			<UnidadMedida>Unid</UnidadMedida>
+			<UnidadMedidaComercial>Unidad</UnidadMedidaComercial>
+			<Detalle>GRASA MULTIPROPOSITO AF-200 NLGI #2 435gr.</Detalle>
+			<PrecioUnitario>18268.0000</PrecioUnitario>
+			<MontoTotal>91340.0000</MontoTotal>
+			<SubTotal>91340.0000</SubTotal>
+			<BaseImponible>91340.0000</BaseImponible>
+			<Impuesto>
+				<Codigo>01</Codigo>
+				<CodigoTarifaIVA>08</CodigoTarifaIVA>
+				<Tarifa>13.00</Tarifa>
+				<Monto>11874.2000</Monto>
+			</Impuesto>
+			<ImpuestoAsumidoEmisorFabrica>0.0000</ImpuestoAsumidoEmisorFabrica>
+			<ImpuestoNeto>11874.2000</ImpuestoNeto>
+			<MontoTotalLinea>103214.2000</MontoTotalLinea>
+		</LineaDetalle>
+	</DetalleServicio>
+	<ResumenFactura>
+		<CodigoTipoMoneda>
+			<CodigoMoneda>CRC</CodigoMoneda>
+			<TipoCambio>1.00000</TipoCambio>
+		</CodigoTipoMoneda>
+		<TotalServGravados>0.0000</TotalServGravados>
+		<TotalServExentos>0.0000</TotalServExentos>
+		<TotalMercanciasGravadas>325736.0000</TotalMercanciasGravadas>
+		<TotalMercanciasExentas>0.0000</TotalMercanciasExentas>
+		<TotalGravado>325736.0000</TotalGravado>
+		<TotalExento>0.0000</TotalExento>
+		<TotalVenta>325736.0000</TotalVenta>
+		<TotalDescuentos>0.0000</TotalDescuentos>
+		<TotalVentaNeta>325736.0000</TotalVentaNeta>
+		<TotalDesgloseImpuesto>
+			<Codigo>01</Codigo>
+			<CodigoTarifaIVA>08</CodigoTarifaIVA>
+			<TotalMontoImpuesto>42345.6800</TotalMontoImpuesto>
+		</TotalDesgloseImpuesto>
+		<TotalImpuesto>42345.6800</TotalImpuesto>
+		<TotalComprobante>368081.6800</TotalComprobante>
+	</ResumenFactura>
+	<InformacionReferencia>
+		<TipoDocIR>99</TipoDocIR>
+		<TipoDocRefOTRO>Correccion de Documento del Pinturas Sur</TipoDocRefOTRO>
+		<Numero>PCo_04682351</Numero>
+		<FechaEmisionIR>2026-06-11T08:25:08</FechaEmisionIR>
+		<Codigo>02</Codigo>
+		<Razon>Venta a SUR Química</Razon>
+	</InformacionReferencia>
+<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="Signature-e1cc1104-0581-4fe1-aa74-8e55c6201129"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#" /><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" /><ds:Reference Id="Reference-4e3102aa-c2c5-4b1d-8eda-6537fa89b689" URI=""><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>wEDNM3u9SfwJrB4bDZCoP3+BDJmgd/TH8Zix2UQRjf8=</ds:DigestValue></ds:Reference><ds:Reference Id="ReferenceKeyInfo" URI="#KeyInfoId-Signature-e1cc1104-0581-4fe1-aa74-8e55c6201129"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>ICuH/MLHU4THgdTac9fGxvLCUw6UN69IgY3QtGnaOl4=</ds:DigestValue></ds:Reference><ds:Reference Type="http://uri.etsi.org/01903#SignedProperties" URI="#SignedProperties-Signature-e1cc1104-0581-4fe1-aa74-8e55c6201129"><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>kw5LXFE97ftuIh9bmFLgiGX7EyJwUScAMmdSvKNRHZc=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue Id="SignatureValue-e1cc1104-0581-4fe1-aa74-8e55c6201129">IrlQ/NdqpkfrOqtOpv3MUCgR0UJlMPXDCu2PzzjYcKNuxBYnitICpD0Yh7W70/huxqeenkIdXSytrh6+b7sCeTqWQtPl/im1+RviAKFHv2a27TlS7p+3AeKlA8AQ97g75VQRR/HXLskQpKu9nJIlzzJ7Pc0GWWXbB9JoGl30Xs/WwWdMDD4WzKRIc3HB6HCqoksZDcSIEU41+vqEOqF+X5GiL8buC79kODZmHoBGqoABKbNmtJfDPjF+TSrF3uoNCkQ8sTytJ035Rku6U/Fx9XarlqDXIQbkUr3XSYgGQOG1SDltIUy/3cz4xoHMroLavZVHnpgZlZB7/lzemHbu5w==</ds:SignatureValue><ds:KeyInfo Id="KeyInfoId-Signature-e1cc1104-0581-4fe1-aa74-8e55c6201129"><ds:X509Data><ds:X509Certificate>MIIFJzCCAw+gAwIBAgIGAYJqmc60MA0GCSqGSIb3DQEBCwUAMFoxCzAJBgNVBAYTAkNSMR8wHQYDVQQKDBZNSU5JU1RFUklPIERFIEhBQ0lFTkRBMQwwCgYDVQQLDANER1QxHDAaBgNVBAMME0NBIFBFUlNPTkEgSlVSSURJQ0EwHhcNMjIwODA0MjA0NDAxWhcNMjYwODAzMjA0NDAxWjCBgTEZMBcGA1UEBRMQQ1BKLTMtMTAxLTE2NjI5MjELMAkGA1UEBhMCQ1IxGTAXBgNVBAoMEFBFUlNPTkEgSlVSSURJQ0ExDDAKBgNVBAsMA0NQSjEuMCwGA1UEAwwlUFJPTEFCIERFIENPU1RBIFJJQ0EgU09DSUVEQUQgQU5PTklNQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAIUhEsmXbNEMzCDjwAEFTm9IrUzO64u8X52qFm5D5dulIhxaO91bita/izMMjsN4jaZYKyCPV3lgRGOm4CAhngWny0cT2cNofNmfMzDfAgb1CVVtqnK+Hm57gsa9Bz6q8czGKAO6g3SFSsovg5k9tXC7yAWVhG3axp4ATV2VaFwERkjUhPDKWRf4SN4lGDXj93utsrwPK+UDA4h300/jw8FN1IMqd761fUUTp0+5NJDdH9DqZV69E2KwCKWyGuImmIatqtq3WwnOBAJ1DEdx5wFxnsyqPipJDTSNonF786N7psYK282kK33LuZrXsYWFYr/k+3ooc204BBHvv+t+2JUCAwEAAaOByjCBxzAfBgNVHSMEGDAWgBQ7bVf11nzpnhACIEHjvRrMz7NOlTAdBgNVHQ4EFgQU9xnKLOiSaEDZbBD0u9D2c58CuVMwCwYDVR0PBAQDAgbAMBMGA1UdJQQMMAoGCCsGAQUFBwMEMGMGCCsGAQUFBwEBBFcwVTBTBggrBgEFBQcwAoZHaHR0cHM6Ly9wa2kuY29tcHJvYmFudGVzZWxlY3Ryb25pY29zLmdvLmNyL3Byb2QvaW50ZXJtZWRpYXRlLXBqLXBlbS5jcnQwDQYJKoZIhvcNAQELBQADggIBAHZ7RFXVYU8J/VgjXuti9NrA7IwzH/eYtbydU7CTy7PnndEwUUv2z/UmCaGjqRLUhvI+URcpX3nI4f5iMr9Kf9h7VDswmDs4gWZ+Rnk+GJvM4xB97FjLfhtVdprbJdtXURDDrkY8rySiHDaILvwzBC1b83WZ3dlvh62DqIqnR2RxJUHJP8/53mnak9IcWzIvPr4k4FeUK1AyGHlik3LagxoQwR7ecz1t86kFIJSr0lEgLVkOxFhdd9EtJtL0jSGXwCwm1C18PhkCFNJV9xokS0gAHyWbqchJ6xFHzDHrTz5kR1AdLskYqcUGFlc9FYepQ2yhqm+YRQItGeZPT3wlMMW+VkGeIrR7sl+y/WCrqtHfTteCDrKlDxU5eSPqE+1jkPSOSfKTNLuWC0ZdiycdOjH/N+mVBggYkvHHLqnmTJo8bUvKxVOmcx0rWksmiN5uh6eV1K7Kte5DbhUqUhO4SZaFU+0UU8KwJw5y7BevHADflUDOF59Jq1hooIa8WleKKKf5DECCE5Qcsb3O+Bhlnq219IoytM5TNQ41Ki85WGgfqCj86YkKxXcq2gUxJJbemYv9mhE9aFhJ76hbFaZFdExPU9kwwv20hjYBj7GA8BODcfGpEap2CfwWh/1Fm5ZBu4kDCvFGBpS+blSMFtXw+0c6KeyhT9VoQ7T5tbVnk/tp</ds:X509Certificate></ds:X509Data><ds:KeyValue><ds:RSAKeyValue><ds:Modulus>hSESyZds0QzMIOPAAQVOb0itTM7ri7xfnaoWbkPl26UiHFo73VuK1r+LMwyOw3iNplgrII9XeWBEY6bgICGeBafLRxPZw2h82Z8zMN8CBvUJVW2qcr4ebnuCxr0HPqrxzMYoA7qDdIVKyi+DmT21cLvIBZWEbdrGngBNXZVoXARGSNSE8MpZF/hI3iUYNeP3e62yvA8r5QMDiHfTT+PDwU3Ugyp3vrV9RROnT7k0kN0f0OplXr0TYrAIpbIa4iaYhq2q2rdbCc4EAnUMR3HnAXGezKo+KkkNNI2icXvzo3umxgrbzaQrfcu5mtexhYViv+T7eihzbTgEEe+/637YlQ==</ds:Modulus><ds:Exponent>AQAB</ds:Exponent></ds:RSAKeyValue></ds:KeyValue></ds:KeyInfo><ds:Object Id="XadesObjectId-e0429b06-d204-46ee-a9b8-584ea4c4be92"><xades:QualifyingProperties xmlns:xades="http://uri.etsi.org/01903/v1.3.2#" Id="QualifyingProperties-6dc96f28-a2ae-4ff2-b05d-642ebb8cf19e" Target="#Signature-e1cc1104-0581-4fe1-aa74-8e55c6201129"><xades:SignedProperties Id="SignedProperties-Signature-e1cc1104-0581-4fe1-aa74-8e55c6201129"><xades:SignedSignatureProperties><xades:SigningTime>2026-06-11T08:25:16-06:00</xades:SigningTime><xades:SigningCertificate><xades:Cert><xades:CertDigest><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>VWdf+xp7GNxLAFE5WiPb6o5Q3+Rd5m2dro6Os2WVpik=</ds:DigestValue></xades:CertDigest><xades:IssuerSerial><ds:X509IssuerName>CN=CA PERSONA JURIDICA, OU=DGT, O=MINISTERIO DE HACIENDA, C=CR</ds:X509IssuerName><ds:X509SerialNumber>1659645841076</ds:X509SerialNumber></xades:IssuerSerial></xades:Cert></xades:SigningCertificate><SignaturePolicyIdentifier xmlns="http://uri.etsi.org/01903/v1.3.2#"><SignaturePolicyId><SigPolicyId><xades:Identifier>https://tribunet.hacienda.go.cr/docs/esquemas/2016/v4.1/Resolucion_Comprobantes_Electronicos_DGT-R-48-2016.pdf</xades:Identifier><Description /></SigPolicyId><xades:SigPolicyHash><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><ds:DigestValue>NmI5Njk1ZThkNzI0MmIzMGJmZDAyNDc4YjUwNzkzODM2NTBiOWUxNTBkMmI2YjgzYzZjM2I5NTZlNDQ4OWQzMQ==</ds:DigestValue></xades:SigPolicyHash></SignaturePolicyId></SignaturePolicyIdentifier></xades:SignedSignatureProperties><xades:SignedDataObjectProperties><xades:DataObjectFormat ObjectReference="#Reference-4e3102aa-c2c5-4b1d-8eda-6537fa89b689"><xades:MimeType>application/octet-stream</xades:MimeType></xades:DataObjectFormat></xades:SignedDataObjectProperties></xades:SignedProperties></xades:QualifyingProperties></ds:Object></ds:Signature></FacturaElectronica>

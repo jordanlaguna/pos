@@ -1,0 +1,507 @@
+{
+  "$comentario": "Registro de VentaSys: lo que pasó y por qué. Lo lee y lo actualiza Claude Code al inicio y al final de cada sesión (ver CLAUDE.md). Es el complemento de spec.md, plan.md y task.md, que miran hacia adelante; este mira hacia atrás. Editable a mano.",
+  "formato": 1,
+  "proyecto": {
+    "nombre": "VentaSys",
+    "descripcion": "Punto de venta migrado de C#/WinForms a SvelteKit, sobre un backend FastAPI + MySQL en Docker.",
+    "repos_origen": {
+      "frontend_csharp": "https://github.com/jordanlaguna/POS.git",
+      "backend_python": "https://github.com/jordanlaguna/backend-python.git"
+    },
+    "idioma_interfaz": "es-CR (voseo)",
+    "moneda": "CRC",
+    "iva": 0.13
+  },
+  "actualizado": "2026-08-16",
+  "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
+  "$rumbo": {
+    "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
+    "resumen": "VentaSys deja de ser un POS instalado para un negocio y pasa a ser un producto que se vende por suscripción: una sola base compartida, inquilinos identificados por el par (afiliado, compañía), categorías de dos niveles, impuesto por producto desde CABYS y preparación de factura electrónica.",
+    "decidido_con_el_usuario": {
+      "afiliado_y_compania": "Son el mismo ente visto desde la suscripción: el negocio que paga. El par (afiliado, compañía) identifica al inquilino; afiliado 1 + compañía 1 = Anónimos S.A.",
+      "aislamiento": "Una sola base compartida, con company_id en cada tabla.",
+      "categorias": "Dos niveles fijos: categoría y subcategoría.",
+      "suscripcion": "Solo control de estado (activa, vencida, suspendida). El cobro se hace por fuera."
+    },
+    "sin_decidir": "Si la emisión de comprobantes se implementa directo o vía proveedor autorizado. El diseño de F4 y F5 sirve para las dos rutas."
+  },
+  "entorno": {
+    "$ver": "Comandos para levantar y trampas conocidas: CLAUDE.md. Detalle de despliegue: backend/README.md.",
+    "urls": {
+      "pos": "http://localhost:3000",
+      "api": "http://localhost:8001",
+      "api_docs": "http://localhost:8001/docs",
+      "adminer": "http://localhost:8080"
+    },
+    "credenciales_demo": {
+      "$aviso": "Solo para desarrollo. Cambiar antes de producción.",
+      "admin": "admin@ventasys.cr / admin123",
+      "cajero": "cajero@ventasys.cr / cajero123"
+    }
+  },
+  "completado": {
+    "migracion": {
+      "estado": "listo",
+      "detalle": "Los diez formularios del WinForms tienen equivalente: login, registro, menú, ventas, cobro, ticket, facturas, inventario, clientes, usuarios."
+    },
+    "modulos_nuevos": {
+      "estado": "listo",
+      "caja": "Apertura, movimientos de efectivo, cierre con arqueo y diferencia.",
+      "devoluciones": "Totales y parciales, con reposición de stock.",
+      "roles": "admin y cajero, aplicados en el servidor.",
+      "reportes": "Ventas netas, ticket promedio, tendencia diaria, top de productos, métodos de pago, stock bajo."
+    },
+    "docker": {
+      "estado": "listo",
+      "detalle": "Compose con healthcheck, TZ, .env, puertos atados a localhost, imagen sin root y .dockerignore."
+    },
+    "documentacion": {
+      "estado": "listo",
+      "archivos": [
+        "README.md",
+        "frontend/README.md",
+        "backend/README.md",
+        ".specify/spec.md",
+        ".specify/plan.md",
+        ".specify/task.md"
+      ]
+    },
+    "ventas_en_espera": {
+      "estado": "listo",
+      "detalle": "Varias ventas simultáneas en pestañas. F3 deja la actual en espera y abre otra; F4 rota. El stock se valida contra lo apartado en TODAS las ventas abiertas. Máximo 8."
+    },
+    "entradas_inventario": {
+      "estado": "listo",
+      "detalle": "Recepción de mercadería por tres vías: manual, Excel/CSV y XML de factura electrónica de Hacienda (v4.3/4.4). Vista previa con emparejado por código o nombre, alta opcional de productos nuevos, documento con proveedor y factura, historial y anulación con reversión de stock."
+    },
+    "configuracion": {
+      "estado": "listo",
+      "detalle": "Pantalla /configuracion (solo admin) con cuatro secciones: negocio, moneda e impuesto, documentos y facturación electrónica. Backend: tabla settings de una fila con JSON + logo en LONGTEXT, GET para cualquier sesión y PUT solo admin.",
+      "moneda": "13 monedas preconfiguradas y separadores editables. Deja de estar fijo el colón; formatMoney compone la cifra a mano en vez de pelear con Intl.",
+      "impuesto": "Nombre y tasa configurables. La tasa viaja explícita a computeTotals en el servidor.",
+      "documentos": "Tres plantillas: tiquete térmico (58/80 mm), factura clásica y factura moderna, ambas de página completa, con color de marca, logo, leyenda, notas y vista previa en vivo.",
+      "marca": "Logo (PNG/JPG/WebP, 250 KB) servido por /marca/logo con caché inmutable, y acento de la interfaz con tono oscuro y tinta derivados en OKLab."
+    },
+    "facturacion_electronica": {
+      "estado": "no implementado",
+      "detalle": "Solo la casilla y los datos del emisor (ambiente, actividad económica, sucursal, terminal, usuario ATV). No firma, no transmite y no guarda credenciales. La pantalla dice explícitamente qué falta."
+    },
+    "backend": {
+      "estado": "listo",
+      "detalle": "Aplicación FastAPI completa y autónoma en backend/ (57 módulos), con su docker-compose. Deja de ser un patch: ya no hay nada que ensamblar.",
+      "endpoints": 42
+    }
+  },
+  "defectos_corregidos": [
+    {
+      "id": 1,
+      "donde": "backend crud_sale.create_sale",
+      "que": "db.commit() de la venta antes de validar stock, con except que no atrapaba HTTPException.",
+      "impacto": "Cada venta rechazada por falta de stock dejaba una factura guardada sin líneas y sin descontar inventario."
+    },
+    {
+      "id": 2,
+      "donde": "backend crud_product.get_product_by_barcode",
+      "que": "Filtraba por Product.name en vez de Product.barcode.",
+      "impacto": "El escáner de código de barras nunca encontraba nada."
+    },
+    {
+      "id": 3,
+      "donde": "backend model_sales / model_product",
+      "que": "created_at era Column(Date), sin hora.",
+      "impacto": "Imposible atribuir una venta a un turno de caja."
+    },
+    {
+      "id": 4,
+      "donde": "backend, toda la API",
+      "que": "Se emitían JWT pero ningún endpoint los verificaba.",
+      "impacto": "API pública de hecho."
+    },
+    {
+      "id": 5,
+      "donde": "backend model_sales.client_id",
+      "que": "NOT NULL.",
+      "impacto": "El WinForms mandaba client_id=1 en todas las ventas."
+    },
+    {
+      "id": 6,
+      "donde": "backend requirements.txt / utils/security.py",
+      "que": "passlib[bcrypt] sin versión acotada; passlib 1.7.4 es incompatible con bcrypt >= 4.1.",
+      "impacto": "Registro y login con error 500 al instalar en una máquina nueva. Se quitó passlib y se usa bcrypt directo."
+    },
+    {
+      "id": 7,
+      "donde": "backend utils/jwt_handler.py",
+      "que": "load_dotenv() sin ruta; buscaba el .env en el directorio de arranque y no en app/.",
+      "impacto": "SECRET_KEY caía al valor por defecto, que está publicado en el repositorio."
+    },
+    {
+      "id": 8,
+      "donde": "docker-compose",
+      "que": "Contenedores sin TZ corriendo en UTC.",
+      "impacto": "Con UTC-6, toda venta después de las 18:00 se registraba como del día siguiente; arqueo del turno de noche partido en dos."
+    },
+    {
+      "id": 9,
+      "donde": "backend crud_sale.create_sale",
+      "que": "Guardaba el created_at que mandaba el cliente.",
+      "impacto": "Un desfase de segundos entre el reloj del POS y el de la VM hacía desaparecer ventas del arqueo, sin error visible. Ahora la hora la sella el servidor."
+    },
+    {
+      "id": 10,
+      "donde": "web toasts.push + los $effect que lo llamaban",
+      "que": "push() reasignaba this.items, lo que obliga a leerlo primero. Llamado desde un $effect, esa lectura quedaba registrada como dependencia y la escritura volvía a disparar el effect.",
+      "impacto": "Bucle infinito: decenas de avisos apilados y la pestaña congelada. Se blindó push() con untrack y los avisos se movieron al callback de use:enhance, que corre una vez por envío.",
+      "reportado_por": "el usuario, al abrir caja"
+    },
+    {
+      "id": 11,
+      "donde": "backend app/services/ y app/utils/",
+      "que": "El archivo de paquete se llamaba __inti__.py (la t y la i cambiadas) y app/utils/ no tenía ninguno.",
+      "impacto": "Ninguno visible: Python 3 trata un directorio sin __init__.py como paquete de espacio de nombres, así que funcionaba de casualidad. Corregido al reorganizar el repositorio.",
+      "encontrado": "verificando que backend/ arrancara solo, con un chequeo de importaciones internas"
+    }
+  ],
+  "decisiones": [
+    {
+      "tema": "Arquitectura",
+      "decision": "SvelteKit actúa de BFF: el navegador nunca habla directo con FastAPI.",
+      "porque": "El JWT vive en cookie httpOnly, no hay CORS que configurar y el navegador nunca ve la IP de la VM."
+    },
+    {
+      "tema": "Cálculo de totales",
+      "decision": "El servidor relee los precios del backend y recalcula subtotal, IVA y total.",
+      "porque": "Del navegador solo se aceptan ids y cantidades; un carrito manipulado no puede cambiar lo que se cobra."
+    },
+    {
+      "tema": "Aritmética monetaria",
+      "decision": "Redondeo a 2 decimales en cada paso, en $lib/money.ts.",
+      "porque": "C# usaba decimal (exacto en base 10); number de JavaScript es binario y acumula centavos fantasma."
+    },
+    {
+      "tema": "Marca de tiempo de las ventas",
+      "decision": "La pone el backend, se ignora la del cliente.",
+      "porque": "El turno de caja se delimita comparando contra cash_sessions.opened_at; dos relojes distintos no se pueden comparar."
+    },
+    {
+      "tema": "Zona horaria",
+      "decision": "Todo el sistema vive en la zona del negocio (TZ en los contenedores), no en UTC.",
+      "porque": "Es un POS de un solo país; convertir husos en cada consulta añade superficie de error sin beneficio."
+    },
+    {
+      "tema": "Separador de miles",
+      "decision": "Punto (₡3.175.119,20), no el espacio duro que asigna CLDR a es-CR.",
+      "porque": "Es la convención del comercio costarricense. Centralizado en groupWithDots() de money.ts."
+    },
+    {
+      "tema": "No se vende con la caja cerrada",
+      "decision": "La pantalla de ventas lo bloquea y ofrece abrir la caja ahí mismo.",
+      "porque": "Una venta que no pertenece a ningún turno no aparece en ningún arqueo."
+    },
+    {
+      "tema": "Gráficos",
+      "decision": "Serie única con un solo tono (#0891b2), validado para contraste en tema claro y oscuro. Cada gráfico tiene vista de tabla.",
+      "porque": "La longitud ya codifica el valor; teñir por tamaño gasta el canal de color en información redundante."
+    },
+    {
+      "tema": "Modo mock",
+      "decision": "Backend simulado en memoria con contratos idénticos a FastAPI.",
+      "porque": "Permite desarrollar y demostrar sin la VM. Hay que mantenerlo sincronizado al agregar endpoints."
+    },
+    {
+      "tema": "Avisos y formularios",
+      "decision": "Los toasts salen del callback de use:enhance vía $lib/forms.ts, nunca de un $effect.",
+      "porque": "Un $effect que llama a un toast crea un bucle infinito, y además `form` conserva su valor al navegar, así que el aviso reaparecía sin que nadie enviara nada."
+    },
+    {
+      "tema": "Ventas simultáneas",
+      "decision": "El carrito maneja N ventas en espera; el stock disponible descuenta lo apartado en las otras.",
+      "porque": "Un mostrador real atiende a varios clientes a la vez. Sin descontar lo apartado, la segunda venta se rechazaría al cobrar, con el cliente enfrente."
+    },
+    {
+      "tema": "Entrada de mercadería",
+      "decision": "Nada toca el inventario hasta que el usuario confirma la vista previa; los productos desconocidos se crean solo si se marcan.",
+      "porque": "Un código mal escrito del proveedor ensuciaría el catálogo con duplicados. La vista previa muestra si el emparejado fue por código (fiable) o por nombre (heurístico)."
+    },
+    {
+      "tema": "Costo unitario del XML",
+      "decision": "Se toma SubTotal/Cantidad, no PrecioUnitario.",
+      "porque": "Cuando la línea trae descuento, PrecioUnitario es el de lista y SubTotal ya viene neto. Se paga lo segundo."
+    },
+    {
+      "tema": "Factura duplicada",
+      "decision": "El backend rechaza una entrada cuyo número de documento ya se cargó y sigue aplicada.",
+      "porque": "Cargar dos veces la misma factura duplica el inventario en silencio; es el error que este módulo tiene que hacer imposible."
+    },
+    {
+      "tema": "Dónde vive la configuración",
+      "decision": "Una fila en el backend con un campo JSON, no una columna por opción ni un archivo en el servidor del POS.",
+      "porque": "Varias cajas comparten el backend y tienen que ver la misma moneda. El JSON evita una migración por cada casilla nueva; el precio es que no se puede filtrar por campo, y una fila que se lee y se escribe entera no lo necesita."
+    },
+    {
+      "tema": "Formato de moneda",
+      "decision": "Se compone a mano (símbolo, separadores, decimales) en vez de usar Intl.NumberFormat.",
+      "porque": "Intl impone la convención de CLDR —a es-CR le asigna el espacio duro— y la versión anterior la corregía con un replace sobre su salida, que solo servía para el colón. Con los separadores configurables, componer es más corto que corregir."
+    },
+    {
+      "tema": "Tasa de impuesto de una devolución",
+      "decision": "Se deduce de la venta que se devuelve (tax / subtotal), no de la configuración vigente.",
+      "porque": "Si el negocio cambia la tasa, una devolución de una venta anterior tiene que reembolsar lo que se cobró. Con la tasa actual se devolvería de más o de menos y el arqueo cerraría con una diferencia inexplicable."
+    },
+    {
+      "tema": "Color de la interfaz",
+      "decision": "El dueño elige un tono; el acento del tema oscuro y el color del texto se derivan en OKLab y se muestra el contraste calculado.",
+      "porque": "El contraste es una división, no una cuestión de gusto. En HSL bajar la luminosidad de un amarillo lo ensucia; OKLab conserva el tono. Si el color no llega a 3:1 contra ambas superficies, los gráficos conservan el tono validado y la pantalla lo dice."
+    },
+    {
+      "tema": "Formato del logo",
+      "decision": "Solo PNG, JPG y WebP. Se guarda en la base, no en disco.",
+      "porque": "Un SVG es XML, admite <script> y se sirve desde el mismo origen que el POS: subirlo sería subir código con la sesión del cajero. En la base sobrevive a un docker compose up --build y viaja con el respaldo."
+    },
+    {
+      "tema": "Secretos de Hacienda",
+      "decision": "La llave criptográfica y su PIN no se piden ni se guardan mientras no se emitan comprobantes.",
+      "porque": "Guardar una credencial que el sistema no usa es asumir el riesgo sin ninguna contraparte."
+    },
+    {
+      "tema": "Menú y roles",
+      "decision": "Las secciones que el rol no puede abrir se muestran atenuadas con candado, en vez de desaparecer del menú.",
+      "porque": "Ocultarlas hizo que el usuario, entrando como cajero, creyera que el sistema no tenía pantalla de inventario. El control de acceso real está en el servidor; el menú solo informa."
+    },
+    {
+      "tema": "Arquitectura limpia",
+      "decision": "El sistema se organiza en capas con las dependencias apuntando hacia adentro: domain (puro), application (casos de uso y puertos), infrastructure (adaptadores) e interfaces (routers, load y actions). Vale para backend y frontend.",
+      "porque": "El producto se vende a negocios distintos y va a cambiar de proveedor de factura electrónica, quizá de base y algún día de framework; lo que no puede cambiar son las reglas. Y la regla de prueba por función solo es sostenible si el dominio se ejecuta sin levantar nada. Hoy crud_sale.py mezcla regla, SQL y HTTP en la misma función, y por eso no hay forma de probar el cálculo de una venta sin MySQL.",
+      "custodia": "agente architect, con búsquedas que fallan si una capa importa de más"
+    },
+    {
+      "tema": "Puerto Clock",
+      "decision": "La hora entra por un puerto; datetime.now() queda prohibido en dominio y casos de uso.",
+      "porque": "Convierte en restricción estructural la regla que nació del defecto 9: con la hora esparcida por los servicios, que la ponga el servidor depende de que nadie se equivoque; con un puerto, un caso de uso que quiera saltársela no pasa su prueba."
+    },
+    {
+      "tema": "Prueba por función",
+      "decision": "Regla del proyecto: toda función de domain y application tiene su prueba, con cobertura al 100 % que rompe la build. Adaptadores por integración, interfaz por flujos de punta a punta.",
+      "porque": "Lo pidió el usuario como regla, y se aplica por capa porque cada capa se prueba distinto. El umbral cubre solo dominio y aplicación a propósito: exigir 100 % en adaptadores lleva a escribir pruebas que confirman que SQLAlchemy es SQLAlchemy."
+    },
+    {
+      "tema": "Idioma",
+      "decision": "El código en inglés (identificadores, archivos, tablas, columnas, rutas); la interfaz en español de Costa Rica con voseo; la documentación y los comentarios en español.",
+      "porque": "Es la línea del código heredado (products, sales, cash_sessions) y mezclar obliga a traducir en cada línea. Queda deuda: settings.ts, la pantalla de configuración y los componentes de documento usan identificadores en español; se corrigen en F1 (T-113)."
+    },
+    {
+      "tema": "Orden de las fases",
+      "decision": "F1 pasa a ser arquitectura limpia y pruebas; multiempresa se corre a F2 y el resto detrás.",
+      "porque": "Todo lo que sigue toca dinero, existencias o aislamiento entre compañías, y los invariantes se verifican hoy a mano una vez, lo que no escala a seis fases. Además el filtro por compañía de F2 vive en la capa de persistencia que crea F1."
+    }
+  ],
+  "invariantes_verificados": {
+    "$comentario": "Números de referencia. Si alguno cambia, hay una regresión.",
+    "venta_3x1450": {
+      "subtotal": 4350,
+      "iva": 565.5,
+      "total": 4915.5,
+      "pago": 5000,
+      "vuelto": 84.5
+    },
+    "venta_arroz_cafe": {
+      "subtotal": 5700,
+      "iva": 741,
+      "total": 6441,
+      "pago": 10000,
+      "vuelto": 3559
+    },
+    "devolucion_1x1450": {
+      "reembolso": 1638.5
+    },
+    "arqueo": {
+      "apertura": 50000,
+      "ventas_efectivo": 4915.5,
+      "devoluciones": 1638.5,
+      "esperado": 53277.0
+    },
+    "cierre_contando_53000": {
+      "diferencia": -277.0
+    },
+    "reportes_dia": {
+      "brutas": 4915.5,
+      "devoluciones": 1638.5,
+      "netas": 3277.0
+    },
+    "ventas_en_espera": {
+      "venta_1": "arroz 1450 + café 4250 -> total 6441.00",
+      "venta_2": "leche 1290 -> total 1457.70",
+      "tras_cobrar_la_1": "queda 1 pestaña activa con 1457.70"
+    },
+    "entrada_xml_hacienda": {
+      "archivo": "factura v4.3 con 4 líneas, una con descuento y una de servicio",
+      "proveedor": "Distribuidora La Central S.A.",
+      "lineas_incluidas": "3 de 4 (la de cantidad 0,5 queda desmarcada)",
+      "unidades": 42,
+      "costo_total": 79800.0,
+      "nota": "el café se toma a 3400 neto y no a 3600 de lista, por el descuento",
+      "stock_arroz": "110 -> 134"
+    },
+    "entrada_csv": {
+      "archivo": "columnas desordenadas, con tildes, punto y coma, fila vacía y una cantidad 0",
+      "lineas_incluidas": "3 de 4",
+      "unidades": 70,
+      "costo_total": 69080.0
+    },
+    "formato_moneda": {
+      "CRC": "1450 -> ₡1.450,00 · 3175119.2 -> ₡3.175.119,20 · -277 -> −₡277,00",
+      "USD": "1450 -> $1,450.00 · 3175119.2 -> $3,175,119.20 · -277 -> −$277.00",
+      "nota": "cambiar la moneda en Configuración cambia símbolo, separadores y decimales a la vez"
+    },
+    "factura_ejemplo_plantilla": {
+      "lineas": "arroz 1450 + té 950 + chiverre 2730",
+      "subtotal": 5130.0,
+      "iva": 666.9,
+      "total": 5796.9,
+      "pago": 6000,
+      "vuelto": 203.1
+    },
+    "acento_derivado": {
+      "elegido": "#b45309",
+      "claro": "#b45309 con texto blanco, contraste 5.0:1",
+      "oscuro": "#fea575 con tinta oscura, contraste 9.2:1"
+    }
+  },
+  "riesgos_conocidos": [
+    {
+      "riesgo": "El POS se sirve por HTTP en la LAN, así que la cookie de sesión viaja en claro.",
+      "mitigacion": "Aceptable en red local cerrada. Con HTTPS, quitar POS_INSECURE_COOKIE y la cookie pasa a secure."
+    },
+    {
+      "riesgo": "Adminer da acceso completo a la base con solo la contraseña.",
+      "mitigacion": "Está atado a 127.0.0.1. Para entrar desde afuera, túnel SSH."
+    },
+    {
+      "riesgo": "El backend corre con el filtro por compañía todavía sin implementar: hoy es de un solo negocio.",
+      "mitigacion": "Es el objetivo de F2. Hasta entonces no se le puede dar acceso a una segunda compañía."
+    }
+  ],
+  "sesiones": [
+    {
+      "fecha": "2026-08-15",
+      "titulo": "Migración completa de WinForms a SvelteKit",
+      "hecho": [
+        "Se clonaron y analizaron los repos de C# y del backend FastAPI.",
+        "Se construyó el POS entero en SvelteKit: 10 pantallas, sistema de diseño con tema claro y oscuro, gráficos validados.",
+        "Se añadieron caja, devoluciones, roles y reportes.",
+        "Se escribió el backend simulado para desarrollar sin la VM.",
+        "Se escribió backend-patch con 12 archivos nuevos y 20 reemplazados.",
+        "Se detectaron y corrigieron los defectos 1 a 7 del backend."
+      ]
+    },
+    {
+      "fecha": "2026-08-15",
+      "titulo": "Docker, despliegue y verificación en vivo",
+      "hecho": [
+        "Se revisó la carpeta docker del usuario y se corrigieron seis problemas del compose.",
+        "Se movieron todas las variables a un .env con guardarraíles que impiden arrancar sin configurar.",
+        "Se levantó el stack completo y se encontraron los defectos 8 y 9 (zona horaria y hora del cliente), que solo aparecen en contenedores.",
+        "Se encontraron dos bloqueadores de despliegue del frontend: ORIGIN obligatoria y que node build/index.js no lee el .env.",
+        "Se verificó el flujo completo por la interfaz: apertura de caja, venta con escáner, cobro con F1, factura y arqueo.",
+        "Se creó seed.py para la carga inicial vía API.",
+        "Se crearon los cuatro agentes del proyecto y este archivo."
+      ]
+    },
+    {
+      "fecha": "2026-08-15",
+      "titulo": "Agentes, registro de progreso y correcciones reportadas por el usuario",
+      "hecho": [
+        "Se crearon cuatro agentes del proyecto en .claude/agents/ y este progress.json, más un CLAUDE.md que lo hace vivo.",
+        "Se corrigió el defecto 10: bucle infinito de avisos que congelaba la pestaña, reportado por el usuario al abrir caja.",
+        "Se creó $lib/forms.ts y se migraron 6 pantallas del antipatrón $effect+toast al callback de use:enhance.",
+        "Se implementaron las ventas en espera: varias ventas simultáneas en pestañas, con F3 y F4.",
+        "Se verificó en vivo: 1 solo aviso estable, pestañas conservando sus líneas, y el cobro cerrando solo la venta cobrada."
+      ]
+    },
+    {
+      "fecha": "2026-08-15",
+      "titulo": "Entrada de mercadería: manual, Excel y XML de Hacienda",
+      "hecho": [
+        "Se comprobó que /inventario sí cargaba: lo que faltaba era el módulo de ENTRADAS, no la pantalla.",
+        "Backend: tablas stock_entries y stock_entry_details, 4 endpoints bajo /inventory, con anulación que revierte el stock.",
+        "Lector de factura electrónica de Hacienda v4.3/4.4, tolerante a namespace y a las variantes de código.",
+        "Lector de Excel y CSV con detección de columnas por sinónimos, sin exigir plantilla fija.",
+        "Vista previa que distingue emparejado por código de emparejado por nombre y permite crear los productos nuevos.",
+        "Verificado en vivo: XML con descuento (79.800), CSV desordenado (69.080), stock 110->134, producto nuevo creado y factura duplicada rechazada."
+      ]
+    },
+    {
+      "fecha": "2026-08-15",
+      "titulo": "Código en las tarjetas y menú que muestra lo restringido",
+      "hecho": [
+        "Las tarjetas de la grilla de ventas muestran el código de barras bajo el nombre.",
+        "El menú muestra las secciones de administración atenuadas con candado cuando el rol no las puede abrir.",
+        "Se aclaró el reporte de 'no veo inventario': el usuario se había registrado desde /registro y quedó como cajero (id 4). Se lo ascendió a admin."
+      ]
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Configuración: moneda, impuesto, marca y plantillas de documento",
+      "hecho": [
+        "Backend: tabla settings (una fila, JSON + logo LONGTEXT), GET/PUT con permisos, y crud_return dejó de tener el 13 % escrito en el código.",
+        "money.ts pasó a componer el formato a mano: moneda, símbolo, separadores y decimales configurables. Se eliminó groupWithDots.",
+        "Pantalla /configuracion con cuatro secciones y vista previa en vivo del documento.",
+        "Tres plantillas de documento: tiquete térmico y dos facturas de página completa armadas a partir de los ejemplos que subió el usuario en docs/invoice.",
+        "Logo del negocio servido por /marca/logo con caché inmutable; SVG rechazado por seguridad.",
+        "Acento de la interfaz configurable, con tono oscuro y tinta derivados en OKLab y contraste mostrado en pantalla.",
+        "Verificado en vivo: CRC -> USD cambia símbolo y separadores, las tres plantillas dibujan, guardar persiste, la factura 38 sale con los datos del negocio, y con la configuración vacía el POS queda exactamente como estaba."
+      ],
+      "defecto_encontrado_durante": "La vista previa de la moneda no se actualizaba al cambiar de divisa: formatMoney lee un módulo, no una señal, y un bloque con una lista fija de números no tiene ninguna dependencia que se mueva. Se resolvió con un {#key} sobre la clave de la moneda."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Cambio de rumbo: producto multiempresa. Documentación en .specify",
+      "hecho": [
+        "El usuario definió que el sistema se vende por suscripción y debe servir a supermercados, repuesteros y otros verticales.",
+        "Se cerraron cuatro decisiones de modelo: afiliado y compañía como par identificador, base compartida, categorías de dos niveles y suscripción con control de estado nada más.",
+        "Se escribieron .specify/spec.md (qué y por qué, con RF y RN numerados), plan.md (cómo, con DDL y fases) y task.md (el trabajo en orden, con verificación por tarea).",
+        "Se verificó contra el API real de Hacienda que CABYS devuelve la tarifa por código: harina de arroz 13 %, medicamentos 2 %, libros infantiles 0 %. Confirma que el impuesto tiene que ser por producto.",
+        "Se detectó que renombrar backend-patch a backend dejaría un backend que no arranca: tiene 39 archivos y la aplicación completa 56. El plan lo resuelve tomando la app ensamblada de deploy/app."
+      ],
+      "sin_ejecutar_todavia": "La reestructuración del repositorio (F0) y todo lo demás. Esta sesión solo dejó la documentación."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "F0: reestructuración del repositorio",
+      "hecho": [
+        "web/ pasó a frontend/ y backend-patch/ a backend/, este último con la aplicación completa tomada de deploy/app (56 archivos, no los 39 del patch).",
+        "Se borraron los clones de referencia: backend-python, csharp-original y la carpeta docker original.",
+        "backend/ quedó autónomo: Dockerfile, compose, seed.py y migration.sql en su raíz, se levanta con docker compose up sin ensamblar nada.",
+        "Se fijó name: ventasys y el volumen ventasys_db_data en el compose, para que los datos dejen de depender del nombre de la carpeta.",
+        "Se corrigió el defecto 11 (__inti__.py) y se verificó con un chequeo de importaciones: 0 rotas, 57 módulos compilan.",
+        "Se reescribieron README.md, backend/README.md y frontend/README.md, y se actualizaron CLAUDE.md, los cuatro agentes y este archivo.",
+        "Verificado tras el movimiento: npm run check en 0/0 y el sistema funcionando de punta a punta."
+      ],
+      "pendiente_de_esta_fase": "deploy/ sigue existiendo con el .env real y el stack en marcha usa el volumen deploy_db_data. Se puede borrar cuando se migre el volumen o se acepte volver a sembrar."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Agentes de revisión, arquitectura limpia y regla de pruebas",
+      "hecho": [
+        "Cuatro agentes nuevos, de solo lectura: architect (custodia las capas), spec-reviewer, plan-reviewer y task-reviewer. Nombres en inglés, contenido en español como el resto de la documentación.",
+        "Se adoptó arquitectura limpia y quedó escrita en spec §5.5 y plan §1.2, con el destino de carpetas para backend y frontend y el orden para llegar sin romper nada.",
+        "Se adoptó la regla de prueba por función (RNF-6), aplicada por capa: 100 % en dominio y aplicación con la build cayéndose por debajo, integración en adaptadores, flujos de punta a punta en la interfaz.",
+        "Se fijó el idioma: código en inglés, interfaz en español, documentación en español (spec §5.6, RN-21 a RN-23).",
+        "Se reordenaron las fases: F1 pasa a ser arquitectura y pruebas, y multiempresa se corre a F2. Renumerado el plan y las tareas.",
+        "progress.json se movió a .specify/, junto a spec, plan y task. Al moverlo se resolvió la duplicación: estructura y entorno los posee CLAUDE.md, y los pendientes los posee task.md. Los seis que no tenían tarea se migraron a T-905..T-910 antes de sacarlos."
+      ],
+      "sin_ejecutar_todavia": "Ninguna de las tareas de F1. Esta sesión dejó los agentes y la documentación."
+    }
+  ],
+  "$reparto": {
+    "$nota": "Cada hecho vive en un solo lugar. Acá va lo que ningún otro documento guarda.",
+    "acá": "decisiones con su porqué, defectos corregidos, invariantes verificados, bitácora de sesiones y el estado del rumbo.",
+    "spec.md": "qué se construye y por qué. Requisitos numerados.",
+    "plan.md": "cómo se construye. Arquitectura, modelo de datos, fases y riesgos del plan.",
+    "task.md": "el trabajo pendiente, en orden y con su verificación. Antes estaba acá, en \"pendientes\".",
+    "CLAUDE.md": "mapa del repositorio, comandos para levantar y trampas conocidas. Antes estaban acá, en \"estructura\" y \"entorno\"."
+  },
+  "$estructura": "Ver el mapa en CLAUDE.md.",
+  "$pendientes": "Ver .specify/task.md. Los 14 pendientes que vivían acá se migraron ahí; los seis que no tenían tarea quedaron como T-905 a T-910.",
+  "$riesgos_conocidos": "Riesgos del sistema tal como está hoy. Los riesgos del plan por construir están en plan.md §9."
+}

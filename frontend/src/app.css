@@ -1,0 +1,295 @@
+@import 'tailwindcss';
+
+/*
+ * VentaSys — sistema de diseño.
+ * El cian de marca viene de la app WinForms original (Color.FromArgb(34, 211, 238)).
+ */
+@theme {
+	--color-brand-50: #ecfeff;
+	--color-brand-100: #cffafe;
+	--color-brand-200: #a5f3fc;
+	--color-brand-300: #67e8f9;
+	--color-brand-400: #22d3ee;
+	--color-brand-500: #06b6d4;
+	--color-brand-600: #0891b2;
+	--color-brand-700: #0e7490;
+	--color-brand-800: #155e75;
+	--color-brand-900: #164e63;
+	--color-brand-950: #083344;
+
+	--font-sans:
+		'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-mono: ui-monospace, 'Cascadia Code', 'Segoe UI Mono', Menlo, monospace;
+}
+
+@layer base {
+	:root {
+		color-scheme: light;
+		--surface: #f1f5f9;
+		--surface-raised: #ffffff;
+		--surface-sunken: #e2e8f0;
+		--border: #cbd5e1;
+		--border-strong: #94a3b8;
+		--text: #0f172a;
+		--text-muted: #475569;
+		--text-subtle: #64748b;
+		--accent: #0e7490;
+		--accent-text: #ffffff;
+		--positive: #15803d;
+		--positive-bg: #dcfce7;
+		--negative: #b91c1c;
+		--negative-bg: #fee2e2;
+		--warning: #a16207;
+		--warning-bg: #fef9c3;
+		--info: #1d4ed8;
+		--info-bg: #dbeafe;
+		--ring: #0891b2;
+
+		/*
+		 * Tokens de gráfico. El acento es serie única (magnitud y tendencia), no una
+		 * paleta categórica: un solo tono para todas las marcas, la longitud codifica
+		 * el valor. #0891b2 pasa banda de luminosidad, piso de croma y contraste ≥3:1
+		 * contra AMBAS superficies, así que no cambia entre modos.
+		 */
+		--chart-accent: #0891b2;
+		--chart-area: rgb(8 145 178 / 0.1);
+		--chart-grid: #e2e8f0;
+		--chart-axis: #cbd5e1;
+		--chart-ink: #64748b;
+		--chart-surface: #ffffff;
+	}
+
+	:root[data-theme='dark'] {
+		color-scheme: dark;
+		--surface: #0f172a;
+		--surface-raised: #1e293b;
+		--surface-sunken: #020617;
+		--border: #334155;
+		--border-strong: #475569;
+		--text: #f1f5f9;
+		--text-muted: #cbd5e1;
+		--text-subtle: #94a3b8;
+		--accent: #22d3ee;
+		--accent-text: #083344;
+		--positive: #4ade80;
+		--positive-bg: #14532d;
+		--negative: #f87171;
+		--negative-bg: #7f1d1d;
+		--warning: #fbbf24;
+		--warning-bg: #713f12;
+		--info: #60a5fa;
+		--info-bg: #1e3a8a;
+		--ring: #22d3ee;
+
+		/* Mismo acento validado; solo cambian rejilla y superficie del gráfico. */
+		--chart-accent: #0891b2;
+		--chart-area: rgb(8 145 178 / 0.16);
+		--chart-grid: #334155;
+		--chart-axis: #475569;
+		--chart-ink: #94a3b8;
+		--chart-surface: #1e293b;
+	}
+
+	html,
+	body {
+		height: 100%;
+	}
+
+	body {
+		background-color: var(--surface);
+		color: var(--text);
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+	}
+
+	/* El cajero navega con Tab: el foco debe verse siempre. */
+	:focus-visible {
+		outline: 2px solid var(--ring);
+		outline-offset: 2px;
+	}
+
+	::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
+	::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	::-webkit-scrollbar-thumb {
+		background: var(--border-strong);
+		border-radius: 999px;
+		border: 2px solid var(--surface);
+	}
+}
+
+@layer components {
+	.card {
+		background-color: var(--surface-raised);
+		border: 1px solid var(--border);
+		border-radius: 0.75rem;
+	}
+
+	.input {
+		width: 100%;
+		background-color: var(--surface-raised);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: 0.5rem;
+		padding: 0.5rem 0.75rem;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		transition: border-color 120ms ease;
+	}
+	.input::placeholder {
+		color: var(--text-subtle);
+	}
+	.input:focus {
+		border-color: var(--ring);
+	}
+	.input:disabled {
+		background-color: var(--surface-sunken);
+		color: var(--text-subtle);
+		cursor: not-allowed;
+	}
+	.input[aria-invalid='true'] {
+		border-color: var(--negative);
+	}
+
+	.label {
+		display: block;
+		font-size: 0.75rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
+		color: var(--text-subtle);
+		margin-bottom: 0.3rem;
+	}
+
+	.btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		border-radius: 0.5rem;
+		padding: 0.55rem 1rem;
+		font-size: 0.875rem;
+		font-weight: 600;
+		border: 1px solid transparent;
+		cursor: pointer;
+		transition:
+			background-color 120ms ease,
+			border-color 120ms ease,
+			opacity 120ms ease;
+		white-space: nowrap;
+	}
+	.btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.btn-primary {
+		background-color: var(--accent);
+		color: var(--accent-text);
+	}
+	.btn-primary:not(:disabled):hover {
+		filter: brightness(1.1);
+	}
+	.btn-ghost {
+		background-color: transparent;
+		color: var(--text-muted);
+		border-color: var(--border);
+	}
+	.btn-ghost:not(:disabled):hover {
+		background-color: var(--surface-sunken);
+		color: var(--text);
+	}
+	.btn-danger {
+		background-color: var(--negative);
+		color: #fff;
+	}
+	.btn-danger:not(:disabled):hover {
+		filter: brightness(1.1);
+	}
+
+	.badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		border-radius: 999px;
+		padding: 0.15rem 0.55rem;
+		font-size: 0.7rem;
+		font-weight: 600;
+		line-height: 1.2rem;
+	}
+
+	.table-wrap {
+		overflow-x: auto;
+	}
+	.data-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.875rem;
+	}
+	.data-table thead th {
+		text-align: left;
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--text-subtle);
+		padding: 0.6rem 0.75rem;
+		border-bottom: 1px solid var(--border);
+		white-space: nowrap;
+		background-color: var(--surface-raised);
+	}
+	.data-table tbody td {
+		padding: 0.6rem 0.75rem;
+		border-bottom: 1px solid var(--border);
+		color: var(--text);
+	}
+	.data-table tbody tr:hover td {
+		background-color: var(--surface-sunken);
+	}
+	.num {
+		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
+}
+
+/*
+ * Bloques cuyo color ES la información: las franjas de marca de la factura y la
+ * cabecera de su tabla. Los navegadores quitan los fondos al imprimir para
+ * ahorrar tinta, y sin esto la factura sale con el nombre del negocio en blanco
+ * sobre blanco.
+ */
+.ink-exact {
+	-webkit-print-color-adjust: exact;
+	print-color-adjust: exact;
+}
+
+/* Ticket de venta: en pantalla se ve como papel, al imprimir ocupa la hoja sola. */
+@media print {
+	body {
+		background: #fff !important;
+		color: #000 !important;
+	}
+	.no-print {
+		display: none !important;
+	}
+	.print-only {
+		display: block !important;
+	}
+	.print-sheet {
+		box-shadow: none !important;
+		border: none !important;
+		border-radius: 0 !important;
+		margin: 0 !important;
+		padding: 0 !important;
+		max-width: none !important;
+		width: 100% !important;
+	}
+	/*
+	 * El tamaño de la hoja no se define acá: cada plantilla emite su propia regla
+	 * `@page` (el tiquete pide un rollo de 58 u 80 mm, la factura pide carta), y
+	 * `@page` es global, así que tener una fija acá ganaría a la de la plantilla.
+	 */
+}
