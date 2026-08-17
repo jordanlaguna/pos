@@ -1,20 +1,28 @@
 import type { Handle, HandleServerError } from '@sveltejs/kit';
-import { clearSessionCookie, resolveUser } from '$lib/server/auth';
+import { clearSessionCookie, pendingSession, resolveUser } from '$lib/server/auth';
 import { SESSION_COOKIE } from '$lib/server/config';
 
 /**
  * Resuelve la sesión una sola vez por petición y la deja en `locals`, para que
  * los `load` y las acciones no tengan que repetir el trabajo.
+ *
+ * Desde F2 hay tres estados y no dos: sin sesión, **con compañía elegida**, y el
+ * intermedio —autenticado pero sin compañía— que crea el login de dos pasos.
  */
 export const handle: Handle = async ({ event, resolve }) => {
 	const token = event.cookies.get(SESSION_COOKIE) ?? null;
-	const user = await resolveUser(token);
+	const pending = pendingSession(token);
+	const user = pending ? null : await resolveUser(token);
 
 	// Token presente pero inservible (vencido o revocado): se limpia la cookie.
-	if (token && !user) clearSessionCookie(event.cookies);
+	// Un token de tránsito vigente no entra acá: sirve, aunque no para el POS.
+	if (token && !user && !pending) clearSessionCookie(event.cookies);
 
-	event.locals.token = user ? token : null;
+	// El token viaja en `locals` aunque sea de tránsito: `/compania` lo necesita
+	// para pedir la lista y para elegir.
+	event.locals.token = user || pending ? token : null;
 	event.locals.user = user;
+	event.locals.pending = pending;
 
 	return resolve(event);
 };

@@ -1,14 +1,14 @@
 import { apiSafe } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth';
 import { LOW_STOCK_THRESHOLD } from '$lib/server/config';
-import { toDateInput } from '$lib/format';
+import { toDateInput } from '$lib/ui/format';
 import type {
 	LowStockProduct,
 	PaymentBreakdown,
 	ReportSummary,
 	SalesByDay,
 	TopProduct
-} from '$lib/types';
+} from '$lib/domain/types';
 import type { PageServerLoad } from './$types';
 
 /** Rango por defecto: los últimos 30 días, incluido hoy. */

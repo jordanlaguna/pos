@@ -1,23 +1,23 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
-	import { submit } from '$lib/forms';
-	import Icon from '$lib/components/Icon.svelte';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Field from '$lib/components/Field.svelte';
-	import Spinner from '$lib/components/Spinner.svelte';
-	import DocumentSheet from '$lib/components/documents/DocumentSheet.svelte';
-	import { computeTotals, configureMoney, formatMoney, round2 } from '$lib/money';
-	import { accentTheme } from '$lib/color';
-	import { formatDateTime } from '$lib/format';
+	import { submit } from '$lib/ui/forms';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import PageHeader from '$lib/ui/components/PageHeader.svelte';
+	import Field from '$lib/ui/components/Field.svelte';
+	import Spinner from '$lib/ui/components/Spinner.svelte';
+	import DocumentSheet from '$lib/ui/components/documents/DocumentSheet.svelte';
+	import { computeTotals, configureMoney, formatMoney, round2 } from '$lib/domain/money';
+	import { accentTheme } from '$lib/domain/color';
+	import { formatDateTime } from '$lib/ui/format';
 	import {
-		MONEDAS,
-		PLANTILLAS,
-		TIPOS_IDENTIFICACION,
-		type PlantillaId,
+		CURRENCIES,
+		TEMPLATES,
+		ID_TYPES,
+		type TemplateId,
 		type Settings
-	} from '$lib/settings';
-	import type { Client, SaleDetail } from '$lib/types';
+	} from '$lib/domain/settings';
+	import type { Client, SaleDetail } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -45,25 +45,25 @@
 	// Cuando se guarda, la pantalla se recarga entera.
 	const inicial = untrack(() => data.configuracion);
 
-	let negocio = $state({ ...inicial.negocio });
-	let moneda = $state({ ...inicial.moneda });
-	let impuestoNombre = $state(inicial.impuesto.nombre);
-	let tasaPorcentaje = $state(String(round2(inicial.impuesto.tasa * 100)));
-	let documento = $state({ ...inicial.documento });
-	let colorAcento = $state(inicial.apariencia.color_acento);
-	let electronica = $state({ ...inicial.electronica });
+	let business = $state({ ...inicial.business });
+	let currency = $state({ ...inicial.currency });
+	let impuestoNombre = $state(inicial.tax.name);
+	let tasaPorcentaje = $state(String(round2(inicial.tax.rate * 100)));
+	let document = $state({ ...inicial.document });
+	let colorAcento = $state(inicial.appearance.accentColor);
+	let eInvoicing = $state({ ...inicial.eInvoicing });
 
 	let quitarLogo = $state(false);
 	/** Vista previa del archivo recién elegido, antes de subirlo. */
 	let logoElegido = $state<string | null>(null);
 
 	const borrador: Settings = $derived({
-		negocio,
-		moneda,
-		impuesto: { nombre: impuestoNombre, tasa: (Number(tasaPorcentaje.replace(',', '.')) || 0) / 100 },
-		documento,
-		apariencia: { color_acento: colorAcento },
-		electronica
+		business,
+		currency,
+		tax: { name: impuestoNombre, rate: (Number(tasaPorcentaje.replace(',', '.')) || 0) / 100 },
+		document,
+		appearance: { accentColor: colorAcento },
+		eInvoicing
 	});
 
 	/*
@@ -92,14 +92,15 @@
 	 * propiedad y se redibuja porque la propiedad cambió.
 	 */
 	const claveMoneda = $derived(
-		`${moneda.codigo}|${moneda.simbolo}|${moneda.decimales}|${moneda.separador_miles}|${moneda.separador_decimal}|${moneda.simbolo_al_final}|${moneda.espacio}|${tasaPorcentaje}|${impuestoNombre}`
+		`${currency.code}|${currency.symbol}|${currency.decimals}|${currency.thousandsSeparator}|${currency.decimalSeparator}|${currency.symbolAtEnd}|${currency.space}|${tasaPorcentaje}|${impuestoNombre}`
 	);
 
 	function aplicarMoneda(codigo: string) {
-		const preset = MONEDAS.find((m) => m.codigo === codigo);
+		const preset = CURRENCIES.find((m) => m.code === codigo);
 		if (!preset) return;
-		const { nombre: _nombre, ...valores } = preset;
-		moneda = { ...valores };
+		// `label` es la etiqueta del selector, no parte de la moneda que se guarda.
+		const { label: _label, ...valores } = preset;
+		currency = { ...valores };
 	}
 
 	function elegirLogo(event: Event) {
@@ -141,7 +142,7 @@
 
 	const ventaEjemplo: SaleDetail = $derived.by(() => {
 		const items = LINEAS_EJEMPLO.map((l) => ({ ...l, subtotal: round2(l.price * l.quantity) }));
-		const totales = computeTotals(items, borrador.impuesto.tasa);
+		const totales = computeTotals(items, borrador.tax.rate);
 		const recibido = Math.ceil(totales.total / 1000) * 1000;
 		return {
 			id: 0,
@@ -162,8 +163,8 @@
 
 	const codigosEjemplo = { 1: '7441000100015', 2: '7441000200014', 3: '7441000300013' };
 
-	function seleccionarPlantilla(id: PlantillaId) {
-		documento = { ...documento, plantilla: id };
+	function seleccionarPlantilla(id: TemplateId) {
+		document = { ...document, template: id };
 	}
 </script>
 
@@ -235,7 +236,7 @@
 		}
 	})}
 >
-	<!-- ------------------------------------------------------------ negocio -->
+	<!-- ------------------------------------------------------------ business -->
 	<div style:display={seccion === 'negocio' ? '' : 'none'}>
 		<div class="grid gap-4 lg:grid-cols-3">
 			<div class="card p-5 lg:col-span-2">
@@ -244,7 +245,7 @@
 					<Field
 						label="Nombre comercial"
 						name="negocio_nombre"
-						bind:value={negocio.nombre}
+						bind:value={business.name}
 						required
 						icon="tag"
 						error={form?.errors?.negocio_nombre}
@@ -254,7 +255,7 @@
 					<Field
 						label="Razón social"
 						name="negocio_razon_social"
-						bind:value={negocio.razon_social}
+						bind:value={business.legalName}
 						error={form?.errors?.negocio_razon_social}
 						hint="Solo si difiere del nombre comercial."
 					/>
@@ -265,10 +266,10 @@
 							id="tipo-id"
 							name="negocio_tipo_identificacion"
 							class="input"
-							bind:value={negocio.tipo_identificacion}
+							bind:value={business.taxIdType}
 						>
-							{#each TIPOS_IDENTIFICACION as tipo (tipo.codigo)}
-								<option value={tipo.codigo}>{tipo.nombre}</option>
+							{#each ID_TYPES as tipo (tipo.code)}
+								<option value={tipo.code}>{tipo.label}</option>
 							{/each}
 						</select>
 					</div>
@@ -276,14 +277,14 @@
 					<Field
 						label="Cédula"
 						name="negocio_identificacion"
-						bind:value={negocio.identificacion}
+						bind:value={business.taxId}
 						icon="idcard"
 						error={form?.errors?.negocio_identificacion}
 					/>
 					<Field
 						label="Teléfono"
 						name="negocio_telefono"
-						bind:value={negocio.telefono}
+						bind:value={business.phone}
 						icon="phone"
 						error={form?.errors?.negocio_telefono}
 					/>
@@ -291,20 +292,20 @@
 						label="Correo"
 						name="negocio_correo"
 						type="email"
-						bind:value={negocio.correo}
+						bind:value={business.email}
 						icon="mail"
 						error={form?.errors?.negocio_correo}
 					/>
 					<Field
 						label="Sitio web"
 						name="negocio_sitio_web"
-						bind:value={negocio.sitio_web}
+						bind:value={business.website}
 						error={form?.errors?.negocio_sitio_web}
 					/>
 					<Field
 						label="Dirección"
 						name="negocio_direccion"
-						bind:value={negocio.direccion}
+						bind:value={business.address}
 						error={form?.errors?.negocio_direccion}
 						class="sm:col-span-2"
 					/>
@@ -415,7 +416,7 @@
 		</div>
 	</div>
 
-	<!-- ------------------------------------------------------------- moneda -->
+	<!-- ------------------------------------------------------------- currency -->
 	<div style:display={seccion === 'moneda' ? '' : 'none'}>
 		<div class="grid gap-4 lg:grid-cols-3">
 			<div class="card p-5 lg:col-span-2">
@@ -431,14 +432,14 @@
 						<select
 							id="moneda-preset"
 							class="input"
-							value={moneda.codigo}
+							value={currency.code}
 							onchange={(e) => aplicarMoneda(e.currentTarget.value)}
 						>
-							{#each MONEDAS as m (m.codigo)}
-								<option value={m.codigo}>{m.nombre} ({m.codigo})</option>
+							{#each CURRENCIES as m (m.code)}
+								<option value={m.code}>{m.label} ({m.code})</option>
 							{/each}
-							{#if !MONEDAS.some((m) => m.codigo === moneda.codigo)}
-								<option value={moneda.codigo}>{moneda.codigo} (personalizada)</option>
+							{#if !CURRENCIES.some((m) => m.code === currency.code)}
+								<option value={currency.code}>{currency.code} (personalizada)</option>
 							{/if}
 						</select>
 					</div>
@@ -446,7 +447,7 @@
 					<Field
 						label="Código"
 						name="moneda_codigo"
-						bind:value={moneda.codigo}
+						bind:value={currency.code}
 						required
 						error={form?.errors?.moneda_codigo}
 						hint="ISO 4217: CRC, USD, EUR…"
@@ -454,7 +455,7 @@
 					<Field
 						label="Símbolo"
 						name="moneda_simbolo"
-						bind:value={moneda.simbolo}
+						bind:value={currency.symbol}
 						required
 						error={form?.errors?.moneda_simbolo}
 					/>
@@ -464,7 +465,7 @@
 						type="number"
 						min="0"
 						max="4"
-						bind:value={moneda.decimales}
+						bind:value={currency.decimals}
 						required
 						error={form?.errors?.moneda_decimales}
 					/>
@@ -476,7 +477,7 @@
 							class="input"
 							name="moneda_separador_miles"
 							maxlength="1"
-							bind:value={moneda.separador_miles}
+							bind:value={currency.thousandsSeparator}
 						/>
 						<p class="mt-1 text-xs text-[var(--text-subtle)]">Vacío = sin separar.</p>
 					</div>
@@ -487,7 +488,7 @@
 							class="input"
 							name="moneda_separador_decimal"
 							maxlength="1"
-							bind:value={moneda.separador_decimal}
+							bind:value={currency.decimalSeparator}
 						/>
 					</div>
 
@@ -496,12 +497,12 @@
 							<input
 								type="checkbox"
 								name="moneda_simbolo_al_final"
-								bind:checked={moneda.simbolo_al_final}
+								bind:checked={currency.symbolAtEnd}
 							/>
 							Símbolo después de la cifra
 						</label>
 						<label class="flex items-center gap-2 text-[var(--text-muted)]">
-							<input type="checkbox" name="moneda_espacio" bind:checked={moneda.espacio} />
+							<input type="checkbox" name="moneda_espacio" bind:checked={currency.space} />
 							Espacio entre símbolo y cifra
 						</label>
 					</div>
@@ -547,7 +548,7 @@
 					</dl>
 					<p class="mt-3 text-xs text-[var(--text-subtle)]">
 						Una venta de {formatMoney(10000)} lleva {impuestoNombre}
-						{formatMoney(round2(10000 * borrador.impuesto.tasa))}.
+						{formatMoney(round2(10000 * borrador.tax.rate))}.
 					</p>
 				{/key}
 			</div>
@@ -565,10 +566,10 @@
 					</p>
 
 					<div class="space-y-2">
-						{#each PLANTILLAS as plantilla (plantilla.id)}
+						{#each TEMPLATES as plantilla (plantilla.id)}
 							<label
 								class="flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors
-									{documento.plantilla === plantilla.id
+									{document.template === plantilla.id
 									? 'border-[var(--accent)] bg-[var(--surface-sunken)]'
 									: 'border-[var(--border)] hover:bg-[var(--surface-sunken)]'}"
 							>
@@ -576,24 +577,24 @@
 									type="radio"
 									name="documento_plantilla"
 									value={plantilla.id}
-									checked={documento.plantilla === plantilla.id}
+									checked={document.template === plantilla.id}
 									onchange={() => seleccionarPlantilla(plantilla.id)}
 									class="mt-0.5"
 								/>
 								<span class="min-w-0 flex-1">
 									<span class="flex items-baseline justify-between gap-2">
-										<span class="text-sm font-semibold text-[var(--text)]">{plantilla.nombre}</span>
-										<span class="text-[10px] text-[var(--text-subtle)]">{plantilla.papel}</span>
+										<span class="text-sm font-semibold text-[var(--text)]">{plantilla.name}</span>
+										<span class="text-[10px] text-[var(--text-subtle)]">{plantilla.paper}</span>
 									</span>
 									<span class="mt-0.5 block text-xs leading-relaxed text-[var(--text-muted)]">
-										{plantilla.descripcion}
+										{plantilla.description}
 									</span>
 								</span>
 							</label>
 						{/each}
 					</div>
 
-					{#if documento.plantilla === 'tiquete'}
+					{#if document.template === 'tiquete'}
 						<div class="mt-4">
 							<span class="label">Ancho del rollo</span>
 							<div class="flex gap-4 text-sm text-[var(--text-muted)]">
@@ -603,8 +604,8 @@
 											type="radio"
 											name="documento_ancho"
 											value={String(ancho)}
-											checked={documento.ancho_tiquete === ancho}
-											onchange={() => (documento = { ...documento, ancho_tiquete: ancho as 58 | 80 })}
+											checked={document.receiptWidth === ancho}
+											onchange={() => (document = { ...document, receiptWidth: ancho as 58 | 80 })}
 										/>
 										{ancho} mm
 									</label>
@@ -613,7 +614,7 @@
 						</div>
 					{:else}
 						<!-- El ancho sigue viajando aunque no se muestre: si no, se perdería. -->
-						<input type="hidden" name="documento_ancho" value={String(documento.ancho_tiquete)} />
+						<input type="hidden" name="documento_ancho" value={String(document.receiptWidth)} />
 					{/if}
 				</div>
 
@@ -624,7 +625,7 @@
 						<input
 							type="color"
 							name="documento_color"
-							bind:value={documento.color}
+							bind:value={document.color}
 							class="h-10 w-14 cursor-pointer rounded border border-[var(--border)] bg-transparent"
 							aria-label="Color del documento"
 						/>
@@ -641,7 +642,7 @@
 							<input
 								type="checkbox"
 								name="documento_mostrar_logo"
-								bind:checked={documento.mostrar_logo}
+								bind:checked={document.showLogo}
 							/>
 							Mostrar el logo
 						</label>
@@ -649,7 +650,7 @@
 							<input
 								type="checkbox"
 								name="documento_mostrar_codigo"
-								bind:checked={documento.mostrar_codigo}
+								bind:checked={document.showBarcode}
 							/>
 							Mostrar el código de barras de cada producto
 						</label>
@@ -659,13 +660,13 @@
 						<Field
 							label="Mensaje de despedida"
 							name="documento_mensaje"
-							bind:value={documento.mensaje_gracias}
+							bind:value={document.thanksMessage}
 							error={form?.errors?.documento_mensaje}
 						/>
 						<Field
 							label="Leyenda legal"
 							name="documento_leyenda"
-							bind:value={documento.leyenda}
+							bind:value={document.legalNotice}
 							error={form?.errors?.documento_leyenda}
 							hint="Mientras no se emita factura electrónica, conviene decirlo acá."
 						/>
@@ -676,7 +677,7 @@
 								name="documento_notas"
 								rows="3"
 								class="input resize-y"
-								bind:value={documento.notas}
+								bind:value={document.notes}
 								placeholder="Ej.: Los cambios se aceptan dentro de los 8 días con la factura."
 							></textarea>
 							<p class="mt-1 text-xs text-[var(--text-subtle)]">
@@ -743,7 +744,7 @@
 					<input
 						type="checkbox"
 						name="electronica_activa"
-						bind:checked={electronica.activa}
+						bind:checked={eInvoicing.enabled}
 						class="mt-1"
 					/>
 					<span>
@@ -762,7 +763,7 @@
 							id="fe-ambiente"
 							name="electronica_ambiente"
 							class="input"
-							bind:value={electronica.ambiente}
+							bind:value={eInvoicing.environment}
 						>
 							<option value="sandbox">Pruebas (sandbox)</option>
 							<option value="produccion">Producción</option>
@@ -771,28 +772,28 @@
 					<Field
 						label="Actividad económica"
 						name="electronica_actividad"
-						bind:value={electronica.actividad_economica}
+						bind:value={eInvoicing.economicActivity}
 						error={form?.errors?.electronica_actividad}
 						hint="Código de 6 dígitos inscrito ante Hacienda."
 					/>
 					<Field
 						label="Sucursal"
 						name="electronica_sucursal"
-						bind:value={electronica.sucursal}
+						bind:value={eInvoicing.branch}
 						error={form?.errors?.electronica_sucursal}
 						hint="3 dígitos. Normalmente 001."
 					/>
 					<Field
 						label="Terminal"
 						name="electronica_terminal"
-						bind:value={electronica.terminal}
+						bind:value={eInvoicing.terminal}
 						error={form?.errors?.electronica_terminal}
 						hint="5 dígitos. Una por caja."
 					/>
 					<Field
 						label="Usuario de ATV"
 						name="electronica_usuario"
-						bind:value={electronica.usuario_atv}
+						bind:value={eInvoicing.atvUser}
 						error={form?.errors?.electronica_usuario}
 						class="sm:col-span-2"
 					/>

@@ -1,8 +1,10 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
+
 from app.database.database import Base
+from app.utils.tenancy import TenantMixin
 
 
-class Return(Base):
+class Return(TenantMixin, Base):
     """Devolución de una venta, total o parcial.
 
     No modifica la venta original: el histórico de facturación queda intacto y
@@ -14,12 +16,14 @@ class Return(Base):
     id = Column(Integer, primary_key=True, index=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id_user"), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    terminal_id = Column(Integer, ForeignKey("terminals.id"), nullable=False)
     created_at = Column(DateTime, nullable=False)
     reason = Column(String(255), nullable=False)
     total = Column(Numeric(10, 2), nullable=False)
 
 
-class ReturnDetail(Base):
+class ReturnDetail(TenantMixin, Base):
     __tablename__ = "return_details"
 
     id = Column(Integer, primary_key=True, index=True)

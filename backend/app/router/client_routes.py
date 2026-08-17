@@ -12,7 +12,7 @@ from app.schemas.schemas_clients import (
     UpdateClientResponse,
 )
 from app.services import crud_client
-from app.utils.auth_dependency import get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user
 
 router = APIRouter()
 
@@ -30,7 +30,7 @@ def get_db():
 def register_client(
     client: ClientRegister,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     existing = db.query(Client).filter(Client.identification == client.identification).first()
     if existing:
@@ -43,7 +43,7 @@ def register_client(
 @router.get("/clients_list", response_model=list[ClientUserInformation])
 def get_clients_list(
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     return db.query(Client).order_by(Client.name).all()
 
@@ -53,7 +53,7 @@ def update_client(
     id_client: int,
     client_data: ClientUpdate,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     existing = db.query(Client).filter(Client.id_client == id_client).first()
     if not existing:

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import Icon from '$lib/components/Icon.svelte';
+	import Icon from '$lib/ui/components/Icon.svelte';
 
 	const isForbidden = $derived(page.status === 403);
 	const isNotFound = $derived(page.status === 404);

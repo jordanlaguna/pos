@@ -1,6 +1,6 @@
 import readXlsxFile from 'read-excel-file/node';
-import { parseAmount, round2 } from '$lib/money';
-import type { ParsedLine, ParseResult } from '$lib/types';
+import { parseAmount, round2 } from '$lib/domain/money';
+import type { ParsedLine, ParseResult } from '$lib/domain/types';
 
 /**
  * Lector de planillas para entrada de mercadería: `.xlsx` y `.csv`.

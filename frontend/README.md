@@ -180,7 +180,29 @@ npm run dev       # desarrollo
 npm run check     # verificación de tipos (svelte-check)
 npm run build     # build de producción (adapter-node)
 npm run preview   # previsualizar el build
+
+npm test          # pruebas de unidad, con cobertura
+npm run test:e2e  # flujos de punta a punta (Playwright)
+npm run test:all  # las tres cosas: check + unidad + punta a punta
 ```
+
+### Pruebas
+
+**Unidad** (`vitest`). Cubren el código puro: `money.ts`, `color.ts`,
+`settings.ts` y `documents.ts`. La cobertura tiene que dar **100 %** en líneas,
+ramas y funciones; por debajo, `npm test` sale con error. Es regla del proyecto
+(RNF-6), no una meta.
+
+**Punta a punta** (`playwright`). Corren contra el **modo simulado**, así que no
+hace falta levantar Docker ni MySQL: Playwright arranca el servidor solo. La
+primera vez hay que bajar el navegador:
+
+```bash
+npx playwright install chromium
+```
+
+Lo que habla con FastAPI y MySQL de verdad son las pruebas de caracterización,
+que viven en [`../backend/tests/`](../backend/README.md).
 
 Para desplegarlo:
 

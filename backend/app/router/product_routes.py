@@ -14,7 +14,7 @@ from app.schemas.schemas_product import (
     ProductUpdateResponse,
 )
 from app.services import crud_product
-from app.utils.auth_dependency import get_current_user, require_admin
+from app.utils.auth_dependency import Sesion, get_current_user, require_admin
 
 router = APIRouter()
 
@@ -31,7 +31,7 @@ def get_db():
 def register_product(
     product: ProductRegister,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     existing = db.query(Product).filter(Product.barcode == product.barcode).first()
     if existing:
@@ -45,7 +45,7 @@ def register_product(
 @router.get("/products_list", response_model=List[ProductResponse])
 def get_all_products(
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     products = crud_product.get_all_products(db=db)
     return [
@@ -67,7 +67,7 @@ def get_all_products(
 def get_product_by_barcode(
     term: str,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     """Búsqueda del lector: código de barras exacto y, si no, nombre exacto."""
     product = crud_product.get_product_by_barcode(db=db, term=term)
@@ -80,7 +80,7 @@ def get_product_by_barcode(
 def search_products_by_name(
     name: str,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     return (
         db.query(Product)
@@ -95,7 +95,7 @@ def update_product(
     id_product: int,
     product_data: ProductUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     updated = crud_product.update_product_information(
         db=db, id_product=id_product, product_data=product_data.dict()
@@ -109,7 +109,7 @@ def update_product(
 def delete_product(
     id_product: int,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     deleted = crud_product.delete_product(db=db, id_product=id_product)
     if not deleted:

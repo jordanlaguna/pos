@@ -24,6 +24,19 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ./app ./app
+
+# `bootstrap.py` entra en la imagen y `seed.py` no, y la diferencia es dónde
+# corre cada uno: el seed habla con la API por HTTP y sirve desde cualquier
+# máquina, mientras que dar de alta una compañía toca la base directamente
+# —no hay API para eso: no hay sesión sin membresía ni membresía sin compañía—
+# y necesita estar donde la base es alcanzable.
+COPY bootstrap.py .
+
+# `company_dump.py` entra por lo mismo: respaldar y restaurar una compañía
+# recorre doce tablas respetando las claves foráneas, y eso se hace donde la
+# base es alcanzable, no por HTTP.
+COPY company_dump.py .
+
 COPY wait-for-db.sh /wait-for-db.sh
 RUN chmod +x /wait-for-db.sh
 

@@ -1,20 +1,20 @@
 """Configuración del negocio: moneda, impuesto, documentos, marca.
 
-Es una sola fila. Si no existe, se crea vacía en la primera lectura, de modo que
-un sistema recién instalado no necesita ningún paso previo: el frontend aplica
-sus valores por omisión sobre un objeto vacío y el POS arranca funcionando.
+Una fila por compañía. Si no existe, se crea vacía en la primera lectura, de
+modo que una compañía recién dada de alta no necesita ningún paso previo: el
+frontend aplica sus valores por omisión sobre un objeto vacío y el POS arranca
+funcionando.
 """
 
 import json
-from datetime import datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.model_settings import Settings
-
-SETTINGS_ID = 1
+from app.utils import clock
+from app.utils.tenancy import compania_actual
 
 # Tope de la configuración serializada. No es una restricción de la base (el
 # campo es TEXT, 64 KB), es un cortafuegos: la configuración son unas decenas de
@@ -27,9 +27,16 @@ DEFAULT_TAX_RATE = Decimal("0.13")
 
 
 def _row(db: Session) -> Settings:
-    row = db.query(Settings).filter(Settings.id == SETTINGS_ID).first()
+    """La fila de ESTA compañía.
+
+    Antes era `WHERE id = 1`, y con una sola compañía eso era exacto. Ahora el
+    `WHERE company_id` lo pone el filtro automático, así que la consulta no
+    lleva condición: pedir «la configuración» ya significa «la de la compañía
+    de esta petición».
+    """
+    row = db.query(Settings).first()
     if row is None:
-        row = Settings(id=SETTINGS_ID, data="{}")
+        row = Settings(company_id=compania_actual(), data="{}")
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -99,7 +106,7 @@ def save_settings(
         elif not keep_logo:
             row.logo_mime = None
             row.logo_data = None
-        row.updated_at = datetime.now()
+        row.updated_at = clock.now()
         row.updated_by = user_id
         db.commit()
         db.refresh(row)
@@ -117,7 +124,14 @@ def get_tax_rate(db: Session) -> Decimal:
     fuera de rango se ignora en vez de propagarse a un cálculo de plata.
     """
     try:
-        value = _parse(_row(db).data).get("impuesto", {}).get("tasa")
+        data = _parse(_row(db).data)
+        # Las dos formas de la clave: `tax.rate` desde T-113 y el
+        # `impuesto.tasa` de antes. Una fila guardada con la versión anterior
+        # tiene que seguir entendiéndose; si no, actualizar el sistema haría que
+        # el POS cobrara con la tasa de fábrica sin decir nada.
+        value = data.get("tax", {}).get("rate")
+        if value is None:
+            value = data.get("impuesto", {}).get("tasa")
         if value is None:
             return DEFAULT_TAX_RATE
         rate = Decimal(str(value))

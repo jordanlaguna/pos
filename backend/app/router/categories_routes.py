@@ -6,7 +6,7 @@ from app.models.model_categories import Category
 from app.models.model_user import User
 from app.schemas.schemas_categories import AddCategories, CategoryRegister, CategoryResponse
 from app.services.crud_categories import create_category, get_all_categories
-from app.utils.auth_dependency import get_current_user, require_admin
+from app.utils.auth_dependency import Sesion, get_current_user, require_admin
 
 router = APIRouter()
 
@@ -23,7 +23,7 @@ def get_db_session():
 def register_category(
     category: CategoryRegister,
     db: Session = Depends(get_db_session),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     existing = db.query(Category).filter(Category.name == category.name).first()
     if existing:
@@ -35,6 +35,6 @@ def register_category(
 @router.get("/categories_list", response_model=list[CategoryResponse])
 def list_categories(
     db: Session = Depends(get_db_session),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     return get_all_categories(db=db)

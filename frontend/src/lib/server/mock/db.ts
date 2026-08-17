@@ -11,8 +11,8 @@ import type {
 	SaleItem,
 	SaleReturn,
 	StockEntry
-} from '$lib/types';
-import { DEFAULT_TAX_RATE, round2 } from '$lib/money';
+} from '$lib/domain/types';
+import { DEFAULT_TAX_RATE, round2 } from '$lib/domain/money';
 
 /**
  * Base de datos del modo mock.
@@ -53,9 +53,28 @@ export interface MockSettings {
 	updated_by: number | null;
 }
 
-export interface MockDb {
-	persons: Person[];
-	users: MockUser[];
+/** Una compañía del sistema simulado. */
+export interface MockCompany {
+	id: number;
+	afiliado: number;
+	compania: number;
+	nombre: string;
+	estado: string;
+	branch_code: string;
+	terminal_code: string;
+}
+
+/** Quién entra a qué compañía y con qué rol. */
+export interface MockMembership {
+	user_id: number;
+	company_id: number;
+	rol: Role;
+	activa: boolean;
+	aceptada_el: string | null;
+}
+
+/** Los datos de **una** compañía. Cada una tiene los suyos, sin mezclar. */
+export interface MockCompanyData {
 	clients: Client[];
 	categories: Category[];
 	products: Product[];
@@ -64,51 +83,124 @@ export interface MockDb {
 	cash_sessions: CashSession[];
 	cash_movements: CashMovement[];
 	stock_entries: StockEntry[];
-	/** Opcional a propósito: un `.data/mock-db.json` de antes de existir la
-	 *  configuración tiene que seguir cargando en vez de descartarse entero. */
 	settings?: MockSettings;
+}
+
+/**
+ * Lo global: la identidad y las membresías, que no son de ninguna compañía.
+ *
+ * Es la misma división que en la base de verdad —`users` y `persons` son
+ * identidad (RN-3)— y no una simplificación del mock.
+ */
+export interface MockRoot {
+	persons: Person[];
+	users: MockUser[];
+	companies: MockCompany[];
+	memberships: MockMembership[];
+	empresas: Record<number, MockCompanyData>;
 	counters: Record<string, number>;
 }
 
+/**
+ * Vista de trabajo: lo global más los datos de UNA compañía.
+ *
+ * Las propiedades apuntan a los mismos arreglos que guarda `MockRoot`, así que
+ * mutar `db.products` muta el almacén de verdad. Es lo que permite que los
+ * manejadores sigan escritos igual que cuando el mock tenía una sola compañía:
+ * lo único que cambió es que hay que decir de cuál se habla.
+ */
+export type MockDb = MockRoot & MockCompanyData;
+
 const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
 
-let db: MockDb | null = null;
+/** La compañía del negocio de demostración. Es la que tiene datos. */
+export const COMPANIA_DEMO = 1;
 
-/** Siguiente id para una colección, al estilo AUTO_INCREMENT. */
-export function nextId(key: keyof MockDb | string): number {
-	const state = getDb();
+let raiz: MockRoot | null = null;
+
+/**
+ * Siguiente id para una colección, al estilo AUTO_INCREMENT.
+ *
+ * El contador es **global** y no por compañía, igual que en MySQL: los
+ * identificadores no se reciclan entre compañías, y eso es justamente lo que
+ * hace que una prueba de aislamiento pruebe algo —si cada compañía empezara en
+ * 1, pedir «el producto 1» de la otra devolvería el propio por casualidad—.
+ */
+export function nextId(key: string): number {
+	const state = cargar();
 	const current = state.counters[key] ?? 0;
 	const next = current + 1;
 	state.counters[key] = next;
 	return next;
 }
 
-export function getDb(): MockDb {
-	if (db) return db;
+function cargar(): MockRoot {
+	if (raiz) return raiz;
 
 	if (existsSync(DB_PATH)) {
 		try {
-			const parsed = JSON.parse(readFileSync(DB_PATH, 'utf-8')) as MockDb;
+			const parsed = JSON.parse(readFileSync(DB_PATH, 'utf-8')) as MockRoot;
 			// Si el archivo quedó de una versión anterior del seed, se descarta.
-			if (parsed && Array.isArray(parsed.products) && parsed.counters) {
-				db = parsed;
-				return db;
+			if (parsed && parsed.empresas && parsed.counters && Array.isArray(parsed.users)) {
+				raiz = parsed;
+				return raiz;
 			}
 		} catch {
 			// Archivo corrupto: se regenera desde el seed.
 		}
 	}
 
-	db = seed();
+	raiz = seed();
 	persist();
-	return db;
+	return raiz;
+}
+
+/** Las compañías y las membresías, sin ninguna en particular. */
+export function getRoot(): MockRoot {
+	return cargar();
+}
+
+/** Los datos de una compañía, creándolos vacíos si es la primera vez. */
+export function getEmpresa(companyId: number): MockCompanyData {
+	const state = cargar();
+	if (!state.empresas[companyId]) {
+		state.empresas[companyId] = empresaVacia();
+	}
+	return state.empresas[companyId];
+}
+
+/**
+ * La vista de trabajo de una compañía.
+ *
+ * El `spread` copia **referencias** a los arreglos, no los arreglos, así que
+ * `db.products.push(...)` escribe en el almacén. Lo único que no puede hacerse
+ * sobre esta vista es reasignar una colección entera (`db.products = []`),
+ * porque eso cambiaría la copia y no el original.
+ */
+export function getDb(companyId: number = COMPANIA_DEMO): MockDb {
+	const state = cargar();
+	return { ...state, ...getEmpresa(companyId) };
+}
+
+export function empresaVacia(): MockCompanyData {
+	return {
+		clients: [],
+		categories: [],
+		products: [],
+		sales: [],
+		returns: [],
+		cash_sessions: [],
+		cash_movements: [],
+		stock_entries: [],
+		settings: { data: {}, logo: null, updated_at: null, updated_by: null }
+	};
 }
 
 export function persist(): void {
-	if (!db) return;
+	if (!raiz) return;
 	try {
 		mkdirSync(dirname(DB_PATH), { recursive: true });
-		writeFileSync(DB_PATH, JSON.stringify(db, null, '\t'), 'utf-8');
+		writeFileSync(DB_PATH, JSON.stringify(raiz, null, '\t'), 'utf-8');
 	} catch {
 		// Sin permisos de escritura el mock sigue funcionando, solo que en memoria.
 	}
@@ -116,7 +208,7 @@ export function persist(): void {
 
 /** Reinicia la base al estado de fábrica. Lo usa el botón "Reiniciar demo". */
 export function resetDb(): void {
-	db = seed();
+	raiz = seed();
 	persist();
 }
 
@@ -194,7 +286,7 @@ const PAYMENT_MIX = [
 	'Pago móvil'
 ];
 
-function seed(): MockDb {
+function seed(): MockRoot {
 	const now = new Date();
 	const created = iso(daysAgo(120));
 
@@ -218,18 +310,62 @@ function seed(): MockDb {
 
 	const clients: Client[] = CLIENT_SEED.map((c, i) => ({ ...c, id_client: i + 1 }));
 
-	const state: MockDb = {
+	/*
+	 * Dos compañías (T-228). La segunda nace **vacía**, que es exactamente lo que
+	 * pasa cuando se da de alta una: sin catálogo, sin clientes, sin ventas.
+	 *
+	 * No es un adorno del demo. Es lo que permite que las pruebas de punta a
+	 * punta recorran la pantalla de selección y comprueben que cambiar de
+	 * compañía deja la pantalla de ventas vacía (T-223) —con una sola compañía
+	 * no hay nada de eso que probar—.
+	 *
+	 * El administrador pertenece a las dos; los cajeros, solo a la primera. Así
+	 * el demo muestra los dos caminos: con varias compañías se elige (RF-27) y
+	 * con una sola se entra directo (RN-25).
+	 */
+	const raizNueva: MockRoot = {
 		persons,
 		users,
-		clients,
-		categories: [...CATEGORIES],
-		products,
-		sales: [],
-		returns: [],
-		cash_sessions: [],
-		cash_movements: [],
-		stock_entries: [],
-		settings: { data: {}, logo: null, updated_at: null, updated_by: null },
+		companies: [
+			{
+				id: 1,
+				afiliado: 1,
+				compania: 1,
+				nombre: 'Abastecedor La Esquina',
+				estado: 'activa',
+				branch_code: '001',
+				terminal_code: '00001'
+			},
+			{
+				id: 2,
+				afiliado: 1,
+				compania: 2,
+				nombre: 'La Esquina · Sucursal Norte',
+				estado: 'activa',
+				branch_code: '001',
+				terminal_code: '00001'
+			}
+		],
+		memberships: [
+			{ user_id: 1, company_id: 1, rol: 'admin', activa: true, aceptada_el: created },
+			{ user_id: 1, company_id: 2, rol: 'admin', activa: true, aceptada_el: created },
+			{ user_id: 2, company_id: 1, rol: 'cajero', activa: true, aceptada_el: created },
+			{ user_id: 3, company_id: 1, rol: 'cajero', activa: true, aceptada_el: created }
+		],
+		empresas: {
+			1: {
+				clients,
+				categories: [...CATEGORIES],
+				products,
+				sales: [],
+				returns: [],
+				cash_sessions: [],
+				cash_movements: [],
+				stock_entries: [],
+				settings: { data: {}, logo: null, updated_at: null, updated_by: null }
+			},
+			2: empresaVacia()
+		},
 		counters: {
 			persons: persons.length,
 			users: users.length,
@@ -243,6 +379,9 @@ function seed(): MockDb {
 			stock_entries: 0
 		}
 	};
+
+	// El historial de abajo se escribe sobre la compañía con datos.
+	const state = { ...raizNueva, ...raizNueva.empresas[1] } as MockDb;
 
 	// Historial de 45 días para que el dashboard tenga de dónde graficar.
 	let saleId = 0;
@@ -310,5 +449,5 @@ function seed(): MockDb {
 	});
 	state.counters.sales = state.sales.length;
 
-	return state;
+	return raizNueva;
 }

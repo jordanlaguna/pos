@@ -6,7 +6,7 @@ import type { LayoutServerLoad } from './$types';
 /** Todo lo que cuelga de (app) exige sesión iniciada. */
 export const load: LayoutServerLoad = async ({ locals, url }) => {
 	const user = requireUser(locals, url.pathname);
-	const stored = await loadSettings(locals.token);
+	const stored = await loadSettings(locals.token, user.company_id);
 
 	return {
 		user,

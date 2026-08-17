@@ -13,8 +13,10 @@ from app.schemas.schemas_person import (
     UpdatePerson,
     UpdatePersonResponse,
 )
+from app.models.model_company import UserCompany
 from app.services import crud_person
-from app.utils.auth_dependency import get_current_user, require_admin
+from app.utils.auth_dependency import Sesion, get_current_user, require_admin
+from app.utils.tenancy import sin_filtro
 
 router = APIRouter()
 
@@ -41,9 +43,22 @@ def register_person(person: PersonRegister, db: Session = Depends(get_db)):
 @router.get("/persons_list", response_model=List[PersonUserInformation])
 def get_all_persons(
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
-    rows = db.query(Person, User).join(User, Person.id_person == User.id_person).all()
+    """Las personas con membresía en esta compañía, con su rol acá.
+
+    Antes devolvía todas las personas de la base. Con una base compartida, eso
+    era la libreta de direcciones de todos los clientes del producto.
+    """
+    rows = (
+        sin_filtro(
+            db.query(Person, User, UserCompany)
+            .join(User, Person.id_person == User.id_person)
+            .join(UserCompany, UserCompany.user_id == User.id_user)
+            .filter(UserCompany.company_id == admin.company_id)
+            .order_by(User.id_user)
+        )
+    ).all()
 
     return [
         PersonUserInformation(
@@ -56,9 +71,9 @@ def get_all_persons(
             telephone=person.telephone,
             id_user=user.id_user,
             email=user.email,
-            role=user.role,
+            role=membresia.rol,
         )
-        for person, user in rows
+        for person, user, membresia in rows
     ]
 
 
@@ -67,11 +82,11 @@ def update_person(
     id_person: int,
     person: UpdatePerson,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    sesion: Sesion = Depends(get_current_user),
 ):
     # Cada quien edita sus propios datos; el admin puede editar los de cualquiera.
-    if current.id_person != id_person and current.role != "admin":
-        raise HTTPException(status_code=403, detail="No podés editar este usuario.")
+    if sesion.id_person != id_person and sesion.rol != "admin":
+        raise HTTPException(status_code=403, detail="No puede editar este usuario.")
 
     updated = crud_person.update_person_information(
         db=db, id_person=id_person, person_data=person.dict()

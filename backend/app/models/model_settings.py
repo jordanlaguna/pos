@@ -1,10 +1,11 @@
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
 
 from app.database.database import Base
+from app.utils.tenancy import TenantMixin
 
 
-class Settings(Base):
-    """Configuración del negocio. Una sola fila, siempre id = 1.
+class Settings(TenantMixin, Base):
+    """Configuración del negocio. Una fila por compañía.
 
     Por qué una fila con JSON y no una columna por opción
     ------------------------------------------------------
@@ -35,3 +36,8 @@ class Settings(Base):
 
     updated_at = Column(DateTime, nullable=True)
     updated_by = Column(Integer, nullable=True)
+
+    # Lo que impide que aparezcan dos filas para la misma compañía. Antes el
+    # invariante era «siempre id = 1» y lo sostenía el código; ahora lo sostiene
+    # la base, que es donde los invariantes no se olvidan.
+    __table_args__ = (UniqueConstraint("company_id", name="uq_settings_company"),)

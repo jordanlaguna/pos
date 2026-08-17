@@ -5,7 +5,7 @@ from app.database.database import SessionLocal
 from app.models.model_user import User
 from app.schemas.schemas_settings import SettingsResponse, SettingsUpdate
 from app.services import crud_settings
-from app.utils.auth_dependency import get_current_user, require_admin
+from app.utils.auth_dependency import Sesion, get_current_user, require_admin
 
 router = APIRouter()
 
@@ -21,7 +21,7 @@ def get_db():
 @router.get("/", response_model=SettingsResponse)
 def read_settings(
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     """Configuración vigente.
 
@@ -37,7 +37,7 @@ def read_settings(
 def update_settings(
     payload: SettingsUpdate,
     db: Session = Depends(get_db),
-    current: User = Depends(require_admin),
+    current: Sesion = Depends(require_admin),
 ):
     """Reemplaza la configuración completa. Solo administradores."""
     return crud_settings.save_settings(

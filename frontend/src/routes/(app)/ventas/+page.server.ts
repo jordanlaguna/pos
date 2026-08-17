@@ -2,10 +2,9 @@ import { fail, redirect } from '@sveltejs/kit';
 import { api, apiSafe, toMessage } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
 import { loadSettings } from '$lib/server/settings';
-import { computeTotals, changeDue, round2 } from '$lib/money';
-import { toLocalIso } from '$lib/format';
-import { Validator } from '$lib/validation';
-import { PAYMENT_METHODS, type CashSession, type Category, type Client, type Product } from '$lib/types';
+import { prepareSale } from '$lib/application/checkout';
+import { Validator } from '$lib/application/validation';
+import { PAYMENT_METHODS, type CashSession, type Category, type Client, type Product } from '$lib/domain/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -60,45 +59,35 @@ export const actions: Actions = {
 			return fail(502, { message: toMessage(error) });
 		}
 
-		const priced: { price: number; quantity: number }[] = [];
-		for (const line of lines) {
-			const product = catalog.find((p) => p.id_product === Number(line.id_product));
-			if (!product) return fail(400, { message: `Un producto de la venta ya no existe.` });
-
-			const quantity = Math.trunc(Number(line.quantity));
-			if (!(quantity > 0))
-				return fail(400, { message: `Cantidad inválida para ${product.name}.` });
-			if (quantity > product.stock)
-				return fail(400, {
-					message: `Stock insuficiente para ${product.name}: quedan ${product.stock}.`
-				});
-
-			priced.push({ price: Number(product.price), quantity });
-		}
-
 		/*
 		 * La tasa se lee acá y no del estado del módulo de dinero: esto corre en una
 		 * acción del servidor, donde no se ha renderizado ningún componente y por lo
 		 * tanto nadie llamó a `configureMoney`. La plata se calcula con la tasa que
 		 * el servidor acaba de leer, no con la que quedó de la última pantalla.
 		 */
-		const { settings } = await loadSettings(token);
-		const totals = computeTotals(priced, settings.impuesto.tasa);
+		const { settings } = await loadSettings(token, user.company_id);
 
-		// En efectivo el monto entregado tiene que alcanzar; en los demás métodos
-		// se cobra el importe exacto, así que no hay vuelto que calcular.
-		const isCash = paymentMethod === 'Efectivo';
-		const received = isCash ? round2(cashReceived) : totals.total;
-		if (isCash && received < totals.total) {
+		// La decisión entera vive en la capa de aplicación y es pura; acá solo se
+		// transporta lo que devuelve (T-112).
+		const preparada = prepareSale(
+			{
+				lines,
+				paymentMethod,
+				cashReceived,
+				clientId,
+				saleNumber: String(form.get('sale_number') ?? '').trim(),
+				userId: user.id_user
+			},
+			catalog,
+			settings.tax.rate,
+			new Date()
+		);
+
+		if (!preparada.ok) {
 			return fail(400, {
-				message: 'El monto recibido no cubre el total de la venta.',
-				errors: { cash_received: 'Monto insuficiente.' }
+				message: preparada.message,
+				...(preparada.field ? { errors: { [preparada.field]: 'Monto insuficiente.' } } : {})
 			});
-		}
-
-		const saleNumber = String(form.get('sale_number') ?? '').trim();
-		if (!/^\d{14}$/.test(saleNumber)) {
-			return fail(400, { message: 'El número de factura no es válido.' });
 		}
 
 		let saleId: number;
@@ -106,24 +95,7 @@ export const actions: Actions = {
 			const result = await api<{ message: string; id_sale: number }>('/sales/add_sale', {
 				method: 'POST',
 				token,
-				body: {
-					sale_number: saleNumber,
-					client_id: clientId,
-					user_id: user.id_user,
-					subtotal: totals.subtotal,
-					tax: totals.tax,
-					total: totals.total,
-					payment_method: paymentMethod,
-					cash_received: received,
-					change_given: changeDue(received, totals.total),
-					// Hora local, no UTC: el backend compara contra su propio reloj para
-					// atribuir la venta al turno de caja abierto.
-					created_at: toLocalIso(new Date()),
-					products: priced.map((p, i) => ({
-						id_product: Number(lines[i].id_product),
-						stock: p.quantity
-					}))
-				}
+				body: preparada.payload
 			});
 			saleId = result.id_sale;
 		} catch (error) {

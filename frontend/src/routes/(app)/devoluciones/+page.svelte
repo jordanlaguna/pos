@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { submit } from '$lib/forms';
+	import { submit } from '$lib/ui/forms';
 	import { page } from '$app/state';
-	import Icon from '$lib/components/Icon.svelte';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import Spinner from '$lib/components/Spinner.svelte';
-	import { toasts } from '$lib/stores/toast.svelte';
-	import { formatMoney, round2, taxName, taxRate } from '$lib/money';
-	import { formatDateTime, formatInt } from '$lib/format';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import PageHeader from '$lib/ui/components/PageHeader.svelte';
+	import EmptyState from '$lib/ui/components/EmptyState.svelte';
+	import Spinner from '$lib/ui/components/Spinner.svelte';
+	import { toasts } from '$lib/ui/stores/toast.svelte';
+	import { formatMoney, round2, taxName, taxRate } from '$lib/domain/money';
+	import { formatDateTime, formatInt } from '$lib/ui/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

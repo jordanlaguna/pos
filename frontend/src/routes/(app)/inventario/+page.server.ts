@@ -1,9 +1,9 @@
 import { fail } from '@sveltejs/kit';
 import { api, apiSafe, toMessage } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth';
-import { toLocalIso } from '$lib/format';
-import { formError, Validator } from '$lib/validation';
-import type { Category, Product } from '$lib/types';
+import { toLocalIso } from '$lib/domain/datetime';
+import { formError, Validator } from '$lib/application/validation';
+import type { Category, Product } from '$lib/domain/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {

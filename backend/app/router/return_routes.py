@@ -6,7 +6,7 @@ from app.models.model_return import Return
 from app.models.model_user import User
 from app.schemas.schemas_return import ReturnCreate, ReturnCreateSuccess, ReturnResponse
 from app.services import crud_return
-from app.utils.auth_dependency import get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user
 
 router = APIRouter()
 
@@ -22,7 +22,7 @@ def get_db():
 @router.get("/returns_list", response_model=list[ReturnResponse])
 def list_returns(
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     records = db.query(Return).order_by(Return.created_at.desc()).limit(500).all()
     return [crud_return.serialize(db, r) for r in records]
@@ -32,7 +32,7 @@ def list_returns(
 def get_return(
     return_id: int,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     record = db.query(Return).filter(Return.id == return_id).first()
     if not record:
@@ -44,7 +44,7 @@ def get_return(
 def add_return(
     payload: ReturnCreate,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     """Registra la devolución y devuelve las unidades al inventario."""
     return crud_return.create_return(db, payload)

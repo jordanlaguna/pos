@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { submit } from '$lib/forms';
-	import Icon from '$lib/components/Icon.svelte';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import Field from '$lib/components/Field.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import Spinner from '$lib/components/Spinner.svelte';
-	import { toasts } from '$lib/stores/toast.svelte';
-	import { formatDate, fullName, toDateInput } from '$lib/format';
-	import type { Client } from '$lib/types';
+	import { submit } from '$lib/ui/forms';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import PageHeader from '$lib/ui/components/PageHeader.svelte';
+	import Modal from '$lib/ui/components/Modal.svelte';
+	import Field from '$lib/ui/components/Field.svelte';
+	import EmptyState from '$lib/ui/components/EmptyState.svelte';
+	import Spinner from '$lib/ui/components/Spinner.svelte';
+	import { toasts } from '$lib/ui/stores/toast.svelte';
+	import { formatDate, fullName, toDateInput } from '$lib/ui/format';
+	import type { Client } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();

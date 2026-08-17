@@ -1,0 +1,78 @@
+# Pila desechable para las pruebas.
+#
+# Es la misma aplicación que `docker-compose.yml`, con tres diferencias que
+# importan:
+#
+#   1. **Nombre de proyecto propio** (`ventasys-test`). Sin esto, Compose
+#      reutilizaría el proyecto `ventasys` y las pruebas correrían contra la
+#      base de trabajo: cada corrida dejaría productos, ventas y turnos de caja
+#      inventados en los reportes de verdad.
+#
+#   2. **Volumen anónimo.** La base vive y muere con los contenedores, así que
+#      `docker compose ... down -v` la borra entera y la corrida siguiente
+#      arranca desde cero. Las pruebas necesitan eso: la primera persona que se
+#      registra queda como administradora, y varias cifras dependen de que el
+#      inventario esté en un estado conocido.
+#
+#   3. **Credenciales escritas acá.** No hay `.env` que copiar y no hay secreto
+#      que proteger: nada de esto sale de la máquina, la base se borra al
+#      terminar y el puerto de MySQL ni se publica. Es lo que permite que las
+#      pruebas corran en una máquina recién clonada, o en integración continua,
+#      sin configurar nada.
+#
+# Uso:
+#   docker compose -f docker-compose.test.yml up -d --build
+#   pytest -m characterization
+#   docker compose -f docker-compose.test.yml down -v
+
+name: ventasys-test
+
+services:
+  db:
+    image: mysql:8
+    environment:
+      TZ: America/Costa_Rica
+      MYSQL_ROOT_PASSWORD: test
+      MYSQL_DATABASE: posdb_test
+      MYSQL_USER: pos_test
+      MYSQL_PASSWORD: test
+    tmpfs:
+      # En memoria: más rápido y no deja rastro en el disco al terminar.
+      - /var/lib/mysql
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ptest"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      # La misma zona que el resto del sistema. Es lo que hace que el arqueo por
+      # turno compare marcas del mismo reloj (defecto 8).
+      TZ: America/Costa_Rica
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: pos_test
+      DB_PASS: test
+      DB_NAME: posdb_test
+      SECRET_KEY: clave-solo-para-pruebas-no-sirve-para-nada-mas
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      ALLOWED_ORIGINS: ""
+    ports:
+      # 8002 para no chocar con el 8001 del stack de trabajo, que puede estar
+      # levantado al mismo tiempo.
+      - "127.0.0.1:8002:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - test-net
+
+networks:
+  test-net:

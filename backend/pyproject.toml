@@ -1,0 +1,44 @@
+[project]
+name = "ventasys-backend"
+version = "0.1.0"
+description = "API de VentaSys: punto de venta multiempresa"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `-ra` resume al final por qué se saltó o falló cada cosa: sin eso, una prueba
+# omitida por falta de la pila de pruebas se ve igual que una que pasó.
+#
+# `--cov` va acá y no en un comando aparte para que el portón del 100 % se
+# aplique solo: `pytest` a secas es la verificación completa, como dice
+# CLAUDE.md. Para correr un archivo suelto sin que la cobertura parcial haga
+# fallar la corrida, `pytest --no-cov tests/domain/test_money.py`.
+addopts = "-ra --strict-markers --cov --cov-report=term-missing"
+markers = [
+    "characterization: fija el comportamiento de HOY antes de reorganizar por capas. Necesita la pila de docker-compose.test.yml.",
+    "integration: toca la base de datos o la red.",
+]
+
+[tool.coverage.run]
+branch = true
+# El umbral del 100 % es regla del proyecto (RNF-6) y aplica a dominio y casos
+# de uso, que son código puro. Los adaptadores —routers, repositorios, cliente
+# de Hacienda— se prueban por integración y no entran en esta cuenta: exigirles
+# 100 % empuja a escribir pruebas de espejo que no verifican nada.
+#
+# Las dos carpetas las crea T-105 y T-108. Hasta entonces esto no mide nada, y
+# está bien: el portón queda puesto antes que el código que tiene que vigilar,
+# no después.
+source = ["app/domain", "app/application"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+    "\\.\\.\\.",
+]

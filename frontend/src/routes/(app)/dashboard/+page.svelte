@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { navigating } from '$app/state';
-	import Icon from '$lib/components/Icon.svelte';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import StatCard from '$lib/components/StatCard.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import SalesTrendChart from '$lib/components/charts/SalesTrendChart.svelte';
-	import BarListChart from '$lib/components/charts/BarListChart.svelte';
-	import type { BarItem } from '$lib/components/charts/BarListChart.svelte';
-	import { formatMoney } from '$lib/money';
-	import { formatDate, formatDelta, formatInt, toDateInput } from '$lib/format';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import PageHeader from '$lib/ui/components/PageHeader.svelte';
+	import StatCard from '$lib/ui/components/StatCard.svelte';
+	import EmptyState from '$lib/ui/components/EmptyState.svelte';
+	import SalesTrendChart from '$lib/ui/components/charts/SalesTrendChart.svelte';
+	import BarListChart from '$lib/ui/components/charts/BarListChart.svelte';
+	import type { BarItem } from '$lib/ui/components/charts/BarListChart.svelte';
+	import { formatMoney } from '$lib/domain/money';
+	import { formatDate, formatDelta, formatInt, toDateInput } from '$lib/ui/format';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

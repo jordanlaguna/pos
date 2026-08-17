@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Factura electrónica de proveedor, versión 4.3.
+
+  Reproduce el caso que se verificó a mano y quedó anotado en
+  `.specify/progress.json` → invariantes_verificados.entrada_xml_hacienda:
+  cuatro líneas, de las que entran tres, 42 unidades y ₡79 800 de costo.
+
+  Cada línea prueba algo distinto:
+
+    1. Arroz     — línea normal, código comercial.
+    2. Café      — trae DESCUENTO: PrecioUnitario dice 3 600 pero el SubTotal
+                   ya viene neto a 3 400. Se paga lo segundo, y por eso el
+                   lector calcula el costo como SubTotal/Cantidad.
+    3. Servicio  — cantidad 0,5, que no es una unidad de inventario. El lector
+                   la marca con un problema y la vista previa la deja
+                   desmarcada.
+    4. Chiverre  — sin CodigoComercial: solo CodigoCABYS, que es el último
+                   recurso para reconocer el producto.
+-->
+<FacturaElectronica xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.3/facturaElectronica">
+  <Clave>50601012600310115499800100001010000514161100514161</Clave>
+  <NumeroConsecutivo>00100001010000514161</NumeroConsecutivo>
+  <FechaEmision>2026-08-16T09:14:22-06:00</FechaEmision>
+
+  <Emisor>
+    <Nombre>Distribuidora La Central S.A.</Nombre>
+    <Identificacion>
+      <Tipo>02</Tipo>
+      <Numero>3101154998</Numero>
+    </Identificacion>
+  </Emisor>
+
+  <DetalleServicio>
+    <LineaDetalle>
+      <NumeroLinea>1</NumeroLinea>
+      <CodigoCABYS>0112100000100</CodigoCABYS>
+      <CodigoComercial>
+        <Tipo>04</Tipo>
+        <Codigo>7441029001057</Codigo>
+      </CodigoComercial>
+      <Cantidad>24</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <Detalle>Arroz Tio Pelon 1kg</Detalle>
+      <PrecioUnitario>1200.00000</PrecioUnitario>
+      <MontoTotal>28800.00000</MontoTotal>
+      <SubTotal>28800.00000</SubTotal>
+      <MontoTotalLinea>28800.00000</MontoTotalLinea>
+    </LineaDetalle>
+
+    <LineaDetalle>
+      <NumeroLinea>2</NumeroLinea>
+      <CodigoCABYS>0161200000100</CodigoCABYS>
+      <CodigoComercial>
+        <Tipo>04</Tipo>
+        <Codigo>7441029001064</Codigo>
+      </CodigoComercial>
+      <Cantidad>15</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <Detalle>Cafe Rey molido 500g</Detalle>
+      <PrecioUnitario>3600.00000</PrecioUnitario>
+      <MontoTotal>54000.00000</MontoTotal>
+      <Descuento>
+        <MontoDescuento>3000.00000</MontoDescuento>
+        <NaturalezaDescuento>Descuento por volumen</NaturalezaDescuento>
+      </Descuento>
+      <SubTotal>51000.00000</SubTotal>
+      <MontoTotalLinea>51000.00000</MontoTotalLinea>
+    </LineaDetalle>
+
+    <LineaDetalle>
+      <NumeroLinea>3</NumeroLinea>
+      <CodigoCABYS>8531100000000</CodigoCABYS>
+      <Cantidad>0.5</Cantidad>
+      <UnidadMedida>Sp</UnidadMedida>
+      <Detalle>Servicio de transporte</Detalle>
+      <PrecioUnitario>12000.00000</PrecioUnitario>
+      <MontoTotal>6000.00000</MontoTotal>
+      <SubTotal>6000.00000</SubTotal>
+      <MontoTotalLinea>6000.00000</MontoTotalLinea>
+    </LineaDetalle>
+
+    <LineaDetalle>
+      <NumeroLinea>4</NumeroLinea>
+      <CodigoCABYS>0113200000100</CodigoCABYS>
+      <Cantidad>3</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <Detalle>Chiverre en dulce</Detalle>
+      <PrecioUnitario>0.00000</PrecioUnitario>
+      <MontoTotal>0.00000</MontoTotal>
+      <SubTotal>0.00000</SubTotal>
+      <MontoTotalLinea>0.00000</MontoTotalLinea>
+    </LineaDetalle>
+  </DetalleServicio>
+
+  <ResumenFactura>
+    <CodigoTipoMoneda>
+      <CodigoMoneda>CRC</CodigoMoneda>
+      <TipoCambio>1.00000</TipoCambio>
+    </CodigoTipoMoneda>
+    <TotalVenta>85800.00000</TotalVenta>
+    <TotalDescuentos>3000.00000</TotalDescuentos>
+    <TotalVentaNeta>85800.00000</TotalVentaNeta>
+    <TotalComprobante>85800.00000</TotalComprobante>
+  </ResumenFactura>
+</FacturaElectronica>

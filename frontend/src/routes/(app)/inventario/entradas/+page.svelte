@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
-	import { submit } from '$lib/forms';
-	import Icon from '$lib/components/Icon.svelte';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import { toasts } from '$lib/stores/toast.svelte';
-	import { formatMoney } from '$lib/money';
-	import { formatDateTime, formatInt } from '$lib/format';
-	import type { StockEntry } from '$lib/types';
+	import { submit } from '$lib/ui/forms';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import PageHeader from '$lib/ui/components/PageHeader.svelte';
+	import Modal from '$lib/ui/components/Modal.svelte';
+	import EmptyState from '$lib/ui/components/EmptyState.svelte';
+	import { toasts } from '$lib/ui/stores/toast.svelte';
+	import { formatMoney } from '$lib/domain/money';
+	import { formatDateTime, formatInt } from '$lib/ui/format';
+	import type { StockEntry } from '$lib/domain/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

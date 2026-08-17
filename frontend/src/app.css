@@ -241,7 +241,8 @@
 		white-space: nowrap;
 		background-color: var(--surface-raised);
 	}
-	.data-table tbody td {
+	.data-table tbody td,
+	.data-table tfoot td {
 		padding: 0.6rem 0.75rem;
 		border-bottom: 1px solid var(--border);
 		color: var(--text);
@@ -251,6 +252,15 @@
 	}
 	.num {
 		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
+	/*
+	 * El encabezado se alinea con su columna. `.num` sobre un `th` perdía contra
+	 * `.data-table thead th`, que tiene más especificidad: los títulos de las
+	 * columnas de plata quedaban a la izquierda y los montos a la derecha, sin
+	 * nada que los relacionara. Con `.data-table` delante, la clase gana.
+	 */
+	.data-table .num {
 		text-align: right;
 	}
 }

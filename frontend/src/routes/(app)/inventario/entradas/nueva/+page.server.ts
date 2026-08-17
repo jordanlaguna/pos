@@ -4,8 +4,8 @@ import { requireAdmin } from '$lib/server/auth';
 import { parseHaciendaXml } from '$lib/server/import/hacienda';
 import { parseSpreadsheet } from '$lib/server/import/spreadsheet';
 import { matchLines } from '$lib/server/import/match';
-import { formError } from '$lib/validation';
-import type { Category, ParseResult, Product } from '$lib/types';
+import { formError } from '$lib/application/validation';
+import type { Category, ParseResult, Product } from '$lib/domain/types';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Tope de tamaño. Una factura de proveedor no llega ni de lejos a esto. */

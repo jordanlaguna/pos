@@ -12,7 +12,7 @@ from app.schemas.schemas_cash import (
     MovementResponse,
 )
 from app.services import crud_cash
-from app.utils.auth_dependency import get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user
 
 router = APIRouter()
 
@@ -29,12 +29,12 @@ def get_db():
 def current_session(
     user_id: int | None = None,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     """Turno abierto del usuario. `null` si la caja está cerrada."""
     target = user_id or current.id_user
     # Un cajero no puede espiar la caja de otro; el admin sí necesita hacerlo.
-    if target != current.id_user and current.role != "admin":
+    if target != current.id_user and current.rol != "admin":
         raise HTTPException(status_code=403, detail="Solo podés consultar tu propia caja.")
 
     session = crud_cash.get_open_session(db, target)
@@ -45,9 +45,9 @@ def current_session(
 def open_cash(
     payload: CashOpen,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
-    if payload.user_id != current.id_user and current.role != "admin":
+    if payload.user_id != current.id_user and current.rol != "admin":
         raise HTTPException(status_code=403, detail="Solo podés abrir tu propia caja.")
     return crud_cash.open_session(db, payload.user_id, payload.opening_amount, payload.notes)
 
@@ -56,9 +56,9 @@ def open_cash(
 def add_movement(
     payload: MovementCreate,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
-    if payload.user_id != current.id_user and current.role != "admin":
+    if payload.user_id != current.id_user and current.rol != "admin":
         raise HTTPException(status_code=403, detail="Solo podés mover efectivo de tu propia caja.")
     return crud_cash.add_movement(
         db, payload.user_id, payload.type, payload.amount, payload.reason
@@ -69,9 +69,9 @@ def add_movement(
 def close_cash(
     payload: CashClose,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
-    if payload.user_id != current.id_user and current.role != "admin":
+    if payload.user_id != current.id_user and current.rol != "admin":
         raise HTTPException(status_code=403, detail="Solo podés cerrar tu propia caja.")
     return crud_cash.close_session(db, payload.user_id, payload.closing_amount, payload.notes)
 
@@ -80,11 +80,11 @@ def close_cash(
 def list_sessions(
     user_id: int | None = None,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     """Historial de turnos. El cajero solo ve los suyos."""
     query = db.query(CashSession)
-    if current.role != "admin":
+    if current.rol != "admin":
         query = query.filter(CashSession.user_id == current.id_user)
     elif user_id:
         query = query.filter(CashSession.user_id == user_id)
@@ -97,11 +97,11 @@ def list_sessions(
 def get_session(
     session_id: int,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     session = db.query(CashSession).filter(CashSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Sesión de caja no encontrada")
-    if session.user_id != current.id_user and current.role != "admin":
+    if session.user_id != current.id_user and current.rol != "admin":
         raise HTTPException(status_code=403, detail="No podés consultar esta caja.")
     return crud_cash.build_report(db, session)

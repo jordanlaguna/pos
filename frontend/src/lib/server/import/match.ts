@@ -1,4 +1,4 @@
-import type { ParsedLine, Product } from '$lib/types';
+import type { ParsedLine, Product } from '$lib/domain/types';
 
 /**
  * Empareja las líneas de un archivo con el catálogo.
@@ -26,7 +26,7 @@ export function matchLines(lines: ParsedLine[], products: Product[]): ParsedLine
 	const byBarcode = new Map<string, Product>();
 	const byName = new Map<string, Product>();
 	// Nombres que se repiten en el catálogo: emparejar por nombre sería una
-	// moneda al aire, así que se descartan como criterio.
+	// currency al aire, así que se descartan como criterio.
 	const ambiguousNames = new Set<string>();
 
 	for (const product of products) {

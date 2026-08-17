@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { submit } from '$lib/forms';
-	import Icon from '$lib/components/Icon.svelte';
-	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import Field from '$lib/components/Field.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import Spinner from '$lib/components/Spinner.svelte';
-	import { toasts } from '$lib/stores/toast.svelte';
-	import { currencySettings, formatMoney, parseAmount, round2 } from '$lib/money';
-	import { formatDateTime, formatInt, formatTime } from '$lib/format';
+	import { submit } from '$lib/ui/forms';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import PageHeader from '$lib/ui/components/PageHeader.svelte';
+	import Modal from '$lib/ui/components/Modal.svelte';
+	import Field from '$lib/ui/components/Field.svelte';
+	import EmptyState from '$lib/ui/components/EmptyState.svelte';
+	import Spinner from '$lib/ui/components/Spinner.svelte';
+	import { toasts } from '$lib/ui/stores/toast.svelte';
+	import { currencySettings, formatMoney, parseAmount, round2 } from '$lib/domain/money';
+	import { formatDateTime, formatInt, formatTime } from '$lib/ui/format';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -28,10 +28,10 @@
 	/*
 	 * La moneda se nombra en los campos donde se escribe efectivo. Quien cuenta la
 	 * gaveta está tecleando una cifra suelta, sin símbolo, y tiene que ver en qué
-	 * moneda se la están pidiendo: la configura el dueño del sistema y no siempre
+	 * currency se la están pidiendo: la configura el dueño del sistema y no siempre
 	 * es la del país donde se escribió este código.
 	 */
-	const moneda = $derived(currencySettings());
+	const currency = $derived(currencySettings());
 
 	// Diferencia en vivo mientras el cajero cuenta la gaveta, antes de confirmar.
 	const counted = $derived(parseAmount(countedInput) ?? 0);
@@ -351,16 +351,16 @@
 		class="space-y-4"
 	>
 		<Field
-			label="Monto de apertura ({moneda.codigo})"
+			label="Monto de apertura ({currency.code})"
 			name="opening_amount"
 			value="0"
 			inputmode="decimal"
 			icon="wallet"
 			required
 			error={form?.errors?.opening_amount}
-			hint="Efectivo con el que inicia la gaveta, en {moneda.codigo}."
+			hint="Efectivo con el que inicia la gaveta, en {currency.code}."
 		>
-			<span class="pr-1 text-sm font-semibold text-[var(--text-subtle)]">{moneda.simbolo}</span>
+			<span class="pr-1 text-sm font-semibold text-[var(--text-subtle)]">{currency.symbol}</span>
 		</Field>
 		<Field
 			label="Notas (opcional)"
@@ -397,14 +397,14 @@
 		class="space-y-4">
 		<input type="hidden" name="type" value={moveType} />
 		<Field
-			label="Monto ({moneda.codigo})"
+			label="Monto ({currency.code})"
 			name="amount"
 			inputmode="decimal"
 			icon="wallet"
 			required
 			error={form?.errors?.amount}
 		>
-			<span class="pr-1 text-sm font-semibold text-[var(--text-subtle)]">{moneda.simbolo}</span>
+			<span class="pr-1 text-sm font-semibold text-[var(--text-subtle)]">{currency.symbol}</span>
 		</Field>
 		<Field
 			label="Motivo"
@@ -454,7 +454,7 @@
 		</div>
 
 		<Field
-			label="Efectivo contado ({moneda.codigo})"
+			label="Efectivo contado ({currency.code})"
 			name="closing_amount"
 			bind:value={countedInput}
 			inputmode="decimal"
@@ -462,7 +462,7 @@
 			required
 			error={form?.errors?.closing_amount}
 		>
-			<span class="pr-1 text-sm font-semibold text-[var(--text-subtle)]">{moneda.simbolo}</span>
+			<span class="pr-1 text-sm font-semibold text-[var(--text-subtle)]">{currency.symbol}</span>
 		</Field>
 
 		<!-- La diferencia se ve antes de confirmar: nadie cierra a ciegas. -->

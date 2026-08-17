@@ -2,6 +2,16 @@
 
 Todo se resuelve con SQL agregado en vez de traer las filas y sumarlas en
 Python: con unos meses de operación son decenas de miles de ventas.
+
+**Acá el filtro por compañía va escrito a mano** (T-209). El automático de
+`app/utils/tenancy.py` inyecta el criterio en las consultas que *cargan
+entidades*; estas no cargan ninguna —piden `COUNT`, `SUM`, `DATE`— y por eso
+quedan fuera de su alcance. Es el límite conocido que plan §3.3 anota como
+riesgo, y un reporte que se lo saltara sumaría las ventas de todas las
+compañías en una cifra que se ve perfectamente normal.
+
+Cada consulta de este módulo lleva su `company_id ==` visible. Si mañana se
+agrega otra, tiene que llevarlo también: no hay red debajo.
 """
 
 from datetime import datetime, timedelta
@@ -14,6 +24,8 @@ from app.models.model_product import Product
 from app.models.model_return import Return
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
+from app.utils import clock
+from app.utils.tenancy import compania_actual
 
 
 def _money(value) -> float:
@@ -22,7 +34,7 @@ def _money(value) -> float:
 
 def parse_range(date_from: str | None, date_to: str | None) -> tuple[datetime, datetime, str, str]:
     """Convierte `YYYY-MM-DD` en un rango [00:00:00, 23:59:59] inclusive."""
-    today = datetime.now().date()
+    today = clock.today()
     to_date = datetime.strptime(date_to, "%Y-%m-%d").date() if date_to else today
     from_date = datetime.strptime(date_from, "%Y-%m-%d").date() if date_from else to_date
 
@@ -41,7 +53,11 @@ def _sales_totals(db: Session, start: datetime, end: datetime) -> tuple[int, Dec
             func.coalesce(func.sum(Sale.total), 0),
             func.coalesce(func.sum(Sale.tax), 0),
         )
-        .filter(Sale.created_at >= start, Sale.created_at <= end)
+        .filter(
+            Sale.company_id == compania_actual(),
+            Sale.created_at >= start,
+            Sale.created_at <= end,
+        )
         .one()
     )
     return int(row[0]), Decimal(str(row[1])), Decimal(str(row[2]))
@@ -55,7 +71,11 @@ def summary(db: Session, date_from: str | None, date_to: str | None) -> dict:
     returns_total = Decimal(
         str(
             db.query(func.coalesce(func.sum(Return.total), 0))
-            .filter(Return.created_at >= start, Return.created_at <= end)
+            .filter(
+                Return.company_id == compania_actual(),
+                Return.created_at >= start,
+                Return.created_at <= end,
+            )
             .scalar()
         )
     )
@@ -63,7 +83,11 @@ def summary(db: Session, date_from: str | None, date_to: str | None) -> dict:
     items_sold = (
         db.query(func.coalesce(func.sum(SaleDetail.quantity), 0))
         .join(Sale, Sale.id == SaleDetail.sale_id)
-        .filter(Sale.created_at >= start, Sale.created_at <= end)
+        .filter(
+            Sale.company_id == compania_actual(),
+            Sale.created_at >= start,
+            Sale.created_at <= end,
+        )
         .scalar()
     )
 
@@ -98,7 +122,11 @@ def top_products(db: Session, date_from: str | None, date_to: str | None, limit:
         )
         .join(Sale, Sale.id == SaleDetail.sale_id)
         .join(Product, Product.id_product == SaleDetail.product_id)
-        .filter(Sale.created_at >= start, Sale.created_at <= end)
+        .filter(
+            Sale.company_id == compania_actual(),
+            Sale.created_at >= start,
+            Sale.created_at <= end,
+        )
         .group_by(SaleDetail.product_id, Product.name)
         .order_by(func.sum(SaleDetail.subtotal).desc())
         .limit(limit)
@@ -125,7 +153,11 @@ def sales_by_day(db: Session, date_from: str | None, date_to: str | None) -> lis
             func.count(Sale.id),
             func.coalesce(func.sum(Sale.total), 0),
         )
-        .filter(Sale.created_at >= start, Sale.created_at <= end)
+        .filter(
+            Sale.company_id == compania_actual(),
+            Sale.created_at >= start,
+            Sale.created_at <= end,
+        )
         .group_by(func.date(Sale.created_at))
         .all()
     )
@@ -154,7 +186,11 @@ def by_payment_method(db: Session, date_from: str | None, date_to: str | None) -
             func.count(Sale.id),
             func.coalesce(func.sum(Sale.total), 0),
         )
-        .filter(Sale.created_at >= start, Sale.created_at <= end)
+        .filter(
+            Sale.company_id == compania_actual(),
+            Sale.created_at >= start,
+            Sale.created_at <= end,
+        )
         .group_by(Sale.payment_method)
         .order_by(func.sum(Sale.total).desc())
         .all()
@@ -168,7 +204,7 @@ def by_payment_method(db: Session, date_from: str | None, date_to: str | None) -
 def low_stock(db: Session, threshold: int = 10) -> list[Product]:
     return (
         db.query(Product)
-        .filter(Product.stock <= threshold)
+        .filter(Product.company_id == compania_actual(), Product.stock <= threshold)
         .order_by(Product.stock.asc())
         .all()
     )

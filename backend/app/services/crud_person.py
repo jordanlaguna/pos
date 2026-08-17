@@ -18,16 +18,19 @@ def create_person(db: Session, person: PersonRegister):
     db.add(db_person)
     db.flush()  # asigna id_person sin cerrar la transacción
 
-    # El primer usuario del sistema es administrador —si no, nadie podría
-    # gestionar nada—. A partir de ahí todos entran como cajero y el ascenso
-    # lo concede un admin explícitamente.
-    is_first_user = db.query(User).count() == 0
-
+    # El usuario nace SIN membresía, o sea sin compañía a la que entrar.
+    #
+    # Antes acá se decidía el rol —el primero administrador, los demás
+    # cajeros—, y con una sola compañía eso alcanzaba. Con la base compartida
+    # ya no: no hay ninguna compañía a la que este registro pueda pertenecer
+    # sin que alguien lo diga. Quien se registra puede autenticarse, ve que no
+    # tiene compañías y no puede tocar nada. Es el comportamiento correcto —una
+    # puerta abierta a la nada— y es también la razón por la que hace falta
+    # resolver T-903: cómo se concede el primer administrador de una compañía.
     db_user = User(
         email=person.email,
         password=hash_password(person.password),
         id_person=db_person.id_person,
-        role="admin" if is_first_user else "cajero",
     )
     db.add(db_user)
     db.commit()

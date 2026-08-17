@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { api, apiSafe, ApiError } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
 import { USE_MOCK } from '$lib/server/config';
-import type { Client, Product, Sale, SaleDetail, SaleReturn } from '$lib/types';
+import type { Client, Product, Sale, SaleDetail, SaleReturn } from '$lib/domain/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params, url }) => {

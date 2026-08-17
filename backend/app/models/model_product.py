@@ -1,8 +1,10 @@
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+
 from app.database.database import Base
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
+from app.utils.tenancy import TenantMixin
 
 
-class Product(Base):
+class Product(TenantMixin, Base):
     __tablename__ = "products"
 
     id_product = Column(Integer, primary_key=True, index=True)
@@ -14,3 +16,11 @@ class Product(Base):
     barcode = Column(String(100), nullable=True, index=True)
     created_at = Column(DateTime, nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
+
+    # Antes solo tenía índice. Ahora es único POR COMPAÑÍA, que es lo que el
+    # escáner necesita —una lectura, un producto— sin impedir que dos negocios
+    # vendan el mismo artículo. Los nulos no chocan entre sí en MySQL, así que
+    # los productos sin código de barras siguen conviviendo.
+    __table_args__ = (
+        UniqueConstraint("company_id", "barcode", name="uq_products_company_barcode"),
+    )

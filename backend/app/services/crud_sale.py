@@ -1,24 +1,39 @@
-"""Registro de ventas.
+"""Registro de ventas — adaptador.
 
-CORRECCIÓN IMPORTANTE respecto de la versión original
------------------------------------------------------
-La versión anterior hacía `db.commit()` de la cabecera de la venta ANTES de
-validar el stock de los productos, y su `except` solo atrapaba `SQLAlchemyError`.
-Consecuencia: si un producto no tenía existencias, el `HTTPException` subía sin
-pasar por el rollback y **la venta quedaba guardada en la base sin líneas de
-detalle y sin descontar inventario**. Cada intento fallido dejaba una factura
-fantasma que además cuadraba mal los reportes.
+La lógica se mudó a `app/application/use_cases/register_sale.py`. Lo que queda
+acá es la traducción entre HTTP y el caso de uso: armar los puertos a partir de
+la sesión de SQLAlchemy y convertir los «no» del dominio en códigos de estado.
 
-Aquí se valida todo primero y se escribe al final, en una sola transacción:
-o entra la venta completa, o no entra nada.
+Los mensajes son los mismos que antes, palabra por palabra: los ve el cajero y
+los fijan las pruebas de caracterización.
 """
-
-from datetime import datetime
-from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.application.use_cases.register_sale import (
+    ProductNotFound,
+    ProductWithoutPrice,
+    RegisterSale,
+    RequestedLine,
+    SaleRequest,
+)
+from app.domain.errors import (
+    DuplicateSaleNumber,
+    EmptySale,
+    InsufficientPayment,
+    InsufficientStock,
+    InvalidQuantity,
+    TotalsMismatch,
+)
+from app.domain.money import Money
+from app.infrastructure.clock import SystemClock
+from app.infrastructure.persistence.sqlalchemy_repositories import (
+    SqlAlchemyProductRepository,
+    SqlAlchemySaleRepository,
+    SqlAlchemySettingsRepository,
+    SqlAlchemyUnitOfWork,
+)
 from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
@@ -26,106 +41,97 @@ from app.schemas.schemas_sales import SaleRegister, SaleRegisterSuccess
 
 
 def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
-    if not sale.products:
-        raise HTTPException(status_code=400, detail="La venta debe contener al menos un producto.")
+    productos = SqlAlchemyProductRepository(db)
+    caso = RegisterSale(
+        products=productos,
+        sales=SqlAlchemySaleRepository(db),
+        settings=SqlAlchemySettingsRepository(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+    )
 
-    # ---------------------------------------------------------------- validar
-    # Nada se escribe todavía. Se bloquean las filas de producto para que dos
-    # cajas no puedan vender la última unidad al mismo tiempo.
-    validated = []
-    for line in sale.products:
-        quantity = line.stock
-        if not line.id_product or quantity <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Producto ID {line.id_product} no válido o cantidad insuficiente.",
-            )
+    peticion = SaleRequest(
+        sale_number=sale.sale_number,
+        client_id=sale.client_id,
+        user_id=sale.user_id,
+        subtotal=Money(sale.subtotal),
+        tax=Money(sale.tax),
+        total=Money(sale.total),
+        payment_method=sale.payment_method,
+        cash_received=Money(sale.cash_received),
+        change_given=Money(sale.change_given),
+        # `stock` es la CANTIDAD vendida, no el inventario. El nombre viene del
+        # cliente WinForms y se conserva en el contrato del API.
+        lines=[RequestedLine(l.id_product, l.stock) for l in sale.products],
+    )
 
-        product = (
-            db.query(Product)
-            .filter(Product.id_product == line.id_product)
-            .with_for_update()
-            .first()
-        )
-        if not product:
-            raise HTTPException(
-                status_code=404, detail=f"Producto ID {line.id_product} no encontrado."
-            )
-        if product.price is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"El producto ID {line.id_product} no tiene un precio definido.",
-            )
-        if product.stock < quantity:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Stock insuficiente para {product.name}: "
-                    f"quedan {product.stock} y se piden {quantity}."
-                ),
-            )
-
-        unit_price = Decimal(str(product.price))
-        validated.append(
-            {
-                "product": product,
-                "quantity": quantity,
-                "unit_price": unit_price,
-                "subtotal": (unit_price * quantity).quantize(Decimal("0.01")),
-            }
-        )
-
-    # ---------------------------------------------------------------- escribir
     try:
-        db_sale = Sale(
-            sale_number=sale.sale_number,
-            client_id=sale.client_id,
-            user_id=sale.user_id,
-            total=sale.total,
-            subtotal=sale.subtotal,
-            tax=sale.tax,
-            payment_method=sale.payment_method,
-            cash_received=sale.cash_received,
-            change_given=sale.change_given,
-            # La hora la pone el servidor, no el cliente.
-            #
-            # El turno de caja se delimita comparando `sales.created_at` contra
-            # `cash_sessions.opened_at`, y esa marca la escribe este mismo
-            # backend. Si la venta trajera la hora del equipo del cajero, bastaría
-            # con que ese reloj fuera unos segundos atrás para que la venta
-            # quedara fechada ANTES de la apertura y desapareciera del arqueo, sin
-            # ningún error visible. Dos relojes no se pueden comparar; uno sí.
-            created_at=datetime.now(),
+        resultado = caso(peticion)
+
+    except DuplicateSaleNumber:
+        raise HTTPException(
+            status_code=400, detail="Ya existe una venta con este número de venta."
+        ) from None
+    except EmptySale:
+        raise HTTPException(
+            status_code=400, detail="La venta debe contener al menos un producto."
+        ) from None
+    except InvalidQuantity:
+        # El mensaje nombra el producto que venía mal, como antes.
+        malo = next(
+            (l for l in sale.products if not l.id_product or l.stock <= 0), None
         )
-        db.add(db_sale)
-        # flush, no commit: asigna el id sin cerrar la transacción, de modo que
-        # un fallo posterior revierta también la cabecera.
-        db.flush()
-
-        for value in validated:
-            db.add(
-                SaleDetail(
-                    sale_id=db_sale.id,
-                    product_id=value["product"].id_product,
-                    quantity=value["quantity"],
-                    unit_price=value["unit_price"],
-                    subtotal=value["subtotal"],
-                )
-            )
-            value["product"].stock -= value["quantity"]
-
-        db.commit()
-        db.refresh(db_sale)
-
+        raise HTTPException(
+            status_code=400,
+            detail=f"Producto ID {malo.id_product if malo else None} no válido o cantidad insuficiente.",
+        ) from None
+    except ProductNotFound as e:
+        raise HTTPException(
+            status_code=404, detail=f"Producto ID {e.product_id} no encontrado."
+        ) from None
+    except ProductWithoutPrice as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El producto ID {e.product_id} no tiene un precio definido.",
+        ) from None
+    except InsufficientStock as e:
+        producto = productos.get(e.product_id)
+        nombre = producto.name if producto else f"el producto {e.product_id}"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Stock insuficiente para {nombre}: "
+                f"quedan {e.available} y se piden {e.requested}."
+            ),
+        ) from None
+    except TotalsMismatch as e:
+        # Se dicen las dos cifras: quien lo lea tiene que poder ver cuál está
+        # mal sin abrir la base.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"El {e.campo} no coincide con el que calcula el servidor: "
+                f"la caja dice {e.declarado} y el servidor {e.calculado}. "
+                f"Recargá el catálogo: los precios pueden haber cambiado."
+            ),
+        ) from None
+    except InsufficientPayment as e:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"El efectivo recibido ({e.received}) no puede ser menor "
+                f"al total de la venta ({e.total})."
+            ),
+        ) from None
     except HTTPException:
-        db.rollback()
         raise
     except Exception as exc:
-        # `Exception` y no `SQLAlchemyError`: cualquier fallo debe revertir.
-        db.rollback()
+        # Cualquier otro fallo ya revirtió dentro de la unidad de trabajo.
         raise HTTPException(status_code=500, detail=f"Error al registrar la venta: {exc}")
 
-    return SaleRegisterSuccess(message="Venta registrada exitosamente", id_sale=db_sale.id)
+    return SaleRegisterSuccess(
+        message="Venta registrada exitosamente", id_sale=resultado.id_sale
+    )
 
 
 def get_all_sales(db: Session):

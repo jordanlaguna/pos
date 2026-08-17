@@ -15,7 +15,7 @@ from app.models.model_sales import Sale
 from app.models.model_user import User
 from app.schemas.schemas_sales import SaleDetailResponse, SaleRegister, SaleRegisterSuccess, SalesList
 from app.services import crud_sale
-from app.utils.auth_dependency import get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user
 
 router = APIRouter()
 
@@ -32,26 +32,25 @@ def get_db():
 def register_sale(
     sale: SaleRegister,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
-    existing = db.query(Sale).filter(Sale.sale_number == sale.sale_number).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Ya existe una venta con este número de venta.")
-    if sale.cash_received < sale.total:
-        raise HTTPException(
-            status_code=400,
-            detail="El efectivo recibido no puede ser menor al total de la venta.",
-        )
-    if sale.change_given < 0:
-        raise HTTPException(status_code=400, detail="El cambio dado no puede ser negativo.")
-
+    # Este endpoint solo transporta (T-110). Las reglas se fueron al caso de
+    # uso, y con motivo:
+    #
+    # - **El número de factura único** es una regla de la venta, no del
+    #   transporte: dos ventas con el mismo consecutivo son un problema de
+    #   Hacienda, no de HTTP.
+    # - **El efectivo y el vuelto** se comprobaban contra el total que mandaba
+    #   el POS, que es justo el número del que ya no se fía nadie. Ahora se
+    #   miden contra el total que calcula el servidor, y el vuelto ni se
+    #   recibe: se calcula.
     return crud_sale.create_sale(db=db, sale=sale)
 
 
 @router.get("/sales_list", response_model=list[SalesList])
 def get_all_sales(
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     return crud_sale.get_all_sales(db=db)
 
@@ -60,7 +59,7 @@ def get_all_sales(
 def get_sale_detail(
     sale_id: int,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     """Venta con sus líneas de detalle.
 
@@ -77,7 +76,7 @@ def get_sale_detail(
 def generate_invoice_pdf(
     sale_id: int,
     db: Session = Depends(get_db),
-    current: User = Depends(get_current_user),
+    current: Sesion = Depends(get_current_user),
 ):
     sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not sale:

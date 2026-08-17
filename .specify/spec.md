@@ -75,11 +75,31 @@ se evalúa al abrir la pantalla de ventas, no al cobrar.
 | **Administrador** | Su compañía | Configura el negocio, el catálogo, los usuarios, ve reportes, factura. |
 | **Cajero** | Su compañía, su terminal | Vende, abre y cierra caja, hace devoluciones. |
 
-**RN-3.** Un usuario pertenece a **una** compañía. El correo es único en todo el
-sistema, así que el login no pregunta a qué compañía se entra.
+**RN-3.** Una persona puede pertenecer a **varias** compañías. El correo
+identifica a la persona y sigue siendo único en todo el sistema; lo que se
+repite es la **membresía**: una fila por (persona, compañía) con **su propio
+rol**. El contador que atiende tres locales entra a los tres con la misma clave,
+y puede ser administrador en el suyo y cajero en otro.
 
 **RN-4.** Soporte no tiene compañía. Para ver los datos de una tiene que
 *entrar como* esa compañía, y eso queda registrado con fecha, usuario y motivo.
+
+**RN-24.** La compañía se elige **después** de autenticarse, nunca antes. La
+lista de compañías de un correo no se le muestra a quien todavía no probó ser
+esa persona: es la cartera de clientes del producto.
+
+**RN-25.** Con una sola compañía disponible no se pregunta nada: se entra
+directo. Un cajero abre caja todos los días a la misma hora y no puede pagar un
+clic diario por una posibilidad que no tiene. La pantalla aparece solo cuando
+hay de dónde escoger.
+
+**RN-26.** Entre autenticarse y elegir compañía la sesión **no lee ni escribe
+datos de negocio**. Es un estado intermedio, corto y sin permisos: solo sirve
+para listar las compañías propias y elegir una.
+
+**RN-27.** Cambiar de compañía sin cerrar sesión **descarta el estado de la
+anterior**: ventas en espera, carrito y configuración en memoria. Un producto de
+una compañía no puede terminar en la factura de otra.
 
 ---
 
@@ -240,15 +260,35 @@ tablas, columnas, rutas de API. Es lo que ya hacía el código heredado
 (`products`, `sales`, `cash_sessions`) y mezclarlo obliga a traducir mentalmente
 en cada línea.
 
-**RN-22.** La **interfaz** va en español de Costa Rica, con voseo. Sin
-excepción: la usan cajeros costarricenses.
+**RN-22.** La **interfaz** se traduce: español, inglés y portugués. Ningún
+texto que ve una persona se escribe dentro de un componente; todos viven en
+catálogos.
+
+El español va en **usted**, no en voseo. La versión anterior de esta regla decía
+«español de Costa Rica, con voseo», y eso era una suposición mía sobre el
+mercado: en Costa Rica el ustedeo es más común, y además «Cobrá rápido» le suena
+extranjero a un usuario mexicano o colombiano. Un solo español en usted sirve a
+toda la región y ahorra un catálogo.
 
 **RN-23.** La **documentación y los comentarios** van en español, como el resto
 de `.specify/`, `CLAUDE.md` y `progress.json`.
 
-Hay deuda conocida: `settings.ts`, la pantalla de configuración y los
-componentes de documento usan identificadores en español (`negocio`, `moneda`,
-`documento`, `plantilla`). Se corrigen al reorganizar por capas.
+**RN-28.** El idioma tiene dos niveles: la **compañía** fija el suyo al darse de
+alta y cada **persona** puede elegir otro para su sesión. Sin el primero, el
+administrador de una compañía nueva arranca en el idioma equivocado; sin el
+segundo, un negocio costarricense no puede contratar a una cajera nicaragüense
+que prefiera otra cosa.
+
+**RN-29.** El idioma del **documento impreso no es el de la pantalla**. La
+factura es para el cliente y para Hacienda, no para el cajero: una compañía
+costarricense emite en español aunque su cajero use el POS en portugués. Son dos
+ajustes distintos y el del documento vive en Configuración.
+
+**RN-30.** El **backend no escribe texto para una persona**. Devuelve un código
+y los datos —`{"code": "insufficient_stock", "product": "Arroz", "available": 2}`—
+y el POS arma la frase. Hoy produce 68 mensajes en español que el POS muestra
+tal cual, y con eso un cajero brasileño vería media aplicación en su idioma y
+los errores en español, que es justo cuando más necesita entender.
 
 ## 6. Requisitos funcionales
 
@@ -261,6 +301,12 @@ componentes de documento usan identificadores en español (`negocio`, `moneda`,
   barras, número de factura, nombre de categoría.
 - **RF-4** Los datos existentes pasan a ser la compañía (afiliado 1, compañía 1)
   sin pérdida.
+- **RF-27** Pantalla de selección de compañía después del login. Lista las
+  compañías de la persona con su estado; las bloqueadas se muestran **con el
+  motivo**, no se ocultan —quien no puede entrar tiene que saber por qué—. Se
+  salta cuando hay una sola disponible (RN-25).
+- **RF-28** Cambiar de compañía desde el menú, sin volver a escribir la
+  contraseña y sin arrastrar nada de la anterior (RN-27).
 
 ### Panel de soporte
 
@@ -309,8 +355,12 @@ componentes de documento usan identificadores en español (`negocio`, `moneda`,
 ## 7. Requisitos no funcionales
 
 - **RNF-1 Aislamiento.** Ninguna respuesta contiene datos de otra compañía. Se
-  verifica con pruebas automatizadas que intentan cruzarse a propósito.
-- **RNF-2 Idioma.** Español de Costa Rica, con voseo. Sin excepción.
+  verifica con pruebas automatizadas que intentan cruzarse a propósito. **Sin
+  compañía en la sesión no se responde nada**: la ausencia de filtro es un
+  error, no un permiso (ver plan §3.3).
+- **RNF-2 Idioma.** Español, inglés y portugués (de Brasil). El español en
+  **usted**. Ningún texto visible queda escrito dentro de un componente: se
+  verifica con una prueba que recorre las plantillas buscando cadenas sueltas.
 - **RNF-3 Rendimiento.** La grilla de ventas responde en menos de 100 ms con
   5 000 productos. La búsqueda por código de barras es instantánea.
 - **RNF-4 Sin internet.** El POS funciona en LAN sin salida a internet. Lo que

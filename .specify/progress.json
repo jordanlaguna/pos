@@ -160,6 +160,76 @@
       "que": "El archivo de paquete se llamaba __inti__.py (la t y la i cambiadas) y app/utils/ no tenía ninguno.",
       "impacto": "Ninguno visible: Python 3 trata un directorio sin __init__.py como paquete de espacio de nombres, así que funcionaba de casualidad. Corregido al reorganizar el repositorio.",
       "encontrado": "verificando que backend/ arrancara solo, con un chequeo de importaciones internas"
+    },
+    {
+      "id": 12,
+      "donde": "frontend/src/app.css — .data-table",
+      "que": "La clase .num alinea a la derecha, pero en un <th> perdía contra `.data-table thead th { text-align: left }`, que tiene más especificidad. El título de cada columna de plata quedaba a la izquierda y los montos a la derecha.",
+      "impacto": "Visible en toda tabla con columnas numéricas —facturas, caja, inventario, entradas de mercadería, devoluciones y panel—: el encabezado no estaba sobre su columna. No afecta datos. Corregido con `.data-table .num`, que gana por llevar dos clases; además `tfoot td` ahora recibe el mismo relleno que `tbody td`, que le faltaba.",
+      "encontrado": "reportado por el usuario desde una captura de /facturas; verificado después en 41 columnas visibles de 8 pantallas, 0 desalineadas"
+    },
+    {
+      "id": 13,
+      "donde": "frontend/src/lib/settings.ts — mergeSettings",
+      "que": "`num()` usaba `Number(value)` a secas para convertir. `Number(null)`, `Number('')`, `Number([])` y `Number(false)` valen 0, y el 0 cae dentro de todo rango permitido, así que se aceptaban como valor bueno en vez de caer al de fábrica. Además `DEFAULT_SETTINGS.moneda` arrastraba el campo `nombre` del preajuste, escondido por un `as CurrencySettings`.",
+      "impacto": "Una fila de configuración con `impuesto: { tasa: null }` —guardada a medias, o escrita por una versión vieja— hacía que el POS cobrara **0 % de impuesto** en silencio, en cada venta, hasta que alguien revisara una factura. Lo mismo con `decimales: null`, que dejaba los montos sin céntimos. Contradecía el contrato escrito de la propia función: «cada campo malo se reemplaza por el de fábrica».",
+      "encontrado": "escribiendo las pruebas de unidad de mergeSettings (T-102)"
+    },
+    {
+      "id": 14,
+      "donde": "backend app/services/ — todas las escrituras de fecha",
+      "que": "Las columnas de fecha son `DATETIME`, sin fracción de segundo, y MySQL **redondea** al guardar: `10:00:05.700` queda almacenado como `10:00:06`. Python escribía con microsegundos, así que una venta podía quedar guardada hasta medio segundo en el futuro.",
+      "impacto": "El arqueo delimita las ventas del turno con `created_at <= ahora`, y una venta con marca futura no entra en esa ventana: desaparecía de su propio turno hasta que el reloj la alcanzara. Si la caja se cerraba dentro de ese medio segundo, la venta no aparecía en NINGÚN turno y el faltante quedaba sin explicación. Corregido con `app/utils/clock.py`, un único punto donde se lee el reloj, que trunca al segundo; T-107 lo convierte en el puerto `Clock`.",
+      "encontrado": "las pruebas de caracterización de T-104, al bajar de 142 s a 1,8 s: con la suite lenta el reloj siempre alcanzaba a la venta y el defecto no se veía"
+    },
+    {
+      "id": 15,
+      "donde": "backend app/domain/money.py y frontend src/lib/money.ts",
+      "que": "Los dos lados redondeaban distinto. El backend usaba `ROUND_HALF_EVEN` —el redondeo bancario, que es el valor por omisión de Python y que nadie eligió— y el POS medio hacia arriba. Además `round2` del POS usaba `Math.round`, que redondea hacia +∞: los negativos se acercaban al cero en vez de alejarse, así que −1,005 daba −1,00.",
+      "impacto": "La misma venta daba 2,66 en el servidor y 2,67 en la pantalla. Mientras el servidor guardaba la cabecera que le mandaba el POS, la diferencia quedaba escondida; al empezar el servidor a verificar los totales (defecto 16), un céntimo de desacuerdo habría rechazado ventas buenas. Unificado en `ROUND_HALF_UP`, el redondeo comercial, que es el que hacía el WinForms original.",
+      "encontrado": "extrayendo el dominio, al tener que escribir en un solo lugar cuál era el modo"
+    },
+    {
+      "id": 16,
+      "donde": "backend app/services/crud_sale.py y app/router/sale_routes.py",
+      "que": "El servidor recalculaba los subtotales de línea con sus propios precios, pero guardaba subtotal, impuesto y total **tal como se los mandaba el cliente**, sin comprobar que correspondieran a esas líneas. El vuelto también se guardaba tal cual. Las validaciones de «el efectivo alcanza» y «el vuelto no es negativo» se hacían contra el total del cliente.",
+      "impacto": "Una lista de precios vieja en una caja, un carrito desincronizado o un cliente alterado dejaban en la base una venta cuyos totales no correspondían a sus propias líneas —y con ella un arqueo y unos reportes que no cuadran, sin ningún error visible—. Contradecía la regla del proyecto: el dinero se calcula en el servidor. Ahora el servidor recalcula todo, guarda lo suyo y rechaza la venta si lo declarado difiere en más de un céntimo.",
+      "encontrado": "leyendo crud_sale.py para extraer el caso de uso"
+    },
+    {
+      "id": 17,
+      "donde": "frontend src/lib/server/settings.ts",
+      "que": "La configuración se guardaba en una variable de módulo, que vive en el proceso de Node y no en la petición. Con varias compañías, la primera que cargara una página le prestaba su nombre, su logo, su moneda y su color de acento a todas las demás durante 30 segundos, y `invalidateSettings()` le borraba la caché a todos.",
+      "impacto": "El POS de un negocio mostrando la marca de otro es la fuga más visible que puede tener un producto multiempresa. Se arregló con un `Map` por compañía y una invalidación de una sola. Es el mismo defecto que el `WHERE` olvidado, del otro lado del BFF.",
+      "encontrado": "estaba anotado en plan §3.6 desde el diseño de F2; se corrigió al implementarla"
+    },
+    {
+      "id": 18,
+      "donde": "backend migrations/002-multiempresa.sql",
+      "que": "El cliente `mysql` negocia latin1 si nadie le dice otra cosa. La migración escribió «Compañía inicial» y en la base quedó «CompaÃ±Ã­a inicial». Las tablas eran utf8mb4; lo que faltaba era declararlo en la CONEXIÓN.",
+      "impacto": "Se vio al primer login contra la base ya migrada, en el nombre de la compañía del menú. Se corrigió la fila y se le agregó `SET NAMES utf8mb4` a la migración para que no vuelva a pasar. Es la clase de error que no rompe nada y se queda para siempre en los datos.",
+      "encontrado": "verificando el POS contra la base viva después de migrar"
+    },
+    {
+      "id": 19,
+      "donde": "backend app/models/model_company.py",
+      "que": "Cinco columnas de las tablas nuevas quedaron con un tipo en el modelo SQLAlchemy y otro en la migración: `activa` y `factura_electronica` como INT en vez de TINYINT(1), los códigos de sucursal y terminal como VARCHAR en vez de CHAR, y `vence_el` como DATETIME en vez de DATE.",
+      "impacto": "Una instalación NUEVA —donde el esquema lo crea `create_all` a partir de los modelos— habría quedado distinta de una migrada, y el mismo código se comportaría distinto en cada una. Se detectó comparando las 155 columnas de las dos y quedó como comprobación permanente.",
+      "encontrado": "comparando el esquema de una base nueva contra el de la copia migrada"
+    },
+    {
+      "id": 20,
+      "donde": "backend app/utils/tenancy.py (límite del mecanismo, no una fuga real)",
+      "que": "`with_loader_criteria` no alcanza a `Query.count()`: `count()` envuelve la consulta en `SELECT count(*) FROM (…)` y el criterio no entra en la envoltura. Con la compañía 1 fijada, `query(Product).all()` devuelve 1 fila y `query(Product).count()` devuelve 2.",
+      "impacto": "No había ninguna fuga en el código —el único `.count()` del backend es sobre `user_companies` y lleva su `company_id`— pero cualquiera que escribiera `db.query(Product).count()` habría contado las filas de todas las compañías sin que nada avisara. Un `.count()` no parece SQL agregado, parece ORM inocente. Se dejó un guardián que recorre el árbol de sintaxis de `app/` y tumba pytest si aparece uno sin filtro a la vista.",
+      "encontrado": "escribiendo la prueba de T-206, que era una de las tres verificaciones que se habían marcado como hechas sin ejecutar"
+    },
+    {
+      "id": 21,
+      "donde": "frontend playwright.config.ts",
+      "que": "`reuseExistingServer: !process.env.CI` hacía que Playwright reutilizara cualquier servidor que ya estuviera escuchando en el 4173. Un `npm run dev` olvidado de horas antes siguió sirviendo el código viejo.",
+      "impacto": "La suite entera —13 pruebas— pasó en verde varias veces seguidas sin haber ejecutado una sola línea del código que se acababa de escribir. Es la peor clase de fallo: no avisa, y da confianza justo cuando no corresponde. Al matar el proceso viejo, 7 de las 13 fallaron de inmediato. Ahora `reuseExistingServer` es `false`: si el puerto está ocupado, Playwright falla y lo dice.",
+      "encontrado": "al reestructurar el mock para T-228: los 13 casos siguieron pasando cuando tenían que fallar, y esa incoherencia era el síntoma"
     }
   ],
   "decisiones": [
@@ -293,6 +363,156 @@
       "tema": "Orden de las fases",
       "decision": "F1 pasa a ser arquitectura limpia y pruebas; multiempresa se corre a F2 y el resto detrás.",
       "porque": "Todo lo que sigue toca dinero, existencias o aislamiento entre compañías, y los invariantes se verifican hoy a mano una vez, lo que no escala a seis fases. Además el filtro por compañía de F2 vive en la capa de persistencia que crea F1."
+    },
+    {
+      "tema": "Una persona puede entrar a varias compañías",
+      "decision": "Se separa identidad de pertenencia: `users` guarda el correo (único global) y una contraseña; `user_companies` guarda la membresía con su propio rol. Se descarta UNIQUE (company_id, email), que era la alternativa planteada.",
+      "porque": "Repetir el correo por compañía no crea una persona con tres accesos: crea tres cuentas que solo coinciden en el texto del correo, con tres contraseñas que se desincronizan. Y obliga a preguntar la compañía ANTES de autenticar, o sea a mostrarle la lista de clientes del producto a cualquiera que escriba una dirección. Con membresías el rol además pasa a ser por compañía, que es lo que se quiere: administrador en el local propio, cajero en otro."
+    },
+    {
+      "tema": "La compañía se elige después de autenticar, y solo si hay de dónde escoger",
+      "decision": "Login en dos pasos con un token de tránsito sin `company_id`, válido pocos minutos y solo para listar las compañías propias y elegir una. Con una sola compañía disponible no hay pantalla: se entra directo.",
+      "porque": "La lista de compañías de un correo es la cartera de clientes; no se muestra a quien todavía no probó ser esa persona. Y un cajero abre caja todos los días a la misma hora: no puede pagar un clic diario por una posibilidad que no tiene."
+    },
+    {
+      "tema": "El filtro por compañía falla cerrado",
+      "decision": "Sin compañía en el `ContextVar`, `do_orm_execute` lanza `SinCompania` en vez de no filtrar. La única salida es la opción explícita `sin_filtro_de_compania`.",
+      "porque": "La versión escrita en el plan decía `if cid is not None: aplicar`, o sea que la ausencia de compañía devolvía las filas de todas —sin error y sin aviso—. Con un usuario por compañía no se alcanzaba nunca, pero la pantalla de selección crea justo ese estado: autenticado y todavía sin compañía. Soporte tenía el mismo agujero al revés: veía todo por omisión y no por haberlo pedido, que es lo contrario de lo que el propio plan decía buscar."
+    },
+    {
+      "tema": "Las pruebas del backend corren contra una pila desechable",
+      "decision": "`backend/docker-compose.test.yml`: proyecto `ventasys-test`, API en el 8002, MySQL en memoria (tmpfs) sin volumen con nombre y credenciales escritas en el archivo.",
+      "porque": "Contra la base de trabajo, cada corrida dejaría productos, ventas y turnos inventados en los reportes de verdad. Con volumen anónimo, `down -v` la borra entera y la corrida siguiente arranca desde cero, que es lo que necesitan varias pruebas: la primera persona registrada queda como administradora. Y sin `.env` que copiar, corre en una máquina recién clonada o en integración continua sin configurar nada."
+    },
+    {
+      "tema": "Los flujos de punta a punta corren contra el modo simulado",
+      "decision": "Playwright apunta a `POS_MOCK=1`, no al backend real. Lo que sí habla con FastAPI y MySQL son las pruebas de caracterización.",
+      "porque": "Lo que verifican esas pruebas es la interfaz, y el modo simulado tiene contrato idéntico al backend por regla del proyecto. Así corren sin levantar Docker, no dejan ventas inventadas en ninguna base, y separan con claridad qué prueba la pantalla de qué prueba el servidor."
+    },
+    {
+      "tema": "Los puertos son Protocol, no clases base",
+      "decision": "`application/ports/` define contratos con `typing.Protocol`. Un repositorio de SQLAlchemy los cumple por tener los métodos, sin heredar ni importar la capa de aplicación.",
+      "porque": "Con una clase base abstracta, el adaptador tendría que importar la aplicación para heredar de ella, y la dependencia apuntaría hacia afuera: exactamente lo que esta arquitectura existe para impedir. Con Protocol, la flecha va solo en un sentido."
+    },
+    {
+      "tema": "La comprobación de capas va como prueba, no como guion",
+      "decision": "`backend/tests/test_layers.py` lee el árbol de sintaxis de cada módulo de `domain/` y `application/` y falla si aparece un import prohibido.",
+      "porque": "Un guion que hay que acordarse de correr no protege nada; una prueba tumba `pytest`, que es la verificación que ya se corre al terminar. Se lee el AST y no se importa cada módulo porque importar ejecuta código, y un módulo que abre la base al importarse haría fallar la prueba por la razón equivocada."
+    },
+    {
+      "tema": "El redondeo no se unificó dentro del refactor",
+      "decision": "El dominio conserva `ROUND_HALF_EVEN`, que es lo que venía haciendo el backend. Queda como constante única (`app/domain/money.py`, `ROUNDING`) y la decisión de unificarlo con el POS —que redondea medio hacia arriba— es T-105b.",
+      "porque": "Mover código y cambiar cuánto se cobra son dos cosas distintas, y mezclarlas es como se cuelan los errores que después nadie encuentra. El desacuerdo es real pero solo se manifiesta en los empates exactos (2,665 da 2,66 en el servidor y 2,67 en pantalla), que con precios en colones enteros no ocurren."
+    },
+    {
+      "tema": "Redondeo comercial en los dos lados",
+      "decision": "`ROUND_HALF_UP` —el empate se aleja del cero— en `app/domain/money.py` y en `round2` de `money.ts`.",
+      "porque": "Es lo que hacía el sistema original con `.ToString(\"0.00\")` y lo que espera el comercio. El bancario estaba en el backend por omisión de Python, no por decisión. Con el servidor verificando los totales, los dos lados tienen que redondear igual o no pueden compararse."
+    },
+    {
+      "tema": "La verificación de totales tolera un céntimo",
+      "decision": "El servidor rechaza la venta si lo declarado difiere en más de 0,01 de lo calculado. Lo que guarda es siempre su propio número.",
+      "porque": "El POS calcula en coma flotante binaria y el servidor en decimal exacto; no pueden coincidir siempre. Se cotejaron 1 208 montos representativos: coinciden salvo cuando el binario cae justo por debajo de un empate a medio céntimo, y ahí difieren en exactamente 0,01. Con tolerancia cero, ese ruido rechazaría ventas buenas. La tolerancia no afloja la seguridad porque lo que se persiste es el número del servidor: la comparación es un detector de errores reales —precios viejos, carrito desincronizado—, no un control de acceso."
+    },
+    {
+      "tema": "El stack vivo pasa a ser backend/",
+      "decision": "Se copió el volumen `deploy_db_data` a `ventasys_db_data` con un contenedor auxiliar y el sistema quedó corriendo desde `backend/`, proyecto `ventasys`. El volumen viejo y la carpeta `deploy/` se conservan como respaldo.",
+      "porque": "Levantar desde `backend/` sin migrar habría creado un volumen vacío y habría parecido una pérdida total de la base. Se copió en vez de restaurar un volcado porque las cuentas de MySQL viven dentro del propio volumen: copiándolo, las credenciales del `.env` siguen sirviendo sin tocar nada."
+    },
+    {
+      "tema": "`server/` no se renombra a `infrastructure/`",
+      "decision": "Las capas del frontend son `domain/`, `application/`, `server/` y `ui/`. La de infraestructura conserva el nombre `server/`.",
+      "porque": "SvelteKit trata `$lib/server` como especial: si el código del cliente la importa, **la compilación falla**. Es exactamente la frontera que la arquitectura busca, pero verificada por el compilador en vez de por una convención o un guion. Renombrarla por parecerse a la nomenclatura del backend sería cambiar una garantía por un nombre bonito."
+    },
+    {
+      "tema": "El renombrado a inglés lee las claves viejas",
+      "decision": "`mergeSettings` (frontend) y `get_tax_rate` (backend) aceptan tanto `tax.rate` como el `impuesto.tasa` anterior a T-113. Se prefiere la nueva y se cae a la vieja.",
+      "porque": "Los identificadores en español eran también las claves del JSON guardado en `settings.data`. Renombrar solo el código habría hecho que una fila existente dejara de entenderse: el POS habría vuelto a la moneda y la tasa de fábrica sin decir nada, y la caja habría empezado a cobrar mal. La lectura doble cuesta una línea por campo y es la diferencia entre una actualización y una pérdida de configuración."
+    },
+    {
+      "tema": "Las pruebas de punta a punta corren en serie",
+      "decision": "Playwright con `workers: 1` y `fullyParallel: false`.",
+      "porque": "El modo simulado es un proceso con una base respaldada en un archivo: dos pruebas en paralelo escriben sobre lo mismo. Con tres trabajadores la suite fallaba una de cada varias corridas, siempre en un sitio distinto —la peor clase de fallo, porque parece casualidad y esconde el problema—. En serie tarda unos once segundos; no había nada que ganar paralelizando."
+    },
+    {
+      "tema": "La interfaz se traduce: español, inglés y portugués",
+      "decision": "Se agrega multi-idioma como F8, con el español en **usted** y no en voseo. Los catálogos de inglés y portugués pueden llenarse después, pero el mecanismo tiene que existir antes de F3.",
+      "porque": "Cambia RNF-2 y RN-22, que decían «español de Costa Rica, con voseo, sin excepción». El voseo venía de una suposición mía sobre el mercado que el dueño del producto corrigió: en Costa Rica el ustedeo es más común, y «Cobrá rápido» le suena extranjero a un usuario mexicano o colombiano. Un solo español en usted sirve a toda la región y ahorra un catálogo. Lo del calendario es aritmética: F3, F4, F5 y F6 agregan pantallas, y cada una escrita con la cadena adentro hay que volver a abrirla."
+    },
+    {
+      "tema": "El backend deja de escribir texto para personas",
+      "decision": "Los 68 mensajes en español que produce FastAPI pasan a ser código y datos —`{\"code\": \"insufficient_stock\", \"product\": \"Arroz\", \"available\": 2}`— y el POS arma la frase.",
+      "porque": "Con el backend escribiendo texto no hay forma de traducirlo desde el POS: un cajero brasileño vería media aplicación en su idioma y los errores en español, justo cuando más necesita entender. El trabajo está medio hecho y es el pago de F1: el dominio ya lanza errores tipados que llevan exactamente esos datos, y quien los convierte en frase es el adaptador. De paso, el error deja de ser un `detail` suelto y se vuelve un contrato tan estable como el resto del API."
+    },
+    {
+      "tema": "El idioma del documento no es el de la pantalla",
+      "decision": "`companies.locale` para la interfaz, `users.locale` para la preferencia de cada persona (nulo hereda) y `companies.document_locale` para la factura, aparte.",
+      "porque": "La factura es para el cliente y para Hacienda, no para el cajero: una compañía costarricense emite en español aunque su cajero use el POS en portugués. Y los dos niveles de idioma cubren el caso real: sin el de la compañía, el administrador de una compañía nueva arranca en el idioma equivocado; sin el de la persona, un negocio costarricense no puede contratar a una cajera que prefiera otra cosa."
+    },
+    {
+      "tema": "Editar no se pregunta; borrar sí, y lo que no está en .specify tampoco",
+      "decision": "defaultMode acceptEdits en .claude/settings.json, con lista ask para lo destructivo (rm, git clean/reset/restore/push, docker compose down, docker volume rm) y la regla escrita en CLAUDE.md. Una mejora que no figure en spec, plan ni task se plantea antes de implementarla.",
+      "porque": "Un archivo editado se revisa con el diff y se revierte; un volumen borrado no. La frontera útil no es entre cambios grandes y pequeños sino entre lo reversible y lo que no lo es. Y lo construido sin pasar por los documentos queda sin requisito que lo justifique ni tarea que lo verifique, que es como se acumula funcionalidad que nadie sabe por qué está."
+    },
+    {
+      "tema": "La lista de patrones de settings.json es un cinturón, no un muro",
+      "decision": "La lista de ask cubre las formas conocidas de borrar. docker compose exec y mysql quedaron fuera de allow a propósito, y se quitó de settings.local.json el permiso Bash(python -c ' *), que autorizaba Python arbitrario.",
+      "porque": "El emparejamiento de permisos es textual: reconoce rm pero no un shutil.rmtree dentro de un python -c, ni un DROP dentro de un docker compose exec … mysql. Ese permiso local dejaba abierto justo el canal que la lista pretendía cerrar. Los dos caminos más cortos hacia el volumen ventasys_db_data ahora preguntan."
+    },
+    {
+      "tema": "`persons` es identidad y no lleva compañía",
+      "decision": "Las tablas de negocio son doce, no catorce: `users` y `persons` quedan fuera. `persons` guarda el nombre y la cédula de la misma identidad que representa `users` —son 1 a 1, `/persons/register` crea las dos juntas y nadie más la referencia—, y los datos de los clientes viven en `clients`, que sí lleva `company_id`.",
+      "porque": "El plan decía «persons, clients → company_id». Ponerle compañía a `persons` obligaría a decidir a cuál «pertenece» el contador que atiende tres locales, que es exactamente el problema que T-216 acababa de resolver para `users`. Lo que sí cambió es quién la puede ver: `/persons/persons_list` devolvía la libreta entera de la base y ahora se une con `user_companies`."
+    },
+    {
+      "tema": "El aislamiento también se sella al escribir, no solo al leer",
+      "decision": "Además del `do_orm_execute` que filtra los SELECT, un `before_flush` le pone la compañía a toda fila nueva de negocio. No pisa lo que ya venga puesto, para que las semillas y `bootstrap.py` puedan crear filas de otra compañía a propósito.",
+      "porque": "El plan solo cubría la lectura. Si leer sin `WHERE company_id` es imposible pero escribir sin `company_id` depende de que quince sitios se acuerden, el fallo entra por el lado de la escritura: una venta guardada sin compañía queda visible para nadie —o para quien tenga ese número— y el defecto aparece semanas después, con datos encima."
+    },
+    {
+      "tema": "Se exige compañía solo si la consulta toca una tabla de negocio",
+      "decision": "El filtro mira `state.all_mappers` y lanza `SinCompania` únicamente si la consulta involucra alguna clase que herede `TenantMixin`. Las lecturas de identidad —el login, `users`, `persons`— pasan sin marca.",
+      "porque": "Exigirla en toda consulta obligaría a marcar el login con `sin_filtro_de_compania`. Y si esa marca aparece en las consultas normales deja de significar «acá se cruzan compañías a propósito», que es lo único que la hace útil al leer el código. No se pierde nada: una consulta que no toca negocio no puede filtrar datos de negocio."
+    },
+    {
+      "tema": "La dependencia que fija la compañía es asíncrona, y tiene que serlo",
+      "decision": "`payload_del_token` es `async def` aunque no espere nada.",
+      "porque": "FastAPI corre las dependencias síncronas en un hilo aparte, con una COPIA del contexto: un `ContextVar` fijado ahí no se ve desde el endpoint. Las asíncronas corren en la misma tarea que la petición. Volverla síncrona por prolijidad haría que el filtro dejara de recibir la compañía y todo empezara a lanzar `SinCompania`."
+    },
+    {
+      "tema": "Elegir compañía acepta también un token de sesión",
+      "decision": "`GET /auth/companies` y `POST /auth/company` aceptan tanto el token de tránsito como uno de sesión, aunque el plan decía «solo el de tránsito».",
+      "porque": "Sin eso, cambiar de compañía desde el menú obligaría a volver a escribir la contraseña, y RF-28 dice explícitamente que no. Un token de sesión prueba la identidad igual de bien que el de tránsito, y en los dos casos lo único que se puede ver son las membresías propias."
+    },
+    {
+      "tema": "Una compañía nueva no se puede crear por la API",
+      "decision": "`bootstrap.py`, el único guion que habla con la base directamente. Crea plan, compañía, sucursal 001, terminal 00001, configuración vacía y la membresía del primer administrador. Entra en la imagen de Docker; `seed.py` no, porque va por HTTP.",
+      "porque": "No hay sesión sin membresía y no hay membresía sin compañía. Es el huevo y la gallina que T-903 tiene que resolver bien; mientras tanto el arranque es manual y explícito en vez de un endpoint público que cree compañías. Cuando exista el panel de soporte (RF-6) esto será un formulario."
+    },
+    {
+      "tema": "Restaurar una compañía conserva sus identificadores",
+      "decision": "T-217: se restaura solo lo que no está, sin remapear claves. `auto_increment` de MySQL nunca reutiliza un número, así que los identificadores de una compañía dada de baja quedan libres para siempre. `users` se exporta por correo y no por fila, porque la identidad es global y puede estar compartida con otra compañía viva. Si ya existe alguna fila de esa compañía, la restauración se niega.",
+      "porque": "Remapear claves entre doce tablas es donde este tipo de herramienta se rompe. Conservarlas es posible precisamente por cómo funciona `auto_increment`, y el precio —no se puede restaurar encima de datos existentes— es el comportamiento correcto: mezclar sería peor que fallar."
+    },
+    {
+      "tema": "El hueco de `count()` se vigila, no se tapa",
+      "decision": "Se documenta el límite, se fija con una prueba que afirma el comportamiento actual, y se agrega un guardián que prohíbe `.count()` sin `company_id` visible. No se intenta reescribir el filtro para cubrirlo (queda como T-230).",
+      "porque": "Cubrir `count()` significaría interceptar la envoltura que arma SQLAlchemy, que es código frágil pegado a una versión concreta. El guardián cuesta veinte líneas, no se rompe cuando SQLAlchemy cambie, y convierte «hay que acordarse» en «la build se cae». La prueba que afirma el comportamiento actual además se pondrá roja si algún día SQLAlchemy lo cubre, que es una noticia que conviene leer."
+    },
+    {
+      "tema": "Crear una cuenta y sumar una cuenta ajena no son la misma operación",
+      "decision": "`POST /users/` (el administrador crea la cuenta con su correo y su contraseña) nace aceptada; `POST /users/membership` (suma una identidad que ya existía) nace pendiente y no autoriza nada hasta que la persona responda. `bootstrap.py` nace aceptada.",
+      "porque": "Las dos terminan en una fila de `user_companies`, pero en la primera no hay a quién preguntarle y en la segunda sí. Sin la distinción, o se pide consentimiento a una cuenta recién creada por su propio dueño —absurdo— o se le da acceso a la de otro sin avisar. Y `bootstrap.py` tiene que nacer aceptada o una instalación nueva quedaría con una invitación que nadie puede responder."
+    },
+    {
+      "tema": "El modo simulado tiene dos compañías, con una vista fusionada",
+      "decision": "El almacén del mock pasó de plano a una raíz global —personas, usuarios, membresías, contadores— más una porción por compañía. `getDb(compañía)` devuelve `{...raiz, ...empresa}`: un objeto cuyas propiedades apuntan a los mismos arreglos.",
+      "porque": "Los 61 accesos del manejador (`db.products`, `db.users`) siguen escritos igual y siguen mutando el almacén de verdad, porque el spread copia referencias. Filtrar en cada acceso habría sido 42 ediciones frágiles; esto fue una reestructura del almacén y un argumento. Lo único que no se puede hacer sobre la vista es reasignar una colección entera, y había un solo sitio que lo hacía."
+    },
+    {
+      "tema": "La segunda compañía del demo nace vacía",
+      "decision": "En vez de duplicar el catálogo, la compañía 2 del modo simulado no tiene productos, clientes ni ventas.",
+      "porque": "Es lo que de verdad pasa al dar de alta una compañía, así que no miente. Y hace que el cambio de compañía se note de una forma que no se puede fingir: si el aislamiento del mock estuviera mal, la pantalla mostraría el catálogo de la otra y la prueba lo vería."
     }
   ],
   "invariantes_verificados": {
@@ -318,15 +538,15 @@
       "apertura": 50000,
       "ventas_efectivo": 4915.5,
       "devoluciones": 1638.5,
-      "esperado": 53277.0
+      "esperado": 53277
     },
     "cierre_contando_53000": {
-      "diferencia": -277.0
+      "diferencia": -277
     },
     "reportes_dia": {
       "brutas": 4915.5,
       "devoluciones": 1638.5,
-      "netas": 3277.0
+      "netas": 3277
     },
     "ventas_en_espera": {
       "venta_1": "arroz 1450 + café 4250 -> total 6441.00",
@@ -338,7 +558,7 @@
       "proveedor": "Distribuidora La Central S.A.",
       "lineas_incluidas": "3 de 4 (la de cantidad 0,5 queda desmarcada)",
       "unidades": 42,
-      "costo_total": 79800.0,
+      "costo_total": 79800,
       "nota": "el café se toma a 3400 neto y no a 3600 de lista, por el descuento",
       "stock_arroz": "110 -> 134"
     },
@@ -346,7 +566,7 @@
       "archivo": "columnas desordenadas, con tildes, punto y coma, fila vacía y una cantidad 0",
       "lineas_incluidas": "3 de 4",
       "unidades": 70,
-      "costo_total": 69080.0
+      "costo_total": 69080
     },
     "formato_moneda": {
       "CRC": "1450 -> ₡1.450,00 · 3175119.2 -> ₡3.175.119,20 · -277 -> −₡277,00",
@@ -355,7 +575,7 @@
     },
     "factura_ejemplo_plantilla": {
       "lineas": "arroz 1450 + té 950 + chiverre 2730",
-      "subtotal": 5130.0,
+      "subtotal": 5130,
       "iva": 666.9,
       "total": 5796.9,
       "pago": 6000,
@@ -365,6 +585,37 @@
       "elegido": "#b45309",
       "claro": "#b45309 con texto blanco, contraste 5.0:1",
       "oscuro": "#fea575 con tinta oscura, contraste 9.2:1"
+    },
+    "aislamiento_entre_companias": {
+      "$comentario": "T-214. Si alguno cambia, el aislamiento se rompió.",
+      "rutas_por_id_que_dan_404": 10,
+      "pruebas_en_la_bateria": 32,
+      "fallan_si_se_desactiva_el_filtro": 14,
+      "filtros_escritos_a_mano_en_crud_report": 7,
+      "tablas_de_negocio": 12,
+      "modelos_con_TenantMixin": 14,
+      "pruebas_del_mecanismo": 13,
+      "$count_no_cubierto": "query(Modelo).count() cuenta las de todas las compañías. Usar query(func.count(Modelo.id)).",
+      "pruebas_de_punta_a_punta": 20
+    },
+    "base_viva_tras_migrar_a_f2": {
+      "ventas": 38,
+      "total_vendido": 360413.5,
+      "productos": 27,
+      "usuarios": 4,
+      "membresias": 4,
+      "companias": 1,
+      "columnas_iguales_entre_instalacion_nueva_y_migrada": "155 de 155"
+    },
+    "respaldo_por_compania": {
+      "$comentario": "T-225. Exportar, borrar y restaurar una compañía sin tocar a las demás.",
+      "tablas_de_compania_que_se_respaldan": 17,
+      "tablas_de_identidad_que_no_se_borran": [
+        "persons",
+        "users"
+      ],
+      "se_conservan_los_identificadores": true,
+      "restaurar_encima_de_datos_existentes": "se niega"
     }
   },
   "riesgos_conocidos": [
@@ -379,6 +630,14 @@
     {
       "riesgo": "El backend corre con el filtro por compañía todavía sin implementar: hoy es de un solo negocio.",
       "mitigacion": "Es el objetivo de F2. Hasta entonces no se le puede dar acceso a una segunda compañía."
+    },
+    {
+      "riesgo": "La caché de configuración del BFF (`frontend/src/lib/server/settings.ts`) es una variable de módulo: vive en el proceso de Node, no en la petición. Con varias compañías, la primera que cargue una página le presta nombre, logo, moneda y color de acento a las demás durante 30 s, e `invalidateSettings()` se las borra a todas.",
+      "mitigacion": "Hoy no se manifiesta: hay una sola compañía. Pasa a `Map` por compañía en F2, con la invalidación recibiendo cuál (T-224, plan §3.6). No puede quedar para después de F2: es el mismo defecto que un `WHERE` olvidado, solo que del otro lado del BFF."
+    },
+    {
+      "riesgo": "Cuando el impuesto pase a ser por producto (F5, catálogo CABYS), la devolución dejará de poder reconstruir la tarifa desde el encabezado de la venta: `tax / subtotal` es un promedio, y una devolución parcial de una sola tarifa reembolsaría de más o de menos. Con un medicamento al 2 % junto a un arroz al 13 %, devolver solo el medicamento daría ₡1 075 en vez de ₡1 020.",
+      "mitigacion": "Hoy no se manifiesta: hay una sola tarifa y el promedio ES la tarifa. Se resuelve congelando `tax_rate` y `tax_amount` en `sale_details` al cobrar (T-509b), y `TaxRate.of_sale` queda como respaldo para las ventas anteriores a esa migración. Anotado en plan §6.3."
     }
   ],
   "sesiones": [
@@ -491,6 +750,179 @@
         "progress.json se movió a .specify/, junto a spec, plan y task. Al moverlo se resolvió la duplicación: estructura y entorno los posee CLAUDE.md, y los pendientes los posee task.md. Los seis que no tenían tarea se migraron a T-905..T-910 antes de sacarlos."
       ],
       "sin_ejecutar_todavia": "Ninguna de las tareas de F1. Esta sesión dejó los agentes y la documentación."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Login en tarjeta centrada y alineación de las tablas",
+      "hecho": [
+        "El login pasa de dos mitades a sangre a una tarjeta centrada de 68rem × 36rem: en un monitor ancho el formulario quedaba solo contra el borde derecho. Se tomó el estilo centrado de una referencia que trajo el usuario, pero más grande que ella (1088×576 contra 920×482).",
+        "La marca en móvil y el botón de tema se anclaron a las esquinas de la tarjeta. Antes viajaban dentro del bloque del formulario, que va centrado vertical, y el botón terminaba flotando a media altura.",
+        "Se borró la leyenda «Migrado de WinForms a SvelteKit · Backend FastAPI + MySQL» del panel de marca.",
+        "Defecto 12: los encabezados de las columnas numéricas no se alineaban con sus valores. Arreglado en app.css.",
+        "Se habló del diseño multiempresa: el par (afiliado, compañía) es la llave de negocio y vive en `companies` con UNIQUE; lo que viaja en cada tabla es `company_id`, un entero suplente. Ya estaba así en plan §3.1; quedó explicado el porqué y anotadas dos decisiones abiertas (respaldo por cliente y si un correo puede pertenecer a más de una compañía)."
+      ],
+      "sin_ejecutar_todavia": "F1 completa (T-101..T-116). El repositorio publicado todavía no tiene estos cambios."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "F1 arranca: infraestructura de pruebas y dos defectos",
+      "hecho": [
+        "T-101, T-102, T-103 y T-104 terminadas. Vitest con umbral del 100 % (103 pruebas), Playwright en el repositorio (9 pruebas), pytest con pila desechable (17 pruebas). Total: 129.",
+        "Defecto 13: un `tasa: null` en la configuración se leía como impuesto del 0 % en vez de caer al 13 %.",
+        "Defecto 14: MySQL redondea `DATETIME` hacia arriba, así que una venta podía quedar guardada medio segundo en el futuro y desaparecer de su propio turno de caja. Corregido con `app/utils/clock.py`.",
+        "El portón de cobertura se comprobó de verdad en el frontend: quitando las pruebas de `color.ts`, `npm test` sale con código 1 (parte de T-115).",
+        "La prueba de alineación de tablas se comprobó revirtiendo el CSS: falla nombrando la columna y la pantalla.",
+        "Dos hallazgos de método: en Windows `time.time_ns()` repite el valor unos 15 ms, así que las marcas «únicas» por reloj chocan cuando la suite es rápida; y el primer clic tras un `goto` se pierde porque Svelte todavía no enganchó los manejadores."
+      ],
+      "sin_ejecutar_todavia": "El resto de F1: T-105 a T-114 y T-116. No se ha movido ni un archivo de sitio todavía, que es el orden que manda task.md."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "F1: dominio extraído, puertos y el flujo de la venta por capas",
+      "hecho": [
+        "T-105, T-106, T-107, T-114 (backend) y T-115 terminadas. T-108 y T-109 hechas para la venta; faltan caja, devoluciones y entradas.",
+        "`app/domain/` con ocho módulos y sin un solo import de fuera: Money sobre Decimal, TaxRate que se niega a construirse con 13 en vez de 0,13, Barcode, y las reglas de venta, arqueo y devolución.",
+        "`app/application/ports/` con nueve puertos en Protocol, y `app/infrastructure/` con SystemClock, FixedClock y los repositorios de la venta.",
+        "El defecto 1 —la factura fantasma— ahora se comprueba SIN base de datos, con repositorios de mentira, en milisegundos. Es la prueba de que los puertos sirven para algo.",
+        "230 pruebas en el backend, 100 % de líneas y ramas en dominio y aplicación. Las 12 de caracterización siguen dando los mismos números contra MySQL de verdad después de mover el flujo de la venta entero.",
+        "Los dos portones comprobados a la mala: quitando pruebas, `pytest` y `npm test` salen con código 1 y nombran el archivo. El de capas, metiendo un `import sqlalchemy` en el dominio."
+      ],
+      "sin_ejecutar_todavia": "T-108/T-109 para caja, devoluciones y entradas; T-110 (adelgazar routers); T-111 a T-113 (frontend e idioma); la mitad frontend de T-114; T-116."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "El servidor calcula la plata, y el stack vivo se muda a backend/",
+      "hecho": [
+        "T-911: volumen migrado de `deploy_db_data` a `ventasys_db_data`. `diff -r` idéntico y los mismos registros; ahora `docker compose up --build` desde `backend/` es seguro.",
+        "T-105b: redondeo unificado en `ROUND_HALF_UP` en los dos lados (defecto 15). Cotejados 1 208 montos: la diferencia máxima entre POS y servidor es de un céntimo, y solo en los empates.",
+        "T-108b: el servidor recalcula subtotal, impuesto, total y vuelto, guarda los suyos y rechaza lo que no cuadre (defecto 16). El simulado hace lo mismo.",
+        "Verificado contra el stack real: total alterado, subtotal compensado y efectivo corto responden 400 y no escriben nada; el POS de :3000, reconstruido, entra y muestra las 38 facturas por ₡360.413,50 con las columnas alineadas.",
+        "253 pruebas en el backend y 115 en el frontend, 100 % de cobertura en dominio y aplicación de los dos lados."
+      ],
+      "sin_ejecutar_todavia": "T-108/T-109 para caja, devoluciones y entradas; T-110; T-111 a T-113; la mitad frontend de T-114; T-116."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Caja y devoluciones pasan por capas",
+      "hecho": [
+        "T-108 y T-109 completadas para caja y devoluciones: `cash_session.py` (abrir, mover, cerrar y armar el arqueo) y `register_return.py`. Los tres `crud_*` de plata son ya solo traducción a HTTP.",
+        "`_sale_tax_rate` se borró de `crud_return`: la regla de «una devolución usa la tasa de SU venta» vive ahora en `TaxRate.of_sale`, y se prueba sin base de datos.",
+        "Con `FixedClock` se puede probar lo que antes era imposible verificar: que una venta de las 23:58 entre en el turno que abrió a las 22:00 y una de las 21:59 no, sin esperar dos horas.",
+        "296 pruebas en el backend, 100 % de líneas y ramas en las diez piezas de dominio y las siete de aplicación.",
+        "El contrato de puertos atrapó el método nuevo `sold_prices` antes de que quedara sin sincronizar. Para eso existe.",
+        "Verificado contra los datos reales: los cinco turnos de caja del sistema dan exactamente el mismo esperado que un cálculo en SQL escrito aparte, y el corte Z del turno 1 sale completo."
+      ],
+      "sin_ejecutar_todavia": "Entradas de mercadería por caso de uso; T-110 (adelgazar routers); T-111 a T-113 (capas del frontend e idioma); la mitad frontend de T-114; T-116."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Entradas de mercadería por capas y routers sin reglas",
+      "hecho": [
+        "T-108 y T-109 completadas: los cuatro flujos que tocan plata o inventario —venta, caja, devolución y entradas de mercadería— pasan por casos de uso y repositorios. Los `crud_*` son solo traducción a HTTP.",
+        "`app/domain/stock_entry.py` con las tres reglas: una factura no se carga dos veces, anular devuelve el stock solo si todavía está, y una línea sin producto no entra.",
+        "T-110 en lo que importa: la última regla de negocio que quedaba en un router —el número de factura único— se fue a `RegisterSale`. Lo que sigue ahí son comprobaciones de autorización, que sí pertenecen a la interfaz porque dependen de quién hace la petición.",
+        "338 pruebas en el backend, 100 % de líneas y ramas en once módulos de dominio y ocho de aplicación.",
+        "Verificado contra el stack real de punta a punta: crear entrada con producto nuevo (12 unidades, 1 producto creado), repetir la misma factura (400 con la fecha de la anterior), anular (stock a 0), anular dos veces (400) y anular algo ya vendido (400 nombrando el producto y las cantidades)."
+      ],
+      "sin_ejecutar_todavia": "Mover los archivos de `router/` a `interfaces/http/`; adaptadores de `security/` detrás de `PasswordHasher` y `TokenIssuer`; T-104b; T-111 a T-113; la mitad frontend de T-114; T-116."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "El frontend por capas y su comprobación",
+      "hecho": [
+        "T-111 y T-114 terminadas. `src/lib/` quedó en `domain/`, `application/`, `server/` y `ui/`: 16 piezas movidas y 51 archivos con los imports reescritos, con `npm run check` en 0 errores.",
+        "Del almacén del carrito salieron las reglas puras a `domain/cart.ts`: cuánto se puede agregar contando lo apartado en las OTRAS ventas abiertas, el número de factura y los montos sugeridos de efectivo. Antes solo se podían probar levantando Svelte.",
+        "`domain/` y `application/` al 100 % de cobertura otra vez: 200 pruebas de unidad, contando las nuevas de carrito, validación y tipos.",
+        "La comprobación de capas del frontend va como prueba y mira además que el dominio no use runas, `fetch` ni almacenamiento del navegador. Comprobada metiendo un `import $app/environment` en el dominio.",
+        "Detalle de método: esa comprobación descarta los comentarios antes de mirar. La primera versión marcaba `domain/cart.ts` porque su propia cabecera dice «sin $state»; una comprobación que salta con el comentario que documenta la regla no comprueba nada.",
+        "POS reconstruido y verificado contra el backend real: entra, muestra las 38 facturas por ₡360.413,50 y ninguna columna desalineada."
+      ],
+      "sin_ejecutar_todavia": "T-112 (dejar `load` y `actions` como transporte), T-113 (identificadores en español a inglés), T-104b, y T-116 para cerrar la fase."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "T-113: el código de configuración pasa a inglés",
+      "hecho": [
+        "Identificadores de configuración en inglés en las dos capas y en las tres plantillas de documento; los textos de la interfaz siguen en español.",
+        "`mergeSettings` y `crud_settings.get_tax_rate` leen las claves viejas además de las nuevas. Verificado contra el stack real: `impuesto.tasa = 0.04` cobra 4 % y `tax.rate = 0.07` cobra 7 %.",
+        "354 pruebas en el backend y 203 en el frontend, 100 % de cobertura en dominio y aplicación de los dos lados.",
+        "Se afinó la comprobación de capas: buscaba el texto `document.` y saltaba con `d.document.color`, que es una propiedad de la configuración por omisión. Ahora usa un lookbehind para distinguir el global del navegador de una propiedad cualquiera.",
+        "El guion de renombrado destrozó prosa en español —«Registro de clientes del business»— porque el patrón de identificadores también casa dentro de una frase. Reparado y comprobado: cero spanglish en el código y en la pantalla."
+      ],
+      "sin_ejecutar_todavia": "T-112 (dejar `load` y `actions` como transporte), T-104b y T-116 para cerrar F1."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "F1 cerrada: T-112, T-104b y T-116",
+      "hecho": [
+        "T-112: la decisión de cobrar salió de la acción de `/ventas` a `application/checkout.ts`, que es una función pura. La acción bajó de 157 a 128 líneas y no calcula nada.",
+        "`toLocalIso` pasó de `ui/format` a `domain/datetime`: es el formato en que las fechas viajan al backend, no formateo de pantalla, y la capa de aplicación no puede importar de `ui/`.",
+        "T-104b: los lectores de XML y de CSV se prueban directo con Vitest, no con Playwright: `parseHaciendaXml` recibe una cadena. Las facturas de prueba viven en `frontend/tests/fixtures/`.",
+        "T-116: las 17 de caracterización pasan con el dominio, los cuatro casos de uso, los repositorios y las capas del frontend ya movidos.",
+        "Los 12 invariantes de progress.json tienen ya prueba automatizada: se cerraron `reportes_dia` (caracterización, midiendo diferencias porque el reporte suma por fecha) y `ventas_en_espera` (cuatro flujos de punta a punta).",
+        "La suite de punta a punta pasó a un solo trabajador: en paralelo fallaba una de cada varias corridas porque el modo simulado tiene una sola base en un archivo. Comprobada estable en tres corridas seguidas."
+      ],
+      "sin_ejecutar_todavia": "Dos flecos de F1 anotados en task.md: los adaptadores de `security/` (T-109, conviene hacerlos en F2 junto con el JWT por compañía) y mover `router/` a `interfaces/http/` (T-110, es mover carpetas). Sigue F2 · Multiempresa."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Multi-idioma documentado antes de entrar a F2",
+      "hecho": [
+        "F8 · Multi-idioma escrita en spec (RN-22 reescrita, RN-28 a RN-30, RNF-2), plan §8 y task (T-801 a T-814).",
+        "Medido sobre el código real antes de proponer nada: 455 textos en el frontend (223 nodos, 205 atributos, 27 mensajes de acciones) en 33 archivos, 68 mensajes que produce el backend, y 48 apariciones de voseo en 19 archivos.",
+        "El voseo se cambia por usted. Era una suposición mía sobre el mercado que el dueño corrigió; como los 455 textos se tocan igual al extraerlos, reescribirlos en la misma pasada no cuesta nada adicional.",
+        "Las tres columnas de idioma entran en la migración de F2 (T-204b) aunque F2 no las use: una migración sobre tablas con datos es cara y hacer dos donde cabe una es trabajo regalado."
+      ],
+      "sin_ejecutar_todavia": "Todo F8. Sigue F2 · Multiempresa, que ahora lleva también las columnas de idioma."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Permisos: editar libre, borrar se consulta",
+      "hecho": [
+        ".claude/settings.json reescrito: defaultMode acceptEdits, 51 reglas allow con los comandos reales del proyecto y 38 reglas ask con lo destructivo, en Bash y en PowerShell.",
+        "Quitado de .claude/settings.local.json el permiso Bash(python -c ' *): autorizaba Python arbitrario, que borra archivos sin que ningún patrón lo vea.",
+        "docker compose exec y mysql deliberadamente fuera de allow: son el camino más corto a un DROP sobre el volumen ventasys_db_data.",
+        "CLAUDE.md: sección nueva «Qué se hace sin preguntar y qué no», con las dos excepciones y el aviso de que los patrones solo reconocen las formas anotadas."
+      ],
+      "sin_ejecutar_todavia": "Sigue F2 · Multiempresa (T-201 a T-224), con T-217 —respaldo y restauración de una sola compañía— todavía abierta."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "F2 · Multiempresa, de punta a punta",
+      "hecho": [
+        "Migración 002 escrita y probada primero contra una COPIA con los datos reales (`posdb_mig`), después aplicada a la base viva con la API detenida y respaldo previo. Las 38 ventas por ₡360.413,50 siguen iguales.",
+        "Comprobado que una instalación nueva y una migrada terminan con el mismo esquema: 155 de 155 columnas. Las cinco que diferían eran tipos del modelo que no coincidían con la migración (defecto 19).",
+        "Aislamiento en tres capas: la compañía sale del token, el ORM filtra los SELECT y sella los INSERT, y los reportes —que el filtro no cubre— llevan siete filtros escritos a mano.",
+        "Login de dos pasos. Con una compañía se entra directo; con dos, token de tránsito de 10 minutos que no abre ninguna ruta de negocio.",
+        "`backend/tests/test_aislamiento.py`: 32 pruebas. Se comprobó que se ponen rojas —14 fallan— desactivando el filtro a propósito y reconstruyendo la imagen.",
+        "POS al día: pantalla `/compania`, compañía y caja en el menú, cambio de compañía que limpia el carrito, y caché de configuración por compañía. El modo simulado también, con su token ahora con forma de JWT.",
+        "Verificado contra los dos backends de verdad: en el vivo el admin entra directo y ve «Compañía inicial · Sucursal 001 · Caja 00001»; en el de pruebas la contadora cae en la pantalla de selección, elige, y el menú le ofrece cambiar."
+      ],
+      "sin_ejecutar_todavia": "T-225 (respaldo por compañía; decidido, sin construir), T-228 (el mock representa una sola compañía, así que la selección no se cubre en e2e) y T-229 (el alta de membresía es unilateral). De F1 siguen abiertas T-109 y T-110. Sigue F3 · Soporte y suscripción."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Las tres verificaciones de F2 que estaban marcadas sin ejecutar",
+      "hecho": [
+        "Al revisar si F2 estaba terminada aparecieron tres tareas marcadas [x] cuya verificación escrita en task.md no se había corrido: T-206, T-223 y T-224.",
+        "T-206 cerrada: `tests/test_tenancy.py`, 13 pruebas sobre SQLite en memoria —el filtro es un escuchador de SQLAlchemy y no depende del dialecto—. Prueba el caso que la batería HTTP no puede provocar: leer sin compañía.",
+        "T-224 cerrada: `src/lib/server/settings.test.ts`, 6 pruebas. Comprobado que 4 se ponen rojas al volver la caché a una variable de módulo.",
+        "T-223 NO cerrada: la verificación que pide («venta a medias en A, cambiar a B, pantalla vacía») necesita que el mock tenga dos compañías. Queda atada a T-228 y marcada [~], no [x].",
+        "Escribiendo T-206 apareció el defecto 20: `Query.count()` no está cubierto por el filtro. Sin fuga real, pero con hueco. Se dejó un guardián sintáctico que lo prohíbe."
+      ],
+      "sin_ejecutar_todavia": "T-223 (esperando T-228), T-225, T-229 y T-230. De F1 siguen abiertas T-109 y T-110. Sigue F3 · Soporte y suscripción."
+    },
+    {
+      "fecha": "2026-08-16",
+      "titulo": "Cierre de F2: respaldo por compañía, invitaciones y mock con dos compañías",
+      "hecho": [
+        "T-225: `company_dump.py` exporta, borra y restaura una compañía. Conserva los identificadores —`auto_increment` nunca los recicla—, no borra `users` ni `persons` porque son globales, y se niega a restaurar encima de datos existentes. Probado de ida y vuelta contra la pila real.",
+        "T-229: la membresía se acepta. Migración 003, `aceptada_el` en nulo = invitada. La frontera es quién crea la cuenta, no qué endpoint se usa.",
+        "T-228: el mock pasó a tener dos compañías con datos separados, mediante una raíz global y una porción por compañía fusionadas en la vista de trabajo.",
+        "T-223 quedó verificada gracias a T-228: dos unidades en el carrito, cambio de compañía, y la pestaña vuelve vacía.",
+        "Defecto 21, el más incómodo del día: las pruebas de punta a punta llevaban horas corriendo contra un servidor viejo olvidado en el 4173. Pasaban en verde sin probar nada. Al matarlo, 7 de 13 fallaron."
+      ],
+      "sin_ejecutar_todavia": "Solo T-230 de F2 (cubrir `count()` de raíz en vez de vigilarlo). De F1 siguen abiertas T-109 y T-110. Sigue F3 · Soporte y suscripción."
     }
   ],
   "$reparto": {

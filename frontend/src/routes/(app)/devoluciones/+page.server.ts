@@ -1,8 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { api, apiSafe, toMessage } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
-import { formError, Validator } from '$lib/validation';
-import type { Sale, SaleDetail, SaleReturn } from '$lib/types';
+import { formError, Validator } from '$lib/application/validation';
+import type { Sale, SaleDetail, SaleReturn } from '$lib/domain/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {

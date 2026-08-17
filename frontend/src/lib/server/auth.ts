@@ -2,7 +2,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
 import { api, ApiError } from './api';
 import { SESSION_COOKIE } from './config';
-import type { Role, SessionUser } from '$lib/types';
+import type { PendingSession, Role, SessionUser } from '$lib/domain/types';
 
 /**
  * Sesión del POS.
@@ -47,18 +47,45 @@ function isExpired(payload: Record<string, unknown> | null): boolean {
 }
 
 /**
+ * Un token de tránsito no es una sesión.
+ *
+ * Se distingue mirando el propio JWT y no preguntándole al backend: el token de
+ * tránsito hace 401 en toda ruta de negocio, así que preguntar significaría
+ * gastar una petición para que nos digan que no. La firma la valida el backend
+ * cuando el token se usa de verdad; acá solo se lee para saber a qué pantalla
+ * mandar a la persona.
+ */
+export function pendingSession(token: string | null): PendingSession | null {
+	if (!token) return null;
+
+	const payload = decodeJwt(token);
+	if (isExpired(payload)) return null;
+	if (payload?.tipo !== 'transito') return null;
+
+	const idUser = typeof payload.id_user === 'number' ? payload.id_user : null;
+	const email = typeof payload.email === 'string' ? payload.email : null;
+	if (idUser == null || !email) return null;
+
+	return { user_id: idUser, email };
+}
+
+/**
  * Resuelve el usuario del token.
  *
- * Camino normal: `GET /users/me`, que devuelve también el rol. Si ese endpoint no
- * existe todavía (backend sin el patch de este proyecto) se reconstruye el usuario
- * desde el propio JWT y se asume rol admin — así el POS sigue siendo utilizable
- * contra el backend original, solo que sin separación de permisos.
+ * `GET /users/me` devuelve el rol **y la compañía**, y se consulta en cada
+ * petición: así, quitarle a alguien la membresía o degradarlo surte efecto en su
+ * siguiente clic y no cuando venza el JWT.
+ *
+ * Un token de tránsito devuelve `null` acá a propósito. No es un fallo: es
+ * alguien autenticado que todavía no dijo en qué compañía trabaja, y su pantalla
+ * es `/compania`, no el POS.
  */
 export async function resolveUser(token: string | null): Promise<SessionUser | null> {
 	if (!token) return null;
 
 	const payload = decodeJwt(token);
 	if (isExpired(payload)) return null;
+	if (payload?.tipo === 'transito') return null;
 
 	try {
 		const me = await api<{
@@ -67,42 +94,48 @@ export async function resolveUser(token: string | null): Promise<SessionUser | n
 			id_person: number | null;
 			role?: Role;
 			name?: string;
+			company_id: number;
+			company_name?: string | null;
+			branch_code?: string | null;
+			terminal_code?: string | null;
+			companies_available?: number;
 		}>('/users/me', { token });
 		return {
 			id_user: me.id_user,
 			email: me.email,
 			id_person: me.id_person ?? null,
 			role: me.role === 'cajero' ? 'cajero' : 'admin',
-			name: me.name?.trim() || me.email
+			name: me.name?.trim() || me.email,
+			company_id: me.company_id,
+			company_name: me.company_name ?? null,
+			branch_code: me.branch_code ?? null,
+			terminal_code: me.terminal_code ?? null,
+			companies_available: me.companies_available ?? 1
 		};
 	} catch (err) {
-		// 401/403: el token ya no vale. Cualquier otra cosa: intentamos el respaldo.
-		if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return null;
-
-		const idUser = typeof payload?.id_user === 'number' ? payload.id_user : null;
-		const email = typeof payload?.email === 'string' ? payload.email : null;
-		if (idUser == null || !email) return null;
-
-		let name = email;
-		try {
-			const persons = await api<{ id_user: number; name: string; lastName: string }[]>(
-				'/persons/persons_list',
-				{ token }
-			);
-			const person = persons.find((p) => p.id_user === idUser);
-			if (person) name = `${person.name} ${person.lastName}`.trim() || email;
-		} catch {
-			// El nombre es cosmético: si falla, se muestra el correo.
-		}
-
-		return { id_user: idUser, email, id_person: null, role: 'admin', name };
+		/*
+		 * Antes había acá un camino de respaldo que reconstruía el usuario desde
+		 * el JWT y le asumía rol admin, para poder hablar con un backend viejo
+		 * sin `/users/me`. Se quitó en F2: ese respaldo no puede saber en qué
+		 * compañía está la sesión, y adivinarla es exactamente lo que no se
+		 * puede hacer. Sin `/users/me` no hay sesión.
+		 */
+		if (!(err instanceof ApiError)) console.error('[ventasys] /users/me', err);
+		return null;
 	}
 }
 
-/** Exige sesión iniciada. Redirige al login conservando el destino. */
+/**
+ * Exige sesión iniciada. Redirige al login conservando el destino.
+ *
+ * Con un token de tránsito manda a `/compania` y no al login: la persona ya
+ * escribió su contraseña y hacérsela escribir otra vez sería castigarla por no
+ * haber elegido todavía.
+ */
 export function requireUser(locals: App.Locals, pathname = '/'): SessionUser {
 	if (!locals.user) {
 		const target = pathname && pathname !== '/' ? `?redirectTo=${encodeURIComponent(pathname)}` : '';
+		if (locals.pending) redirect(303, `/compania${target}`);
 		redirect(303, `/login${target}`);
 	}
 	return locals.user;

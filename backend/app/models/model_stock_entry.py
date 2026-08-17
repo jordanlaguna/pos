@@ -1,8 +1,10 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
+
 from app.database.database import Base
+from app.utils.tenancy import TenantMixin
 
 
-class StockEntry(Base):
+class StockEntry(TenantMixin, Base):
     """Entrada de mercadería al inventario.
 
     Queda como documento y no como un simple ajuste de stock: cuando dentro de
@@ -20,6 +22,8 @@ class StockEntry(Base):
     # 'manual' | 'excel' | 'xml'
     source = Column(String(20), nullable=False, default="manual")
     user_id = Column(Integer, ForeignKey("users.id_user"), nullable=False)
+    # A qué sucursal entró la mercadería. Sin terminal: la bodega no es una caja.
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
     created_at = Column(DateTime, nullable=False)
     notes = Column(String(255), nullable=True)
     # 'aplicada' | 'anulada'
@@ -27,7 +31,7 @@ class StockEntry(Base):
     total_cost = Column(Numeric(12, 2), nullable=False, default=0)
 
 
-class StockEntryDetail(Base):
+class StockEntryDetail(TenantMixin, Base):
     __tablename__ = "stock_entry_details"
 
     id = Column(Integer, primary_key=True, index=True)

@@ -75,15 +75,45 @@ Si responde en localhost pero no desde afuera, es el cortafuegos:
 sudo ufw allow 8001/tcp
 ```
 
-## ¿Hay que correr `migration.sql`?
+## ¿Hay que correr migraciones?
 
 | Situación | Qué hacer |
 |---|---|
-| Base nueva (primer arranque o tras `down -v`) | **Nada.** `create_all()` deja las 11 tablas correctas. |
-| Base con datos del esquema viejo | Correrla: `docker compose exec -T db mysql -u USER -pPASS posdb < migration.sql` |
+| Base nueva (primer arranque o tras `down -v`) | Ninguna migración. `create_all()` deja el esquema correcto —comprobado columna por columna contra el migrado—. Pero **sí** hay que correr `bootstrap.py`, ver abajo. |
+| Base anterior a F1 | `migration.sql` y después `migrations/002-multiempresa.sql`, en ese orden. |
+| Base anterior a F2 | Solo `migrations/002-multiempresa.sql`. |
 
 `create_all()` crea tablas nuevas pero **nunca altera las existentes**: sobre una
-base vieja, `role` y los `DATETIME` no aparecen solos.
+base vieja, `role`, los `DATETIME` y `company_id` no aparecen solos.
+
+Ninguna migración es idempotente —MySQL 8 no tiene `ADD COLUMN IF NOT EXISTS`—,
+así que correrlas dos veces falla en el primer `ALTER`. Falla, no corrompe. Cada
+una termina con consultas de control.
+
+Respaldo antes, siempre:
+
+```bash
+docker exec -i mysql_db_api sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" \
+    --single-transaction --databases posdb' > respaldo.sql
+```
+
+## La primera compañía
+
+Desde F2 una base sin compañía no deja entrar a nadie: no hay sesión sin
+membresía ni membresía sin compañía. En una instalación nueva, después de
+levantar:
+
+```bash
+docker compose exec fastapi python bootstrap.py \
+    --nombre "Nombre del negocio" --email admin@ejemplo.cr --password CLAVE
+```
+
+Si la base se migró desde F1, **no** hace falta: `002-multiempresa.sql` ya crea
+la compañía 1 con todo lo que había adentro.
+
+Síntoma de haberlo olvidado: el login responde 401 con credenciales correctas, o
+entra y el POS no muestra nada. Lo segundo no pasa —el token no se emite sin
+compañía—, pero es lo primero que la gente supone.
 
 Los `.sql` de `initdb/` se ejecutan **solo** la primera vez que se crea el
 volumen. Sobre una base ya inicializada, MySQL los ignora.

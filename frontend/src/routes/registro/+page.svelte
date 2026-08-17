@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import Field from '$lib/components/Field.svelte';
-	import Icon from '$lib/components/Icon.svelte';
-	import Spinner from '$lib/components/Spinner.svelte';
+	import Field from '$lib/ui/components/Field.svelte';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();

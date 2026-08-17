@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
-import { round2 } from '$lib/money';
-import type { ParsedLine, ParseResult } from '$lib/types';
+import { round2 } from '$lib/domain/money';
+import type { ParsedLine, ParseResult } from '$lib/domain/types';
 
 /**
  * Lector de facturas electrónicas de Hacienda (Costa Rica).

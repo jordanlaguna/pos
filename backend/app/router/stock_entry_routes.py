@@ -10,7 +10,7 @@ from app.schemas.schemas_stock_entry import (
     StockEntrySuccess,
 )
 from app.services import crud_stock_entry
-from app.utils.auth_dependency import require_admin
+from app.utils.auth_dependency import Sesion, require_admin
 
 router = APIRouter()
 
@@ -28,7 +28,7 @@ def get_db():
 def create_entry(
     payload: StockEntryCreate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     return crud_stock_entry.create_entry(db, payload)
 
@@ -37,7 +37,7 @@ def create_entry(
 def list_entries(
     limit: int = 200,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     entries = (
         db.query(StockEntry).order_by(StockEntry.created_at.desc()).limit(limit).all()
@@ -49,7 +49,7 @@ def list_entries(
 def get_entry(
     entry_id: int,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     entry = db.query(StockEntry).filter(StockEntry.id == entry_id).first()
     if not entry:
@@ -61,7 +61,7 @@ def get_entry(
 def cancel_entry(
     entry_id: int,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     """Anula la entrada y devuelve el stock al valor previo."""
     return crud_stock_entry.cancel_entry(db, entry_id)

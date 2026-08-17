@@ -2,14 +2,14 @@ import { fail } from '@sveltejs/kit';
 import { toMessage } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth';
 import { invalidateSettings, loadSettings, saveSettings } from '$lib/server/settings';
-import { formError, Validator } from '$lib/validation';
+import { formError, Validator } from '$lib/application/validation';
 import {
 	isHexColor,
 	mergeSettings,
-	TIPOS_IDENTIFICACION,
+	ID_TYPES,
 	type LogoSettings,
 	type Settings
-} from '$lib/settings';
+} from '$lib/domain/settings';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Un logo más pesado que esto no mejora la factura; solo hace lenta cada pantalla. */
@@ -23,8 +23,8 @@ const MAX_LOGO_BYTES = 250 * 1024;
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	requireAdmin(locals, url.pathname);
-	const stored = await loadSettings(locals.token);
+	const admin = requireAdmin(locals, url.pathname);
+	const stored = await loadSettings(locals.token, admin.company_id);
 
 	return {
 		configuracion: stored.settings,
@@ -78,7 +78,7 @@ async function readLogo(form: FormData, v: Validator): Promise<LogoSettings | un
 
 export const actions: Actions = {
 	guardar: async ({ request, locals, url }) => {
-		requireAdmin(locals, url.pathname);
+		const admin = requireAdmin(locals, url.pathname);
 
 		const form = await request.formData();
 		const v = new Validator(form);
@@ -95,7 +95,7 @@ export const actions: Actions = {
 		const tipoIdentificacion = v.oneOf(
 			'negocio_tipo_identificacion',
 			'El tipo de identificación',
-			TIPOS_IDENTIFICACION.map((t) => t.codigo),
+			ID_TYPES.map((t) => t.code),
 			{ required: false }
 		);
 		const telefono = v.text('negocio_telefono', 'El teléfono', { required: false, max: 30 });
@@ -155,57 +155,65 @@ export const actions: Actions = {
 		 * forma tiene una configuración válida.
 		 */
 		const settings: Settings = mergeSettings({
-			negocio: {
+			business: {
 				nombre,
-				razon_social: razonSocial,
+				legalName: razonSocial,
 				identificacion,
-				tipo_identificacion: tipoIdentificacion || '01',
+				taxIdType: tipoIdentificacion || '01',
 				telefono,
 				correo,
 				direccion,
-				sitio_web: sitioWeb
+				website: sitioWeb
 			},
-			moneda: {
+			currency: {
 				codigo,
 				simbolo,
 				decimales,
-				separador_miles: separator(form, 'moneda_separador_miles', '.'),
-				separador_decimal: separator(form, 'moneda_separador_decimal', ','),
-				simbolo_al_final: checked(form, 'moneda_simbolo_al_final'),
-				espacio: checked(form, 'moneda_espacio')
+				thousandsSeparator: separator(form, 'moneda_separador_miles', '.'),
+				decimalSeparator: separator(form, 'moneda_separador_decimal', ','),
+				symbolAtEnd: checked(form, 'moneda_simbolo_al_final'),
+				space: checked(form, 'moneda_espacio')
 			},
-			impuesto: {
+			tax: {
 				nombre: impuestoNombre,
 				// 13 → 0.13, sin arrastrar el error binario de la división.
-				tasa: Math.round((tasaPorcentaje / 100) * 1e6) / 1e6
+				rate: Math.round((tasaPorcentaje / 100) * 1e6) / 1e6
 			},
-			documento: {
-				plantilla: plantilla || 'tiquete',
+			document: {
+				template: plantilla || 'tiquete',
 				color: colorDocumento,
-				mostrar_logo: checked(form, 'documento_mostrar_logo'),
-				mostrar_codigo: checked(form, 'documento_mostrar_codigo'),
-				ancho_tiquete: anchoTiquete === '58' ? 58 : 80,
-				mensaje_gracias: mensajeGracias,
+				showLogo: checked(form, 'documento_mostrar_logo'),
+				showBarcode: checked(form, 'documento_mostrar_codigo'),
+				receiptWidth: anchoTiquete === '58' ? 58 : 80,
+				thanksMessage: mensajeGracias,
 				leyenda,
 				notas
 			},
-			apariencia: { color_acento: colorAcento },
-			electronica: {
+			appearance: { accentColor: colorAcento },
+			eInvoicing: {
 				// La emisión todavía no está implementada; ver la nota de la pantalla.
 				// Se guarda la intención, no se activa nada.
-				activa: checked(form, 'electronica_activa'),
-				ambiente: ambiente || 'sandbox',
-				actividad_economica: actividad,
+				enabled: checked(form, 'electronica_activa'),
+				environment: ambiente || 'sandbox',
+				economicActivity: actividad,
 				sucursal,
 				terminal,
-				usuario_atv: usuarioAtv
+				atvUser: usuarioAtv
 			}
 		});
 
 		try {
-			await saveSettings(locals.token, settings, quitarLogo && !logo ? null : logo);
+			await saveSettings(
+				locals.token,
+				settings,
+				quitarLogo && !logo ? null : logo,
+				admin.company_id
+			);
 		} catch (error) {
-			invalidateSettings();
+			// Se descarta solo la de ESTA compañía: guardar mal la configuración de
+			// un negocio no tiene por qué obligar a los demás a volver a pedir la
+			// suya (T-224).
+			invalidateSettings(admin.company_id);
 			return fail(400, { errors: formError(toMessage(error)) });
 		}
 

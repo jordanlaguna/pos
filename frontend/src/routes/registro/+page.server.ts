@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { api, toMessage } from '$lib/server/api';
-import { formError, Validator } from '$lib/validation';
+import { formError, Validator } from '$lib/application/validation';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {

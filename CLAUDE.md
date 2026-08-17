@@ -1,7 +1,8 @@
 # VentaSys — contexto para Claude Code
 
 Punto de venta migrado de C#/WinForms a SvelteKit, sobre FastAPI + MySQL en
-Docker. Idioma de la interfaz: español de Costa Rica, con voseo. Moneda: colones.
+Docker. Interfaz en español (usted), con inglés y portugués por venir. Moneda:
+configurable; por omisión colones.
 IVA 13 %.
 
 ## Al empezar una sesión
@@ -37,6 +38,29 @@ aparecido. Los pendientes viven ahí, no en `progress.json`.
 Es un registro de trabajo, no un diario: anotá lo que le sirva a quien retome,
 no cada archivo que se tocó.
 
+## Qué se hace sin preguntar y qué no
+
+Editar no se pregunta: crear archivos, cambiarlos, reescribirlos. Hay dos
+excepciones, y las dos son del mismo tipo —lo que no se puede deshacer leyendo
+el diff—.
+
+**Borrar se consulta.** Archivos, ramas, volúmenes de Docker, filas de la base.
+`.claude/settings.json` lo respalda con una lista de patrones (`rm`, `git clean`,
+`git reset`, `docker compose down`, `docker volume rm`…), pero esa lista es un
+cinturón, no un muro: solo reconoce las formas que alguien anotó. Un borrado
+escrito de otra manera —dentro de un script, en un `docker compose exec … mysql`,
+en un `python -c`— la esquiva sin esfuerzo. Lo que garantiza el aviso es la
+regla, no el patrón.
+
+**Una mejora que no está en `.specify/` se consulta.** Si aparece algo que
+conviene hacer y no figura en `spec.md`, `plan.md` ni `task.md`, se plantea
+antes de implementarlo: primero porque quizá ya se descartó por una razón que no
+está a la vista, y segundo porque lo que se construye sin pasar por los
+documentos queda sin requisito que lo justifique y sin tarea que lo verifique.
+
+Consultar no es frenarse. Lo que sí está en los documentos se sigue haciendo
+mientras tanto, y la pregunta se hace cuando toca decidir, no al empezar.
+
 ## Mapa
 
 ```
@@ -56,11 +80,25 @@ borrar en cuanto se migre su `.env` y su volumen de datos.
 
 ```bash
 cd backend && docker compose up -d --build    # backend + MySQL en :8001
-cd backend && python seed.py --ventas 35      # datos de prueba
+
+# Base nueva: primero la compañía, después los datos. En ese orden.
+docker compose exec fastapi python bootstrap.py \
+    --nombre "Mi negocio" --email admin@ventasys.cr --password admin123
+python seed.py --ventas 35                    # datos de prueba
+
 cd frontend && npm run dev                    # POS en :5173
 ```
 
-Para desarrollar sin backend: `POS_MOCK=1` en `frontend/.env`.
+`bootstrap.py` da de alta una compañía con su sucursal, su terminal y su primer
+administrador. Es el único guion que habla con la base directamente, y tiene que
+serlo: no hay sesión sin membresía ni membresía sin compañía, así que la primera
+no se puede crear por la API. `seed.py` sí va por HTTP y necesita que la compañía
+ya exista.
+
+Para desarrollar sin backend: `POS_MOCK=1` en `frontend/.env`. El modo simulado
+tiene **dos** compañías: la primera con catálogo y ventas, la segunda vacía como
+nace una recién dada de alta. El administrador pertenece a las dos y por eso ve
+la pantalla de selección; los cajeros, a una sola, y entran directo.
 
 ## Reglas del proyecto
 
@@ -95,7 +133,10 @@ Para desarrollar sin backend: `POS_MOCK=1` en `frontend/.env`.
   esas dos capas sin prueba está incompleta, no «pendiente».
 - **El código va en inglés** —identificadores, archivos, tablas, columnas,
   rutas—, igual que el código heredado (`products`, `sales`, `company_id`).
-  **La interfaz va en español de Costa Rica** y **la documentación también**.
+  **La interfaz va en español, tratando de usted** —no voseo— y **la
+  documentación también**. La interfaz se traduce (F8): ningún texto que ve una
+  persona se escribe dentro de un componente, y **el backend no escribe texto
+  para personas**: devuelve un código y los datos, y el POS arma la frase.
 - Al terminar: `cd frontend && npm run check` en 0 errores y 0 advertencias,
   `npm test` y `cd backend && pytest` en verde.
 
@@ -119,6 +160,28 @@ Para desarrollar sin backend: `POS_MOCK=1` en `frontend/.env`.
 - `node build/index.js` **no lee el `.env`**: hace falta `--env-file=.env`.
 - `ORIGIN` es obligatoria en producción o todo POST responde 403.
 - Con `curl` contra el POS hay que mandar `-H "Origin: http://localhost:3000"`.
+- El cliente `mysql` **negocia latin1** si nadie le dice otra cosa. Todo `.sql`
+  con acentos empieza con `SET NAMES utf8mb4;` o «Compañía» entra a la base como
+  «CompaÃ±Ã­a». Las tablas ya son utf8mb4; lo que falta es la conexión.
+- La dependencia que fija la compañía (`payload_del_token`) es **asíncrona a
+  propósito**. FastAPI corre las síncronas en otro hilo, con una copia del
+  contexto, y un `ContextVar` fijado ahí no llega al endpoint. Volverla `def`
+  hace que todo empiece a lanzar `SinCompania`.
+- Después de un `commit`, SQLAlchemy **expira los objetos**: leer un atributo de
+  una tabla de negocio dispara una relectura, y si el contexto ya no tiene
+  compañía, falla. En los guiones hay que armar el resumen antes de confirmar.
+- **Las pruebas de punta a punta ya no reutilizan un servidor que esté
+  escuchando.** `reuseExistingServer` estaba en `!CI`, y un `npm run dev`
+  olvidado en el 4173 hizo que la suite entera pasara en verde contra el código
+  de horas antes. Si el puerto está ocupado, ahora falla y lo dice.
+- **`Query.count()` no se filtra por compañía.** `db.query(Product).all()`
+  devuelve las propias; `db.query(Product).count()` cuenta las de todas, porque
+  `count()` envuelve la consulta en una subconsulta donde el criterio no entra.
+  Se cuenta con `db.query(func.count(Modelo.id))`. Hay un guardián en
+  `tests/test_tenancy.py` que tumba `pytest` si aparece uno sin filtro.
+- El modelo y la migración tienen que decir lo **mismo**. Una instalación nueva
+  crea el esquema con `create_all` y una vieja lo trae de la migración: si
+  difieren, el mismo código se comporta distinto en cada una.
 
 ## Agentes del proyecto
 

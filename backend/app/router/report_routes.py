@@ -11,7 +11,7 @@ from app.schemas.schemas_report import (
     TopProduct,
 )
 from app.services import crud_report
-from app.utils.auth_dependency import require_admin
+from app.utils.auth_dependency import Sesion, require_admin
 
 router = APIRouter()
 
@@ -36,7 +36,7 @@ def get_summary(
     date_from: str | None = FromParam,
     date_to: str | None = ToParam,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     return crud_report.summary(db, date_from, date_to)
 
@@ -47,7 +47,7 @@ def get_top_products(
     date_to: str | None = ToParam,
     limit: int = 8,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     return crud_report.top_products(db, date_from, date_to, limit)
 
@@ -57,7 +57,7 @@ def get_sales_by_day(
     date_from: str | None = FromParam,
     date_to: str | None = ToParam,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     return crud_report.sales_by_day(db, date_from, date_to)
 
@@ -67,7 +67,7 @@ def get_by_payment_method(
     date_from: str | None = FromParam,
     date_to: str | None = ToParam,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     return crud_report.by_payment_method(db, date_from, date_to)
 
@@ -76,6 +76,6 @@ def get_by_payment_method(
 def get_low_stock(
     threshold: int = 10,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: Sesion = Depends(require_admin),
 ):
     return crud_report.low_stock(db, threshold)

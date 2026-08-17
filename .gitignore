@@ -20,3 +20,17 @@ __pycache__/
 # Compilados
 frontend/.svelte-kit/
 frontend/build/
+
+# Salida de las pruebas. Se regenera en cada corrida.
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Permisos de esta máquina. `.claude/settings.json` sí se versiona —es el
+# acuerdo del proyecto— pero el `.local` lleva rutas del scratchpad y permisos
+# que concedió quien está sentado acá, y no le sirven a nadie más.
+.claude/settings.local.json

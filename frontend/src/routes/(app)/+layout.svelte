@@ -2,14 +2,14 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import Icon from '$lib/components/Icon.svelte';
-	import { theme } from '$lib/stores/theme.svelte';
-	import { visibleGroups, titleFor } from '$lib/navigation';
-	import { initials } from '$lib/format';
-	import { configureMoney } from '$lib/money';
-	import { accentTheme, hexToRgb } from '$lib/color';
-	import { businessName } from '$lib/settings';
-	import { DEFAULT_SETTINGS } from '$lib/settings';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import { theme } from '$lib/ui/stores/theme.svelte';
+	import { visibleGroups, titleFor } from '$lib/ui/navigation';
+	import { initials } from '$lib/ui/format';
+	import { configureMoney } from '$lib/domain/money';
+	import { accentTheme, hexToRgb } from '$lib/domain/color';
+	import { businessName } from '$lib/domain/settings';
+	import { DEFAULT_SETTINGS } from '$lib/domain/settings';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: any } = $props();
@@ -18,7 +18,7 @@
 	 * La moneda y el impuesto se fijan acá, en el script del layout, porque corre
 	 * antes de que se renderice cualquier hijo —tanto en el servidor como al
 	 * hidratar—, y de ahí en adelante `formatMoney` ya sabe con qué símbolo
-	 * escribir. Ver la nota larga en $lib/money.ts.
+	 * escribir. Ver la nota larga en $lib/domain/money.ts.
 	 *
 	 * `untrack` porque acá SÍ se quiere el valor inicial y nada más: de mantenerlo
 	 * al día se encarga el `$effect.pre` de abajo.
@@ -39,11 +39,11 @@
 	 * Solo se emiten variables cuando el color elegido no es el de fábrica; así
 	 * el sistema de diseño de app.css sigue siendo la única fuente mientras nadie
 	 * toque nada. El tono oscuro y el color del texto no los elige el usuario: se
-	 * derivan para que el contraste no dependa del gusto (ver $lib/color.ts).
+	 * derivan para que el contraste no dependa del gusto (ver $lib/domain/color.ts).
 	 */
 	const accent = $derived(
-		data.settings.apariencia.color_acento !== DEFAULT_SETTINGS.apariencia.color_acento
-			? accentTheme(data.settings.apariencia.color_acento)
+		data.settings.appearance.accentColor !== DEFAULT_SETTINGS.appearance.accentColor
+			? accentTheme(data.settings.appearance.accentColor)
 			: null
 	);
 
@@ -236,6 +236,42 @@
 		</div>
 
 		<div class="shrink-0 border-t border-[var(--border)] p-2">
+			<!--
+				En qué compañía y en qué caja se está trabajando (T-211).
+				Con una sola compañía es información de fondo; con varias es lo que
+				evita cobrarle una venta al negocio equivocado, y por eso va pegado al
+				usuario y no escondido en Configuración.
+			-->
+			{#if !collapsed && data.user.company_name}
+				<div class="px-2 pt-1 pb-2">
+					<p class="truncate text-[10px] tracking-wide text-[var(--text-subtle)] uppercase">
+						Compañía
+					</p>
+					<p class="truncate text-xs font-medium text-[var(--text)]">
+						{data.user.company_name}
+					</p>
+					{#if data.user.branch_code && data.user.terminal_code}
+						<p class="truncate text-[10px] text-[var(--text-subtle)]">
+							Sucursal {data.user.branch_code} · Caja {data.user.terminal_code}
+						</p>
+					{/if}
+					{#if data.user.companies_available > 1}
+						<!--
+							Solo aparece cuando hay a dónde ir (RN-25). Ofrecerle «cambiar
+							de compañía» a quien tiene una sola es prometer algo que no
+							existe.
+						-->
+						<a
+							href="/compania"
+							class="mt-1.5 inline-flex items-center gap-1 text-[10px] text-[var(--accent-text)] hover:underline"
+						>
+							<Icon name="refresh" size={11} />
+							Cambiar de compañía
+						</a>
+					{/if}
+				</div>
+			{/if}
+
 			<div
 				class="flex items-center gap-2.5 rounded-lg px-2 py-2 {collapsed ? 'justify-center' : ''}"
 			>

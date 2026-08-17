@@ -1,6 +1,6 @@
 import { api, apiSafe } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
-import type { Client, Sale } from '$lib/types';
+import type { Client, Sale } from '$lib/domain/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {

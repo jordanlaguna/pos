@@ -20,8 +20,11 @@ backend/
 ├── Dockerfile
 ├── wait-for-db.sh
 ├── initdb/               dumps que se cargan al crear la base (vacío)
-├── migration.sql         para una base que YA tiene datos
+├── migration.sql         arreglos heredados, para una base anterior a F1
+├── migrations/           migraciones numeradas de acá en adelante
 ├── requirements.txt
+├── bootstrap.py          da de alta una compañía y su administrador
+├── company_dump.py       respalda, borra y restaura UNA compañía
 ├── seed.py               datos de prueba vía API
 └── .env.example
 ```
@@ -60,18 +63,111 @@ python seed.py --url http://localhost:8001 --ventas 35
 
 > **El puerto es 8001, no 8000.** El compose publica `"8001:80"`.
 
+### La primera compañía
+
+Desde F2 la base es multiempresa y una base recién creada no tiene ninguna
+compañía. Sin compañía no hay membresía, y sin membresía nadie entra —ni
+siquiera para crear la primera—. Por eso el alta inicial no va por la API:
+
+```bash
+docker compose exec fastapi python bootstrap.py \
+    --nombre "Mi negocio" --email admin@ventasys.cr --password admin123
+```
+
+Deja la compañía (afiliado 1, compañía 1), su sucursal `001`, su terminal
+`00001`, su configuración vacía y la membresía de administrador. Es repetible: si
+la compañía ya existe la reutiliza, y si la persona ya existe le agrega la
+membresía —que es como se arma el caso del contador que atiende varios locales—.
+
+Después, `seed.py` carga catálogo y ventas de ejemplo por HTTP.
+
 ### Base con datos previos
 
 `create_all()` solo crea tablas que no existen; no modifica las que ya están. Si
-la base viene de una instalación anterior, hay que correr la migración —después
-de un respaldo:
+la base viene de una instalación anterior hay que correr las migraciones, en
+orden y después de un respaldo:
 
 ```bash
-docker compose exec -T db mysqldump -u root -pCLAVE posdb > respaldo.sql
-docker compose exec -T db mysql -u root -pCLAVE posdb < migration.sql
+docker exec -i mysql_db_api sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" \
+    --single-transaction --databases posdb' > respaldo.sql
+
+# Anterior a F1: roles, DATETIME, ventas sin cliente…
+docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
+    < migration.sql
+
+# F2: multiempresa. Crea también la compañía 1 con todo lo que ya había adentro,
+# así que después de esta NO hay que correr bootstrap.py.
+docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
+    < migrations/002-multiempresa.sql
+
+# La membresía se acepta en vez de imponerse. Las que ya existían quedan aceptadas.
+docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
+    < migrations/003-invitaciones.sql
 ```
 
-Sobre una base nueva no hace falta: `create_all()` ya deja el esquema correcto.
+Ninguna es idempotente: MySQL 8 no tiene `ADD COLUMN IF NOT EXISTS`, así que
+correrlas dos veces falla en el primer `ALTER`. Falla, no corrompe. Cada una
+termina con consultas de control que dicen si quedó bien.
+
+Sobre una base nueva no hacen falta: `create_all()` deja el mismo esquema
+—comprobado columna por columna— y solo hay que correr `bootstrap.py`.
+
+### Respaldar una sola compañía
+
+Con base compartida, devolverle sus datos a un cliente ya no es un `mysqldump`:
+hay que sacar sus filas de doce tablas en el orden que exigen las claves
+foráneas. `company_dump.py` hace eso, y el camino de vuelta.
+
+```bash
+docker compose exec fastapi python company_dump.py exportar \
+    --afiliado 2 --compania 1 --salida /tmp/cliente.json
+docker compose cp fastapi:/tmp/cliente.json ./cliente.json
+
+# Dar de baja. Pide el par escrito a mano: es lo único acá que destruye datos.
+docker compose exec fastapi python company_dump.py borrar \
+    --afiliado 2 --compania 1 --confirmar 2-1
+
+# Y el camino de vuelta.
+docker compose exec fastapi python company_dump.py importar --entrada /tmp/cliente.json
+```
+
+Conserva los identificadores: `auto_increment` de MySQL nunca reutiliza un
+número, así que los de una compañía borrada quedan libres para siempre. El
+precio es que restaurar **encima** de una compañía que todavía tiene filas está
+prohibido, y el guion se niega antes de tocar nada.
+
+`users` y `persons` no se borran con la compañía: son identidad global y pueden
+estar compartidas con otra que sigue viva. Quedan sin membresía, que es lo
+correcto.
+
+---
+
+## Pruebas
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+
+docker compose -f docker-compose.test.yml up -d --build   # pila desechable, :8002
+pytest
+docker compose -f docker-compose.test.yml down -v         # borra la base de prueba
+```
+
+Son dos clases distintas:
+
+| | |
+|---|---|
+| `tests/test_clock.py` | Código puro. Corre siempre, sin Docker. |
+| `tests/test_characterization.py` | Contra FastAPI y MySQL de verdad. Sin la pila arriba se **omiten**, con el motivo en pantalla. |
+
+La pila de pruebas es aparte a propósito: proyecto `ventasys-test`, puerto 8002
+y la base en memoria sin volumen con nombre. Sin eso, cada corrida dejaría
+productos, ventas y turnos inventados en la base de trabajo, y los reportes
+dejarían de cuadrar sin que nadie entienda por qué. `down -v` la borra entera.
+
+Las pruebas de caracterización fijan el comportamiento de hoy —los números de
+`../.specify/progress.json`— antes de reorganizar el backend por capas. No
+juzgan si está bien: dicen qué hace. Si una cambia al mover código, el refactor
+rompió algo.
 
 ---
 
@@ -102,9 +198,29 @@ carpeta haría que MySQL arrancara contra un volumen vacío: parecería que se
 perdió la base entera.
 
 Si venís de un despliegue anterior levantado desde otra carpeta, los datos están
-en `<carpeta>_db_data`. Para conservarlos hay que copiar ese volumen al nombre
-nuevo antes de levantar; si son datos de prueba, sale más barato volver a
-sembrar.
+en `<carpeta>_db_data`. Con los dos stacks **abajo**, se copia así:
+
+```bash
+docker compose down                      # y también el stack viejo
+docker volume create ventasys_db_data
+docker run --rm -v <viejo>_db_data:/desde:ro -v ventasys_db_data:/hacia alpine \
+  sh -c "cp -a /desde/. /hacia/"
+docker compose up -d --build
+```
+
+Se copia el volumen en vez de restaurar un volcado porque **las cuentas de MySQL
+viven dentro del propio volumen**: copiándolo, el usuario y la contraseña del
+`.env` siguen sirviendo sin tocar nada. Con un volcado sobre una base nueva hay
+que recrear también las cuentas.
+
+Conviene comprobar antes de borrar el viejo:
+
+```bash
+docker run --rm -v <viejo>_db_data:/a:ro -v ventasys_db_data:/b:ro alpine \
+  diff -r /a /b && echo "idénticos"
+```
+
+Si son datos de prueba, sale más barato volver a sembrar.
 
 ---
 
@@ -129,9 +245,10 @@ ejemplo y la clave de firma publicada— y nadie se entera.
 ## Por qué el código es como es
 
 Este backend viene de [`backend-python`](https://github.com/jordanlaguna/backend-python.git).
-Durante la migración del POS aparecieron diez defectos, y varios solo se ven
-ejecutando el sistema, no leyéndolo. Quedan acá porque explican decisiones que
-de otro modo parecen arbitrarias.
+Durante la migración del POS aparecieron diez defectos, y al escribir las
+pruebas apareció un undécimo. Varios solo se ven ejecutando el sistema, no
+leyéndolo. Quedan acá porque explican decisiones que de otro modo parecen
+arbitrarias.
 
 ### 1. Ventas fantasma — `services/crud_sale.py`
 
@@ -174,7 +291,10 @@ puede existir.
 Se emitían JWT en el login pero **ningún endpoint los verificaba**. Se agregó
 `get_current_user` (401 si el token falta, venció o apunta a un usuario borrado)
 y `require_admin`, aplicados en todos los routers. Quedan públicos solo
-`POST /users/login` y `POST /persons/register`.
+`POST /auth/login` —que en F2 reemplazó a `POST /users/login`— y
+`POST /persons/register`, que desde F2 crea una identidad sin ninguna compañía a
+la que entrar: una puerta abierta a la nada, que es lo correcto mientras T-903 no
+resuelva cómo se concede el primer administrador.
 
 ### 5. Ventas obligadas a tener cliente — `models/model_sales.py`
 
@@ -228,6 +348,30 @@ visible. Reproducido con 0,2 s de desfase. Ahora la hora la pone el servidor.
 `__init__.py`. Funcionaba de casualidad: Python 3 trata un directorio sin
 `__init__.py` como paquete de espacio de nombres. Corregido al reorganizar el
 repositorio.
+
+### 11. Ventas guardadas en el futuro — `utils/clock.py`
+
+> Esta lista numera los defectos **del backend**. En
+> `../.specify/progress.json`, que lleva la cuenta de todo el proyecto, este es
+> el 14.
+
+
+Las columnas de fecha son `DATETIME`, sin fracción de segundo, y MySQL
+**redondea** al guardar: `10:00:05.700` queda almacenado como `10:00:06`.
+Python escribía con microsegundos, así que una venta podía quedar guardada
+hasta medio segundo por delante del reloj.
+
+El arqueo delimita las ventas del turno con `created_at <= ahora`, y una venta
+con marca futura no entra en esa ventana: **desaparecía de su propio turno**
+hasta que el reloj la alcanzara. Si además la caja se cerraba dentro de ese
+medio segundo, la venta no aparecía en ningún turno y el faltante quedaba sin
+explicación posible.
+
+Ahora toda escritura de fecha pasa por `clock.now()`, que trunca al segundo: lo
+guardado nunca es posterior a lo ocurrido, que es la única relación que el
+arqueo necesita. Lo encontraron las pruebas de caracterización al volverse
+rápidas —con la suite lenta, el reloj siempre alcanzaba a la venta antes de que
+alguien mirara—.
 
 ---
 

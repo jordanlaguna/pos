@@ -14,7 +14,7 @@ import type { RequestHandler } from './$types';
  * cambia el sello, la URL es otra y la caché vieja deja de usarse.
  */
 export const GET: RequestHandler = async ({ locals, setHeaders }) => {
-	const stored = await loadSettings(locals.token);
+	const stored = await loadSettings(locals.token, locals.user?.company_id);
 	if (!stored.logo) error(404, { message: 'El negocio no tiene logo configurado.' });
 
 	let bytes: Buffer;

@@ -1,16 +1,36 @@
-"""Lógica del turno de caja."""
+"""Turno de caja — adaptador.
 
-from datetime import datetime
+El cálculo y las reglas se mudaron a
+`app/application/use_cases/cash_session.py` y `app/domain/cash.py`. Lo que queda
+acá es la traducción: armar los puertos desde la sesión de SQLAlchemy, convertir
+los «no» del dominio en códigos de estado y darle al JSON la forma que el API ya
+tenía. Los mensajes son los mismos de antes, palabra por palabra.
+"""
+
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.model_cash import CashMovement, CashSession
+from app.application.use_cases.cash_session import (
+    AddCashMovement,
+    BuildSessionReport,
+    CloseCashSession,
+    NoOpenSession,
+    OpenCashSession,
+    SessionAlreadyOpen,
+)
+from app.domain.errors import InsufficientCash, InvalidMovement
+from app.domain.money import Money
+from app.infrastructure.clock import SystemClock
+from app.infrastructure.persistence.sqlalchemy_repositories import (
+    SqlAlchemyCashRepository,
+    SqlAlchemyReturnRepository,
+    SqlAlchemySaleRepository,
+    SqlAlchemyUnitOfWork,
+)
+from app.models.model_cash import CashSession
 from app.models.model_person import Person
-from app.models.model_return import Return
-from app.models.model_sales import Sale
 from app.models.model_user import User
 
 
@@ -37,76 +57,30 @@ def get_open_session(db: Session, user_id: int) -> CashSession | None:
     )
 
 
+def _reporte(db: Session) -> BuildSessionReport:
+    return BuildSessionReport(
+        sales=SqlAlchemySaleRepository(db),
+        returns=SqlAlchemyReturnRepository(db),
+        cash=SqlAlchemyCashRepository(db),
+        clock=SystemClock(),
+    )
+
+
 def build_report(db: Session, session: CashSession) -> dict:
-    """Arma el estado completo del turno.
+    """Arma el estado completo del turno, tal como lo espera el API.
 
-    Las ventas se atribuyen por ventana de tiempo: las del mismo cajero entre la
-    apertura y el cierre (o ahora, si sigue abierta). Por eso `sales.created_at`
-    tiene que ser DATETIME — con DATE todas las del día caerían en el mismo
-    instante y no habría forma de separar turnos.
+    El cálculo se mudó a `application/use_cases/cash_session.py`; acá queda la
+    forma del JSON. `_money` en cada cifra porque JSON no tiene Decimal.
     """
-
-    start = session.opened_at
-    end = session.closed_at or datetime.now()
-
-    sales = (
-        db.query(Sale)
-        .filter(
-            Sale.user_id == session.user_id,
-            Sale.created_at >= start,
-            Sale.created_at <= end,
-        )
-        .all()
+    cifras = _reporte(db)(
+        session_id=session.id,
+        user_id=session.user_id,
+        opening=Money(session.opening_amount),
+        opened_at=session.opened_at,
+        closed_at=session.closed_at,
+        counted=Money(session.closing_amount) if session.closing_amount is not None else None,
     )
-
-    movements = (
-        db.query(CashMovement)
-        .filter(CashMovement.session_id == session.id)
-        .order_by(CashMovement.created_at)
-        .all()
-    )
-
-    returns_total = (
-        db.query(func.coalesce(func.sum(Return.total), 0))
-        .filter(
-            Return.user_id == session.user_id,
-            Return.created_at >= start,
-            Return.created_at <= end,
-        )
-        .scalar()
-    )
-
-    by_method: dict[str, dict] = {}
-    for sale in sales:
-        entry = by_method.setdefault(
-            sale.payment_method, {"payment_method": sale.payment_method, "count": 0, "total": Decimal(0)}
-        )
-        entry["count"] += 1
-        entry["total"] += Decimal(str(sale.total))
-
-    # Solo el efectivo pasa por la gaveta: tarjeta y transferencia no la afectan.
-    cash_sales = sum(
-        (Decimal(str(s.total)) for s in sales if s.payment_method == "Efectivo"),
-        Decimal(0),
-    )
-    movements_in = sum(
-        (Decimal(str(m.amount)) for m in movements if m.type == "entrada"), Decimal(0)
-    )
-    movements_out = sum(
-        (Decimal(str(m.amount)) for m in movements if m.type == "salida"), Decimal(0)
-    )
-
-    expected = (
-        Decimal(str(session.opening_amount))
-        + cash_sales
-        + movements_in
-        - movements_out
-        - Decimal(str(returns_total or 0))
-    )
-
-    difference = None
-    if session.closing_amount is not None:
-        difference = _money(Decimal(str(session.closing_amount)) - expected)
+    movements = SqlAlchemyCashRepository(db).movements(session.id)
 
     return {
         "id": session.id,
@@ -116,8 +90,8 @@ def build_report(db: Session, session: CashSession) -> dict:
         "closed_at": session.closed_at,
         "opening_amount": _money(session.opening_amount),
         "closing_amount": _money(session.closing_amount) if session.closing_amount is not None else None,
-        "expected_amount": _money(expected),
-        "difference": difference,
+        "expected_amount": cifras.expected.as_float(),
+        "difference": cifras.difference.as_float() if cifras.difference is not None else None,
         "status": session.status,
         "notes": session.notes,
         "movements": [
@@ -131,73 +105,66 @@ def build_report(db: Session, session: CashSession) -> dict:
             }
             for m in movements
         ],
-        "sales_count": len(sales),
-        "sales_total": _money(sum((Decimal(str(s.total)) for s in sales), Decimal(0))),
+        "sales_count": cifras.sales_count,
+        "sales_total": cifras.sales_total.as_float(),
         "by_payment_method": [
-            {"payment_method": v["payment_method"], "count": v["count"], "total": _money(v["total"])}
-            for v in sorted(by_method.values(), key=lambda x: x["total"], reverse=True)
+            {"payment_method": metodo, "count": n, "total": total.as_float()}
+            for metodo, n, total in cifras.by_payment_method
         ],
-        "cash_sales": _money(cash_sales),
-        "movements_in": _money(movements_in),
-        "movements_out": _money(movements_out),
-        "returns_total": _money(returns_total),
+        "cash_sales": cifras.cash_sales.as_float(),
+        "movements_in": cifras.movements_in.as_float(),
+        "movements_out": cifras.movements_out.as_float(),
+        "returns_total": cifras.returns_total.as_float(),
     }
 
 
 def open_session(db: Session, user_id: int, opening_amount: float, notes: str | None) -> dict:
-    if get_open_session(db, user_id):
-        raise HTTPException(status_code=400, detail="Ya existe una caja abierta para este usuario.")
-    if opening_amount < 0:
-        raise HTTPException(status_code=400, detail="El monto de apertura no puede ser negativo.")
-
-    session = CashSession(
-        user_id=user_id,
-        opened_at=datetime.now(),
-        opening_amount=opening_amount,
-        status="abierta",
-        notes=notes,
+    caso = OpenCashSession(
+        cash=SqlAlchemyCashRepository(db), uow=SqlAlchemyUnitOfWork(db), clock=SystemClock()
     )
-    db.add(session)
-    db.commit()
+    try:
+        session = caso(user_id=user_id, opening=Money(opening_amount), notes=notes)
+    except SessionAlreadyOpen:
+        raise HTTPException(
+            status_code=400, detail="Ya existe una caja abierta para este usuario."
+        ) from None
+    except InvalidMovement:
+        raise HTTPException(
+            status_code=400, detail="El monto de apertura no puede ser negativo."
+        ) from None
+
     db.refresh(session)
     return build_report(db, session)
 
 
 def add_movement(db: Session, user_id: int, type_: str, amount: float, reason: str) -> dict:
-    if type_ not in ("entrada", "salida"):
-        raise HTTPException(status_code=400, detail="El tipo de movimiento debe ser 'entrada' o 'salida'.")
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="El monto debe ser mayor que cero.")
-    if not reason or not reason.strip():
-        raise HTTPException(status_code=400, detail="Indique el motivo del movimiento.")
-
-    session = get_open_session(db, user_id)
-    if not session:
+    caso = AddCashMovement(
+        cash=SqlAlchemyCashRepository(db),
+        report=_reporte(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+    )
+    try:
+        movement = caso(user_id=user_id, type_=type_, amount=Money(amount), reason=reason)
+    except NoOpenSession:
         raise HTTPException(
             status_code=400,
             detail="No hay una caja abierta. Abra la caja antes de registrar movimientos.",
-        )
+        ) from None
+    except InsufficientCash as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay suficiente efectivo en caja. Disponible: {e.available}.",
+        ) from None
+    except InvalidMovement as e:
+        mensajes = {
+            "el tipo debe ser 'entrada' o 'salida'": "El tipo de movimiento debe ser 'entrada' o 'salida'.",
+            "el monto debe ser mayor que cero": "El monto debe ser mayor que cero.",
+            "hace falta el motivo del movimiento": "Indique el motivo del movimiento.",
+        }
+        raise HTTPException(status_code=400, detail=mensajes.get(e.motivo, e.motivo)) from None
 
-    # No se puede sacar más efectivo del que hay: la gaveta no queda en negativo.
-    if type_ == "salida":
-        available = build_report(db, session)["expected_amount"]
-        if amount > available:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No hay suficiente efectivo en caja. Disponible: {available:.2f}.",
-            )
-
-    movement = CashMovement(
-        session_id=session.id,
-        type=type_,
-        amount=amount,
-        reason=reason.strip(),
-        created_at=datetime.now(),
-    )
-    db.add(movement)
-    db.commit()
     db.refresh(movement)
-
     return {
         "id": movement.id,
         "session_id": movement.session_id,
@@ -209,18 +176,19 @@ def add_movement(db: Session, user_id: int, type_: str, amount: float, reason: s
 
 
 def close_session(db: Session, user_id: int, closing_amount: float, notes: str | None) -> dict:
-    session = get_open_session(db, user_id)
-    if not session:
-        raise HTTPException(status_code=400, detail="No hay una caja abierta para este usuario.")
-    if closing_amount < 0:
-        raise HTTPException(status_code=400, detail="El monto contado no puede ser negativo.")
+    caso = CloseCashSession(
+        cash=SqlAlchemyCashRepository(db), uow=SqlAlchemyUnitOfWork(db), clock=SystemClock()
+    )
+    try:
+        session = caso(user_id=user_id, counted=Money(closing_amount), notes=notes)
+    except NoOpenSession:
+        raise HTTPException(
+            status_code=400, detail="No hay una caja abierta para este usuario."
+        ) from None
+    except InvalidMovement:
+        raise HTTPException(
+            status_code=400, detail="El monto contado no puede ser negativo."
+        ) from None
 
-    session.closing_amount = closing_amount
-    session.closed_at = datetime.now()
-    session.status = "cerrada"
-    if notes:
-        session.notes = notes
-
-    db.commit()
     db.refresh(session)
     return build_report(db, session)

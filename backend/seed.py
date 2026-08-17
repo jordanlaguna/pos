@@ -13,6 +13,11 @@ mismo camino que las de producción y no hace falta escribir hashes a mano en un
     python3 seed.py --ventas 40                      # además, 40 ventas de hoy
 
 Es repetible: lo que ya existe se salta, no se duplica.
+
+Necesita que la compañía exista antes. Crearla no se puede por API —no hay
+sesión sin membresía y no hay membresía sin compañía—, así que primero:
+
+    python bootstrap.py --email admin@ventasys.cr --password admin123
 """
 
 import argparse
@@ -123,19 +128,50 @@ def main():
         sys.exit(1)
     print(f"Backend accesible en {args.url}\n")
 
-    # --- usuarios. El primero que se registra queda como administrador.
-    print("Usuarios")
-    for persona in [ADMIN] + CAJEROS:
-        status, body = api.call("POST", "/persons/register", persona)
-        marca = "creado" if status == 200 else "ya existía"
-        print(f"  {persona['email']:24} {marca}")
-
-    status, body = api.call("POST", "/users/login",
+    # --- el administrador entra primero. Los cajeros se crean desde adentro,
+    # con membresía en esta compañía: `/persons/register` por sí solo crea una
+    # identidad sin ninguna compañía a la que entrar.
+    status, body = api.call("POST", "/auth/login",
                             {"email": ADMIN["email"], "password": ADMIN["password"]})
     if status != 200:
         print(f"\n  No se pudo iniciar sesión como {ADMIN['email']}: {body}")
+        print(f"  ¿Corriste bootstrap.py?\n"
+              f"    python bootstrap.py --email {ADMIN['email']} "
+              f"--password {ADMIN['password']}")
         sys.exit(1)
     api.token = body["access_token"]
+
+    # Con varias compañías el login devuelve un token de tránsito y hay que
+    # elegir. El seed toma la primera disponible: es un guion de datos de
+    # prueba, no una persona decidiendo.
+    if body.get("tipo") == "transito":
+        disponibles = [c for c in body.get("companies", []) if c["puede_entrar"]]
+        if not disponibles:
+            print(f"\n  {ADMIN['email']} no tiene ninguna compañía disponible.")
+            sys.exit(1)
+        status, body = api.call("POST", "/auth/company",
+                                {"company_id": disponibles[0]["id"]})
+        if status != 200:
+            print(f"\n  No se pudo entrar a la compañía: {body}")
+            sys.exit(1)
+        api.token = body["access_token"]
+
+    _, sesion = api.call("GET", "/users/me")
+    print(f"Sesión     {sesion['email']} · compañía {sesion['company_id']} "
+          f"· rol {sesion['role']}\n")
+
+    print("Usuarios")
+    for persona in CAJEROS:
+        status, body = api.call("POST", "/persons/register", persona)
+        creado = status == 200
+        # La identidad puede existir ya —de otra compañía, o de una corrida
+        # anterior—; lo que hay que asegurar es la membresía acá.
+        status, _ = api.call("POST", "/users/membership",
+                             {"email": persona["email"], "role": "cajero"})
+        if status != 200:
+            print(f"  {persona['email']:24} no se pudo dar de alta")
+            continue
+        print(f"  {persona['email']:24} {'creado' if creado else 'ya existía'}, con membresía")
 
     # --- catálogo
     print("\nCategorías")

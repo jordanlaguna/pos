@@ -1,9 +1,9 @@
 <script lang="ts">
-	import Icon from '$lib/components/Icon.svelte';
-	import DocumentSheet from '$lib/components/documents/DocumentSheet.svelte';
-	import { formatMoney } from '$lib/money';
-	import { formatDateTime } from '$lib/format';
-	import { businessName } from '$lib/settings';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import DocumentSheet from '$lib/ui/components/documents/DocumentSheet.svelte';
+	import { formatMoney } from '$lib/domain/money';
+	import { formatDateTime } from '$lib/ui/format';
+	import { businessName } from '$lib/domain/settings';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

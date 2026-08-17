@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { tick } from 'svelte';
-	import { submit } from '$lib/forms';
-	import Icon from '$lib/components/Icon.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import Field from '$lib/components/Field.svelte';
-	import Spinner from '$lib/components/Spinner.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import { cart, quickCash, saleNumber } from '$lib/stores/cart.svelte';
-	import { toasts } from '$lib/stores/toast.svelte';
-	import { formatMoney, parseAmount, changeDue, taxLabel } from '$lib/money';
-	import { PAYMENT_METHODS, type Product } from '$lib/types';
+	import { submit } from '$lib/ui/forms';
+	import Icon from '$lib/ui/components/Icon.svelte';
+	import Modal from '$lib/ui/components/Modal.svelte';
+	import Field from '$lib/ui/components/Field.svelte';
+	import Spinner from '$lib/ui/components/Spinner.svelte';
+	import EmptyState from '$lib/ui/components/EmptyState.svelte';
+	import { quickCash, saleNumber } from '$lib/domain/cart';
+	import { cart } from '$lib/ui/stores/cart.svelte';
+	import { toasts } from '$lib/ui/stores/toast.svelte';
+	import { formatMoney, parseAmount, changeDue, taxLabel } from '$lib/domain/money';
+	import { PAYMENT_METHODS, type Product } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -128,7 +129,7 @@
 			cashOpen = true;
 			return;
 		}
-		currentSaleNumber = saleNumber();
+		currentSaleNumber = saleNumber(new Date());
 		paymentMethod = PAYMENT_METHODS[0];
 		cashInput = String(totals.total.toFixed(2));
 		paymentOpen = true;

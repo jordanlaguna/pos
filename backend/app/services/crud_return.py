@@ -1,19 +1,39 @@
-"""Devoluciones: revierten una venta, total o parcialmente, y reponen el stock."""
+"""Devoluciones — adaptador.
 
-from datetime import datetime
+Revierten una venta, total o parcialmente, y reponen el stock. Las reglas están
+en `app/domain/returns.py` y el paso a paso en
+`app/application/use_cases/register_return.py`; acá queda la traducción a HTTP,
+con los mismos mensajes que antes.
+"""
+
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.application.use_cases.register_return import (
+    EmptyReturn,
+    MissingReason,
+    RegisterReturn,
+    RequestedReturnLine,
+    ReturnRequest,
+    SaleNotFound,
+)
+from app.domain.errors import ExcessiveReturn, InvalidQuantity, NotSoldInThisSale
+from app.infrastructure.clock import SystemClock
+from app.infrastructure.persistence.sqlalchemy_repositories import (
+    SqlAlchemyProductRepository,
+    SqlAlchemyReturnRepository,
+    SqlAlchemySaleRepository,
+    SqlAlchemySettingsRepository,
+    SqlAlchemyUnitOfWork,
+)
 from app.models.model_person import Person
 from app.models.model_product import Product
 from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.models.model_user import User
-from app.services.crud_settings import get_tax_rate
 
 
 def _money(value) -> float:
@@ -28,25 +48,6 @@ def _user_name(db: Session, user_id: int) -> str | None:
         .first()
     )
     return f"{row[0]} {row[1]}".strip() if row else None
-
-
-def _sale_tax_rate(db: Session, sale) -> Decimal:
-    """Tasa de impuesto con la que se cobró ESTA venta.
-
-    Se deduce de la venta misma (tax / subtotal) y no de la configuración
-    vigente. Si el negocio cambia la tasa mañana, la devolución de una venta de
-    hoy tiene que reembolsar lo que se cobró hoy; con la tasa actual se
-    devolvería de más o de menos y el arqueo cerraría con una diferencia que
-    nadie sabría explicar.
-
-    La configuración solo entra como respaldo, para ventas viejas guardadas sin
-    desglose (subtotal en cero), que es como quedaron las del WinForms.
-    """
-    subtotal = Decimal(str(sale.subtotal or 0))
-    tax = Decimal(str(sale.tax or 0))
-    if subtotal > 0:
-        return (tax / subtotal).quantize(Decimal("0.000001"))
-    return get_tax_rate(db)
 
 
 def _returned_quantities(db: Session, sale_id: int) -> dict[int, int]:
@@ -102,89 +103,59 @@ def serialize(db: Session, record: Return) -> dict:
 
 
 def create_return(db: Session, payload) -> dict:
-    sale = db.query(Sale).filter(Sale.id == payload.sale_id).first()
-    if not sale:
-        raise HTTPException(status_code=404, detail="Venta no encontrada")
-    if not payload.items:
-        raise HTTPException(status_code=400, detail="Debe indicar al menos un producto a devolver.")
-    if not payload.reason or not payload.reason.strip():
-        raise HTTPException(status_code=400, detail="Indique el motivo de la devolución.")
-
-    sold = {
-        d.product_id: d for d in db.query(SaleDetail).filter(SaleDetail.sale_id == sale.id).all()
-    }
-    already = _returned_quantities(db, sale.id)
-
-    # Se valida TODO antes de escribir: o entra la devolución completa, o ninguna.
-    validated = []
-    for item in payload.items:
-        detail = sold.get(item.id_product)
-        if not detail:
-            raise HTTPException(
-                status_code=400,
-                detail=f"El producto ID {item.id_product} no pertenece a esta venta.",
-            )
-        if item.quantity <= 0:
-            raise HTTPException(
-                status_code=400, detail=f"Cantidad inválida para el producto ID {item.id_product}."
-            )
-
-        remaining = detail.quantity - already.get(item.id_product, 0)
-        if item.quantity > remaining:
-            product = db.query(Product).filter(Product.id_product == item.id_product).first()
-            name = product.name if product else f"producto ID {item.id_product}"
-            raise HTTPException(
-                status_code=400,
-                detail=f"Solo quedan {remaining} unidades por devolver de {name}.",
-            )
-
-        unit_price = Decimal(str(detail.unit_price))
-        validated.append(
-            {
-                "product_id": item.id_product,
-                "quantity": item.quantity,
-                "unit_price": unit_price,
-                "subtotal": (unit_price * item.quantity).quantize(Decimal("0.01")),
-            }
-        )
-
-    net_subtotal = sum((v["subtotal"] for v in validated), Decimal(0))
-    total = (net_subtotal * (Decimal(1) + _sale_tax_rate(db, sale))).quantize(Decimal("0.01"))
+    caso = RegisterReturn(
+        sales=SqlAlchemySaleRepository(db),
+        returns=SqlAlchemyReturnRepository(db),
+        products=SqlAlchemyProductRepository(db),
+        settings=SqlAlchemySettingsRepository(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+    )
+    peticion = ReturnRequest(
+        sale_id=payload.sale_id,
+        user_id=payload.user_id,
+        reason=payload.reason or "",
+        lines=[RequestedReturnLine(i.id_product, i.quantity) for i in (payload.items or [])],
+    )
 
     try:
-        record = Return(
-            sale_id=sale.id,
-            user_id=payload.user_id,
-            created_at=datetime.now(),
-            reason=payload.reason.strip(),
-            total=total,
-        )
-        db.add(record)
-        db.flush()  # asigna record.id sin cerrar la transacción
+        resultado = caso(peticion)
 
-        for value in validated:
-            db.add(
-                ReturnDetail(
-                    return_id=record.id,
-                    product_id=value["product_id"],
-                    quantity=value["quantity"],
-                    unit_price=value["unit_price"],
-                    subtotal=value["subtotal"],
-                )
-            )
-            # El stock vuelve al inventario: esto es lo que el sistema no hacía.
-            product = db.query(Product).filter(Product.id_product == value["product_id"]).first()
-            if product:
-                product.stock += value["quantity"]
-
-        db.commit()
-        db.refresh(record)
-    except SQLAlchemyError as exc:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error en base de datos: {exc}")
+    except SaleNotFound:
+        raise HTTPException(status_code=404, detail="Venta no encontrada") from None
+    except EmptyReturn:
+        raise HTTPException(
+            status_code=400, detail="Debe indicar al menos un producto a devolver."
+        ) from None
+    except MissingReason:
+        raise HTTPException(
+            status_code=400, detail="Indique el motivo de la devolución."
+        ) from None
+    except NotSoldInThisSale as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El producto ID {e.product_id} no pertenece a esta venta.",
+        ) from None
+    except InvalidQuantity:
+        malo = next((i for i in payload.items if i.quantity <= 0), None)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cantidad inválida para el producto ID {malo.id_product if malo else None}.",
+        ) from None
+    except ExcessiveReturn as e:
+        product = db.query(Product).filter(Product.id_product == e.product_id).first()
+        name = product.name if product else f"producto ID {e.product_id}"
+        raise HTTPException(
+            status_code=400,
+            detail=f"Solo quedan {e.remaining} unidades por devolver de {name}.",
+        ) from None
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error al registrar la devolución: {exc}")
 
     return {
         "message": "Devolución registrada exitosamente",
-        "id_return": record.id,
-        "total": _money(total),
+        "id_return": resultado.id_return,
+        "total": resultado.total.as_float(),
     }

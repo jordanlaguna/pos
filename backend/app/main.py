@@ -8,6 +8,14 @@ from app.database.database import Base, engine
 # Los modelos se importan antes de create_all para que SQLAlchemy conozca todas
 # las tablas, incluidas las nuevas de caja y devoluciones.
 from app.models.model_cash import CashMovement, CashSession  # noqa: F401
+from app.models.model_company import (  # noqa: F401
+    AuditLog,
+    Branch,
+    Company,
+    Plan,
+    Terminal,
+    UserCompany,
+)
 from app.models.model_categories import Category  # noqa: F401
 from app.models.model_client import Client  # noqa: F401
 from app.models.model_person import Person  # noqa: F401
@@ -19,6 +27,7 @@ from app.models.model_settings import Settings  # noqa: F401
 from app.models.model_stock_entry import StockEntry, StockEntryDetail  # noqa: F401
 from app.models.model_user import User  # noqa: F401
 from app.router import (
+    auth_routes,
     cash_routes,
     categories_routes,
     client_routes,
@@ -54,6 +63,7 @@ if origins:
         allow_headers=["*"],
     )
 
+app.include_router(auth_routes.router, prefix="/auth", tags=["Auth"])
 app.include_router(user_routes.router, prefix="/users", tags=["Users"])
 app.include_router(person_routes.router, prefix="/persons", tags=["Persons"])
 app.include_router(client_routes.router, prefix="/clients", tags=["Clients"])
