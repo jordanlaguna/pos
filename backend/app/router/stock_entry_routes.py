@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
@@ -10,6 +10,7 @@ from app.schemas.schemas_stock_entry import (
     StockEntrySuccess,
 )
 from app.services import crud_stock_entry
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, require_admin
 
 router = APIRouter()
@@ -53,7 +54,7 @@ def get_entry(
 ):
     entry = db.query(StockEntry).filter(StockEntry.id == entry_id).first()
     if not entry:
-        raise HTTPException(status_code=404, detail="Entrada no encontrada")
+        raise api_error(404, "entry_not_found")
     return crud_stock_entry.serialize(db, entry)
 
 

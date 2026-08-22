@@ -38,7 +38,7 @@ def create_person(db: Session, person: PersonRegister):
     db.refresh(db_person)
 
     return {
-        "message": "Registro exitoso",
+        "message": "person_registered",
         "id_user": db_user.id_user,
         "id_person": db_person.id_person,
     }
@@ -72,4 +72,4 @@ def update_person_information(db: Session, id_person: int, person_data: dict):
     db.commit()
     db.refresh(db_person)
 
-    return {"message": "Persona actualizada exitosamente", "id_person": id_person}
+    return {"message": "person_updated", "id_person": id_person}

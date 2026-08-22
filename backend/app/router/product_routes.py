@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
@@ -14,6 +14,7 @@ from app.schemas.schemas_product import (
     ProductUpdateResponse,
 )
 from app.services import crud_product
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user, require_admin
 
 router = APIRouter()
@@ -35,9 +36,7 @@ def register_product(
 ):
     existing = db.query(Product).filter(Product.barcode == product.barcode).first()
     if existing:
-        raise HTTPException(
-            status_code=400, detail="Ya existe un producto con este código de barras."
-        )
+        raise api_error(400, "barcode_taken", barcode=product.barcode)
     return crud_product.create_product(db=db, product=product)
 
 
@@ -72,7 +71,9 @@ def get_product_by_barcode(
     """Búsqueda del lector: código de barras exacto y, si no, nombre exacto."""
     product = crud_product.get_product_by_barcode(db=db, term=term)
     if not product:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
+        # Lo buscado va como dato: es lo único que identifica al producto que no
+        # se encontró, y sin eso la frase queda hablando de «el producto» a secas.
+        raise api_error(404, "product_not_found", product=term)
     return product
 
 
@@ -101,7 +102,7 @@ def update_product(
         db=db, id_product=id_product, product_data=product_data.dict()
     )
     if not updated:
-        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+        raise api_error(404, "product_not_found", product_id=id_product)
     return updated
 
 
@@ -113,5 +114,5 @@ def delete_product(
 ):
     deleted = crud_product.delete_product(db=db, id_product=id_product)
     if not deleted:
-        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+        raise api_error(404, "product_not_found", product_id=id_product)
     return deleted

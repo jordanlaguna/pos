@@ -7,7 +7,7 @@ El rol que devuelven estos endpoints es siempre el de **esta** compañía. La
 misma persona puede aparecer como administradora en una y como cajera en otra.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.models.model_company import UserCompany
@@ -22,6 +22,7 @@ from app.schemas.schemas_user import (
     UserResponse,
 )
 from app.services import crud_membership, crud_user
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user, get_db, require_admin
 from app.utils.tenancy import sin_filtro
 
@@ -98,11 +99,11 @@ def grant_membership(
     para que pase algo— pero lo correcto es una invitación que se acepte.
     """
     if payload.role not in crud_user.ROLES:
-        raise HTTPException(status_code=400, detail="El rol debe ser 'admin' o 'cajero'.")
+        raise api_error(400, "invalid_role", role=payload.role)
 
     user = crud_user.get_user_by_email(db, payload.email)
     if not user:
-        raise HTTPException(status_code=404, detail="No hay ninguna cuenta con ese correo.")
+        raise api_error(404, "account_not_found")
 
     membresia = crud_user.grant_membership(db, user.id_user, admin.company_id, payload.role)
     return UserResponse(
@@ -127,11 +128,11 @@ def update_role(
     un local no lo degrada en los otros dos.
     """
     if payload.role not in crud_user.ROLES:
-        raise HTTPException(status_code=400, detail="El rol debe ser 'admin' o 'cajero'.")
+        raise api_error(400, "invalid_role", role=payload.role)
 
     encontrado = crud_user.get_user(db, user_id, admin.company_id)
     if not encontrado:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise api_error(404, "user_not_found")
     _user, membresia = encontrado
 
     # Degradar al último administrador dejaría a la compañía sin quien la
@@ -149,11 +150,11 @@ def update_role(
             )
         ).count()
         if quedan == 0:
-            raise HTTPException(status_code=400, detail="Debe existir al menos un administrador.")
+            raise api_error(400, "last_admin")
 
     membresia.rol = payload.role
     db.commit()
-    return RoleUpdateResponse(message="Rol actualizado exitosamente", id_user=user_id)
+    return RoleUpdateResponse(message="role_updated", id_user=user_id)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -163,11 +164,11 @@ def read_user(
     sesion: Sesion = Depends(get_current_user),
 ):
     if user_id != sesion.id_user and sesion.rol != "admin":
-        raise HTTPException(status_code=403, detail="No puede consultar este usuario.")
+        raise api_error(403, "user_not_yours")
 
     encontrado = crud_user.get_user(db, user_id, sesion.company_id)
     if not encontrado:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise api_error(404, "user_not_found")
     user, membresia = encontrado
     return UserResponse(
         id_user=user.id_user,

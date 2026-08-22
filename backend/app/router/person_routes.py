@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
@@ -15,6 +15,7 @@ from app.schemas.schemas_person import (
 )
 from app.models.model_company import UserCompany
 from app.services import crud_person
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user, require_admin
 from app.utils.tenancy import sin_filtro
 
@@ -33,9 +34,9 @@ def get_db():
 @router.post("/register", response_model=PersonRegisterSuccess)
 def register_person(person: PersonRegister, db: Session = Depends(get_db)):
     if db.query(Person).filter(Person.identification == person.identification).first():
-        raise HTTPException(status_code=400, detail="Ya existe una persona con esta cédula.")
+        raise api_error(400, "person_identification_taken")
     if db.query(User).filter(User.email == person.email).first():
-        raise HTTPException(status_code=400, detail="Ya existe un usuario con este correo.")
+        raise api_error(400, "email_taken")
 
     return crud_person.create_person(db=db, person=person)
 
@@ -86,12 +87,12 @@ def update_person(
 ):
     # Cada quien edita sus propios datos; el admin puede editar los de cualquiera.
     if sesion.id_person != id_person and sesion.rol != "admin":
-        raise HTTPException(status_code=403, detail="No puede editar este usuario.")
+        raise api_error(403, "person_not_yours")
 
     updated = crud_person.update_person_information(
         db=db, id_person=id_person, person_data=person.dict()
     )
     if not updated:
-        raise HTTPException(status_code=404, detail="Persona no encontrada.")
+        raise api_error(404, "person_not_found")
 
     return updated

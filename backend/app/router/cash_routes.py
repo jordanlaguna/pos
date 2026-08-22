@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
@@ -12,6 +12,7 @@ from app.schemas.schemas_cash import (
     MovementResponse,
 )
 from app.services import crud_cash
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user
 
 router = APIRouter()
@@ -35,7 +36,7 @@ def current_session(
     target = user_id or current.id_user
     # Un cajero no puede espiar la caja de otro; el admin sí necesita hacerlo.
     if target != current.id_user and current.rol != "admin":
-        raise HTTPException(status_code=403, detail="Solo podés consultar tu propia caja.")
+        raise api_error(403, "cash_read_not_yours")
 
     session = crud_cash.get_open_session(db, target)
     return crud_cash.build_report(db, session) if session else None
@@ -48,7 +49,7 @@ def open_cash(
     current: Sesion = Depends(get_current_user),
 ):
     if payload.user_id != current.id_user and current.rol != "admin":
-        raise HTTPException(status_code=403, detail="Solo podés abrir tu propia caja.")
+        raise api_error(403, "cash_open_not_yours")
     return crud_cash.open_session(db, payload.user_id, payload.opening_amount, payload.notes)
 
 
@@ -59,7 +60,7 @@ def add_movement(
     current: Sesion = Depends(get_current_user),
 ):
     if payload.user_id != current.id_user and current.rol != "admin":
-        raise HTTPException(status_code=403, detail="Solo podés mover efectivo de tu propia caja.")
+        raise api_error(403, "cash_movement_not_yours")
     return crud_cash.add_movement(
         db, payload.user_id, payload.type, payload.amount, payload.reason
     )
@@ -72,7 +73,7 @@ def close_cash(
     current: Sesion = Depends(get_current_user),
 ):
     if payload.user_id != current.id_user and current.rol != "admin":
-        raise HTTPException(status_code=403, detail="Solo podés cerrar tu propia caja.")
+        raise api_error(403, "cash_close_not_yours")
     return crud_cash.close_session(db, payload.user_id, payload.closing_amount, payload.notes)
 
 
@@ -101,7 +102,7 @@ def get_session(
 ):
     session = db.query(CashSession).filter(CashSession.id == session_id).first()
     if not session:
-        raise HTTPException(status_code=404, detail="Sesión de caja no encontrada")
+        raise api_error(404, "cash_session_not_found")
     if session.user_id != current.id_user and current.rol != "admin":
-        raise HTTPException(status_code=403, detail="No podés consultar esta caja.")
+        raise api_error(403, "cash_session_not_yours")
     return crud_cash.build_report(db, session)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
@@ -6,6 +6,7 @@ from app.models.model_categories import Category
 from app.models.model_user import User
 from app.schemas.schemas_categories import AddCategories, CategoryRegister, CategoryResponse
 from app.services.crud_categories import create_category, get_all_categories
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user, require_admin
 
 router = APIRouter()
@@ -27,7 +28,7 @@ def register_category(
 ):
     existing = db.query(Category).filter(Category.name == category.name).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Categoría ya registrada con este nombre.")
+        raise api_error(400, "category_name_taken", name=category.name)
     return create_category(db=db, category=category)
 
 

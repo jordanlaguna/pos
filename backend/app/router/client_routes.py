@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
@@ -12,6 +12,7 @@ from app.schemas.schemas_clients import (
     UpdateClientResponse,
 )
 from app.services import crud_client
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user
 
 router = APIRouter()
@@ -34,9 +35,7 @@ def register_client(
 ):
     existing = db.query(Client).filter(Client.identification == client.identification).first()
     if existing:
-        raise HTTPException(
-            status_code=400, detail="Ya existe un cliente con esta identificación."
-        )
+        raise api_error(400, "client_identification_taken")
     return crud_client.create_client(db=db, client=client)
 
 
@@ -57,7 +56,7 @@ def update_client(
 ):
     existing = db.query(Client).filter(Client.id_client == id_client).first()
     if not existing:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+        raise api_error(404, "client_not_found")
 
     # Una cédula repetida crearía dos fichas para la misma persona.
     if client_data.identification:
@@ -70,15 +69,11 @@ def update_client(
             .first()
         )
         if clash:
-            raise HTTPException(
-                status_code=400, detail="Ya existe otro cliente con esta identificación."
-            )
+            raise api_error(400, "client_identification_taken")
 
     updated = crud_client.update_client_information(
         db=db, id_client=id_client, client_data=client_data.dict()
     )
     if not updated:
-        raise HTTPException(
-            status_code=400, detail="Error al actualizar la información del cliente."
-        )
+        raise api_error(400, "client_update_failed")
     return updated

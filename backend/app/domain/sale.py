@@ -92,9 +92,11 @@ def check_declared_totals(declared: Totals, computed: Totals) -> None:
     Se comparan las tres cifras y no solo el total: un subtotal y un impuesto
     que se compensan entre sí dan el mismo total y son, aun así, un error.
     """
+    # Los nombres son los del API —'tax', no 'impuesto'—: viajan hasta el POS y
+    # ahí se convierten en palabra, en el idioma que corresponda (RN-30).
     for campo, dicho, dado in (
         ("subtotal", declared.subtotal, computed.subtotal),
-        ("impuesto", declared.tax, computed.tax),
+        ("tax", declared.tax, computed.tax),
         ("total", declared.total, computed.total),
     ):
         if abs(dicho - dado) > TOTALS_TOLERANCE:

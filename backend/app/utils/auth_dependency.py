@@ -14,18 +14,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
 from app.models.model_user import User
 from app.services import crud_membership
+from app.utils.api_errors import api_error, unauthorized
 from app.utils.jwt_handler import verify_access_token
 from app.utils.tenancy import current_branch, current_company, current_terminal, sin_filtro
 
-# auto_error=False para poder devolver un mensaje propio en español en vez del
-# 403 genérico de FastAPI cuando falta la cabecera Authorization.
+# auto_error=False para poder devolver un 401 con código propio en vez del 403
+# genérico de FastAPI cuando falta la cabecera Authorization.
 security = HTTPBearer(auto_error=False)
 
 #: Tipos de token. El de tránsito dura minutos y no abre ninguna puerta de
@@ -42,12 +43,10 @@ def get_db():
         db.close()
 
 
-def _no_autorizado(detalle: str = "Token inválido o ausente") -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail=detalle,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def _no_autorizado(code: str = "unauthorized") -> HTTPException:
+    """401 con su código. Tres casos distintos y el POS los distingue: el token
+    no sirve, no trae compañía, o la membresía dejó de estar activa."""
+    return unauthorized(code)
 
 
 @dataclass(frozen=True)
@@ -135,7 +134,7 @@ def get_current_user(
     mismo que ya hacía `/users/me`, ahora para todo—.
     """
     if payload.get("tipo") == TIPO_TRANSITO or payload.get("cid") is None:
-        raise _no_autorizado("El token no tiene compañía. Elegí una para continuar.")
+        raise _no_autorizado("no_company_in_token")
 
     user = _usuario_del_payload(db, payload)
     cid = payload["cid"]
@@ -144,7 +143,7 @@ def get_current_user(
     if not encontrada:
         # La membresía se desactivó, o el token es de una compañía que ya no le
         # corresponde. En los dos casos deja de ser una sesión válida.
-        raise _no_autorizado("La membresía ya no está activa.")
+        raise _no_autorizado("membership_inactive")
 
     uc, _company = encontrada
     return Sesion(
@@ -175,8 +174,5 @@ def require_admin(sesion: Sesion = Depends(get_current_user)) -> Sesion:
     """Restringe el endpoint a administradores **de esa compañía**."""
 
     if sesion.rol != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Esta operación es solo para administradores.",
-        )
+        raise api_error(403, "admin_only")
     return sesion

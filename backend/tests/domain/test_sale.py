@@ -118,7 +118,9 @@ class TestCotejoDeTotales:
 
         with pytest.raises(TotalsMismatch) as e:
             check_declared_totals(Totals(**{"subtotal": valores["subtotal"], "tax": valores["tax"], "total": valores["total"]}), self.calculado)
-        assert e.value.campo in ("subtotal", "impuesto", "total")
+        # El campo que viaja al POS es el del API ('tax', no 'impuesto'): es lo
+        # que le permite armar la frase en el idioma que sea (RN-30).
+        assert e.value.campo == campo
 
     def test_se_miran_las_tres_cifras_y_no_solo_el_total(self):
         # Un subtotal y un impuesto que se compensan dan el mismo total y son,

@@ -1,0 +1,172 @@
+"""Los «no» del servidor, en código y datos (RN-30).
+
+El backend no escribe texto para una persona. Devuelve un código y los datos con
+los que se arma la frase, y la frase la arma el POS —que es el único que sabe en
+qué idioma está mirando quien la va a leer—:
+
+    {"detail": {"code": "insufficient_stock",
+                "product": "Arroz", "available": 2, "requested": 5}}
+
+Antes cada `raise` traía su oración en español. Un cajero brasileño veía media
+aplicación en portugués y los errores en español, justo cuando más necesita
+entender qué pasó.
+
+**Todo `HTTPException` del backend se construye acá.** No es una preferencia de
+estilo: `tests/test_error_codes.py` lee el árbol de sintaxis de `app/` y tumba
+`pytest` si aparece un `HTTPException(...)` en cualquier otro lado. Sin ese
+guardián la regla dura hasta el primer apuro.
+
+Los códigos son los de esta lista y nada más —el mismo guardián lo comprueba—.
+Están en inglés como todo el código; el español vive en los catálogos del POS
+(`frontend/messages/{locale}/errors.json`), y ahí tiene que haber una entrada
+por cada código de acá.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import HTTPException
+
+#: Los datos que acompañan al código son los que el POS necesita para armar la
+#: frase. Van en inglés y con el nombre que ya tienen en el API (`product_id`,
+#: `barcode`, `sale_number`), no con el que tendría la oración.
+CODES: frozenset[str] = frozenset(
+    {
+        # --------------------------------------------------------- sesión
+        # Un solo código para «no hay token», «está mal firmado» y «venció»:
+        # distinguirlos por fuera no le sirve a nadie más que a quien ataca.
+        "unauthorized",
+        "no_company_in_token",
+        "membership_inactive",
+        "admin_only",
+        "invalid_credentials",
+        # `state` es el estado de la suscripción tal como está en la base
+        # ('suspendida', 'vencida', 'cancelada'). Es un valor, no un código:
+        # viaja como dato y el POS lo traduce.
+        "company_blocked",
+        "membership_not_found",
+        "invalid_invitation_action",
+        "invitation_already_accepted",
+        # ----------------------------------------------------------- caja
+        # Cuatro códigos para la misma regla —la caja es de quien la abrió—
+        # porque son cuatro frases distintas: consultar, abrir, mover, cerrar.
+        "cash_read_not_yours",
+        "cash_open_not_yours",
+        "cash_movement_not_yours",
+        "cash_close_not_yours",
+        "cash_session_not_found",
+        "cash_session_not_yours",
+        "cash_already_open",
+        "cash_opening_negative",
+        # Uno solo, contra los dos mensajes distintos que había para la misma
+        # situación (mover efectivo y cerrar sin caja abierta).
+        "cash_no_open_session",
+        "cash_insufficient",
+        "cash_invalid_movement_type",
+        "cash_amount_not_positive",
+        "cash_missing_reason",
+        "cash_counted_negative",
+        # --------------------------------------------------------- ventas
+        "duplicate_sale_number",
+        "empty_sale",
+        "invalid_sale_line",
+        "product_not_found",
+        "product_without_price",
+        "insufficient_stock",
+        # `field` es 'subtotal', 'tax' o 'total': el nombre del campo en el API,
+        # no la palabra de la oración.
+        "totals_mismatch",
+        "insufficient_payment",
+        "sale_not_found",
+        "sale_details_not_found",
+        "sale_failed",
+        # --------------------------------------------------- devoluciones
+        "empty_return",
+        "missing_return_reason",
+        "not_sold_in_this_sale",
+        "invalid_return_quantity",
+        "excessive_return",
+        "return_not_found",
+        "return_failed",
+        # ------------------------------------------------------- entradas
+        "empty_entry",
+        "invalid_entry_source",
+        "duplicate_document",
+        "invalid_entry_line",
+        "entry_product_not_found",
+        "entry_missing_barcode",
+        "barcode_taken",
+        "entry_line_without_product",
+        "entry_not_found",
+        "entry_already_cancelled",
+        "entry_cannot_cancel",
+        "entry_failed",
+        "entry_cancel_failed",
+        # ------------------------------------------------------- catálogo
+        "product_has_sales",
+        "category_name_taken",
+        # ------------------------------------------------------- personas
+        "person_identification_taken",
+        "email_taken",
+        "person_not_found",
+        "person_not_yours",
+        "client_identification_taken",
+        "client_not_found",
+        "client_update_failed",
+        "invalid_role",
+        "account_not_found",
+        "user_not_found",
+        "user_not_yours",
+        "last_admin",
+        # -------------------------------------------------- configuración
+        "settings_too_large",
+        "tax_rate_not_a_number",
+        "tax_rate_out_of_range",
+        "settings_save_failed",
+    }
+)
+
+#: Los «sí». No los lee nadie —el POS escribe sus propios avisos de éxito— pero
+#: iban en español dentro del cuerpo de la respuesta, y una respuesta con prosa
+#: adentro es prosa que alguien acabará mostrando. Van como código por lo mismo
+#: que los «no». El campo sigue llamándose `message` porque es el contrato que
+#: ya publica el API.
+DONE: frozenset[str] = frozenset(
+    {
+        "client_registered",
+        "client_updated",
+        "person_registered",
+        "person_updated",
+        "product_registered",
+        "product_updated",
+        "product_deleted",
+        "sale_registered",
+        "return_registered",
+        "entry_registered",
+        "entry_cancelled",
+        "role_updated",
+    }
+)
+
+
+def api_error(status_code: int, code: str, **datos: Any) -> HTTPException:
+    """Un «no» con su código y sus datos.
+
+    Se devuelve en vez de lanzarse para que el `raise` quede a la vista en quien
+    llama: `raise api_error(404, "product_not_found", product_id=7) from None`.
+
+    El código no se valida en tiempo de ejecución a propósito. Un `assert` acá
+    convertiría un error de dedo en un 500 en producción, y el guardián de
+    `tests/test_error_codes.py` ya lo caza antes, leyendo el código fuente.
+    """
+    detail: dict[str, Any] = {"code": code}
+    detail.update(datos)
+    return HTTPException(status_code=status_code, detail=detail)
+
+
+def unauthorized(code: str = "unauthorized", **datos: Any) -> HTTPException:
+    """401 con la cabecera que pide el estándar para el esquema Bearer."""
+    exc = api_error(401, code, **datos)
+    exc.headers = {"WWW-Authenticate": "Bearer"}
+    return exc

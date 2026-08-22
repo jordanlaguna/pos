@@ -1,10 +1,10 @@
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.model_categories import Category
 from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
 from app.schemas.schemas_product import ProdcutRegisterSuccess, ProductRegister
+from app.utils.api_errors import api_error
 
 
 def create_product(db: Session, product: ProductRegister):
@@ -22,7 +22,7 @@ def create_product(db: Session, product: ProductRegister):
     db.refresh(db_product)
 
     return ProdcutRegisterSuccess(
-        message="Producto registrado exitosamente", id_product=db_product.id_product
+        message="product_registered", id_product=db_product.id_product
     )
 
 
@@ -63,9 +63,7 @@ def update_product_information(db: Session, id_product: int, product_data: dict)
             .first()
         )
         if clash:
-            raise HTTPException(
-                status_code=400, detail="Ya existe otro producto con este código de barras."
-            )
+            raise api_error(400, "barcode_taken", barcode=new_barcode)
 
     for key, value in product_data.items():
         if value is not None and hasattr(db_product, key):
@@ -75,7 +73,7 @@ def update_product_information(db: Session, id_product: int, product_data: dict)
     db.refresh(db_product)
 
     return {
-        "message": "Información del producto actualizada exitosamente",
+        "message": "product_updated",
         "id_product": db_product.id_product,
     }
 
@@ -89,11 +87,8 @@ def delete_product(db: Session, id_product: int):
     # rompería los reportes históricos. Para retirarlo de la venta, poné stock 0.
     sold = db.query(SaleDetail).filter(SaleDetail.product_id == id_product).first()
     if sold:
-        raise HTTPException(
-            status_code=400,
-            detail="No se puede eliminar: el producto tiene ventas registradas.",
-        )
+        raise api_error(400, "product_has_sales")
 
     db.delete(db_product)
     db.commit()
-    return {"message": "Producto eliminado exitosamente", "id_product": id_product}
+    return {"message": "product_deleted", "id_product": id_product}

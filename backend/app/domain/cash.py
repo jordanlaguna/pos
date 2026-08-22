@@ -61,11 +61,11 @@ def check_movement(type_: str, amount: Money, reason: str, available: Money) -> 
     significar nada.
     """
     if type_ not in MOVEMENT_TYPES:
-        raise InvalidMovement("el tipo debe ser 'entrada' o 'salida'")
+        raise InvalidMovement("invalid_type")
     if not amount.is_positive:
-        raise InvalidMovement("el monto debe ser mayor que cero")
+        raise InvalidMovement("amount_not_positive")
     if not reason or not reason.strip():
-        raise InvalidMovement("hace falta el motivo del movimiento")
+        raise InvalidMovement("missing_reason")
     if type_ == "salida" and (available - amount).is_negative:
         raise InsufficientCash(available, amount)
 
@@ -73,4 +73,4 @@ def check_movement(type_: str, amount: Money, reason: str, available: Money) -> 
 def check_opening(amount: Money) -> None:
     """El fondo de apertura puede ser cero, pero no negativo."""
     if amount.is_negative:
-        raise InvalidMovement("el monto de apertura no puede ser negativo")
+        raise InvalidMovement("opening_negative")

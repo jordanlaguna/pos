@@ -4,8 +4,8 @@ La lógica se mudó a `app/application/use_cases/register_sale.py`. Lo que queda
 acá es la traducción entre HTTP y el caso de uso: armar los puertos a partir de
 la sesión de SQLAlchemy y convertir los «no» del dominio en códigos de estado.
 
-Los mensajes son los mismos que antes, palabra por palabra: los ve el cajero y
-los fijan las pruebas de caracterización.
+Lo que sale de acá es un código y sus datos, nunca una frase (RN-30): la escribe
+el POS, que es el único que sabe en qué idioma la va a leer el cajero.
 """
 
 from fastapi import HTTPException
@@ -38,6 +38,7 @@ from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.schemas.schemas_sales import SaleRegister, SaleRegisterSuccess
+from app.utils.api_errors import api_error
 
 
 def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
@@ -68,70 +69,62 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
     try:
         resultado = caso(peticion)
 
-    except DuplicateSaleNumber:
-        raise HTTPException(
-            status_code=400, detail="Ya existe una venta con este número de venta."
-        ) from None
+    except DuplicateSaleNumber as e:
+        raise api_error(400, "duplicate_sale_number", sale_number=e.sale_number) from None
     except EmptySale:
-        raise HTTPException(
-            status_code=400, detail="La venta debe contener al menos un producto."
-        ) from None
+        raise api_error(400, "empty_sale") from None
     except InvalidQuantity:
-        # El mensaje nombra el producto que venía mal, como antes.
+        # El dominio rechaza el valor pero no dice qué línea venía mal: eso lo
+        # sabe la interfaz, que es la que conoce el orden en que llegaron.
         malo = next(
             (l for l in sale.products if not l.id_product or l.stock <= 0), None
         )
-        raise HTTPException(
-            status_code=400,
-            detail=f"Producto ID {malo.id_product if malo else None} no válido o cantidad insuficiente.",
+        raise api_error(
+            400, "invalid_sale_line", product_id=malo.id_product if malo else None
         ) from None
     except ProductNotFound as e:
-        raise HTTPException(
-            status_code=404, detail=f"Producto ID {e.product_id} no encontrado."
-        ) from None
+        raise api_error(404, "product_not_found", product_id=e.product_id) from None
     except ProductWithoutPrice as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"El producto ID {e.product_id} no tiene un precio definido.",
-        ) from None
+        raise api_error(400, "product_without_price", product_id=e.product_id) from None
     except InsufficientStock as e:
+        # El nombre del producto es un dato, no una frase: sin él el cajero
+        # tendría que buscar qué producto es el ID 47.
         producto = productos.get(e.product_id)
-        nombre = producto.name if producto else f"el producto {e.product_id}"
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Stock insuficiente para {nombre}: "
-                f"quedan {e.available} y se piden {e.requested}."
-            ),
+        raise api_error(
+            400,
+            "insufficient_stock",
+            product_id=e.product_id,
+            product=producto.name if producto else None,
+            available=e.available,
+            requested=e.requested,
         ) from None
     except TotalsMismatch as e:
-        # Se dicen las dos cifras: quien lo lea tiene que poder ver cuál está
-        # mal sin abrir la base.
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"El {e.campo} no coincide con el que calcula el servidor: "
-                f"la caja dice {e.declarado} y el servidor {e.calculado}. "
-                f"Recargá el catálogo: los precios pueden haber cambiado."
-            ),
+        # Van las dos cifras: quien lo lea tiene que poder ver cuál está mal sin
+        # abrir la base.
+        raise api_error(
+            400,
+            "totals_mismatch",
+            field=e.campo,
+            declared=e.declarado.as_float(),
+            computed=e.calculado.as_float(),
         ) from None
     except InsufficientPayment as e:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"El efectivo recibido ({e.received}) no puede ser menor "
-                f"al total de la venta ({e.total})."
-            ),
+        # Cifras, no texto ya formateado: el símbolo de moneda y los separadores
+        # los pone el POS, que es el que sabe la moneda configurada.
+        raise api_error(
+            400,
+            "insufficient_payment",
+            received=e.received.as_float(),
+            total=e.total.as_float(),
         ) from None
     except HTTPException:
         raise
     except Exception as exc:
-        # Cualquier otro fallo ya revirtió dentro de la unidad de trabajo.
-        raise HTTPException(status_code=500, detail=f"Error al registrar la venta: {exc}")
+        # Cualquier otro fallo ya revirtió dentro de la unidad de trabajo. El
+        # texto de la excepción va como dato para el registro, no para mostrar.
+        raise api_error(500, "sale_failed", cause=str(exc))
 
-    return SaleRegisterSuccess(
-        message="Venta registrada exitosamente", id_sale=resultado.id_sale
-    )
+    return SaleRegisterSuccess(message="sale_registered", id_sale=resultado.id_sale)
 
 
 def get_all_sales(db: Session):

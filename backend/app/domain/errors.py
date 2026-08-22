@@ -5,8 +5,14 @@ Son excepciones propias y no `HTTPException` a propósito: el dominio no sabe
 que existe HTTP. Traducirlas a un código de estado es trabajo de la capa de
 interfaz, y es lo que permite probar una regla sin levantar un servidor.
 
-Cada una lleva los datos con los que se puede armar un mensaje. El texto para el
-cajero se escribe arriba, en español; acá solo va lo que pasó.
+Cada una lleva los datos con los que se puede armar un mensaje, y ninguna lleva
+la frase: acá solo va lo que pasó. El texto lo escribe la interfaz, que es la
+única que sabe en qué idioma está mirando quien lo va a leer (RN-30).
+
+El argumento de `Exception` sí está en español y sí es una oración, pero esa no
+la lee ninguna persona: es lo que sale en un traceback. Lo que no puede ser una
+frase es cualquier atributo que la interfaz vaya a reenviar —de ahí que
+`InvalidBarcode` e `InvalidMovement` lleven un `code`—.
 """
 
 from __future__ import annotations
@@ -45,10 +51,12 @@ class InvalidTaxRate(DomainError):
 class InvalidBarcode(DomainError):
     """Un código de barras vacío o con caracteres que un lector no produce."""
 
-    def __init__(self, value: object, motivo: str) -> None:
-        super().__init__(f"código de barras no válido ({motivo}): {value!r}")
+    def __init__(self, value: object, code: str) -> None:
+        super().__init__(f"código de barras no válido ({code}): {value!r}")
         self.value = value
-        self.motivo = motivo
+        #: Qué tiene de malo, en código: 'not_text', 'empty', 'too_long',
+        #: 'inner_space' o 'control_chars'.
+        self.code = code
 
 
 # ------------------------------------------------------------------- reglas
@@ -119,6 +127,8 @@ class TotalsMismatch(DomainError):
         super().__init__(
             f"el {campo} declarado ({declarado}) no coincide con el calculado ({calculado})"
         )
+        #: 'subtotal', 'tax' o 'total': el nombre del campo en el API. Va hasta
+        #: el POS, así que es un nombre y no una palabra de la oración.
         self.campo = campo
         self.declarado = declarado
         self.calculado = calculado
@@ -186,6 +196,9 @@ class CannotCancel(DomainError):
 class InvalidMovement(DomainError):
     """Un movimiento de caja mal formado: tipo desconocido, monto o motivo."""
 
-    def __init__(self, motivo: str) -> None:
-        super().__init__(motivo)
-        self.motivo = motivo
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        #: Qué está mal, en código: 'invalid_type', 'amount_not_positive',
+        #: 'missing_reason' u 'opening_negative'. Era una frase en español y la
+        #: interfaz la reenviaba tal cual cuando no la reconocía.
+        self.code = code

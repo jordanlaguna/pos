@@ -2,7 +2,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -15,6 +15,7 @@ from app.models.model_sales import Sale
 from app.models.model_user import User
 from app.schemas.schemas_sales import SaleDetailResponse, SaleRegister, SaleRegisterSuccess, SalesList
 from app.services import crud_sale
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user
 
 router = APIRouter()
@@ -68,7 +69,7 @@ def get_sale_detail(
     """
     detail = crud_sale.get_sale_detail(db, sale_id)
     if not detail:
-        raise HTTPException(status_code=404, detail="Venta no encontrada")
+        raise api_error(404, "sale_not_found")
     return detail
 
 
@@ -80,11 +81,11 @@ def generate_invoice_pdf(
 ):
     sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not sale:
-        raise HTTPException(status_code=404, detail="Venta no encontrada")
+        raise api_error(404, "sale_not_found")
 
     details = db.query(SaleDetail).filter(SaleDetail.sale_id == sale.id).all()
     if not details:
-        raise HTTPException(status_code=404, detail="Detalles de la venta no encontrados")
+        raise api_error(404, "sale_details_not_found")
 
     temp_dir = Path(os.getenv("TEMP") or tempfile.gettempdir())
     file_path = temp_dir / f"venta_{sale.sale_number}.pdf"

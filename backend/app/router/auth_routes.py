@@ -14,7 +14,7 @@ Hay que probar primero que se es esa persona.
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.models.model_user import User
@@ -27,6 +27,7 @@ from app.schemas.schemas_auth import (
     LoginResponse,
 )
 from app.services import crud_membership, crud_user
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import TIPO_SESION, TIPO_TRANSITO, get_db, get_identidad
 from app.utils.jwt_handler import create_access_token
 
@@ -95,7 +96,7 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if not user:
         # Mismo error para «no existe» y «contraseña incorrecta»: distinguirlos
         # convierte el login en un verificador de correos registrados.
-        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+        raise api_error(401, "invalid_credentials")
 
     opciones = [_opcion(uc, company) for uc, company in crud_membership.companias_de(db, user.id_user)]
     disponibles = [o for o in opciones if o.puede_entrar]
@@ -165,17 +166,17 @@ def responder_invitacion(
     pedirla otra vez y no pueda quedar mostrando lo de antes.
     """
     if datos.accion not in ("aceptar", "rechazar"):
-        raise HTTPException(status_code=400, detail="La acción debe ser 'aceptar' o 'rechazar'.")
+        raise api_error(400, "invalid_invitation_action", action=datos.accion)
 
     encontrada = crud_membership.membresia(
         db, user.id_user, datos.company_id, incluir_pendientes=True
     )
     if not encontrada:
-        raise HTTPException(status_code=404, detail="No encontrada")
+        raise api_error(404, "membership_not_found")
 
     uc, company = encontrada
     if uc.aceptada_el is not None:
-        raise HTTPException(status_code=409, detail={"code": "ya_aceptada"})
+        raise api_error(409, "invitation_already_accepted")
 
     if datos.accion == "aceptar":
         uc.aceptada_el = datetime.now().replace(microsecond=0)
@@ -222,7 +223,7 @@ def elegir_compania(
     """
     encontrada = crud_membership.membresia(db, user.id_user, datos.company_id)
     if not encontrada:
-        raise HTTPException(status_code=404, detail="No encontrada")
+        raise api_error(404, "membership_not_found")
 
     uc, company = encontrada
     puede, motivo = crud_membership.puede_entrar(company, uc.rol)
@@ -230,7 +231,7 @@ def elegir_compania(
         # Acá sí es 403 y con motivo: la persona ya demostró que la compañía es
         # suya, así que ocultarle por qué no entra no protege nada y la deja sin
         # saber qué hacer. El motivo es un código; la frase la arma el POS.
-        raise HTTPException(status_code=403, detail={"code": motivo})
+        raise api_error(403, "company_blocked", state=motivo)
 
     crud_membership.registrar(
         db,

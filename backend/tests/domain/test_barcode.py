@@ -30,30 +30,30 @@ class TestInvalidos:
     def test_vacio(self, malo):
         with pytest.raises(InvalidBarcode) as e:
             Barcode(malo)
-        assert e.value.motivo == "vacío"
+        assert e.value.code == "empty"
 
     def test_con_espacios_en_medio(self):
         # Dos lecturas pegadas. Buscar por eso no encuentra nada.
         with pytest.raises(InvalidBarcode) as e:
             Barcode("744102 9001057")
-        assert "espacios" in e.value.motivo
+        assert e.value.code == "inner_space"
 
     def test_mas_largo_que_la_columna(self):
         # Cortar en silencio convertiría dos productos distintos en el mismo.
         with pytest.raises(InvalidBarcode) as e:
             Barcode("x" * (MAX_LENGTH + 1))
-        assert str(MAX_LENGTH) in e.value.motivo
+        assert e.value.code == "too_long"
 
     def test_con_caracteres_de_control(self):
         with pytest.raises(InvalidBarcode) as e:
             Barcode("744\x00102")
-        assert "control" in e.value.motivo
+        assert e.value.code == "control_chars"
 
     @pytest.mark.parametrize("malo", [None, 7441029001057, [], object()])
     def test_lo_que_no_es_texto(self, malo):
         with pytest.raises(InvalidBarcode) as e:
             Barcode(malo)
-        assert e.value.motivo == "no es texto"
+        assert e.value.code == "not_text"
 
     def test_el_error_lleva_el_valor_original(self):
         with pytest.raises(InvalidBarcode) as e:

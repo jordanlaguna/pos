@@ -4,12 +4,11 @@ El cálculo y las reglas se mudaron a
 `app/application/use_cases/cash_session.py` y `app/domain/cash.py`. Lo que queda
 acá es la traducción: armar los puertos desde la sesión de SQLAlchemy, convertir
 los «no» del dominio en códigos de estado y darle al JSON la forma que el API ya
-tenía. Los mensajes son los mismos de antes, palabra por palabra.
+tenía. Lo que sale es código y datos, no frases (RN-30).
 """
 
 from decimal import Decimal
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.application.use_cases.cash_session import (
@@ -32,6 +31,7 @@ from app.infrastructure.persistence.sqlalchemy_repositories import (
 from app.models.model_cash import CashSession
 from app.models.model_person import Person
 from app.models.model_user import User
+from app.utils.api_errors import api_error
 
 
 def _money(value) -> float:
@@ -125,13 +125,9 @@ def open_session(db: Session, user_id: int, opening_amount: float, notes: str | 
     try:
         session = caso(user_id=user_id, opening=Money(opening_amount), notes=notes)
     except SessionAlreadyOpen:
-        raise HTTPException(
-            status_code=400, detail="Ya existe una caja abierta para este usuario."
-        ) from None
+        raise api_error(400, "cash_already_open") from None
     except InvalidMovement:
-        raise HTTPException(
-            status_code=400, detail="El monto de apertura no puede ser negativo."
-        ) from None
+        raise api_error(400, "cash_opening_negative") from None
 
     db.refresh(session)
     return build_report(db, session)
@@ -147,22 +143,19 @@ def add_movement(db: Session, user_id: int, type_: str, amount: float, reason: s
     try:
         movement = caso(user_id=user_id, type_=type_, amount=Money(amount), reason=reason)
     except NoOpenSession:
-        raise HTTPException(
-            status_code=400,
-            detail="No hay una caja abierta. Abra la caja antes de registrar movimientos.",
-        ) from None
+        raise api_error(400, "cash_no_open_session") from None
     except InsufficientCash as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No hay suficiente efectivo en caja. Disponible: {e.available}.",
-        ) from None
+        raise api_error(400, "cash_insufficient", available=e.available.as_float()) from None
     except InvalidMovement as e:
-        mensajes = {
-            "el tipo debe ser 'entrada' o 'salida'": "El tipo de movimiento debe ser 'entrada' o 'salida'.",
-            "el monto debe ser mayor que cero": "El monto debe ser mayor que cero.",
-            "hace falta el motivo del movimiento": "Indique el motivo del movimiento.",
+        # El dominio ya distingue los tres casos con su código. Antes venían como
+        # frase, y la que no estuviera en la tabla se reenviaba tal cual: así se
+        # colaba el español del dominio hasta la pantalla.
+        codigos = {
+            "invalid_type": "cash_invalid_movement_type",
+            "amount_not_positive": "cash_amount_not_positive",
+            "missing_reason": "cash_missing_reason",
         }
-        raise HTTPException(status_code=400, detail=mensajes.get(e.motivo, e.motivo)) from None
+        raise api_error(400, codigos[e.code]) from None
 
     db.refresh(movement)
     return {
@@ -182,13 +175,11 @@ def close_session(db: Session, user_id: int, closing_amount: float, notes: str |
     try:
         session = caso(user_id=user_id, counted=Money(closing_amount), notes=notes)
     except NoOpenSession:
-        raise HTTPException(
-            status_code=400, detail="No hay una caja abierta para este usuario."
-        ) from None
+        # El mismo código que al mover efectivo: es la misma situación, y antes
+        # tenía dos frases distintas nada más que por dónde se topaba.
+        raise api_error(400, "cash_no_open_session") from None
     except InvalidMovement:
-        raise HTTPException(
-            status_code=400, detail="El monto contado no puede ser negativo."
-        ) from None
+        raise api_error(400, "cash_counted_negative") from None
 
     db.refresh(session)
     return build_report(db, session)

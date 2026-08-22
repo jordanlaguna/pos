@@ -19,7 +19,7 @@ def create_client(db: Session, client: ClientRegister):
     db.refresh(db_client)
 
     return {
-        "message": "Client registered successfully",
+        "message": "client_registered",
         "id_client": db_client.id_client
     }
 
@@ -46,6 +46,6 @@ def update_client_information(db: Session, id_client: int, client_data: dict):
     db.refresh(db_client)
 
     return {
-        "message": "Client information updated successfully",
+        "message": "client_updated",
         "id_client": db_client.id_client
     }

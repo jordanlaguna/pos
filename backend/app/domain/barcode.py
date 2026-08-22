@@ -28,17 +28,17 @@ class Barcode:
 
     def __post_init__(self) -> None:
         if not isinstance(self.value, str):
-            raise InvalidBarcode(self.value, "no es texto")
+            raise InvalidBarcode(self.value, "not_text")
 
         limpio = self.value.strip()
         if not limpio:
-            raise InvalidBarcode(self.value, "vacío")
+            raise InvalidBarcode(self.value, "empty")
         if len(limpio) > MAX_LENGTH:
-            raise InvalidBarcode(self.value, f"más de {MAX_LENGTH} caracteres")
+            raise InvalidBarcode(self.value, "too_long")
         if any(c.isspace() for c in limpio):
-            raise InvalidBarcode(self.value, "tiene espacios en medio")
+            raise InvalidBarcode(self.value, "inner_space")
         if not limpio.isprintable():
-            raise InvalidBarcode(self.value, "tiene caracteres de control")
+            raise InvalidBarcode(self.value, "control_chars")
 
         object.__setattr__(self, "value", limpio)
 

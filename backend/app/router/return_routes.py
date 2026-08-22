@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
@@ -6,6 +6,7 @@ from app.models.model_return import Return
 from app.models.model_user import User
 from app.schemas.schemas_return import ReturnCreate, ReturnCreateSuccess, ReturnResponse
 from app.services import crud_return
+from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user
 
 router = APIRouter()
@@ -36,7 +37,7 @@ def get_return(
 ):
     record = db.query(Return).filter(Return.id == return_id).first()
     if not record:
-        raise HTTPException(status_code=404, detail="Devolución no encontrada")
+        raise api_error(404, "return_not_found")
     return crud_return.serialize(db, record)
 
 

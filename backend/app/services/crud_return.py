@@ -3,7 +3,7 @@
 Revierten una venta, total o parcialmente, y reponen el stock. Las reglas están
 en `app/domain/returns.py` y el paso a paso en
 `app/application/use_cases/register_return.py`; acá queda la traducción a HTTP,
-con los mismos mensajes que antes.
+en código y datos, nunca en frases (RN-30).
 """
 
 from decimal import Decimal
@@ -34,6 +34,7 @@ from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.models.model_user import User
+from app.utils.api_errors import api_error
 
 
 def _money(value) -> float:
@@ -122,40 +123,34 @@ def create_return(db: Session, payload) -> dict:
         resultado = caso(peticion)
 
     except SaleNotFound:
-        raise HTTPException(status_code=404, detail="Venta no encontrada") from None
+        raise api_error(404, "sale_not_found") from None
     except EmptyReturn:
-        raise HTTPException(
-            status_code=400, detail="Debe indicar al menos un producto a devolver."
-        ) from None
+        raise api_error(400, "empty_return") from None
     except MissingReason:
-        raise HTTPException(
-            status_code=400, detail="Indique el motivo de la devolución."
-        ) from None
+        raise api_error(400, "missing_return_reason") from None
     except NotSoldInThisSale as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"El producto ID {e.product_id} no pertenece a esta venta.",
-        ) from None
+        raise api_error(400, "not_sold_in_this_sale", product_id=e.product_id) from None
     except InvalidQuantity:
         malo = next((i for i in payload.items if i.quantity <= 0), None)
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cantidad inválida para el producto ID {malo.id_product if malo else None}.",
+        raise api_error(
+            400, "invalid_return_quantity", product_id=malo.id_product if malo else None
         ) from None
     except ExcessiveReturn as e:
         product = db.query(Product).filter(Product.id_product == e.product_id).first()
-        name = product.name if product else f"producto ID {e.product_id}"
-        raise HTTPException(
-            status_code=400,
-            detail=f"Solo quedan {e.remaining} unidades por devolver de {name}.",
+        raise api_error(
+            400,
+            "excessive_return",
+            product_id=e.product_id,
+            product=product.name if product else None,
+            remaining=e.remaining,
         ) from None
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error al registrar la devolución: {exc}")
+        raise api_error(500, "return_failed", cause=str(exc))
 
     return {
-        "message": "Devolución registrada exitosamente",
+        "message": "return_registered",
         "id_return": resultado.id_return,
         "total": resultado.total.as_float(),
     }

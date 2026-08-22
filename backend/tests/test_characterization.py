@@ -206,7 +206,7 @@ class TestLaPlataLaCalculaElServidor:
         )
 
         assert estado == 400, f"se aceptó un total alterado: {cuerpo}"
-        assert "no coincide" in str(cuerpo.get("detail", "")).lower()
+        assert cuerpo["detail"]["code"] == "totals_mismatch"
         assert len(api.ok("GET", "/sales/sales_list")) == antes
         assert api.ok("GET", f"/products/product/{p['barcode']}")["stock"] == 10
 
@@ -235,7 +235,7 @@ class TestLaPlataLaCalculaElServidor:
             "POST", "/sales/add_sale", self._cuerpo(api, p, cash_received=100.0)
         )
         assert estado == 400
-        assert "efectivo" in str(cuerpo.get("detail", "")).lower()
+        assert cuerpo["detail"]["code"] == "insufficient_payment"
 
 
 class TestArqueoDeCaja:

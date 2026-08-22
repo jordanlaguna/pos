@@ -9,11 +9,11 @@ funcionando.
 import json
 from decimal import Decimal
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.model_settings import Settings
 from app.utils import clock
+from app.utils.api_errors import api_error
 from app.utils.tenancy import compania_actual
 
 # Tope de la configuración serializada. No es una restricción de la base (el
@@ -78,10 +78,7 @@ def save_settings(
 ) -> dict:
     serialized = json.dumps(data, ensure_ascii=False)
     if len(serialized.encode("utf-8")) > MAX_DATA_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail="La configuración es demasiado grande.",
-        )
+        raise api_error(400, "settings_too_large", max_bytes=MAX_DATA_BYTES)
 
     # Único campo que este backend lee por su cuenta (crud_return lo usa para
     # calcular el reembolso), así que es el único que valida aquí.
@@ -90,12 +87,9 @@ def save_settings(
         try:
             rate = Decimal(str(tax["tasa"]))
         except Exception:
-            raise HTTPException(status_code=400, detail="La tasa de impuesto no es un número.")
+            raise api_error(400, "tax_rate_not_a_number", value=str(tax["tasa"])) from None
         if rate < 0 or rate > 1:
-            raise HTTPException(
-                status_code=400,
-                detail="La tasa de impuesto se expresa entre 0 y 1 (0.13 = 13 %).",
-            )
+            raise api_error(400, "tax_rate_out_of_range", value=float(rate))
 
     row = _row(db)
     try:
@@ -112,7 +106,7 @@ def save_settings(
         db.refresh(row)
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"No se pudo guardar la configuración: {exc}")
+        raise api_error(500, "settings_save_failed", cause=str(exc))
 
     return get_settings(db)
 
