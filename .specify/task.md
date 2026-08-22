@@ -8,7 +8,7 @@
 > importe para quien retome va a `progress.json`; este archivo es la lista de
 > trabajo, no el registro histórico.
 >
-> Actualizado: 2026-08-16
+> Actualizado: 2026-08-22
 
 ---
 
@@ -542,30 +542,284 @@ F5 el buscador de CABYS y F6 la pantalla del certificado: cada pantalla escrita
 con la cadena adentro es una pantalla que hay que volver a abrir. Escribirla con
 `t('ventas.cobrar')` desde el primer día cuesta lo mismo.
 
+> **El mecanismo ya existe, y F3 puede empezar** (2026-08-22). Están hechas
+> T-801 a T-805, T-812 y T-815: la biblioteca elegida y montada, los códigos del
+> backend, las 18 pantallas y las tres plantillas en catálogo, el usted, y la
+> prueba que tumba la build si alguien escribe una cadena dentro de un
+> componente o dentro de una acción.
+>
+> **Lo que queda de F8 no bloquea F3**, porque es poder cambiar de idioma y no
+> poder escribir pantallas bien: los catálogos de inglés y portugués (T-807,
+> T-808) con su red (T-813), las fechas por locale (T-806), de dónde sale el
+> idioma (T-809, T-810, T-811) y el flujo de punta a punta en tres idiomas
+> (T-814). El orden razonable es **T-813 antes de T-807 y T-808**: hoy una clave
+> que falte en `en` o `pt` cae al español sin avisar, así que sin esa prueba los
+> catálogos nuevos se llenarían a ciegas.
+
+### Una decisión pendiente, del dueño del spec
+
+**RN-30 dice «el backend no escribe texto para una persona». Lo implementado es
+más amplio: ninguna capa que no sea la interfaz lo escribe.** Salió así porque la
+regla, aplicada solo al borde HTTP, no cerraba —el dominio del backend mandaba
+«el monto debe ser mayor que cero» y el adaptador lo reenviaba; el dominio del
+POS devolvía frases; `$lib/server/api.ts` escribía las suyas—. Hoy los cuatro
+sitios devuelven código y datos, y la frase se arma en un solo lugar por lado:
+`ui/messages.ts` en el POS, y nada en el backend.
+
+Falta decidir si **RN-30 se reescribe** para decir eso, o si se deja como está y
+lo demás queda como criterio de implementación. No se toca `spec.md` sin esa
+respuesta: es el documento del QUÉ, y ampliar un requisito por iniciativa propia
+es inventarse el alcance.
+
 ### El backend deja de escribir texto
 
-- [ ] **T-801** Elegir la biblioteca con una prueba real sobre la pantalla de
+- [x] **T-801** Elegir la biblioteca con una prueba real sobre la pantalla de
       ventas, que es la más cargada. Candidatos: Paraglide (Inlang) y
       `typesafe-i18n`. Criterios, en orden: que funcione en el servidor, que una
       clave que falta rompa `npm run check`, y que no pese en el arranque.
       Plan §8.5.
-- [ ] **T-802** Los 68 mensajes del backend pasan a **código y datos**:
+      **Gana Paraglide** (2026-08-22, `@inlang/paraglide-js` 2.24.1). Se probaron
+      los dos con los mismos doce mensajes de `/ventas` —texto suelto, atributos,
+      parámetros y plural—, no leyendo documentación:
+
+      | Criterio | Paraglide | typesafe-i18n |
+      |---|---|---|
+      | Sirve en el servidor | sí | sí |
+      | Clave o parámetro mal escrito rompe `npm run check` | sí, 3 de 3 | sí |
+      | Clave que falta en un catálogo **que no es el base** | **no**, cae al base en silencio | **sí**, error de tipo |
+      | Peso con 455 claves usando 3 | **5,55 kB** (2,19 gz) | **87,48 kB** (8,00 gz), y con dos idiomas en vez de tres |
+
+      Pierde en lo único que T-813 ya existía para cubrir, y gana en lo que
+      ninguna prueba arregla: el peso —16× en una caja modesta— y el
+      mantenimiento (Paraglide publicó el 2026-08-15 y es la integración oficial
+      de SvelteKit; `typesafe-i18n` publicó 266 versiones hasta agosto de 2023 y
+      una sola después, en febrero de 2026: su autor murió en 2023).
+      Queda montado y corriendo: `paraglideVitePlugin` en `vite.config.ts`,
+      catálogos en `messages/{es,en,pt}.json`, y `npm run i18n` atado a `prepare`
+      y a `check` —`svelte-check` no corre Vite, así que sin eso un clon nuevo
+      no compila—.
+      **`strategy: ['baseLocale']` a propósito**: la de fábrica incluye
+      `globalVariable`, que es una variable de módulo y en el servidor la
+      comparten todas las peticiones. Sería el defecto 17 otra vez. El idioma
+      entra por `paraglideMiddleware` (AsyncLocalStorage, por petición) en T-809.
+- [x] **T-802** Los 68 mensajes del backend pasan a **código y datos**:
       `{"code": "insufficient_stock", "product": "Arroz", "available": 2}`.
       El dominio ya lanza los errores con esos datos —es el pago de F1—, así que
       el cambio vive en los adaptadores `crud_*`, un archivo por flujo. RN-30.
-- [ ] **T-803** Cada código de error tiene su prueba: «esta situación devuelve
+
+      **Hecho el 2026-08-22.** Fueron **81 `raise`** en 17 archivos, no 68, más
+      12 mensajes de éxito y 70 sitios del simulado. Quedan en **64 códigos**:
+      el conteo baja porque cuatro pares decían lo mismo con distintas palabras
+      («no hay caja abierta» tenía dos frases según dónde se topara uno, y el
+      código de barras repetido tenía tres).
+
+      Todos se construyen en `app/utils/api_errors.py` con
+      `api_error(status, code, **datos)`. La forma del cuerpo es la que ya usaban
+      las invitaciones: `{"detail": {"code": …, …datos}}`.
+
+      Tres cosas que el plan no preveía y sin las cuales la regla no cerraba:
+
+      - **El dominio también escribía español.** `InvalidMovement` llevaba la
+        frase («el monto debe ser mayor que cero») y el adaptador la reenviaba
+        tal cual cuando no la reconocía; `InvalidBarcode` igual; y
+        `TotalsMismatch.campo` decía «impuesto», que iba a la pantalla. Ahora
+        llevan código y el nombre del campo del API (`tax`).
+      - **Los «sí» también.** `{"message": "Venta registrada exitosamente"}` no
+        lo lee nadie —el POS escribe sus propios avisos— pero una respuesta con
+        prosa adentro es prosa que alguien acabará mostrando. Son códigos
+        (`sale_registered`); el campo se sigue llamando `message` porque es el
+        contrato publicado.
+      - **El POS también.** `api.ts` escribía «No se pudo conectar con el
+        backend en …» dentro de `$lib/server`, que no es la interfaz. `ApiError`
+        lleva ahora `code` y `data`; `toMessage()` se llama `toLog()` y es para
+        el registro. La frase la arma `apiMessage()` en `$lib/ui/messages.ts`,
+        el mismo lugar que ya armaba las del carrito y el validador.
+
+      Lo que **no** se cambió: los mensajes de `Exception` del dominio (salen en
+      un traceback, no en una pantalla), los `print` de `bootstrap.py` y
+      compañía (son para quien corre el guion en su terminal) y el saludo de
+      `GET /` (es el «¿está encendido?» de quien despliega). Ninguno es texto
+      para quien usa el POS.
+- [x] **T-803** Cada código de error tiene su prueba: «esta situación devuelve
       este código». Sustituye a comparar cadenas, que es lo que hacen hoy las de
       caracterización.
 
+      **Hecho el 2026-08-22**, en `backend/tests/test_error_codes.py`: 67
+      pruebas, y las dos de caracterización que comparaban cadenas
+      (`"no coincide" in detail`) ahora comparan el código. La suite pasó de 412
+      a **479**.
+
+      Y tres guardianes, porque una regla sin red dura hasta el primer apuro:
+
+      1. **`HTTPException` solo se construye en `api_errors.py`.** Se lee el
+         árbol de sintaxis de `app/`. Un `detail="…"` escrito con prisa tumba
+         `pytest` en vez de llegar a la pantalla de alguien.
+      2. **Ningún código inventado y ninguno de adorno.** Las dos direcciones:
+         un `raise` con un código que no está en `CODES`, y un código en `CODES`
+         que nadie levanta —que casi siempre es un error de dedo en uno de los
+         dos lados—.
+      3. **El backend y el POS dicen lo mismo.** `messages.test.ts` lee
+         `api_errors.py` y compara con `API_CODES`. Comprobado tumbándolo: se
+         agregó un código al backend y la prueba lo señaló por nombre.
+
+      Del lado del POS, el `switch` de `apiMessage` es exhaustivo y termina en
+      `never`. Se comprobó igual —quitando el caso de `last_admin`— y
+      `svelte-check` lo rechazó. El primer intento tenía un `as never` que
+      desactivaba la verificación sin que se notara: el `switch` compilaba
+      completo o incompleto por igual.
+
 ### Los catálogos
 
-- [ ] **T-804** Extraer los 455 textos del frontend a catálogos: 223 nodos de
-      texto, 205 atributos y 27 mensajes de acciones, en 33 archivos. Plan §8.1.
-- [ ] **T-805** Reescribir a **usted** en la misma pasada. Son 48 apariciones de
-      voseo en 19 archivos; hacerlo después obliga a volver a abrirlos todos.
+- [x] **T-804** Extraer los textos del frontend a catálogos. Plan §8.1.
+      **Inventario corregido el 2026-08-22**, midiendo sobre el código de hoy: el
+      plan decía 455 en 33 archivos y hay más, pero la diferencia es de reparto y
+      no de tamaño. Lo que **no** entra:
+
+      - `lib/server/mock/db.ts` (28) — nombres de productos y clientes de
+        mentira. Son datos, no interfaz.
+      - `lib/server/mock/handler.ts` (39) — errores del backend simulado. Iban
+        con **T-802**, y ahí se resolvieron: `fail()` recibe código y datos, así
+        que en el simulado ya no hay texto que extraer.
+      - `F1`…`F4` — nombres de tecla.
+      - `PAYMENT_METHODS` — se guardan en `sales.payment_method` y se comparan en
+        las plantillas y los reportes. **El valor no se traduce nunca**;
+        `paymentLabel()` traduce cómo se muestra.
+
+      Los catálogos están partidos por pantalla (`messages/{locale}/*.json`), que
+      `pathPattern` admite como array. Son 18: `common`, `errors`, `nav`, `auth`,
+      `fields`, `validation`, `cart`, `checkout`, `sales`, `cash`, `returns`,
+      `inventory`, `entries`, `people`, `reports`, `invoices`, `settings` y
+      `documents`.
+
+      **Hecho** (2026-08-22), en este orden y por una razón:
+
+      1. `/ventas` — la más cargada, la que el plan pedía como referencia. Con su
+         acción y su dominio.
+      2. **T-815**, el `Validator`. Antes de seguir con pantallas, porque cada
+         `+page.server.ts` se abre una sola vez.
+      3. **Lo compartido**: el menú (`navigation.ts` + `(app)/+layout.svelte`),
+         `Modal`, `Toaster`, `forms.ts`, `+error.svelte` y `hooks.server.ts`. Se
+         paga una vez y se cobra en todas las pantallas.
+      4. **Las de entrada**: `/login`, `/registro`, `/compania` y sus acciones.
+
+      5. **Las de plata y catálogo**: `/caja`, `/devoluciones`, `/inventario`,
+         `/usuarios`, `/clientes` y sus acciones.
+
+      6. **Las que faltaban** (2026-08-22, segunda jornada): `entradas`,
+         `entradas/nueva`, `dashboard`, `facturas`, `facturas/[id]`, el puente al
+         PDF, los tres gráficos, `configuracion` y las **tres plantillas de
+         documento**.
+
+      **Terminada.** 18 catálogos, **893 claves en español**. El de documentos va
+      aparte a propósito (`documents.json`): el idioma del documento no es el de
+      la pantalla (RN-29), así que T-811 solo tiene que cambiar de dónde sale el
+      idioma —no las claves ni quién arma la frase, que ya es
+      `$lib/ui/documents.ts`—.
+
+      **Tres cosas aparecieron al hacerlo y no estaban en el inventario:**
+
+      - **Los lectores de archivos escribían las frases.** `import/spreadsheet.ts`
+        e `import/hacienda.ts` lanzaban `new Error('No se pudo leer el CSV…')` y
+        la pantalla mostraba `error.message` tal cual. Ahora devuelven
+        `ImportFailure` e `ImportNote` —código y datos— y la frase la arma
+        `importMessage()`. Las cinco pruebas que comparaban cadenas comparan el
+        código, igual que se hizo en T-803.
+      - **El dominio guardaba rótulos.** `CURRENCIES[].label` («Colón
+        costarricense»), `TEMPLATES[].name/description/paper` y, en
+        `domain/documents.ts`, `documentTitle()` («Factura electrónica») y las
+        líneas del emisor ya compuestas («Cédula 3-101…», «Tel. 2222-3333»).
+        Todo eso era texto para una persona en una constante de módulo: el
+        defecto 17 esperando. `TEMPLATES` pasó a `TEMPLATE_IDS`,
+        `documentTitle()` a `domain/documentKind()` + `ui/documents.ts`, y los
+        rótulos al catálogo, resueltos por función.
+      - **`ID_TYPES` se queda con su rótulo, y no es una excepción perezosa.**
+        «Cédula jurídica» es el nombre legal del documento en Costa Rica: no se
+        traduce a portugués, se cambia por la lista de otro país. Lo que hará
+        falta el día que VentaSys se venda fuera es una lista por país, no una
+        traducción.
+
+      **`navigation.ts` tuvo que pasar de constante a función.** El menú era un
+      `const NAV` de módulo: se evaluaría una vez por proceso y todas las
+      peticiones verían los rótulos del idioma de la primera. Con las de esta
+      jornada —los presets del dashboard, las pestañas de configuración, el
+      origen de cada entrada— van **seis** veces que aparece el defecto 17
+      disfrazado en esta fase.
+
+      **Un rastreador, no una prueba**: `scratchpad/buscar-texto-suelto.py`
+      encuentra rótulos literales (`label="…"`) y texto suelto en el marcado. Con
+      él se cazó un «Nuevo cliente» que había quedado en `/clientes`. Es un
+      heurístico y da falsos positivos (una línea de comentario, un ternario de
+      clases); la red de verdad es **T-812**, que corre como prueba.
+- [x] **T-805** Reescribir a **usted** en la misma pasada.
+
+      **Terminada de verdad el 2026-08-22**, al cerrar T-804: el voseo se fue con
+      cada pantalla que pasó al catálogo. La búsqueda buena da **cero** en
+      `src/`; las tres coincidencias que quedan son la palabra «caché» en
+      descripciones de pruebas, que es un sustantivo.
+
+      Lo que sigue vale como advertencia, porque el error de método fue peor que
+      el voseo:
+
+      **Se marcó terminada antes, el mismo día, y no lo estaba. La búsqueda con la que
+      se verificó estaba invertida.** Era `grep -E` con `\b` alrededor de
+      palabras acentuadas, y para grep la «á» no es carácter de palabra: un
+      patrón `...á\b` solo casa **cuando después viene una letra**. Así que
+      encontraba «dejá» dentro de «dejándolo» —falso positivo— y se perdía
+      «Actualizá el FastAPI», que es voseo de verdad. Buscaba justo lo
+      contrario.
+
+      De ahí salieron dos conclusiones falsas: que no quedaba voseo, y que el
+      plan había contado de más. **El plan tenía razón**: 48 en 19 archivos era
+      una estimación buena. Con un patrón Unicode quedan **unos 30 en 12
+      archivos**, todos en texto de pantalla.
+
+      Sirve para buscarlo: `scratchpad/buscar-voseo.py`, que además separa lo que
+      está en un comentario de lo que ve una persona. Cuidado con dos casos que
+      ni ese patrón ve, porque se escriben **sin tilde**: «Guardalo»,
+      «limpialos» —imperativo de vos con el pronombre pegado—.
+
+      Lo que **sí** es cierto de lo verificado: las pantallas ya extraídas están
+      limpias (ventas, caja, devoluciones, inventario, usuarios, clientes, login,
+      registro, compania y el layout), y el simulado también, porque su voseo se
+      fue con las frases al pasar a códigos en T-802.
+
+      Lo que quedaba **coincidía casi exactamente con lo que faltaba de T-804**,
+      así que no fue una pasada aparte: se resolvió al extraer cada pantalla.
+      Estaba en `entradas/nueva` (10), `entradas` (3), su acción (3),
+      `import/spreadsheet.ts` (4), las tres plantillas (4), y uno en cada uno de
+      `configuracion`, `dashboard`, `charts/SalesTrendChart`, `facturas` y el
+      puente al PDF.
+
+      **La lección, que es lo que importa**: una búsqueda que devuelve cero se
+      comprueba al revés antes de creerle —buscando algo que uno sabe que está—.
+      Un cero es el resultado más fácil de fabricar por accidente, y el que menos
+      se cuestiona.
+- [x] **T-815** El `Validator` deja de recibir la etiqueta en español.
+      Apareció al extraer `/ventas`. Hecho 2026-08-22: **92 sitios en 10
+      archivos**, y ninguno quedó sin migrar.
+      El validador devuelve regla y datos (`{ code: 'validation_required', label
+      }`) y `validationErrors()` los convierte en frases **justo antes del
+      `fail()`**. Ese detalle es el que hizo que **los 8 componentes que muestran
+      `form.errors` no se tocaran**: el contrato con la pantalla sigue siendo
+      `Record<string, string>`. `formError()` tuvo que seguir devolviendo texto
+      por lo mismo —al devolver el tipo nuevo, `form.errors` pasaba a ser la
+      unión de las dos formas y las ocho pantallas dejaban de compilar—.
+      El rótulo llega resuelto del catálogo desde `$lib/ui/fields.ts`, con **54
+      campos declarados una sola vez**. Son funciones y no constantes: una
+      constante se evaluaría al importar el módulo y congelaría el idioma de la
+      primera petición para todas: el defecto 17 otra vez.
+      **Defecto 22, encontrado acá:** el rótulo traía el género en el texto pero
+      el mensaje decía «es obligatorio» fijo, así que los 20 campos femeninos y
+      plurales salían mal —«La cédula es obligatorio», «Los decimales es
+      obligatorio»—. Y la prueba de `integer` lo **afirmaba**. Ahora la
+      concordancia viaja con el rótulo (`m`/`f`/`mp`/`fp`) y la elige una
+      variante de Paraglide. Verificado contra el backend real.
 - [ ] **T-806** `ui/format.ts` deja de formatear fechas fijo en es-CR: los meses
       y el orden dependen del locale.
-- [ ] **T-807** Catálogo de inglés.
+- [ ] **T-807** Catálogo de inglés. Con T-804 terminada son **893 claves en 18
+      archivos**; los de `en` y `pt` están creados y vacíos, así que hoy todo cae
+      al español en silencio (por eso T-813 es lo que hay que hacer antes, no
+      después).
 - [ ] **T-808** Catálogo de portugués (Brasil). **Solo la interfaz**: la factura
       electrónica sigue siendo la de Hacienda Costa Rica. Vender en Brasil
       implica NF-e —otro esquema, otra autoridad, otro certificado— y sería una
@@ -580,17 +834,60 @@ con la cadena adentro es una pantalla que hay que volver a abrir. Escribirla con
       menú del usuario el suyo. RN-28.
 - [ ] **T-811** Idioma del **documento**, separado del de la pantalla. La
       factura es para el cliente y para Hacienda: una compañía costarricense
-      emite en español aunque su cajero use el POS en portugués. Toca las tres
-      plantillas. RN-29.
+      emite en español aunque su cajero use el POS en portugués. RN-29.
+      **Salió más barata con T-804**: ya no toca las tres plantillas. Su texto
+      está en `messages/{locale}/documents.json` y quien lo lee es
+      `$lib/ui/documents.ts`. Lo que falta es que ese módulo lea el catálogo de
+      `document_locale` en vez del de la sesión, y el ajuste en Configuración.
 
 ### Verificación — sin esto la fase no está terminada
 
-- [ ] **T-812** Prueba que recorre las plantillas buscando texto suelto: si
+- [x] **T-812** Prueba que recorre las plantillas buscando texto suelto: si
       alguien escribe una cadena dentro de un componente, la build se cae. Es lo
       único que impide que los catálogos se vayan quedando atrás. RNF-2.
+
+      **Hecha el 2026-08-22** en `frontend/src/lib/ui/loose-text.test.ts`, y es
+      **lo último que faltaba para empezar F3**: el plan pedía el mecanismo antes
+      de F3 porque «cada pantalla escrita con la cadena adentro es una pantalla
+      que hay que volver a abrir» (§8.7), y sin esta prueba nada impide que las
+      pantallas de `/admin` nazcan así.
+
+      **Lee el árbol de sintaxis, no las líneas.** El rastreador por líneas del
+      scratchpad daba falsos positivos con lo que más abunda acá —comentarios de
+      varias líneas y ternarios de clases de Tailwind— y una prueba que grita en
+      falso se termina desactivando. En el árbol la diferencia es exacta: un
+      comentario es un `Comment`, un `class={a ? 'x' : 'y'}` es un
+      `ExpressionTag`, y el texto de verdad es un `Text`. Usa `svelte/compiler`
+      para las pantallas y `typescript` para las acciones; ninguno compila nada,
+      los dos solo leen.
+
+      Cubre **dos mitades**, y la segunda va un poco más allá de la letra de la
+      tarea a propósito: una acción de formulario produce tantos mensajes como la
+      pantalla, así que se vigilan también los sumideros de texto de los `.ts`
+      —`formError()`, `v.add()`, `toasts.*()`—. Dejar solo el marcado habría
+      cubierto la mitad menos probable.
+
+      **Encontró 12 textos que dos pasadas de T-804 y el rastreador por líneas no
+      vieron**: un `aria-label="Editar …"` en `/clientes`, cuatro en `/registro`,
+      dos en `/compania`, «vs. periodo anterior» en `StatCard` y cuatro rótulos
+      en línea de `FacturaModerna` («Cédula», «Tel.», «Devuelto»). Es la
+      justificación de la tarea, medida.
+
+      Comprobada tumbándola: se inyectó un texto suelto en una pantalla y una
+      frase en un `formError()`, y las dos mitades fallaron nombrando archivo y
+      línea.
+
+      La lista de excepciones tiene **una** entrada —`VentaSys`, la marca, en los
+      seis `<title>`— y las razones escritas. No están los nombres de tecla
+      porque no hacen falta: viven en expresiones. Una excepción que no se usa es
+      la que después justifica la siguiente.
 - [ ] **T-813** Prueba de que los tres catálogos tienen las mismas claves. Una
       clave que falta en portugués no puede aparecer como `undefined` en la
       pantalla del cajero.
+      **Sube de prioridad con la decisión de T-801**: Paraglide no avisa de esto
+      —una clave que falta en `en` o `pt` cae al español en silencio, comprobado—
+      así que esta prueba es la única red. No es un extra de la fase: es la mitad
+      del criterio 2 del plan §8.5, y se paga acá.
 - [ ] **T-814** Flujo de punta a punta en los tres idiomas: entrar, cobrar y ver
       la factura. Con el documento en español aunque la pantalla esté en
       portugués.

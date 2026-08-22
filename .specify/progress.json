@@ -8,11 +8,11 @@
       "frontend_csharp": "https://github.com/jordanlaguna/POS.git",
       "backend_python": "https://github.com/jordanlaguna/backend-python.git"
     },
-    "idioma_interfaz": "es-CR (voseo)",
+    "idioma_interfaz": "español en usted; inglés y portugués por venir (F8, RN-22)",
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-08-16",
+  "actualizado": "2026-08-22",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -230,6 +230,37 @@
       "que": "`reuseExistingServer: !process.env.CI` hacía que Playwright reutilizara cualquier servidor que ya estuviera escuchando en el 4173. Un `npm run dev` olvidado de horas antes siguió sirviendo el código viejo.",
       "impacto": "La suite entera —13 pruebas— pasó en verde varias veces seguidas sin haber ejecutado una sola línea del código que se acababa de escribir. Es la peor clase de fallo: no avisa, y da confianza justo cuando no corresponde. Al matar el proceso viejo, 7 de las 13 fallaron de inmediato. Ahora `reuseExistingServer` es `false`: si el puerto está ocupado, Playwright falla y lo dice.",
       "encontrado": "al reestructurar el mock para T-228: los 13 casos siguieron pasando cuando tenían que fallar, y esa incoherencia era el síntoma"
+    },
+    {
+      "id": 22,
+      "donde": "frontend src/lib/application/validation.ts",
+      "que": "El validador armaba el mensaje con la concordancia fija —`${label} es obligatorio.`— mientras el rótulo la traía en el texto. Todo campo femenino salía mal: «La cédula es obligatorio», «La dirección es obligatorio», «La categoría es obligatorio», «La sucursal es obligatorio». Con los plurales peor: «Los decimales es obligatorio». Solo `date` y `password` acertaban, porque tenían su propia cadena con «obligatoria» escrita a mano.",
+      "impacto": "Cosmético, pero en la cara del usuario y en 20 de los 54 rótulos del sistema —los femeninos y los plurales—. En un producto que se vende, el formulario que contesta con una falta de concordancia dice algo sobre el resto. Corregido en T-815: la concordancia viaja con el rótulo (`{ text, concord }`) y el mensaje la selecciona con una variante de Paraglide. Verificado contra el backend real: «La dirección es obligatoria», «La fecha de registro es obligatoria».",
+      "encontrado": "escribiendo T-815. La prueba de `integer` AFIRMABA el error: `expect(val.errors.c).toBe('La cantidad es obligatorio.')`. Estaba fijado por una prueba, que es la peor forma de tener un defecto."
+    },
+    {
+      "id": 23,
+      "donde": "backend app/services/crud_cash.py y app/domain/cash.py",
+      "que": "El movimiento de caja inválido se traducía con una tabla de frase a frase (`mensajes.get(e.motivo, e.motivo)`) y el segundo argumento era el reenvío: cualquier motivo que no estuviera en la tabla salía tal cual, con el español del dominio y en minúscula («el tipo debe ser 'entrada' o 'salida'»). Bastaba con cambiar una palabra en `domain/cash.py` para que la pantalla empezara a mostrar el texto interno sin que ninguna prueba se enterara.",
+      "impacto": "Cosmético mientras las dos cadenas coincidieran, y una bomba de tiempo en cuanto dejaran de coincidir: el acoplamiento era por texto exacto, invisible para el compilador y para las pruebas. Corregido en T-802: el dominio lanza un código y `crud_cash` lo traduce con un diccionario total sobre un conjunto cerrado (`check_movement` solo puede lanzar tres)."
+    },
+    {
+      "id": 24,
+      "donde": "frontend src/lib/ui/messages.ts",
+      "que": "El primer `apiMessage` terminaba en `codigoSinFrase(fallo.code as never)`. Ese `as never` desactivaba la verificación de exhaustividad: el `switch` compilaba igual con todos los casos o con la mitad, así que la red que tenía que impedir un código sin frase no impedía nada.",
+      "impacto": "Ninguno en producción —se encontró el mismo día, al ir a comprobar que la red funcionaba— pero es el defecto que más engaña de los que llevamos: el código se leía como si verificara y no verificaba. Corregido separando el `switch` en `frase(code: ApiCode, …)`, con el reconocimiento del código antes y aparte. Comprobado quitando el caso de `last_admin`: `svelte-check` lo rechaza por nombre."
+    },
+    {
+      "id": 25,
+      "donde": "el método de verificación de T-805, no el código",
+      "que": "T-805 se marcó terminada con una búsqueda `grep -E` que llevaba `\\b` después de vocales acentuadas. Para grep la «á» no es carácter de palabra, así que `...á\\b` solo casa cuando después viene una letra: encontraba «dejá» dentro de «dejándolo» y se perdía «Actualizá el FastAPI». La búsqueda hacía lo contrario de lo que se le pedía —solo falsos positivos, ningún positivo real—.",
+      "impacto": "Dos conclusiones falsas escritas en task.md y en progress.json: que no quedaba voseo en `src/routes`, `src/lib/ui` ni `src/lib/server/import`, y que el plan había contado de más (decía 48 en 19 archivos, y tenía razón). Quedaban unos 30 en 12 archivos, en texto de pantalla. Ninguno llegó a producción porque nada está confirmado, pero una tarea marcada como terminada es una tarea que nadie vuelve a mirar: el daño de una verificación falsa es que apaga la revisión. Corregido el 2026-08-22: T-805 vuelve a `[~]` con el detalle por archivo, y la búsqueda buena queda en `scratchpad/buscar-voseo.py`, con la advertencia de los dos casos que se escriben sin tilde («Guardalo», «limpialos»)."
+    },
+    {
+      "id": 26,
+      "donde": "frontend: doce textos en siete archivos",
+      "que": "Al estrenar la prueba de T-812 aparecieron doce textos escritos a mano que **dos pasadas de T-804 y el rastreador por líneas no habían visto**: `aria-label=\"Editar …\"` en `/clientes`, cuatro en `/registro` («Volver al inicio de sesión», «Se registra la persona…», «Creando…», «Crear cuenta»), dos en `/compania` («No hay ninguna compañía…», «Salir»), «vs. periodo anterior» en `StatCard`, y cuatro rótulos en línea de `FacturaModerna` («Cédula», «Tel.», «Devuelto») que en la clásica sí se habían convertido.",
+      "impacto": "Cosmético hoy —todo está en español— y la mitad del valor de la fase mañana: con el POS en portugués, esas doce frases habrían salido en español, y tres de ellas en la factura que ve el cliente. Corregido el mismo día. Lo que importa del defecto no es el arreglo sino la medida: es lo que justifica que la verificación de una fase de traducción no pueda ser una búsqueda a ojo."
     }
   ],
   "decisiones": [
@@ -510,9 +541,96 @@
       "porque": "Los 61 accesos del manejador (`db.products`, `db.users`) siguen escritos igual y siguen mutando el almacén de verdad, porque el spread copia referencias. Filtrar en cada acceso habría sido 42 ediciones frágiles; esto fue una reestructura del almacén y un argumento. Lo único que no se puede hacer sobre la vista es reasignar una colección entera, y había un solo sitio que lo hacía."
     },
     {
+      "tema": "La biblioteca de multi-idioma es Paraglide, y se eligió midiendo",
+      "decision": "`@inlang/paraglide-js` 2.24.1. Se descartó `typesafe-i18n` después de probar las dos con los mismos doce mensajes de la pantalla de ventas.",
+      "porque": "Con 455 claves en el catálogo y tres usadas, Paraglide manda 5,55 kB al navegador (2,19 kB comprimidos) y typesafe-i18n 87,48 kB (8,00 kB) —y eso con dos idiomas en vez de tres—, porque uno compila cada mensaje a una función que el empaquetador puede descartar y el otro manda el diccionario entero. En una caja modesta eso se nota. Y el mantenimiento decide el resto: Paraglide publicó hace una semana y es la integración oficial de SvelteKit; typesafe-i18n publicó 266 versiones hasta agosto de 2023 y una sola después, en febrero de 2026 —su autor murió en 2023—. Para un producto que se vende por suscripción, un upstream detenido es una deuda con fecha.",
+      "lo_que_pierde": "typesafe-i18n gana en una cosa y no es menor: una clave que falta en un catálogo que NO es el base es un error de tipo y rompe `npm run check`. Paraglide cae al idioma base en silencio. Se aceptó porque T-813 —la prueba de que los tres catálogos tienen las mismas claves— ya existía justo para eso: el hueco se tapa con una prueba que igual había que escribir, y los de typesafe-i18n no se tapan con nada."
+    },
+    {
+      "tema": "Dentro del POS también rige RN-30: el dominio devuelve código y datos",
+      "decision": "`domain/cart.ts` y `application/checkout.ts` dejan de devolver frases. Devuelven `{ code: 'cart_out_of_stock', product: 'Arroz' }` y la frase la arma `$lib/ui/messages.ts`, con `switch` exhaustivos cuyo `never` final rompe `npm run check` si aparece un código sin mensaje.",
+      "porque": "RN-30 está escrita para FastAPI, pero el problema es idéntico un nivel más adentro: si el dominio arma la oración, tiene que saber el idioma de la pantalla, y entonces no es dominio. La prueba de capas ni lo habría notado —`$lib/paraglide` no está en su lista de prohibidos—, así que la regla acá la sostiene la decisión, no el guardián. De paso las pruebas del carrito dejaron de comparar cadenas: ahora afirman qué código sale de qué situación, y un cambio de redacción ya no rompe una prueba de lógica.",
+      "pendiente_de_spec": "RN-30 dice «el backend no escribe texto para una persona». Convendría ampliarla a «ninguna capa que no sea la interfaz», porque es lo que se está aplicando. Sin eso, la decisión queda sin requisito que la respalde."
+    },
+    {
+      "tema": "El método de pago se traduce en la etiqueta, no en el valor",
+      "decision": "`PAYMENT_METHODS` sigue siendo `['Efectivo', 'Tarjeta de crédito', …]` en español. `paymentLabel()` traduce cómo se muestra; el valor que viaja al backend y se guarda en `sales.payment_method` no cambia.",
+      "porque": "Ese texto es un dato, no un rótulo: se guarda en la base y se compara en ocho sitios —las tres plantillas de documento y los reportes de métodos de pago—. Traducirlo haría que una venta cobrada con el POS en portugués guardara «Dinheiro» y dejara de contarse como efectivo en el arqueo. Que el valor esté en español es deuda de RN-21, pero arreglarla es una migración de datos y no cabe en F8."
+    },
+    {
+      "tema": "El idioma no se guarda en una variable de módulo",
+      "decision": "`strategy: ['baseLocale']` en `paraglideVitePlugin`, y no la de fábrica (`['cookie', 'globalVariable', 'baseLocale']`). Cuando el idioma entre en el JWT (T-809), se resuelve dentro de `paraglideMiddleware`, que usa AsyncLocalStorage.",
+      "porque": "`globalVariable` guarda el idioma en una variable de módulo, que vive en el proceso de Node y no en la petición: con varias compañías atendidas por el mismo proceso, la primera que cargue una página le presta su idioma a las demás. Es el defecto 17 exactamente, el de la caché de configuración del BFF, y lo trae la configuración por omisión de la biblioteca. `cookie` y `url` sobran además porque el idioma no lo elige el navegador: lo resuelve el servidor —lo de la persona, si no lo de la compañía, si no `es`— y viaja en el token."
+    },
+    {
+      "tema": "El compilador de mensajes se ata a la build, no se corre a mano",
+      "decision": "`npm run i18n` está atado a `prepare` y a `check`, además del complemento de Vite. La carpeta generada `src/lib/paraglide/` no se versiona; sí se versiona `project.inlang/cache`.",
+      "porque": "`npm run check` corre `svelte-check`, que no pasa por Vite: en un clon nuevo la carpeta compilada no existe y la comprobación de tipos falla por una razón que no tiene nada que ver con el código. Y el compilador baja su complemento de formato de `cdn.jsdelivr.net`, así que sin el cache versionado la primera build de una máquina sin internet no arranca."
+    },
+    {
       "tema": "La segunda compañía del demo nace vacía",
       "decision": "En vez de duplicar el catálogo, la compañía 2 del modo simulado no tiene productos, clientes ni ventas.",
       "porque": "Es lo que de verdad pasa al dar de alta una compañía, así que no miente. Y hace que el cambio de compañía se note de una forma que no se puede fingir: si el aislamiento del mock estuviera mal, la pantalla mostraría el catálogo de la otra y la prueba lo vería."
+    },
+    {
+      "tema": "Un solo lugar construye los HTTPException, y un guardián lo obliga",
+      "decision": "Todo «no» del backend sale de `api_error(status, code, **datos)` en `app/utils/api_errors.py`. `tests/test_error_codes.py` lee el árbol de sintaxis de `app/` y falla si aparece un `HTTPException(...)` en cualquier otro archivo, si un código no está en `CODES`, o si un código de `CODES` no lo levanta nadie.",
+      "porque": "RN-30 no se sostiene con buena voluntad. Mientras `detail=\"…\"` se pueda escribir en cualquier archivo, alguien con prisa lo va a escribir, y esa frase en español va a salir en una pantalla en portugués. Es la misma forma que ya funcionó con el filtro por compañía: la regla la cuida una prueba, no la memoria de quien edita."
+    },
+    {
+      "tema": "El dominio del backend tampoco escribe frases",
+      "decision": "`InvalidMovement` e `InvalidBarcode` llevan un código (`amount_not_positive`, `inner_space`) y no una frase; `TotalsMismatch.campo` lleva el nombre del campo del API (`tax`) y no la palabra de la oración («impuesto»).",
+      "porque": "La regla aplicada solo al borde HTTP no cerraba. `crud_cash` traducía la frase del dominio con una tabla y **reenviaba la del dominio cuando no la reconocía**: por ahí se colaba el español hasta la pantalla. Y `campo` llegaba al POS ya en español, así que la frase del cotejo de totales no se podía traducir aunque el resto sí."
+    },
+    {
+      "tema": "Los mensajes de éxito también son códigos",
+      "decision": "`{\"message\": \"Venta registrada exitosamente\"}` pasa a `{\"message\": \"sale_registered\"}`. El campo conserva el nombre porque es el contrato que ya publica el API.",
+      "porque": "No los lee nadie —el POS escribe sus propios avisos— pero una respuesta con prosa adentro es prosa que alguien acabará mostrando: es exactamente lo que pasó con los `detail`. Se dejó el campo llamándose `message` para no tocar diez esquemas de Pydantic por un valor que nadie consume."
+    },
+    {
+      "tema": "Cuatro pares de códigos se fundieron en uno",
+      "decision": "Una sola situación, un solo código: «no hay caja abierta» tenía dos frases según si uno movía efectivo o cerraba; el código de barras repetido tenía tres redacciones entre productos y entradas; la cantidad y el costo malos de una línea de entrada eran dos mensajes. Los 81 `raise` quedan en 64 códigos.",
+      "porque": "La redacción no es la situación. Dos frases distintas para lo mismo eran dos traducciones que mantener y dos formas de decirle al cajero algo idéntico. Donde las frases sí difieren de verdad —consultar, abrir, mover o cerrar la caja de otro— se mantienen cuatro códigos a propósito."
+    },
+    {
+      "tema": "El contrato de códigos se comprueba entre los dos lados",
+      "decision": "`frontend/src/lib/ui/messages.test.ts` lee `backend/app/utils/api_errors.py` y compara sus códigos con `API_CODES` del POS, en las dos direcciones.",
+      "porque": "El `switch` exhaustivo del POS obliga a escribir un caso por código de SU lista, no de la del backend. Sin comparar las dos listas, un código nuevo en FastAPI compila y pasa las pruebas de los dos lados, y aparece en la pantalla como «Ocurrió un error inesperado». Que sea una prueba del frontend leyendo un archivo del backend es feo y es el único lugar donde las dos listas se ven a la vez."
+    },
+    {
+      "tema": "Las cifras de los errores van sin formato",
+      "decision": "Un error manda `available: 1000`, no «₡1.000,00». La frase interpola el número crudo.",
+      "porque": "Formatear plata necesita la moneda configurada, y el estado de módulo que la guarda lo fija el layout al renderizar: una acción de formulario corre antes de eso y pondría el símbolo de fábrica. Un número sin símbolo es ambiguo; uno con el símbolo equivocado es una mentira sobre plata. Se resuelve con T-806."
+    },
+    {
+      "tema": "El documento impreso tiene su propio catálogo",
+      "decision": "Los textos de las tres plantillas viven en `messages/{locale}/documents.json`, aparte de los de las pantallas, y los lee `$lib/ui/documents.ts`.",
+      "porque": "El idioma del documento no es el de la pantalla (RN-29): la factura es para el cliente y para Hacienda, así que una compañía costarricense la emite en español aunque su cajero tenga el POS en portugués. Con el catálogo separado y un solo módulo que lo lee, T-811 pasa de «tocar las tres plantillas» a «cambiar de dónde sale el idioma en un archivo»."
+    },
+    {
+      "tema": "Los rótulos salen del dominio y el dominio se queda con los códigos",
+      "decision": "`CURRENCIES` pierde `label`, `TEMPLATES` pasa a ser `TEMPLATE_IDS`, y `documentTitle()` se parte en `domain/documentKind()` —que devuelve 'invoice' o 'einvoice'— más `ui/documents.ts`, que pone la palabra. Las líneas del emisor dejan de venir compuestas: el dominio dice qué es cada una y la plantilla pone «Cédula» o «Tel.».",
+      "porque": "Eran textos para una persona dentro de constantes de módulo: intraducibles y, además, el defecto 17 esperando —una constante se evalúa una vez por proceso y todas las peticiones verían el idioma de la primera—. Con esto el dominio no tiene una sola frase."
+    },
+    {
+      "tema": "`ID_TYPES` conserva su rótulo en español",
+      "decision": "Los cuatro tipos de identificación de Hacienda («Cédula física», «Cédula jurídica», «DIMEX», «NITE») siguen con el texto dentro del dominio.",
+      "porque": "Es el nombre legal del documento en Costa Rica, no una etiqueta de interfaz. No se traduce a portugués: se cambia por la lista de otro país. Lo que hará falta el día que VentaSys se venda fuera es una lista por país, y traducir estos cuatro habría dado la ilusión de que el problema ya estaba resuelto."
+    },
+    {
+      "tema": "Los lectores de archivos también devuelven código y datos",
+      "decision": "`import/spreadsheet.ts` e `import/hacienda.ts` lanzan `ImportError` con un `ImportFailure`, y sus avisos son `ImportNote`. La frase la arma `importMessage()` / `importFailureMessage()` en `ui/messages.ts`.",
+      "porque": "Lanzaban `new Error('No se pudo leer el CSV…')` y la pantalla mostraba `error.message` tal cual: un adaptador escribiendo español, que es lo mismo que hacía el backend antes de T-802. Y las pruebas comparaban esas cadenas, así que cambiar una coma rompía una prueba de lectura de XML."
+    },
+    {
+      "tema": "La prueba de texto suelto lee el árbol de sintaxis, no las líneas",
+      "decision": "`ui/loose-text.test.ts` importa `svelte/compiler` para las pantallas y `typescript` para las acciones, y recorre sus árboles. Es la excepción a la nota de `vitest.config.ts`, que dice que estas pruebas no arrastran el compilador: acá no se compila nada, se lee.",
+      "porque": "El rastreador por líneas que se usó primero daba falsos positivos con lo que más abunda en este código —comentarios de varias líneas y ternarios de clases de Tailwind—, y una prueba que grita en falso se termina desactivando. En el árbol la diferencia es exacta y no hay heurístico que ajustar: un comentario es un `Comment`, un `class={a ? 'x' : 'y'}` es un `ExpressionTag`, y el texto de verdad es un `Text`. Cuesta medio segundo."
+    },
+    {
+      "tema": "La prueba vigila también los sumideros de texto de los `.ts`",
+      "decision": "Además del marcado, se revisan las llamadas que terminan en los ojos de alguien: `formError()`, `v.add()`, `toasts.*()`. Solo esas, y solo en las posiciones donde va texto.",
+      "porque": "Va un poco más allá de la letra de T-812 —que habla de las plantillas— y es donde está la mitad del riesgo: una acción de formulario produce tantos mensajes como la pantalla. Perseguir todos los literales de un `.ts` en cambio sería ruido: cualquiera puede ser una clave, una clase o una ruta."
     }
   ],
   "invariantes_verificados": {
@@ -607,6 +725,13 @@
       "companias": 1,
       "columnas_iguales_entre_instalacion_nueva_y_migrada": "155 de 155"
     },
+    "peso_de_i18n": {
+      "$comentario": "T-801. Medido con 455 claves en el catálogo y 3 usadas, empaquetado con Vite y minificado. Si el número de Paraglide empieza a crecer con el catálogo, el árbol dejó de sacudirse.",
+      "paraglide_455_claves_3_usadas": "5,55 kB / 2,19 kB comprimido",
+      "paraglide_12_claves_3_usadas": "5,55 kB / 2,19 kB comprimido",
+      "typesafe_i18n_455_claves_3_usadas": "87,48 kB / 8,00 kB comprimido, con dos idiomas",
+      "idiomas_en_el_catalogo": 3
+    },
     "respaldo_por_compania": {
       "$comentario": "T-225. Exportar, borrar y restaurar una compañía sin tocar a las demás.",
       "tablas_de_compania_que_se_respaldan": 17,
@@ -616,6 +741,25 @@
       ],
       "se_conservan_los_identificadores": true,
       "restaurar_encima_de_datos_existentes": "se niega"
+    },
+    "codigos_de_error": {
+      "$comentario": "T-802 y T-803. Si estas cifras se mueven, se movió el contrato entre el backend y el POS: hay un código nuevo, o uno que dejó de levantarse.",
+      "codigos_del_backend": 64,
+      "codigos_propios_del_pos": 4,
+      "mensajes_de_exito": 12,
+      "raise_migrados": 81,
+      "sitios_del_simulado": 70,
+      "pruebas_del_backend": 479,
+      "pruebas_de_unidad_del_pos": 412
+    },
+    "catalogos_de_idioma": {
+      "$comentario": "T-804 terminada. Si el total baja sin que se borre una pantalla, alguien volvió a escribir texto dentro de un componente.",
+      "catalogos": 18,
+      "claves_en_espanol": 898,
+      "claves_en_ingles": 0,
+      "claves_en_portugues": 0,
+      "voseo_en_pantalla": 0,
+      "pruebas_de_unidad": 412
     }
   },
   "riesgos_conocidos": [
@@ -638,6 +782,10 @@
     {
       "riesgo": "Cuando el impuesto pase a ser por producto (F5, catálogo CABYS), la devolución dejará de poder reconstruir la tarifa desde el encabezado de la venta: `tax / subtotal` es un promedio, y una devolución parcial de una sola tarifa reembolsaría de más o de menos. Con un medicamento al 2 % junto a un arroz al 13 %, devolver solo el medicamento daría ₡1 075 en vez de ₡1 020.",
       "mitigacion": "Hoy no se manifiesta: hay una sola tarifa y el promedio ES la tarifa. Se resuelve congelando `tax_rate` y `tax_amount` en `sale_details` al cobrar (T-509b), y `TaxRate.of_sale` queda como respaldo para las ventas anteriores a esa migración. Anotado en plan §6.3."
+    },
+    {
+      "riesgo": "Buscar texto en español con `grep` y `\\b` da resultados al revés: las palabras acentuadas rompen el límite de palabra.",
+      "mitigacion": "Para cualquier búsqueda sobre texto en español —voseo, tildes, plurales— se usa Python con `re.UNICODE` y clases de caracteres explícitas, no `\\b`. Y una búsqueda que devuelve **cero** resultados se comprueba al revés antes de creerle: se busca algo que uno sabe que está."
     }
   ],
   "sesiones": [
@@ -923,6 +1071,120 @@
         "Defecto 21, el más incómodo del día: las pruebas de punta a punta llevaban horas corriendo contra un servidor viejo olvidado en el 4173. Pasaban en verde sin probar nada. Al matarlo, 7 de 13 fallaron."
       ],
       "sin_ejecutar_todavia": "Solo T-230 de F2 (cubrir `count()` de raíz en vez de vigilarlo). De F1 siguen abiertas T-109 y T-110. Sigue F3 · Soporte y suscripción."
+    },
+    {
+      "fecha": "2026-08-22",
+      "titulo": "F8 arranca: T-801, la biblioteca de multi-idioma elegida midiendo",
+      "hecho": [
+        "T-801 cerrada. Paraglide gana sobre typesafe-i18n. Se probaron las dos con los mismos doce mensajes de `/ventas`, no leyendo documentación: 5,55 kB contra 87,48 kB con 455 claves en el catálogo y tres usadas.",
+        "Mecanismo montado y corriendo: `paraglideVitePlugin` en `vite.config.ts`, catálogos en `messages/{es,en,pt}.json`, `npm run i18n` atado a `prepare` y a `check`.",
+        "`strategy: ['baseLocale']` en vez de la de fábrica: `globalVariable` es una variable de módulo compartida entre peticiones, o sea el defecto 17 otra vez. El idioma entrará por `paraglideMiddleware` en T-809.",
+        "Se levantó el stack completo desde cero —los contenedores no existían, el volumen `ventasys_db_data` sí— y se verificó de punta a punta: login por el POS, `/facturas` mostrando las 38 ventas por ₡360.413,50 y «Compañía inicial» con sus acentos.",
+        "Se encontró un POS de producción olvidado en el 3000 desde el 16 de agosto, sirviendo el build de hacía seis días. Es la familia del defecto 21: un servidor viejo que no avisa. Se terminó con el visto bueno del usuario.",
+        "412 pruebas del backend en verde con 100 % de cobertura, y 260 del frontend con 100 %.",
+        "Permisos: se agregaron a `.claude/settings.json` los comandos de inspección que pedían aviso a cada rato (`npm view`, `npx paraglide-js`, las consultas de puertos y procesos de PowerShell, `cd`, `head`, `tail`, `cat`) y se pusieron en `ask` los que no deben pasar solos: `node -e`, `find`, `sed -i`, `Stop-Process`, `kill`."
+      ],
+      "hallazgos_de_metodo": [
+        "El plural de Paraglide se escribe como un array de UN elemento con `declarations`, `selectors` y `match`. Escrito como objeto suelto —lo que parece natural— el compilador contesta «Message must have at least one variant», que no dice nada del array.",
+        "Encadenar `docker compose -f docker-compose.test.yml up -d && pytest` sin esperar el healthcheck no solo omite las pruebas HTTP: hace FALLAR una prueba de cobertura de tablas que depende de una compañía que crean las omitidas. Se lee como un defecto y es una carrera. Con la pila lista: 412 en verde."
+      ],
+      "sin_ejecutar_todavia": "El resto de F8: T-802/T-803 (el backend deja de escribir texto), T-804/T-805 (extraer los 455 textos y reescribirlos a usted), T-806 a T-811, y las tres verificaciones T-812 a T-814. Después, F3."
+    },
+    {
+      "fecha": "2026-08-22",
+      "titulo": "T-804/T-805: /ventas traducida de punta a punta, con el dominio devolviendo códigos",
+      "hecho": [
+        "Catálogos partidos por pantalla en `messages/{locale}/*.json` —`pathPattern` acepta un array— con `common`, `cart`, `checkout` y `sales`. 76 claves compilando.",
+        "`/ventas` completa: los 45 textos de la pantalla, su acción y sus dos modales salen del catálogo, en usted. Comprobado contra el backend real que la página servida no tiene ni una aparición de voseo.",
+        "`domain/cart.ts` y `application/checkout.ts` devuelven código y datos; `ui/messages.ts` arma la frase con `switch` exhaustivos. Las pruebas del carrito dejaron de comparar cadenas y ahora afirman qué código sale de qué situación.",
+        "`ui/messages.ts` tiene prueba propia aunque no entre en la barrera del 100 %: el `switch` exhaustivo obliga a escribir el caso, pero no a que la clave exista, y una clave ausente compila a cadena vacía —un aviso en blanco para el cajero—.",
+        "278 pruebas de unidad con 100 % en dominio y aplicación, y las 20 de punta a punta en verde, incluidas las cuatro de ventas en espera que recorren la pantalla reescrita."
+      ],
+      "inventario_corregido": "El plan decía 455 textos en 33 archivos. Medido hoy hay más, pero el reparto es otro: 28 de `mock/db.ts` son nombres de productos de mentira (datos, no interfaz), 39 de `mock/handler.ts` son los errores del backend simulado y van con T-802, y `F1`..`F4` son nombres de tecla. Anotado en task.md.",
+      "sin_ejecutar_todavia": "Las demás pantallas de T-804 —`configuracion` es la más cargada, con 91— y T-815, que apareció acá: el `Validator` recibe la etiqueta en español y son 79 llamadas en 12 archivos que hay que cambiar de golpe, porque el tipo `Errors` es compartido y a medias no compila. Por eso `/ventas` conserva tres mensajes en español."
+    },
+    {
+      "fecha": "2026-08-22",
+      "titulo": "T-815: el validador devuelve reglas, no frases, y de paso aprende a concordar",
+      "hecho": [
+        "92 sitios de llamada migrados en 10 archivos, ninguno sin migrar. `$lib/ui/fields.ts` declara los 54 rótulos una sola vez, como funciones para que el idioma se resuelva dentro de la petición y no al importar el módulo.",
+        "Las frases se arman en `validationErrors()` justo antes del `fail()`, así que los 8 componentes que muestran `form.errors` no se tocaron: el contrato con la pantalla sigue siendo `Record<string, string>`.",
+        "Defecto 22: la concordancia estaba fija en «es obligatorio» y los 20 campos femeninos y plurales salían mal. La prueba de `integer` lo afirmaba —`toBe('La cantidad es obligatorio.')`—, que es la peor forma de tener un defecto.",
+        "Se hizo primero, antes de las demás pantallas, por la misma aritmética por la que F8 va antes de F3: extraer pantalla por pantalla dejando el validador en español obligaba a abrir cada `+page.server.ts` dos veces.",
+        "300 pruebas de unidad con 100 % en dominio y aplicación, `npm run check` en 0/0 sobre 987 archivos, y 20 de 20 de punta a punta.",
+        "Verificado contra el backend real provocando errores de verdad: «El monto de apertura es obligatorio», «La dirección es obligatoria», «La fecha de registro es obligatoria»."
+      ],
+      "lo_que_ensenó": "Cambiar el tipo de retorno de `formError` fue lo que decidió si T-815 tocaba 10 archivos o 18. Devolviendo `Errors` se filtraba la forma nueva al tipo de `form.errors` de cada pantalla; devolviendo texto —que es lo que ya era— la frontera queda en el servidor. El diseño se juega en dónde se convierte, no en qué se convierte.",
+      "sin_ejecutar_todavia": "T-804 en las pantallas que faltan: `configuracion` (91 textos), `caja` (56), `inventario/entradas/nueva` (49), `inventario` (42), `entradas` (35), `devoluciones` (31), `usuarios` (27), `dashboard` (26), `facturas` (22), `clientes` (21), login/registro/compania, y las plantillas de documento (T-811). Sigue también T-802/T-803 en el backend."
+    },
+    {
+      "fecha": "2026-08-22",
+      "titulo": "T-804 sigue: lo compartido y las pantallas de entrada",
+      "hecho": [
+        "El menú, `Modal`, `Toaster`, `forms.ts`, `+error.svelte` y `hooks.server.ts`: lo que sale en todas las pantallas, que se paga una vez y se cobra en todas.",
+        "`/login`, `/registro` y `/compania` con sus acciones. `/compania` ya estaba escrita en usted —se hizo después de esa decisión— y su `motivo()`/`estado()` ya tenían la forma de código a frase, con un comentario que anticipaba F8: solo hubo que cambiar el destino.",
+        "`navigation.ts` pasó de `const NAV` a `function nav()`. Tercera aparición del defecto 17 en la fase: una constante de módulo habría congelado los rótulos del menú en el idioma de la primera petición del proceso.",
+        "Dos rótulos de rol en minúscula (`role_admin_lower`) porque el español los mete dentro de una frase: «le proponen entrar como cajero». El inglés no distingue; el portugués sí.",
+        "Van 491 de 594 textos y quedan 13 apariciones de voseo de las 19.",
+        "Verificado: `npm run check` 0/0 sobre 1088 archivos, 300 pruebas de unidad al 100 %, y 20 de 20 de punta a punta."
+      ],
+      "cuidado_que_se_tuvo": "Antes de tocar `/login` se revisó qué texto fijan las pruebas de punta a punta: «Iniciar sesión», «Entrar», «Mostrar/Ocultar contraseña» y el rótulo del tema. Esos se conservaron literales y solo cambió la prosa con voseo, así que la suite no necesitó un solo ajuste. Reescribir primero y arreglar las pruebas después habría dejado la duda de si se rompió algo de verdad.",
+      "hallazgo": "`src/routes/+page.svelte` es todavía la página de bienvenida que genera `npm create svelte` («Welcome to SvelteKit»). No se ve nunca porque su `+page.server.ts` siempre redirige, así que es código muerto desde el primer día del proyecto.",
+      "sin_ejecutar_todavia": "Las 10 pantallas de operación y administración, los gráficos, y las tres plantillas de documento (T-811). Después T-802/T-803 en el backend y las verificaciones T-812 a T-814."
+    },
+    {
+      "fecha": "2026-08-22",
+      "titulo": "T-805 cerrada y cinco pantallas más extraídas",
+      "hecho": [
+        "`/caja`, `/devoluciones`, `/inventario`, `/usuarios` y `/clientes` con sus acciones. Van 308 de 594 textos, en 15 catálogos.",
+        "`people.json` junta usuarios y clientes: comparten casi todos los rótulos y separarlos habría duplicado veinte claves.",
+        "Se borró `src/routes/+page.svelte`, la página de bienvenida de `npm create svelte`. Era código muerto desde el primer día: su `+page.server.ts` siempre redirige.",
+        "T-805 cerrada: cero voseo en `src/routes`, `src/lib/ui` y `src/lib/server/import`, verificado con búsqueda de imperativos agudos y sobre las siete pantallas servidas por el backend real.",
+        "Verificado: `npm run check` 0/0 sobre 1290 archivos, 300 pruebas de unidad al 100 %, 20 de 20 de punta a punta, y las siete pantallas devolviendo 200 con texto del catálogo."
+      ],
+      "correccion_al_plan": "El plan decía 48 apariciones de voseo en 19 archivos. Eran menos: el conteo original marcaba como voseo formas que no lo son —`escribían` y `seguía` son pretérito imperfecto, `hacérsela` un infinitivo con pronombre, `dejándolo` un gerundio— y varias estaban en comentarios, no en pantalla. Además `/compania`, escrita después de la decisión del usted, ya venía bien.",
+      "trampa_encontrada": "Correr `npm run check` mientras `vite dev` está arriba hace que los dos ejecuten `svelte-kit sync` y colisionen en Windows: `EPERM` sobre `.svelte-kit/types/…/proxy+page.server.ts`, y el servidor de desarrollo queda devolviendo 500 en TODAS las rutas con el código intacto. Costó un susto: parecía que las cinco pantallas recién tocadas estaban rotas, y lo que estaba roto era el servidor. Lo delató que `npm run check` y las 20 pruebas de punta a punta pasaban —esas levantan su propio servidor—. Anotado en CLAUDE.md.",
+      "sin_ejecutar_todavia": "De T-804: `configuracion` (91), `entradas/nueva` (49), `entradas` (35), `dashboard` (26), `facturas` (22+7), los gráficos y las tres plantillas de documento (57, T-811). Después T-802/T-803 y las verificaciones T-812 a T-814."
+    },
+    {
+      "fecha": "2026-08-22",
+      "titulo": "RN-30 aplicada: el backend devuelve código y datos (T-802, T-803)",
+      "hecho": [
+        "81 `raise` en 17 archivos del backend pasan a `api_error(status, code, **datos)`, más 12 mensajes de éxito y 70 sitios del simulado. Quedan 64 códigos: cuatro pares decían lo mismo con distintas palabras.",
+        "El dominio del backend también escribía español y también se arregló: `InvalidMovement` e `InvalidBarcode` llevan código, y `TotalsMismatch` el nombre del campo del API.",
+        "`ApiError` del POS lleva `code` y `data`; `toMessage()` pasa a `toLog()` (es para el registro) y la frase la arma `apiMessage()` en `ui/messages.ts`, junto a las del carrito y el validador. 26 sitios de llamada.",
+        "`messages/es/errors.json` gana 68 claves con sus frases en usted.",
+        "Tres guardianes: `HTTPException` solo en `api_errors.py`, ningún código inventado ni de adorno, y las listas del backend y del POS comparadas entre sí leyendo el archivo.",
+        "Verificado: 479 pruebas del backend al 100 % de cobertura en dominio y aplicación; `npm run check` 0/0 sobre 1372 archivos; 383 de unidad al 100 %; 20 de 20 de punta a punta; y contra el backend real, las diez pantallas en 200 más dos errores recorridos de extremo a extremo («Correo o contraseña incorrectos», «Ya hay un producto con el código de barras 7441000100015»).",
+        "Las dos redes se comprobaron tumbándolas a propósito: se agregó un código al backend (la prueba del contrato lo señaló) y se quitó un caso del `switch` (`svelte-check` lo rechazó)."
+      ],
+      "correccion_al_plan": "El plan y el spec hablaban de «68 mensajes». Son 81 `raise`, y con los éxitos y el simulado, 163 sitios. La diferencia no es de tamaño sino de reparto: el conteo viejo miraba solo los `detail` de los adaptadores y no los de los enrutadores, ni los mensajes de éxito, ni el español que el dominio metía dentro de sus propios errores.",
+      "pendiente_de_spec": "RN-30 dice «el backend no escribe texto para una persona» y lo implementado es más amplio: ninguna capa que no sea la interfaz lo escribe. Salió así porque la regla aplicada solo al borde HTTP no cerraba. Falta que el dueño del spec decida si RN-30 se reescribe o si queda como criterio de implementación; `spec.md` no se toca sin esa respuesta."
+    },
+    {
+      "fecha": "2026-08-22",
+      "titulo": "T-804 y T-805 cerradas: todas las pantallas y las tres plantillas al catálogo",
+      "hecho": [
+        "Extraídas las que faltaban: `entradas`, `entradas/nueva`, `dashboard`, `facturas`, `facturas/[id]`, el puente al PDF, los tres gráficos, `configuracion` y las tres plantillas de documento. **18 catálogos, 893 claves en español.**",
+        "`documents.json` va aparte: el idioma del documento no es el de la pantalla (RN-29). T-811 queda reducido a cambiar de dónde lee `$lib/ui/documents.ts`.",
+        "Los lectores de planilla y de XML dejaron de escribir frases: devuelven código y datos, y cinco pruebas que comparaban cadenas ahora comparan el código.",
+        "El dominio soltó los últimos rótulos: `CURRENCIES` sin `label`, `TEMPLATE_IDS` en vez de `TEMPLATES`, `documentKind()` en vez de `documentTitle()`, y las líneas del emisor sin componer. `ID_TYPES` se queda, y está explicado por qué.",
+        "Verificado: `npm run check` 0/0 sobre 1751 archivos, 408 pruebas de unidad, 20 de 20 de punta a punta, y contra el backend real las once pantallas en 200 con el texto del catálogo —incluidas las plantillas y los nombres de moneda que antes vivían en el dominio—."
+      ],
+      "correccion_importante": "T-805 se había marcado terminada esa misma mañana con una búsqueda de voseo que estaba invertida: `grep -E` con `\\b` después de una vocal acentuada solo casa cuando después viene una letra, así que encontraba «dejá» dentro de «dejándolo» y se perdía «Actualizá el FastAPI». De ahí salieron dos afirmaciones falsas en task.md y en progress.json —que no quedaba voseo, y que el plan había contado de más—. Quedaban unos 30 en 12 archivos. Ver el defecto 25. Ahora sí es cero, y la búsqueda buena está en `scratchpad/buscar-voseo.py`.",
+      "pendiente_de_spec": "Sigue sin respuesta si RN-30 se reescribe. Lo implementado es «ninguna capa que no sea la interfaz escribe texto», y esta jornada lo extendió a dos lugares más: los lectores de archivos y `domain/settings.ts`. `spec.md` no se toca sin esa decisión."
+    },
+    {
+      "fecha": "2026-08-22",
+      "titulo": "T-812: la red que deja empezar F3",
+      "hecho": [
+        "`frontend/src/lib/ui/loose-text.test.ts`: dos mitades, las pantallas por el árbol de Svelte y las acciones por el de TypeScript. Cuatro pruebas.",
+        "Encontró doce textos que dos pasadas de T-804 no habían visto (defecto 26). Arreglados.",
+        "Comprobada tumbándola: un texto suelto inyectado en una pantalla y una frase en un `formError()` hacen fallar las dos mitades, nombrando archivo y línea.",
+        "La lista de excepciones quedó con una sola entrada, `VentaSys`, y con su razón escrita. Se vació a propósito para ver qué se usaba de verdad: las teclas y el resto sobraban.",
+        "Verificado: `npm run check` 0/0 sobre 1760 archivos, 412 pruebas de unidad, 20 de 20 de punta a punta."
+      ],
+      "estado_de_la_fase": "El mecanismo de F8 está completo y **F3 puede empezar**: T-801 a T-805, T-812 y T-815 hechas. Lo que queda de F8 es poder cambiar de idioma, no poder escribir pantallas bien, así que no bloquea. Orden razonable de lo que sigue: T-813 antes de T-807 y T-808, porque hoy una clave que falte en `en` o `pt` cae al español sin avisar."
     }
   ],
   "$reparto": {

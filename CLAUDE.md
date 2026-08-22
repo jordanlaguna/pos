@@ -127,6 +127,12 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   son los adaptadores. Si para probar una regla hay que levantar la base, la
   regla está en la capa equivocada. Lo custodia el agente `architect`; el
   destino está en `.specify/plan.md` §1.2.
+- **Ningún texto que ve una persona se escribe dentro de un componente.** Va al
+  catálogo (`frontend/messages/es/<pantalla>.json`) y se usa con `m.<clave>()`.
+  Lo custodia `src/lib/ui/loose-text.test.ts`, que lee el árbol de sintaxis de
+  cada pantalla y de cada acción: una cadena suelta en el marcado, un
+  `label="…"` literal o un `formError('frase')` tumban `npm test`. Vale también
+  para las acciones, no solo para el marcado.
 - **Cada función tiene su prueba.** En `domain/` y `application/` es
   obligatorio y la cobertura rompe la build (100 %). En adaptadores, prueba de
   integración; en la interfaz, flujos de punta a punta. Una función nueva de
@@ -137,6 +143,16 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   documentación también**. La interfaz se traduce (F8): ningún texto que ve una
   persona se escribe dentro de un componente, y **el backend no escribe texto
   para personas**: devuelve un código y los datos, y el POS arma la frase.
+- **Un «no» es un código y sus datos, en las dos aplicaciones.** En el backend
+  se construye con `api_error(status, code, **datos)` de
+  `app/utils/api_errors.py` y en ningún otro lado: `tests/test_error_codes.py`
+  lee el árbol de sintaxis y tumba `pytest` si aparece un `HTTPException(...)`
+  suelto, un código que no está en `CODES` o uno que nadie levanta. En el POS,
+  el dominio y la aplicación devuelven lo mismo y la frase se arma en
+  `$lib/ui/messages.ts`, con un `switch` que termina en `never`. Las dos listas
+  de códigos se comparan entre sí en `messages.test.ts`. Un código nuevo se
+  agrega en cuatro lugares: `api_errors.py`, `API_CODES`, `messages/es/errors.json`
+  y el simulado.
 - Al terminar: `cd frontend && npm run check` en 0 errores y 0 advertencias,
   `npm test` y `cd backend && pytest` en verde.
 
@@ -179,6 +195,13 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   `count()` envuelve la consulta en una subconsulta donde el criterio no entra.
   Se cuenta con `db.query(func.count(Modelo.id))`. Hay un guardián en
   `tests/test_tenancy.py` que tumba `pytest` si aparece uno sin filtro.
+- **`npm run check` mientras corre `vite dev` se pelean por `.svelte-kit`.** Los
+  dos ejecutan `svelte-kit sync` y en Windows la colisión sale como
+  `EPERM, Permission denied: …\.svelte-kit\types\…\proxy+page.server.ts`. El
+  servidor de desarrollo queda sirviendo **500 en todas las rutas** aunque el
+  código esté bien —`npm run check` y las pruebas de punta a punta pasan, porque
+  esas levantan su propio servidor—. Se arregla reiniciando `npm run dev`; el
+  síntoma engaña porque parece que se rompió lo último que se tocó.
 - El modelo y la migración tienen que decir lo **mismo**. Una instalación nueva
   crea el esquema con `create_all` y una vieja lo trae de la migración: si
   difieren, el mismo código se comporta distinto en cada una.
