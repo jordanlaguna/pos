@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { API_BASE_URL, USE_MOCK } from '$lib/server/config';
+import { m } from '$lib/paraglide/messages.js';
 import type { RequestHandler } from './$types';
 
 /**
@@ -10,11 +11,9 @@ import type { RequestHandler } from './$types';
  * en la cabecera, no en la URL.
  */
 export const GET: RequestHandler = async ({ params, locals, fetch }) => {
-	if (!locals.user) error(401, { message: 'Sesión requerida.' });
+	if (!locals.user) error(401, { message: m.invoice_session_required() });
 	if (USE_MOCK) {
-		error(404, {
-			message: 'El modo demostración no genera PDF. Usá "Imprimir" para guardarlo desde el navegador.'
-		});
+		error(404, { message: m.invoice_mock_no_pdf() });
 	}
 
 	const upstream = await fetch(`${API_BASE_URL}/sales/pdf/${params.id}`, {
@@ -22,9 +21,7 @@ export const GET: RequestHandler = async ({ params, locals, fetch }) => {
 	});
 
 	if (!upstream.ok) {
-		error(upstream.status === 404 ? 404 : 502, {
-			message: 'El backend no pudo generar el PDF de esta factura.'
-		});
+		error(upstream.status === 404 ? 404 : 502, { message: m.invoice_pdf_failed() });
 	}
 
 	return new Response(upstream.body, {

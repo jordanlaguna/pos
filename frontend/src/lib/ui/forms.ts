@@ -1,5 +1,6 @@
 import type { SubmitFunction } from '@sveltejs/kit';
 import { toasts } from '$lib/ui/stores/toast.svelte';
+import { m } from '$lib/paraglide/messages.js';
 
 /**
  * Envío de formularios con aviso y cierre de diálogo.
@@ -60,7 +61,7 @@ export function submit(options: SubmitOptions = {}): SubmitFunction {
 				// `errors.form` es el error general; `message` lo usan las acciones
 				// que no validan campo por campo, como el cobro.
 				const message = textOf(errors?.form) ?? textOf(data?.message);
-				if (message) toasts.error(errorTitle ?? 'No se pudo completar', message);
+				if (message) toasts.error(errorTitle ?? m.common_action_failed(), message);
 				onFailure?.(data);
 			} else if (result.type === 'redirect') {
 				onRedirect?.();

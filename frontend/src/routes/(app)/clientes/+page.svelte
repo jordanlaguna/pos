@@ -10,6 +10,7 @@
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatDate, fullName, toDateInput } from '$lib/ui/format';
 	import type { Client } from '$lib/domain/types';
+	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -74,17 +75,17 @@
 
 </script>
 
-<PageHeader title="Clientes" description="Registro de clientes del negocio.">
+<PageHeader title={m.clients_title()} description={m.clients_description()}>
 	{#snippet actions()}
 		<button type="button" class="btn btn-primary" onclick={openCreate}>
 			<Icon name="plus" size={15} />
-			Nuevo cliente
+			{m.clients_new_title()}
 		</button>
 	{/snippet}
 </PageHeader>
 
 <div class="card mb-4 p-3">
-	<label class="label" for="cliente-buscar">Buscar</label>
+	<label class="label" for="cliente-buscar">{m.common_search()}</label>
 	<div class="relative">
 		<span
 			class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--text-subtle)]"
@@ -95,7 +96,7 @@
 			id="cliente-buscar"
 			bind:value={search}
 			type="search"
-			placeholder="Nombre, cédula, correo o teléfono…"
+			placeholder={m.clients_search_placeholder()}
 			class="input pl-9"
 		/>
 	</div>
@@ -106,12 +107,12 @@
 		<table class="data-table">
 			<thead>
 				<tr>
-					<th scope="col">Cliente</th>
-					<th scope="col">Cédula</th>
-					<th scope="col">Contacto</th>
-					<th scope="col">Dirección</th>
-					<th scope="col">Registro</th>
-					<th scope="col"><span class="sr-only">Acciones</span></th>
+					<th scope="col">{m.clients_col_client()}</th>
+					<th scope="col">{m.people_label_identification()}</th>
+					<th scope="col">{m.clients_col_contact()}</th>
+					<th scope="col">{m.clients_col_address()}</th>
+					<th scope="col">{m.clients_col_register()}</th>
+					<th scope="col"><span class="sr-only">{m.common_actions()}</span></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -134,7 +135,7 @@
 								type="button"
 								class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"
 								onclick={() => openEdit(client)}
-								aria-label="Editar {fullName(client)}"
+								aria-label={m.users_edit({ person: fullName(client) })}
 							>
 								<Icon name="edit" size={15} />
 							</button>
@@ -145,10 +146,8 @@
 						<td colspan="6">
 							<EmptyState
 								icon="users"
-								title="Sin clientes"
-								description={search
-									? 'Ningún cliente coincide con la búsqueda.'
-									: 'Registrá clientes para asociarlos a las facturas.'}
+								title={m.clients_none()}
+								description={search ? m.clients_no_match() : m.clients_register_hint()}
 								compact
 							/>
 						</td>
@@ -161,7 +160,7 @@
 
 <Modal
 	open={modalOpen}
-	title={editing ? 'Editar cliente' : 'Nuevo cliente'}
+	title={editing ? m.clients_edit_title() : m.clients_new_title()}
 	description={editing ? fullName(editing) : undefined}
 	busy={submitting}
 	onclose={() => (modalOpen = false)}
@@ -181,7 +180,7 @@
 		{/if}
 
 		<Field
-			label="Cédula"
+			label={m.people_label_identification()}
 			name="identification"
 			bind:value={f.identification}
 			icon="idcard"
@@ -190,7 +189,7 @@
 			error={form?.errors?.identification}
 		/>
 		<Field
-			label="Nombre"
+			label={m.people_label_name()}
 			name="name"
 			bind:value={f.name}
 			icon="user"
@@ -198,21 +197,21 @@
 			error={form?.errors?.name}
 		/>
 		<Field
-			label="Primer apellido"
+			label={m.people_label_first_last_name()}
 			name="last_name"
 			bind:value={f.last_name}
 			required
 			error={form?.errors?.last_name}
 		/>
 		<Field
-			label="Segundo apellido"
+			label={m.people_label_second_last_name()}
 			name="second_name"
 			bind:value={f.second_name}
 			required
 			error={form?.errors?.second_name}
 		/>
 		<Field
-			label="Correo electrónico"
+			label={m.people_label_email()}
 			name="email"
 			type="email"
 			bind:value={f.email}
@@ -221,7 +220,7 @@
 			error={form?.errors?.email}
 		/>
 		<Field
-			label="Teléfono"
+			label={m.people_label_telephone()}
 			name="telephone"
 			bind:value={f.telephone}
 			icon="phone"
@@ -230,7 +229,7 @@
 			error={form?.errors?.telephone}
 		/>
 		<Field
-			label="Dirección"
+			label={m.people_label_address()}
 			name="address"
 			bind:value={f.address}
 			required
@@ -238,7 +237,7 @@
 			class="sm:col-span-2"
 		/>
 		<Field
-			label="Fecha de registro"
+			label={m.people_label_register_date()}
 			name="register_date"
 			type="date"
 			bind:value={f.register_date}
@@ -254,15 +253,15 @@
 			onclick={() => (modalOpen = false)}
 			disabled={submitting}
 		>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button type="submit" form="client-form" class="btn btn-primary" disabled={submitting}>
 			{#if submitting}
 				<Spinner size={15} />
-				Guardando…
+				{m.common_saving()}
 			{:else}
 				<Icon name="check" size={15} />
-				{editing ? 'Guardar cambios' : 'Registrar cliente'}
+				{editing ? m.common_save_changes() : m.clients_register()}
 			{/if}
 		</button>
 	{/snippet}

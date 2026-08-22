@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { fade, scale } from 'svelte/transition';
 	import Icon from './Icon.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	interface Props {
 		open: boolean;
@@ -124,7 +125,7 @@
 					class="-mt-1 -mr-1 shrink-0 rounded-lg p-2 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] disabled:opacity-40"
 					onclick={onclose}
 					disabled={busy}
-					aria-label="Cerrar"
+					aria-label={m.common_close()}
 				>
 					<Icon name="close" size={18} />
 				</button>

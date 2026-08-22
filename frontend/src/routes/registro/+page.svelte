@@ -3,6 +3,7 @@
 	import Field from '$lib/ui/components/Field.svelte';
 	import Icon from '$lib/ui/components/Icon.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData } from './$types';
 
 	let { form }: { form: ActionData } = $props();
@@ -11,7 +12,7 @@
 	let submitting = $state(false);
 </script>
 
-<svelte:head><title>Crear cuenta · VentaSys</title></svelte:head>
+<svelte:head><title>{m.auth_create_account()} · VentaSys</title></svelte:head>
 
 <main class="flex min-h-full items-center justify-center p-6">
 	<div class="w-full max-w-2xl">
@@ -20,7 +21,7 @@
 			class="mb-6 inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--text-muted)] hover:text-[var(--text)]"
 		>
 			<Icon name="back" size={15} />
-			Volver al inicio de sesión
+			{m.auth_back_to_sign_in()}
 		</a>
 
 		<div class="card p-6 sm:p-8">
@@ -31,9 +32,9 @@
 					<Icon name="user" size={20} />
 				</span>
 				<div>
-					<h1 class="text-xl font-bold tracking-tight text-[var(--text)]">Crear cuenta</h1>
+					<h1 class="text-xl font-bold tracking-tight text-[var(--text)]">{m.auth_create_account()}</h1>
 					<p class="text-sm text-[var(--text-muted)]">
-						Se registra la persona y su usuario de acceso.
+						{m.auth_create_account_hint()}
 					</p>
 				</div>
 			</div>
@@ -60,7 +61,7 @@
 				class="grid gap-4 sm:grid-cols-2"
 			>
 				<Field
-					label="Nombre"
+					label={m.auth_label_name()}
 					name="name"
 					value={v?.name ?? ''}
 					icon="user"
@@ -68,7 +69,7 @@
 					error={form?.errors?.name}
 				/>
 				<Field
-					label="Cédula"
+					label={m.auth_label_identification()}
 					name="identification"
 					value={v?.identification ?? ''}
 					icon="idcard"
@@ -77,21 +78,21 @@
 					error={form?.errors?.identification}
 				/>
 				<Field
-					label="Primer apellido"
+					label={m.auth_label_first_last_name()}
 					name="lastName"
 					value={v?.lastName ?? ''}
 					required
 					error={form?.errors?.lastName}
 				/>
 				<Field
-					label="Segundo apellido"
+					label={m.auth_label_second_last_name()}
 					name="secondName"
 					value={v?.secondName ?? ''}
 					required
 					error={form?.errors?.secondName}
 				/>
 				<Field
-					label="Teléfono"
+					label={m.auth_label_telephone()}
 					name="telephone"
 					value={v?.telephone ?? ''}
 					icon="phone"
@@ -100,7 +101,7 @@
 					error={form?.errors?.telephone}
 				/>
 				<Field
-					label="Fecha de nacimiento"
+					label={m.auth_label_birth_date()}
 					name="birth_date"
 					type="date"
 					value={v?.birth_date ?? ''}
@@ -109,7 +110,7 @@
 				/>
 
 				<Field
-					label="Correo electrónico"
+					label={m.auth_email()}
 					name="email"
 					type="email"
 					value={v?.email ?? ''}
@@ -121,17 +122,17 @@
 				/>
 
 				<Field
-					label="Contraseña"
+					label={m.auth_password()}
 					name="password"
 					type="password"
 					icon="lock"
 					autocomplete="new-password"
 					required
-					hint="Mínimo 6 caracteres."
+					hint={m.auth_password_hint()}
 					error={form?.errors?.password}
 				/>
 				<Field
-					label="Confirmar contraseña"
+					label={m.auth_label_confirm_password()}
 					name="confirm"
 					type="password"
 					icon="lock"
@@ -141,14 +142,14 @@
 				/>
 
 				<div class="flex justify-end gap-2 sm:col-span-2">
-					<a href="/login" class="btn btn-ghost">Cancelar</a>
+					<a href="/login" class="btn btn-ghost">{m.common_cancel()}</a>
 					<button type="submit" class="btn btn-primary" disabled={submitting}>
 						{#if submitting}
 							<Spinner size={15} />
-							Creando…
+							{m.auth_creating()}
 						{:else}
 							<Icon name="check" size={15} />
-							Crear cuenta
+							{m.auth_create_account()}
 						{/if}
 					</button>
 				</div>

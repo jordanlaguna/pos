@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { relativeLuminance } from './color';
-import { brandTones, documentTitle, issuerLines, returnedTotal } from './documents';
+import { brandTones, documentKind, issuerLines, returnedTotal } from './documents';
 import { mergeSettings } from './settings';
 import type { SaleReturn } from './types';
 
@@ -31,13 +31,13 @@ describe('brandTones', () => {
 	});
 });
 
-describe('documentTitle', () => {
+describe('documentKind', () => {
 	it('dice «Factura» mientras no se emita electrónica', () => {
-		expect(documentTitle(base)).toBe('Factura');
+		expect(documentKind(base)).toBe('invoice');
 	});
 
 	it('y «Factura electrónica» cuando está activa', () => {
-		expect(documentTitle(con({}, { enabled: true }))).toBe('Factura electrónica');
+		expect(documentKind(con({}, { enabled: true }))).toBe('einvoice');
 	});
 });
 
@@ -46,7 +46,12 @@ describe('issuerLines', () => {
 		expect(issuerLines(base)).toEqual([]);
 	});
 
-	it('arma cada línea con su rótulo', () => {
+	/*
+	 * El dominio devuelve QUÉ es cada línea, no cómo se dice: el rótulo
+	 * («Cédula», «Tel.») lo pone la plantilla, que es la que sabe el idioma del
+	 * documento (RN-30, y RN-29 para el idioma).
+	 */
+	it('dice qué es cada línea y en qué orden van', () => {
 		const s = con({
 			nombre: 'La Esquina',
 			legalName: 'Inversiones La Esquina S.A.',
@@ -57,12 +62,12 @@ describe('issuerLines', () => {
 			website: 'laesquina.cr'
 		});
 		expect(issuerLines(s)).toEqual([
-			'Inversiones La Esquina S.A.',
-			'Cédula 3-101-123456',
-			'San José, Costa Rica',
-			'Tel. 2222-3333',
-			'ventas@laesquina.cr',
-			'laesquina.cr'
+			{ kind: 'legalName', value: 'Inversiones La Esquina S.A.' },
+			{ kind: 'taxId', value: '3-101-123456' },
+			{ kind: 'address', value: 'San José, Costa Rica' },
+			{ kind: 'phone', value: '2222-3333' },
+			{ kind: 'email', value: 'ventas@laesquina.cr' },
+			{ kind: 'website', value: 'laesquina.cr' }
 		]);
 	});
 
@@ -71,9 +76,9 @@ describe('issuerLines', () => {
 		expect(issuerLines(s)).toEqual([]);
 	});
 
-	it('omite el rótulo de los campos que están vacíos', () => {
+	it('omite las líneas de los campos que están vacíos', () => {
 		const s = con({ phone: '', taxId: '', address: 'Cartago' });
-		expect(issuerLines(s)).toEqual(['Cartago']);
+		expect(issuerLines(s)).toEqual([{ kind: 'address', value: 'Cartago' }]);
 	});
 });
 

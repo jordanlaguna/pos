@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	DEFAULT_SETTINGS,
 	CURRENCIES,
-	TEMPLATES,
+	TEMPLATE_IDS,
 	ID_TYPES,
 	businessName,
 	isHexColor,
@@ -192,9 +192,10 @@ describe('catálogos', () => {
 	});
 
 	it('las tres plantillas tienen identificador único y el mergeSettings las acepta', () => {
-		expect(TEMPLATES).toHaveLength(3);
-		for (const p of TEMPLATES) {
-			expect(mergeSettings({ document: { template: p.id } }).document.template).toBe(p.id);
+		expect(TEMPLATE_IDS).toHaveLength(3);
+		expect(new Set(TEMPLATE_IDS).size).toBe(TEMPLATE_IDS.length);
+		for (const id of TEMPLATE_IDS) {
+			expect(mergeSettings({ document: { template: id } }).document.template).toBe(id);
 		}
 	});
 

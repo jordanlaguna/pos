@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ImportError } from './errors';
 import { parseHaciendaXml } from './hacienda';
 
 /**
@@ -74,10 +75,25 @@ describe('el invariante de progress.json', () => {
 	});
 });
 
+/*
+ * Se compara el CÓDIGO y no la frase. Comparar cadenas ataba estas pruebas al
+ * idioma —cambiar una coma rompía una prueba de lectura de XML— y aun así no
+ * distinguía dos errores que empezaran igual (T-803, RN-30).
+ */
 describe('archivos que no sirven', () => {
+	function motivo(fn: () => unknown): string {
+		try {
+			fn();
+		} catch (error) {
+			if (error instanceof ImportError) return error.failure.code;
+			throw error;
+		}
+		throw new Error('no lanzó');
+	}
+
 	it('uno que no es una factura', () => {
-		expect(() => parseHaciendaXml('<Cualquiera><a>1</a></Cualquiera>')).toThrow(
-			/no parece una factura/i
+		expect(motivo(() => parseHaciendaXml('<Cualquiera><a>1</a></Cualquiera>'))).toBe(
+			'import_not_an_invoice'
 		);
 	});
 
@@ -87,7 +103,7 @@ describe('archivos que no sirven', () => {
 
 	it('una factura sin líneas', () => {
 		const vacia = XML.replace(/<LineaDetalle>[\s\S]*<\/LineaDetalle>/, '');
-		expect(() => parseHaciendaXml(vacia)).toThrow(/no tiene líneas/i);
+		expect(motivo(() => parseHaciendaXml(vacia))).toBe('import_invoice_without_lines');
 	});
 });
 

@@ -5,6 +5,8 @@
 	import { formatMoney } from '$lib/domain/money';
 	import { formatDateTime, formatInt, toDateInput } from '$lib/ui/format';
 	import { PAYMENT_METHODS } from '$lib/domain/types';
+	import { m } from '$lib/paraglide/messages.js';
+	import { paymentLabel } from '$lib/ui/messages';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -67,13 +69,13 @@
 </script>
 
 <PageHeader
-	title="Facturas"
-	description="Historial de ventas registradas en el sistema."
+	title={m.invoices_title()}
+	description={m.invoices_description()}
 >
 	{#snippet actions()}
 		<a href="/ventas" class="btn btn-primary">
 			<Icon name="cart" size={15} />
-			Nueva venta
+			{m.invoices_new_sale()}
 		</a>
 	{/snippet}
 </PageHeader>
@@ -81,7 +83,7 @@
 <!-- Una sola fila de filtros, arriba de todo lo que condicionan. -->
 <div class="card mb-4 flex flex-wrap items-end gap-3 p-3">
 	<div class="min-w-[12rem] flex-1">
-		<label class="label" for="factura-buscar">Buscar</label>
+		<label class="label" for="factura-buscar">{m.common_search()}</label>
 		<div class="relative">
 			<span
 				class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--text-subtle)]"
@@ -92,49 +94,48 @@
 				id="factura-buscar"
 				bind:value={search}
 				type="search"
-				placeholder="Número de factura o monto…"
+				placeholder={m.invoices_search_placeholder()}
 				class="input pl-9"
 			/>
 		</div>
 	</div>
 
 	<div>
-		<label class="label" for="factura-metodo">Método de pago</label>
+		<label class="label" for="factura-metodo">{m.invoices_payment_method()}</label>
 		<select id="factura-metodo" bind:value={method} class="input w-44">
-			<option value="">Todos</option>
-			{#each PAYMENT_METHODS as m}
-				<option value={m}>{m}</option>
+			<option value="">{m.invoices_all_methods()}</option>
+			{#each PAYMENT_METHODS as metodo}
+				<option value={metodo}>{paymentLabel(metodo)}</option>
 			{/each}
 		</select>
 	</div>
 
 	<div>
-		<label class="label" for="factura-desde">Desde</label>
+		<label class="label" for="factura-desde">{m.invoices_from()}</label>
 		<input id="factura-desde" bind:value={from} type="date" class="input w-40" />
 	</div>
 
 	<div>
-		<label class="label" for="factura-hasta">Hasta</label>
+		<label class="label" for="factura-hasta">{m.invoices_to()}</label>
 		<input id="factura-hasta" bind:value={until} type="date" class="input w-40" />
 	</div>
 
-	<button type="button" class="btn btn-ghost" onclick={setToday}>Hoy</button>
+	<button type="button" class="btn btn-ghost" onclick={setToday}>{m.invoices_today()}</button>
 
 	{#if hasFilters}
 		<button type="button" class="btn btn-ghost" onclick={clearFilters}>
 			<Icon name="close" size={14} />
-			Limpiar
+			{m.invoices_clear()}
 		</button>
 	{/if}
 </div>
 
 <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
 	<p class="text-[var(--text-muted)]">
-		<strong class="text-[var(--text)]">{formatInt(filtered.length)}</strong>
-		{filtered.length === 1 ? 'factura' : 'facturas'}
+		{m.invoices_count({ count: filtered.length })}
 	</p>
 	<p class="text-[var(--text-muted)]">
-		Total: <strong class="tabular-nums text-[var(--text)]">{formatMoney(sumTotal)}</strong>
+		{m.invoices_sum({ total: formatMoney(sumTotal) })}
 	</p>
 </div>
 
@@ -143,13 +144,13 @@
 		<table class="data-table">
 			<thead>
 				<tr>
-					<th scope="col">Factura</th>
-					<th scope="col">Fecha</th>
-					<th scope="col">Método de pago</th>
-					<th scope="col" class="num">Subtotal</th>
-					<th scope="col" class="num">IVA</th>
-					<th scope="col" class="num">Total</th>
-					<th scope="col"><span class="sr-only">Acciones</span></th>
+					<th scope="col">{m.invoices_col_invoice()}</th>
+					<th scope="col">{m.invoices_col_date()}</th>
+					<th scope="col">{m.invoices_payment_method()}</th>
+					<th scope="col" class="num">{m.invoices_col_subtotal()}</th>
+					<th scope="col" class="num">{m.invoices_col_tax()}</th>
+					<th scope="col" class="num">{m.invoices_col_total()}</th>
+					<th scope="col"><span class="sr-only">{m.common_actions()}</span></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -157,7 +158,7 @@
 					<tr>
 						<td class="font-mono text-xs font-semibold">{sale.sale_number}</td>
 						<td class="whitespace-nowrap">{formatDateTime(sale.created_at)}</td>
-						<td>{sale.payment_method}</td>
+						<td>{paymentLabel(sale.payment_method)}</td>
 						<td class="num tabular-nums">
 							{formatMoney(Number((sale as any).subtotal ?? 0))}
 						</td>
@@ -168,7 +169,7 @@
 								href="/facturas/{sale.id}"
 								class="inline-flex items-center gap-1 text-xs font-semibold text-[var(--accent)] hover:underline"
 							>
-								Ver
+								{m.invoices_view()}
 								<Icon name="forward" size={12} />
 							</a>
 						</td>
@@ -178,10 +179,8 @@
 						<td colspan="7">
 							<EmptyState
 								icon="receipt"
-								title={hasFilters ? 'Sin resultados' : 'Todavía no hay facturas'}
-								description={hasFilters
-									? 'Probá con otros filtros o limpialos para ver todo.'
-									: 'Las ventas que cobres van a aparecer acá.'}
+								title={hasFilters ? m.invoices_no_results() : m.invoices_none()}
+								description={hasFilters ? m.invoices_no_results_hint() : m.invoices_none_hint()}
 								compact
 							/>
 						</td>
@@ -202,10 +201,10 @@
 				disabled={page === 1}
 			>
 				<Icon name="back" size={13} />
-				Anterior
+				{m.invoices_previous()}
 			</button>
 			<span class="text-xs text-[var(--text-muted)]">
-				Página {page} de {totalPages}
+				{m.invoices_page_of({ page, total: totalPages })}
 			</span>
 			<button
 				type="button"
@@ -213,7 +212,7 @@
 				onclick={() => (page = Math.min(totalPages, page + 1))}
 				disabled={page === totalPages}
 			>
-				Siguiente
+				{m.invoices_next()}
 				<Icon name="forward" size={13} />
 			</button>
 		</div>

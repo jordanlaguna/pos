@@ -1,6 +1,7 @@
 import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { clearSessionCookie, pendingSession, resolveUser } from '$lib/server/auth';
 import { SESSION_COOKIE } from '$lib/server/config';
+import { m } from '$lib/paraglide/messages.js';
 
 /**
  * Resuelve la sesión una sola vez por petición y la deja en `locals`, para que
@@ -32,7 +33,7 @@ export const handleError: HandleServerError = ({ error, status }) => {
 	return {
 		message:
 			status === 404
-				? 'La página que buscás no existe.'
-				: 'Ocurrió un error inesperado. Revisá la conexión con el backend.'
+				? m.error_page_missing()
+				: m.error_unexpected_backend()
 	};
 };

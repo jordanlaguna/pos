@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ImportError } from './errors';
 import { TEMPLATE_CSV, parseSpreadsheet } from './spreadsheet';
 
 /**
@@ -100,20 +101,37 @@ describe('lo que el lector tiene que tolerar', () => {
 	});
 });
 
+/*
+ * Se compara el CÓDIGO y no la frase, por lo mismo que en el lector de XML: la
+ * prueba mira qué pasó, no cómo se dice (T-803, RN-30).
+ */
 describe('archivos que no sirven', () => {
+	async function motivo(csv: string): Promise<string> {
+		try {
+			await leer(csv);
+		} catch (error) {
+			if (error instanceof ImportError) return error.failure.code;
+			throw error;
+		}
+		throw new Error('no lanzó');
+	}
+
 	it('uno vacío', async () => {
-		await expect(leer('')).rejects.toThrow(/vacío|encabezados/i);
+		expect(await motivo('')).toBe('import_sheet_empty');
 	});
 
 	it('uno con solo encabezados', async () => {
-		await expect(leer('Codigo;Descripcion;Cantidad;Costo\n')).rejects.toThrow(
-			/vacío|encabezados/i
-		);
+		expect(await motivo('Codigo;Descripcion;Cantidad;Costo\n')).toBe('import_sheet_empty');
 	});
 
 	it('uno sin columna de cantidad', async () => {
-		await expect(leer('Codigo;Descripcion;Costo\n111;Algo;500\n')).rejects.toThrow(
-			/cantidad/i
+		expect(await motivo('Codigo;Descripcion;Costo\n111;Algo;500\n')).toBe(
+			'import_no_quantity_column'
 		);
+	});
+
+	it('uno sin nada que identifique el producto', async () => {
+		// Con cantidad pero sin código ni descripción no hay a qué sumarle stock.
+		expect(await motivo('Cantidad;Costo\n3;500\n')).toBe('import_no_identifier_column');
 	});
 });

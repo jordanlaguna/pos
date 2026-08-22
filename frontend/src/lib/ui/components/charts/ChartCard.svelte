@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Icon from '../Icon.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	interface Props {
 		title: string;
@@ -33,7 +34,7 @@
 			aria-pressed={showTable}
 		>
 			<Icon name={showTable ? 'chart' : 'grid'} size={13} />
-			{showTable ? 'Gráfico' : 'Tabla'}
+			{showTable ? m.chart_show_chart() : m.chart_show_table()}
 		</button>
 	</header>
 

@@ -2,6 +2,7 @@
 	import { fly } from 'svelte/transition';
 	import { toasts, type ToastKind } from '$lib/ui/stores/toast.svelte';
 	import Icon, { type IconName } from './Icon.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	const ICON: Record<ToastKind, IconName> = {
 		success: 'check',
@@ -23,7 +24,7 @@
 	class="no-print pointer-events-none fixed top-4 right-4 z-[100] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2"
 	role="region"
 	aria-live="polite"
-	aria-label="Notificaciones"
+	aria-label={m.common_notifications()}
 >
 	{#each toasts.items as toast (toast.id)}
 		<div
@@ -43,7 +44,7 @@
 				type="button"
 				class="shrink-0 rounded p-1 text-[var(--text-subtle)] hover:text-[var(--text)]"
 				onclick={() => toasts.dismiss(toast.id)}
-				aria-label="Cerrar aviso"
+				aria-label={m.common_close_notice()}
 			>
 				<Icon name="close" size={14} />
 			</button>

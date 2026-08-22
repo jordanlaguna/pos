@@ -1,0 +1,40 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"validation_required": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=f": "{field} es obligatoria.",
+				"concord=mp": "{field} son obligatorios.",
+				"concord=fp": "{field} son obligatorias.",
+				"concord=*": "{field} es obligatorio."
+			}
+		}
+	],
+	"validation_not_allowed": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=f": "{field} no es válida.",
+				"concord=mp": "{field} no son válidos.",
+				"concord=fp": "{field} no son válidas.",
+				"concord=*": "{field} no es válido."
+			}
+		}
+	],
+
+	"validation_too_short": "{field} debe tener al menos {min} caracteres.",
+	"validation_too_long": "{field} no puede superar {max} caracteres.",
+	"validation_not_a_number": "{field} debe ser un número.",
+	"validation_not_an_integer": "{field} debe ser un número entero.",
+	"validation_below_min": "{field} no puede ser menor que {min}.",
+	"validation_above_max": "{field} no puede ser mayor que {max}.",
+	"validation_bad_email": "{field} no tiene un formato válido.",
+	"validation_digits_only": "{field} solo puede contener dígitos.",
+	"validation_digit_length": "{field} debe tener entre {min} y {max} dígitos.",
+	"validation_bad_date": "{field} no es una fecha válida.",
+	"validation_future_date": "{field} no puede estar en el futuro."
+}

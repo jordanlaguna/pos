@@ -1,9 +1,12 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { api, toMessage } from '$lib/server/api';
+import { api } from '$lib/server/api';
 import { setSessionCookie } from '$lib/server/auth';
 import { USE_MOCK } from '$lib/server/config';
 import { formError, Validator } from '$lib/application/validation';
 import type { LoginResponse } from '$lib/domain/types';
+import { F } from '$lib/ui/fields';
+import { m } from '$lib/paraglide/messages.js';
+import { apiMessage, validationErrors } from '$lib/ui/messages';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -16,10 +19,10 @@ export const actions: Actions = {
 	default: async ({ request, cookies, url }) => {
 		const form = await request.formData();
 		const v = new Validator(form);
-		const email = v.email('email');
-		const password = v.password('password', 'La contraseña', { min: 1 });
+		const email = v.email('email', F.email());
+		const password = v.password('password', F.password(), { min: 1 });
 
-		if (!v.ok) return fail(400, { errors: v.errors, email });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), email });
 
 		let hayQueElegir = false;
 		try {
@@ -29,7 +32,7 @@ export const actions: Actions = {
 			});
 			if (!result?.access_token) {
 				return fail(502, {
-					errors: formError('El backend no devolvió un token de acceso.'),
+					errors: formError(m.auth_no_token()),
 					email
 				});
 			}
@@ -39,7 +42,7 @@ export const actions: Actions = {
 			// negocio de una sola caja no se entera de que esto existe.
 			hayQueElegir = result.tipo === 'transito';
 		} catch (error) {
-			return fail(401, { errors: formError(toMessage(error)), email });
+			return fail(401, { errors: formError(apiMessage(error)), email });
 		}
 
 		// El redirect va fuera del try: lanza una excepción que no es un error.

@@ -1,0 +1,34 @@
+{
+	"$schema": "https://inlang.com/schema/project-settings",
+	"baseLocale": "es",
+	"locales": [
+		"es",
+		"en",
+		"pt"
+	],
+	"modules": [
+		"https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4.4.0/dist/index.js"
+	],
+	"plugin.inlang.messageFormat": {
+		"pathPattern": [
+			"./messages/{locale}/common.json",
+			"./messages/{locale}/errors.json",
+			"./messages/{locale}/nav.json",
+			"./messages/{locale}/auth.json",
+			"./messages/{locale}/fields.json",
+			"./messages/{locale}/validation.json",
+			"./messages/{locale}/cart.json",
+			"./messages/{locale}/checkout.json",
+			"./messages/{locale}/sales.json",
+			"./messages/{locale}/cash.json",
+			"./messages/{locale}/returns.json",
+			"./messages/{locale}/inventory.json",
+			"./messages/{locale}/entries.json",
+			"./messages/{locale}/people.json",
+			"./messages/{locale}/reports.json",
+			"./messages/{locale}/invoices.json",
+			"./messages/{locale}/settings.json",
+			"./messages/{locale}/documents.json"
+		]
+	}
+}

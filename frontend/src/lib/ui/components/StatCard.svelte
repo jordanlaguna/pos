@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon, { type IconName } from './Icon.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	interface Props {
 		label: string;
@@ -57,7 +58,7 @@
 	<div class="mt-1 flex items-center gap-2 text-xs">
 		{#if delta}
 			<span class="font-semibold tabular-nums {deltaTone}">{delta}</span>
-			<span class="text-[var(--text-subtle)]">vs. periodo anterior</span>
+			<span class="text-[var(--text-subtle)]">{m.reports_vs_previous()}</span>
 		{:else if hint}
 			<span class="text-[var(--text-subtle)]">{hint}</span>
 		{/if}

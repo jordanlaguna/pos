@@ -1,5 +1,6 @@
 import type { IconName } from '$lib/ui/components/Icon.svelte';
 import type { Role } from '$lib/domain/types';
+import { m } from '$lib/paraglide/messages.js';
 
 export interface NavItem {
 	href: string;
@@ -16,27 +17,46 @@ export interface NavGroup {
 	items: NavItem[];
 }
 
-export const NAV: NavGroup[] = [
-	{
-		title: 'Operación',
-		items: [
-			{ href: '/ventas', label: 'Ventas', icon: 'cart', shortcut: 'F2' },
-			{ href: '/caja', label: 'Caja', icon: 'wallet' },
-			{ href: '/facturas', label: 'Facturas', icon: 'receipt' },
-			{ href: '/devoluciones', label: 'Devoluciones', icon: 'undo' }
-		]
-	},
-	{
-		title: 'Administración',
-		items: [
-			{ href: '/dashboard', label: 'Reportes', icon: 'chart', roles: ['admin'] },
-			{ href: '/inventario', label: 'Inventario', icon: 'box', roles: ['admin'] },
-			{ href: '/clientes', label: 'Clientes', icon: 'users' },
-			{ href: '/usuarios', label: 'Usuarios', icon: 'user', roles: ['admin'] },
-			{ href: '/configuracion', label: 'Configuración', icon: 'settings', roles: ['admin'] }
-		]
-	}
-];
+/**
+ * El menú.
+ *
+ * **Es una función y no una constante** (T-804). Una constante se evaluaría al
+ * importar el módulo, o sea una vez por proceso de Node, y todas las peticiones
+ * verían los rótulos del idioma de la primera. Es el mismo motivo por el que
+ * `$lib/ui/fields.ts` también son funciones, y la tercera vez que aparece el
+ * defecto 17 disfrazado en esta fase.
+ *
+ * Las rutas y los iconos sí podrían ser constantes, pero separarlos dejaría la
+ * definición del menú en dos sitios que hay que mantener en paralelo.
+ */
+export function nav(): NavGroup[] {
+	return [
+		{
+			title: m.nav_group_operations(),
+			items: [
+				{ href: '/ventas', label: m.nav_sales(), icon: 'cart', shortcut: 'F2' },
+				{ href: '/caja', label: m.nav_cash(), icon: 'wallet' },
+				{ href: '/facturas', label: m.nav_invoices(), icon: 'receipt' },
+				{ href: '/devoluciones', label: m.nav_returns(), icon: 'undo' }
+			]
+		},
+		{
+			title: m.nav_group_admin(),
+			items: [
+				{ href: '/dashboard', label: m.nav_reports(), icon: 'chart', roles: ['admin'] },
+				{ href: '/inventario', label: m.nav_inventory(), icon: 'box', roles: ['admin'] },
+				{ href: '/clientes', label: m.nav_clients(), icon: 'users' },
+				{ href: '/usuarios', label: m.nav_users(), icon: 'user', roles: ['admin'] },
+				{
+					href: '/configuracion',
+					label: m.nav_settings(),
+					icon: 'settings',
+					roles: ['admin']
+				}
+			]
+		}
+	];
+}
 
 /** Ítem del menú resuelto para un rol: los que no puede abrir van bloqueados. */
 export interface ResolvedItem extends NavItem {
@@ -53,18 +73,24 @@ export interface ResolvedItem extends NavItem {
  * el servidor, no en el menú— y ahorra la pregunta de «¿dónde está X?».
  */
 export function visibleGroups(role: Role): (NavGroup & { items: ResolvedItem[] })[] {
-	return NAV.map((group) => ({
-		...group,
-		items: group.items.map((item) => ({
-			...item,
-			locked: Boolean(item.roles && !item.roles.includes(role))
+	return nav()
+		.map((group) => ({
+			...group,
+			items: group.items.map((item) => ({
+				...item,
+				locked: Boolean(item.roles && !item.roles.includes(role))
+			}))
 		}))
-	})).filter((group) => group.items.length > 0);
+		.filter((group) => group.items.length > 0);
 }
 
-/** Título de la pestaña y encabezado, resuelto por la ruta activa. */
+/**
+ * Título de la pestaña y encabezado, resuelto por la ruta activa.
+ *
+ * «VentaSys» no se traduce: es el nombre del producto.
+ */
 export function titleFor(pathname: string): string {
-	for (const group of NAV) {
+	for (const group of nav()) {
 		for (const item of group.items) {
 			if (pathname === item.href || pathname.startsWith(`${item.href}/`)) return item.label;
 		}

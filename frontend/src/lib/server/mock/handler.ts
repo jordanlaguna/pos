@@ -120,8 +120,16 @@ function readToken(token: string | null | undefined): number | null {
 	return typeof payload.id_user === 'number' ? payload.id_user : null;
 }
 
-function fail(status: number, detail: string): never {
-	throw new ApiError(status, detail, { detail });
+/**
+ * Un «no» del backend simulado, en código y datos, igual que el de verdad.
+ *
+ * El simulado no escribe frases por la misma razón que el backend (RN-30): la
+ * frase la arma el POS con su catálogo. Y tiene que devolver **el mismo código**
+ * que FastAPI para la misma situación: si no, el modo simulado probaría una
+ * aplicación distinta de la que se despliega.
+ */
+function fail(status: number, code: string, data: Record<string, unknown> = {}): never {
+	throw new ApiError(status, code, data);
 }
 
 function nowIso(): string {
@@ -210,7 +218,7 @@ route('POST', '/auth/login', ({ body }) => {
 		.toLowerCase();
 	const password = String(body?.password ?? '');
 	const user = getRoot().users.find((u) => u.email.toLowerCase() === email);
-	if (!user || user.password !== password) fail(401, 'Credenciales incorrectas');
+	if (!user || user.password !== password) fail(401, 'invalid_credentials');
 
 	const opciones = opcionesDe(user.id_user);
 	const disponibles = opciones.filter((o) => o.puede_entrar);
@@ -240,28 +248,28 @@ route('POST', '/auth/login', ({ body }) => {
 route('GET', '/auth/companies', ({ token }) => {
 	const payload = tokenPayload(token);
 	const userId = typeof payload?.id_user === 'number' ? payload.id_user : null;
-	if (userId == null) fail(401, 'Token inválido o ausente');
+	if (userId == null) fail(401, 'unauthorized');
 	return opcionesDe(userId);
 });
 
 route('POST', '/auth/invitation', ({ token }) => {
 	const payload = tokenPayload(token);
-	if (typeof payload?.id_user !== 'number') fail(401, 'Token inválido o ausente');
+	if (typeof payload?.id_user !== 'number') fail(401, 'unauthorized');
 	// El demo no tiene invitaciones pendientes: sus dos compañías son del mismo
 	// dueño. La ruta existe para que el contrato esté completo.
-	fail(404, 'No encontrada');
+	fail(404, 'membership_not_found');
 });
 
 route('POST', '/auth/company', ({ body, token }) => {
 	const payload = tokenPayload(token);
 	const userId = typeof payload?.id_user === 'number' ? payload.id_user : null;
-	if (userId == null) fail(401, 'Token inválido o ausente');
+	if (userId == null) fail(401, 'unauthorized');
 
 	const user = getRoot().users.find((u) => u.id_user === userId);
 	const elegida = Number(body?.company_id);
 	const rol = user ? rolEn(user.id_user, elegida) : null;
 	// 404 y no 403: un 403 confirmaría que esa compañía existe.
-	if (!user || !rol) fail(404, 'No encontrada');
+	if (!user || !rol) fail(404, 'membership_not_found');
 
 	return {
 		access_token: tokenDeSesion(user, elegida, rol),
@@ -274,10 +282,10 @@ route('POST', '/auth/company', ({ body, token }) => {
 });
 
 route('GET', '/users/me', ({ userId, companyId }) => {
-	if (userId == null) fail(401, 'Token inválido o ausente');
+	if (userId == null) fail(401, 'unauthorized');
 	const root = getRoot();
 	const user = root.users.find((u) => u.id_user === userId);
-	if (!user) fail(404, 'Usuario no encontrado');
+	if (!user) fail(404, 'user_not_found');
 	const empresa = root.companies.find((c) => c.id === companyId);
 	return {
 		id_user: user.id_user,
@@ -294,14 +302,14 @@ route('GET', '/users/me', ({ userId, companyId }) => {
 });
 
 route('POST', '/users/membership', ({ body, userId, companyId }) => {
-	if (userId == null) fail(401, 'Token inválido o ausente');
+	if (userId == null) fail(401, 'unauthorized');
 	const db = getDb(companyId);
 	const actor = db.users.find((u) => u.id_user === userId);
-	if (actor?.role !== 'admin') fail(403, 'Esta operación es solo para administradores.');
+	if (actor?.role !== 'admin') fail(403, 'admin_only');
 
 	const email = String(body?.email ?? '').trim().toLowerCase();
 	const user = db.users.find((u) => u.email.toLowerCase() === email);
-	if (!user) fail(404, 'No hay ninguna cuenta con ese correo.');
+	if (!user) fail(404, 'account_not_found');
 
 	// Con una sola compañía, dar de alta es confirmar el rol.
 	const role = body?.role === 'admin' ? 'admin' : 'cajero';
@@ -330,17 +338,17 @@ route('PUT', '/users/role/:id', ({ params, body, companyId }) => {
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const user = db.users.find((u) => u.id_user === id);
-	if (!user) fail(404, 'Usuario no encontrado');
+	if (!user) fail(404, 'user_not_found');
 	const role = String(body?.role ?? '');
-	if (role !== 'admin' && role !== 'cajero') fail(400, "El rol debe ser 'admin' o 'cajero'.");
+	if (role !== 'admin' && role !== 'cajero') fail(400, 'invalid_role', { role });
 	// El último admin no puede degradarse: dejaría el sistema sin quien administre.
 	if (user.role === 'admin' && role !== 'admin') {
 		const admins = db.users.filter((u) => u.role === 'admin').length;
-		if (admins <= 1) fail(400, 'Debe existir al menos un administrador.');
+		if (admins <= 1) fail(400, 'last_admin');
 	}
 	user.role = role;
 	persist();
-	return { message: 'Rol actualizado exitosamente', id_user: id };
+	return { message: 'role_updated', id_user: id };
 });
 
 // ------------------------------------------------------------------- personas
@@ -350,9 +358,9 @@ route('POST', '/persons/register', ({ body, companyId }) => {
 	const identification = String(body?.identification ?? '').trim();
 	const email = String(body?.email ?? '').trim();
 	if (db.persons.some((p) => p.identification === identification))
-		fail(400, 'Ya existe una persona con esta cédula.');
+		fail(400, 'person_identification_taken');
 	if (db.users.some((u) => u.email.toLowerCase() === email.toLowerCase()))
-		fail(400, 'Ya existe un usuario con este correo.');
+		fail(400, 'email_taken');
 
 	const idPerson = nextId('persons');
 	const idUser = nextId('users');
@@ -376,7 +384,7 @@ route('POST', '/persons/register', ({ body, companyId }) => {
 		id_person: idPerson
 	});
 	persist();
-	return { message: 'Registro exitoso', id_user: idUser, id_person: idPerson };
+	return { message: 'person_registered', id_user: idUser, id_person: idPerson };
 });
 
 route('GET', '/persons/persons_list', ({ companyId }) => {
@@ -391,7 +399,7 @@ route('PUT', '/persons/update/:id', ({ params, body, companyId }) => {
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const person = db.persons.find((p) => p.id_person === id);
-	if (!person) fail(404, 'Persona no encontrada.');
+	if (!person) fail(404, 'person_not_found');
 	const user = db.users.find((u) => u.id_person === id);
 
 	for (const key of ['birth_date', 'identification', 'name', 'lastName', 'secondName', 'telephone'] as const) {
@@ -401,12 +409,12 @@ route('PUT', '/persons/update/:id', ({ params, body, companyId }) => {
 		const taken = db.users.some(
 			(u) => u.id_person !== id && u.email.toLowerCase() === String(body.email).toLowerCase()
 		);
-		if (taken) fail(400, 'Ya existe un usuario con este correo.');
+		if (taken) fail(400, 'email_taken');
 		person.email = String(body.email);
 		if (user) user.email = String(body.email);
 	}
 	persist();
-	return { message: 'Persona actualizada exitosamente', id_person: id };
+	return { message: 'person_updated', id_person: id };
 });
 
 // ------------------------------------------------------------------- clientes
@@ -417,7 +425,7 @@ route('POST', '/clients/register_client', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const identification = String(body?.identification ?? '').trim();
 	if (db.clients.some((c) => c.identification === identification))
-		fail(400, 'Ya existe un cliente con esta identificación.');
+		fail(400, 'client_identification_taken');
 	const id = nextId('clients');
 	db.clients.push({
 		id_client: id,
@@ -431,21 +439,21 @@ route('POST', '/clients/register_client', ({ body, companyId }) => {
 		register_date: String(body?.register_date ?? nowIso().slice(0, 10))
 	});
 	persist();
-	return { message: 'Client registered successfully', id_client: id };
+	return { message: 'client_registered', id_client: id };
 });
 
 route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const client = db.clients.find((c) => c.id_client === id);
-	if (!client) fail(404, 'Cliente no encontrado.');
+	if (!client) fail(404, 'client_not_found');
 	for (const [key, value] of Object.entries(body ?? {})) {
 		if (value == null || value === '') continue;
 		if (key === 'telephone') client.telephone = Number(value);
 		else if (key in client) (client as any)[key] = value;
 	}
 	persist();
-	return { message: 'Client information updated successfully', id_client: id };
+	return { message: 'client_updated', id_client: id };
 });
 
 // ------------------------------------------------------------------ productos
@@ -455,8 +463,7 @@ route('GET', '/products/products_list', ({ companyId }) => getDb(companyId).prod
 route('POST', '/products/add_product', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const barcode = String(body?.barcode ?? '').trim();
-	if (db.products.some((p) => p.barcode === barcode))
-		fail(400, 'Ya existe un producto con este código de barras.');
+	if (db.products.some((p) => p.barcode === barcode)) fail(400, 'barcode_taken', { barcode });
 	const id = nextId('products');
 	db.products.push({
 		id_product: id,
@@ -469,16 +476,16 @@ route('POST', '/products/add_product', ({ body, companyId }) => {
 		category_id: Number(body?.category_id ?? 0)
 	});
 	persist();
-	return { message: 'Producto registrado exitosamente', id_product: id };
+	return { message: 'product_registered', id_product: id };
 });
 
 route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const product = db.products.find((p) => p.id_product === id);
-	if (!product) fail(404, 'Producto no encontrado.');
+	if (!product) fail(404, 'product_not_found', { product_id: id });
 	if (body?.barcode && db.products.some((p) => p.id_product !== id && p.barcode === body.barcode))
-		fail(400, 'Ya existe un producto con este código de barras.');
+		fail(400, 'barcode_taken', { barcode: String(body.barcode) });
 	for (const [key, value] of Object.entries(body ?? {})) {
 		if (value == null || value === '') continue;
 		if (key === 'price') product.price = round2(Number(value));
@@ -487,20 +494,20 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 		else if (key in product) (product as any)[key] = value;
 	}
 	persist();
-	return { message: 'Información del producto actualizada exitosamente', id_product: id };
+	return { message: 'product_updated', id_product: id };
 });
 
 route('DELETE', '/products/delete_product/:id', ({ params, companyId }) => {
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const index = db.products.findIndex((p) => p.id_product === id);
-	if (index === -1) fail(404, 'Producto no encontrado.');
+	if (index === -1) fail(404, 'product_not_found', { product_id: id });
 	// Un producto ya vendido no se borra: rompería el histórico de facturas.
 	if (db.sales.some((s) => s.items.some((i) => i.id_product === id)))
-		fail(400, 'No se puede eliminar: el producto tiene ventas registradas.');
+		fail(400, 'product_has_sales');
 	db.products.splice(index, 1);
 	persist();
-	return { message: 'Producto eliminado exitosamente', id_product: id };
+	return { message: 'product_deleted', id_product: id };
 });
 
 /** Búsqueda del escáner: código de barras exacto primero, luego nombre exacto. */
@@ -510,7 +517,7 @@ route('GET', '/products/product/:term', ({ params, companyId }) => {
 	const found =
 		db.products.find((p) => p.barcode === term) ??
 		db.products.find((p) => p.name.toLowerCase() === term.toLowerCase());
-	if (!found) fail(404, 'Producto no encontrado');
+	if (!found) fail(404, 'product_not_found');
 	return found;
 });
 
@@ -532,7 +539,7 @@ route('POST', '/categories/register_category', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const name = String(body?.name ?? '').trim();
 	if (db.categories.some((c) => c.name.toLowerCase() === name.toLowerCase()))
-		fail(400, 'Categoría ya registrada con este nombre.');
+		fail(400, 'category_name_taken', { name });
 	const id = nextId('categories');
 	db.categories.push({ id, name });
 	persist();
@@ -566,7 +573,7 @@ route('GET', '/sales/sales_list', ({ companyId }) =>
 route('GET', '/sales/sale/:id', ({ params, companyId }) => {
 	const db = getDb(companyId);
 	const sale = db.sales.find((s) => s.id === Number(params[0]));
-	if (!sale) fail(404, 'Venta no encontrada');
+	if (!sale) fail(404, 'sale_not_found');
 	const client = db.clients.find((c) => c.id_client === sale.client_id);
 	return {
 		...saleResponse(sale, companyId),
@@ -579,23 +586,29 @@ route('GET', '/sales/sale/:id', ({ params, companyId }) => {
 route('POST', '/sales/add_sale', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const saleNumber = String(body?.sale_number ?? '').trim();
-	if (!saleNumber) fail(400, 'El número de venta es obligatorio.');
+	// Sin número no hay factura. El backend de verdad lo rechaza por esquema, así
+	// que acá se devuelve el código de «cuerpo rechazado» y no uno inventado.
+	if (!saleNumber) fail(400, 'invalid_request', { fields: ['sale_number'] });
 	if (db.sales.some((s) => s.sale_number === saleNumber))
-		fail(400, 'Ya existe una venta con este número de venta.');
+		fail(400, 'duplicate_sale_number', { sale_number: saleNumber });
 
 	const products = Array.isArray(body?.products) ? body.products : [];
-	if (!products.length) fail(400, 'La venta debe contener al menos un producto.');
+	if (!products.length) fail(400, 'empty_sale');
 
 	// Se valida TODO antes de escribir nada: o entra la venta completa, o no entra.
 	const items: SaleItem[] = [];
 	for (const line of products) {
 		const quantity = Math.trunc(Number(line?.stock ?? 0));
 		const product = db.products.find((p) => p.id_product === Number(line?.id_product));
-		if (!product) fail(404, `Producto ID ${line?.id_product} no encontrado.`);
-		if (quantity <= 0)
-			fail(400, `Producto ID ${line?.id_product} no válido o cantidad insuficiente.`);
+		if (!product) fail(404, 'product_not_found', { product_id: line?.id_product });
+		if (quantity <= 0) fail(400, 'invalid_sale_line', { product_id: line?.id_product });
 		if (product.stock < quantity)
-			fail(400, `Stock insuficiente para el producto ID ${product.id_product}.`);
+			fail(400, 'insufficient_stock', {
+				product_id: product.id_product,
+				product: product.name,
+				available: product.stock,
+				requested: quantity
+			});
 		items.push({
 			id_product: product.id_product,
 			name: product.name,
@@ -620,28 +633,25 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 		items.map((i) => ({ price: i.price, quantity: i.quantity })),
 		configuredTaxRate(companyId)
 	);
+	// Los nombres son los del API ('tax', no 'impuesto'): viajan al POS y ahí se
+	// vuelven palabra, igual que en el backend de verdad.
 	for (const [campo, dicho, dado] of [
 		['subtotal', body?.subtotal, calculado.subtotal],
-		['impuesto', body?.tax, calculado.tax],
+		['tax', body?.tax, calculado.tax],
 		['total', body?.total, calculado.total]
 	] as const) {
 		if (Math.abs(round2(Number(dicho ?? 0)) - dado) > 0.01) {
-			fail(
-				400,
-				`El ${campo} no coincide con el que calcula el servidor: ` +
-					`la caja dice ${round2(Number(dicho ?? 0))} y el servidor ${dado}. ` +
-					`Recargá el catálogo: los precios pueden haber cambiado.`
-			);
+			fail(400, 'totals_mismatch', {
+				field: campo,
+				declared: round2(Number(dicho ?? 0)),
+				computed: dado
+			});
 		}
 	}
 
 	const cashReceived = round2(Number(body?.cash_received ?? 0));
 	if (cashReceived < calculado.total)
-		fail(
-			400,
-			`El efectivo recibido (${cashReceived}) no puede ser menor ` +
-				`al total de la venta (${calculado.total}).`
-		);
+		fail(400, 'insufficient_payment', { received: cashReceived, total: calculado.total });
 
 	const id = nextId('sales');
 	db.sales.push({
@@ -664,7 +674,7 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 		product.stock -= item.quantity;
 	}
 	persist();
-	return { message: 'Venta registrada exitosamente', id_sale: id };
+	return { message: 'sale_registered', id_sale: id };
 });
 
 // --------------------------------------------------------------- devoluciones
@@ -675,17 +685,17 @@ route('GET', '/returns/returns_list', ({ companyId }) =>
 
 route('GET', '/returns/return/:id', ({ params, companyId }) => {
 	const found = getDb(companyId).returns.find((r) => r.id === Number(params[0]));
-	if (!found) fail(404, 'Devolución no encontrada');
+	if (!found) fail(404, 'return_not_found');
 	return found;
 });
 
 route('POST', '/returns/add_return', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const sale = db.sales.find((s) => s.id === Number(body?.sale_id));
-	if (!sale) fail(404, 'Venta no encontrada');
+	if (!sale) fail(404, 'sale_not_found');
 
 	const requested = Array.isArray(body?.items) ? body.items : [];
-	if (!requested.length) fail(400, 'Debe indicar al menos un producto a devolver.');
+	if (!requested.length) fail(400, 'empty_return');
 
 	// Cantidad ya devuelta por producto, para no devolver dos veces lo mismo.
 	const already = new Map<number, number>();
@@ -698,11 +708,19 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 	const items = requested.map((line: any) => {
 		const quantity = Math.trunc(Number(line?.quantity ?? 0));
 		const sold = sale.items.find((i) => i.id_product === Number(line?.id_product));
-		if (!sold) fail(400, `El producto ID ${line?.id_product} no pertenece a esta venta.`);
-		if (quantity <= 0) fail(400, `Cantidad inválida para ${sold.name}.`);
+		if (!sold) fail(400, 'not_sold_in_this_sale', { product_id: line?.id_product });
+		if (quantity <= 0)
+			fail(400, 'invalid_return_quantity', {
+				product_id: sold.id_product,
+				product: sold.name
+			});
 		const remaining = sold.quantity - (already.get(sold.id_product) ?? 0);
 		if (quantity > remaining)
-			fail(400, `Solo quedan ${remaining} unidades por devolver de ${sold.name}.`);
+			fail(400, 'excessive_return', {
+				product_id: sold.id_product,
+				product: sold.name,
+				remaining
+			});
 		return {
 			id_product: sold.id_product,
 			name: sold.name,
@@ -746,7 +764,7 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 		if (product) product.stock += item.quantity;
 	}
 	persist();
-	return { message: 'Devolución registrada exitosamente', id_return: id, total };
+	return { message: 'return_registered', id_return: id, total };
 });
 
 // ----------------------------------------------------------------------- caja
@@ -821,9 +839,9 @@ route('GET', '/cash/current', ({ query, userId, companyId }) => {
 route('POST', '/cash/open', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const user = Number(body?.user_id ?? 0);
-	if (currentSession(user, companyId)) fail(400, 'Ya existe una caja abierta para este usuario.');
+	if (currentSession(user, companyId)) fail(400, 'cash_already_open');
 	const amount = round2(Number(body?.opening_amount ?? 0));
-	if (amount < 0) fail(400, 'El monto de apertura no puede ser negativo.');
+	if (amount < 0) fail(400, 'cash_opening_negative');
 
 	const session: CashSession = {
 		id: nextId('cash_sessions'),
@@ -847,20 +865,20 @@ route('POST', '/cash/movement', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const user = Number(body?.user_id ?? 0);
 	const session = currentSession(user, companyId);
-	if (!session) fail(400, 'No hay una caja abierta. Abra la caja antes de registrar movimientos.');
+	if (!session) fail(400, 'cash_no_open_session');
 
 	const type = String(body?.type ?? '');
 	if (type !== 'entrada' && type !== 'salida')
-		fail(400, "El tipo de movimiento debe ser 'entrada' o 'salida'.");
+		fail(400, 'cash_invalid_movement_type');
 	const amount = round2(Number(body?.amount ?? 0));
-	if (!(amount > 0)) fail(400, 'El monto debe ser mayor que cero.');
+	if (!(amount > 0)) fail(400, 'cash_amount_not_positive');
 	const reason = String(body?.reason ?? '').trim();
-	if (!reason) fail(400, 'Indique el motivo del movimiento.');
+	if (!reason) fail(400, 'cash_missing_reason');
 
 	if (type === 'salida') {
 		const available = computeExpected(session, companyId).expected_amount;
 		if (amount > available)
-			fail(400, `No hay suficiente efectivo en caja. Disponible: ${available.toFixed(2)}.`);
+			fail(400, 'cash_insufficient', { available });
 	}
 
 	const movement: CashMovement = {
@@ -879,9 +897,9 @@ route('POST', '/cash/movement', ({ body, companyId }) => {
 route('POST', '/cash/close', ({ body, companyId }) => {
 	const user = Number(body?.user_id ?? 0);
 	const session = currentSession(user, companyId);
-	if (!session) fail(400, 'No hay una caja abierta para este usuario.');
+	if (!session) fail(400, 'cash_no_open_session');
 	const counted = round2(Number(body?.closing_amount ?? 0));
-	if (counted < 0) fail(400, 'El monto contado no puede ser negativo.');
+	if (counted < 0) fail(400, 'cash_counted_negative');
 
 	const report = computeExpected(session, companyId);
 	session.closing_amount = counted;
@@ -905,7 +923,7 @@ route('GET', '/cash/sessions', ({ query, companyId }) => {
 
 route('GET', '/cash/session/:id', ({ params, companyId }) => {
 	const session = getDb(companyId).cash_sessions.find((s) => s.id === Number(params[0]));
-	if (!session) fail(404, 'Sesión de caja no encontrada');
+	if (!session) fail(404, 'cash_session_not_found');
 	return computeExpected(session, companyId);
 });
 
@@ -1042,14 +1060,14 @@ route('GET', '/inventory/entries', ({ companyId }) =>
 
 route('GET', '/inventory/entry/:id', ({ params, companyId }) => {
 	const found = getDb(companyId).stock_entries.find((e) => e.id === Number(params[0]));
-	if (!found) fail(404, 'Entrada no encontrada');
+	if (!found) fail(404, 'entry_not_found');
 	return found;
 });
 
 route('POST', '/inventory/entry', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const requested = Array.isArray(body?.lines) ? body.lines : [];
-	if (!requested.length) fail(400, 'La entrada debe tener al menos una línea.');
+	if (!requested.length) fail(400, 'empty_entry');
 
 	const documentNumber = body?.document_number ? String(body.document_number).trim() : null;
 	if (documentNumber) {
@@ -1057,10 +1075,10 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 			(e) => e.document_number === documentNumber && e.status === 'aplicada'
 		);
 		if (duplicate) {
-			fail(
-				400,
-				`El documento ${documentNumber} ya se cargó. Anulá esa entrada si querés repetirla.`
-			);
+			fail(400, 'duplicate_document', {
+				document_number: documentNumber,
+				loaded_at: duplicate.created_at
+			});
 		}
 	}
 
@@ -1071,20 +1089,22 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	for (const [index, raw] of requested.entries()) {
 		const quantity = Math.trunc(Number(raw?.quantity ?? 0));
 		const unitCost = round2(Number(raw?.unit_cost ?? 0));
-		if (!(quantity > 0)) fail(400, `La línea ${index + 1} tiene una cantidad inválida.`);
-		if (unitCost < 0) fail(400, `La línea ${index + 1} tiene un costo negativo.`);
+		// Un solo código para las dos, como el backend: el dominio rechaza el valor
+		// y la línea la nombra la interfaz.
+		if (!(quantity > 0) || unitCost < 0)
+			fail(400, 'invalid_entry_line', { line: index + 1 });
 
 		if (raw?.id_product) {
 			const product = db.products.find((p) => p.id_product === Number(raw.id_product));
-			if (!product) fail(404, `El producto ID ${raw.id_product} no existe.`);
+			if (!product)
+				fail(404, 'entry_product_not_found', { product_id: raw.id_product });
 			resolved.push({ product, quantity, unitCost });
 		} else if (raw?.new_product) {
 			const data = raw.new_product;
 			const barcode = String(data.barcode ?? '').trim();
-			if (!barcode)
-				fail(400, `La línea ${index + 1} crea un producto sin código de barras.`);
+			if (!barcode) fail(400, 'entry_missing_barcode', { line: index + 1 });
 			if (db.products.some((p) => p.barcode === barcode))
-				fail(400, `Ya existe un producto con el código de barras ${barcode}.`);
+				fail(400, 'barcode_taken', { barcode });
 
 			const product: Product = {
 				id_product: nextId('products'),
@@ -1100,7 +1120,7 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 			createdProducts += 1;
 			resolved.push({ product, quantity, unitCost });
 		} else {
-			fail(400, `La línea ${index + 1} no indica producto existente ni producto a crear.`);
+			fail(400, 'entry_line_without_product', { line: index + 1 });
 		}
 	}
 
@@ -1139,7 +1159,7 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	persist();
 
 	return {
-		message: 'Entrada registrada exitosamente',
+		message: 'entry_registered',
 		id_entry: id,
 		products_created: createdProducts,
 		units_added: units
@@ -1149,17 +1169,19 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 route('POST', '/inventory/entry/:id/cancel', ({ params, companyId }) => {
 	const db = getDb(companyId);
 	const entry = db.stock_entries.find((e) => e.id === Number(params[0]));
-	if (!entry) fail(404, 'Entrada no encontrada');
-	if (entry.status === 'anulada') fail(400, 'La entrada ya está anulada.');
+	if (!entry) fail(404, 'entry_not_found');
+	if (entry.status === 'anulada') fail(400, 'entry_already_cancelled');
 
 	// Si parte ya se vendió, revertir dejaría el stock en negativo.
 	for (const line of entry.lines) {
 		const product = db.products.find((p) => p.id_product === line.id_product);
 		if (product && product.stock < line.quantity) {
-			fail(
-				400,
-				`No se puede anular: de ${product.name} quedan ${product.stock} unidades y la entrada agregó ${line.quantity}.`
-			);
+			fail(400, 'entry_cannot_cancel', {
+				product_id: product.id_product,
+				product: product.name,
+				available: product.stock,
+				added: line.quantity
+			});
 		}
 	}
 
@@ -1169,7 +1191,7 @@ route('POST', '/inventory/entry/:id/cancel', ({ params, companyId }) => {
 	}
 	entry.status = 'anulada';
 	persist();
-	return { message: 'Entrada anulada; el stock volvió atrás', id_entry: entry.id };
+	return { message: 'entry_cancelled', id_entry: entry.id };
 });
 
 // -------------------------------------------------------------- configuración
@@ -1205,36 +1227,38 @@ function configuredTaxRate(companyId: number): number {
 route('GET', '/settings/', ({ userId, companyId }) => {
 	// La lee cualquier sesión: el cajero necesita la moneda y los datos del
 	// tiquete. No hay secretos guardados acá.
-	if (userId == null) fail(401, 'Token inválido o ausente');
+	if (userId == null) fail(401, 'unauthorized');
 	return settingsRow(companyId);
 });
 
 route('PUT', '/settings/', ({ userId, body, companyId }) => {
-	if (userId == null) fail(401, 'Token inválido o ausente');
+	if (userId == null) fail(401, 'unauthorized');
 	const db = getDb(companyId);
 	const user = db.users.find((u) => u.id_user === userId);
-	if (!user) fail(401, 'Token inválido o ausente');
-	if (user.role !== 'admin') fail(403, 'Esta operación es solo para administradores.');
+	if (!user) fail(401, 'unauthorized');
+	if (user.role !== 'admin') fail(403, 'admin_only');
 
 	const data = body?.data;
 	if (!data || typeof data !== 'object' || Array.isArray(data)) {
-		fail(400, 'La configuración debe ser un objeto.');
+		fail(400, 'invalid_request', { fields: ['data'] });
 	}
-	if (JSON.stringify(data).length > 20_000) fail(400, 'La configuración es demasiado grande.');
+	if (JSON.stringify(data).length > 20_000) fail(400, 'settings_too_large');
 
 	const rate = data?.impuesto?.rate;
 	if (rate !== undefined) {
 		const n = Number(rate);
-		if (!Number.isFinite(n)) fail(400, 'La tasa de impuesto no es un número.');
+		if (!Number.isFinite(n)) fail(400, 'tax_rate_not_a_number');
 		if (n < 0 || n > 1)
-			fail(400, 'La tasa de impuesto se expresa entre 0 y 1 (0.13 = 13 %).');
+			fail(400, 'tax_rate_out_of_range');
 	}
 
 	const row = settingsRow(companyId);
 	row.data = data;
 	if (body?.logo) {
 		if (!/^image\/(png|jpeg|webp)$/.test(String(body.logo.mime ?? '')))
-			fail(400, 'Formato de imagen no admitido.');
+			// El backend de verdad lo rechaza por el patrón del esquema, o sea con
+			// un 422 y la lista de campos. Mismo código para la misma situación.
+			fail(400, 'invalid_request', { fields: ['logo.mime'] });
 		row.logo = { mime: String(body.logo.mime), data: String(body.logo.data ?? '') };
 	} else if (body?.keep_logo === false) {
 		row.logo = null;
@@ -1278,5 +1302,11 @@ export async function mockRequest<T>(request: MockRequest): Promise<T> {
 		}) as T;
 	}
 
-	throw new ApiError(404, `Ruta no encontrada en el backend simulado: ${request.method} ${path}`);
+	// Solo la ve quien desarrolla, en la consola: es un endpoint que existe en
+	// FastAPI y falta acá, o un error de dedo en la ruta.
+	throw new ApiError(404, 'unexpected', {
+		mock: 'ruta no encontrada',
+		method: request.method,
+		path
+	});
 }

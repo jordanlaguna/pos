@@ -1,0 +1,4 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"checkout_cash_short": "The amount received does not cover the sale total."
+}

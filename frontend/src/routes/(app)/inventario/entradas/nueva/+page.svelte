@@ -8,6 +8,8 @@
 	import EmptyState from '$lib/ui/components/EmptyState.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney, round2 } from '$lib/domain/money';
+	import { m } from '$lib/paraglide/messages.js';
+	import { importMessage } from '$lib/ui/messages';
 	import type { ParsedLine, Product } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
@@ -74,7 +76,7 @@
 		lineas = parsed.lines.map((l) => nuevaLinea(l));
 		if (parsed.supplier) supplier = parsed.supplier;
 		if (parsed.document_number) documentNumber = parsed.document_number;
-		for (const aviso of parsed.warnings) toasts.warning(aviso);
+		for (const aviso of parsed.warnings) toasts.warning(importMessage(aviso));
 	});
 
 	// ------------------------------------------------------------- carga manual
@@ -174,13 +176,13 @@
 </script>
 
 <PageHeader
-	title="Entrada de mercadería"
-	description="Sumá stock desde una factura del proveedor o a mano. Nada entra hasta que lo confirmes."
+	title={m.entry_new_title()}
+	description={m.entry_new_description()}
 >
 	{#snippet actions()}
 		<a href="/inventario/entradas" class="btn btn-ghost">
 			<Icon name="back" size={15} />
-			Ver entradas
+			{m.entry_new_see_entries()}
 		</a>
 	{/snippet}
 </PageHeader>
@@ -194,7 +196,7 @@
 			onclick={() => (metodo = 'manual')}
 		>
 			<Icon name="edit" size={15} />
-			Manual
+			{m.entry_method_manual()}
 		</button>
 		<button
 			type="button"
@@ -202,7 +204,7 @@
 			onclick={() => (metodo = 'archivo')}
 		>
 			<Icon name="download" size={15} />
-			Desde archivo
+			{m.entry_method_file()}
 		</button>
 	</div>
 
@@ -216,8 +218,8 @@
 			<input
 				bind:value={busqueda}
 				type="search"
-				placeholder="Buscá el producto por nombre o código de barras…"
-				aria-label="Buscar producto para agregar a la entrada"
+				placeholder={m.entry_search_placeholder()}
+				aria-label={m.entry_search_label()}
 				class="input pl-9"
 			/>
 			{#if coincidencias.length}
@@ -236,7 +238,7 @@
 									<span class="block text-xs text-[var(--text-subtle)]">{product.barcode}</span>
 								</span>
 								<span class="shrink-0 text-xs tabular-nums text-[var(--text-subtle)]">
-									stock {product.stock}
+									{m.entry_search_stock({ stock: product.stock })}
 								</span>
 							</button>
 						</li>
@@ -245,7 +247,7 @@
 			{/if}
 		</div>
 		<p class="mt-2 text-xs text-[var(--text-subtle)]">
-			Buscá y tocá cada producto que llegó. Después ajustá cantidad y costo en la tabla.
+			{m.entry_search_hint()}
 		</p>
 	{:else}
 		<form
@@ -253,13 +255,13 @@
 			action="?/analizar"
 			enctype="multipart/form-data"
 			use:enhance={submit({
-				errorTitle: 'No se pudo leer el archivo',
+				errorTitle: m.entry_file_read_failed(),
 				setBusy: (v) => (analizando = v)
 			})}
 			class="flex flex-wrap items-end gap-3"
 		>
 			<div class="min-w-[16rem] flex-1">
-				<label class="label" for="archivo">Factura del proveedor</label>
+				<label class="label" for="archivo">{m.entry_file_label()}</label>
 				<input
 					id="archivo"
 					name="archivo"
@@ -272,10 +274,10 @@
 			<button type="submit" class="btn btn-primary" disabled={analizando}>
 				{#if analizando}
 					<Spinner size={15} />
-					Leyendo…
+					{m.entry_file_reading()}
 				{:else}
 					<Icon name="search" size={15} />
-					Analizar
+					{m.entry_file_analyze()}
 				{/if}
 			</button>
 		</form>
@@ -284,18 +286,22 @@
 			<p class="flex items-start gap-1.5">
 				<Icon name="info" size={13} class="mt-0.5 shrink-0" />
 				<span>
-					<strong class="text-[var(--text-muted)]">XML</strong> — factura electrónica de Hacienda
-					(v4.3 o 4.4), la que llega por correo. Se leen proveedor, consecutivo y líneas.
+					<strong class="text-[var(--text-muted)]">{m.entry_file_xml()}</strong> —
+					{m.entry_file_xml_hint()}
 				</span>
 			</p>
 			<p class="flex items-start gap-1.5">
 				<Icon name="info" size={13} class="mt-0.5 shrink-0" />
 				<span>
-					<strong class="text-[var(--text-muted)]">Excel o CSV</strong> — con columnas
-					<em>Código</em>, <em>Descripción</em>, <em>Cantidad</em> y <em>Costo</em>. El orden no
-					importa.
+					<strong class="text-[var(--text-muted)]">{m.entry_file_sheet()}</strong> —
+					{m.entry_file_sheet_hint({
+						code: m.entry_column_code(),
+						description: m.entry_column_description(),
+						quantity: m.entry_column_quantity(),
+						cost: m.entry_column_cost()
+					})}
 					<a href="/inventario/entradas/plantilla.csv" class="text-[var(--accent)] hover:underline">
-						Descargar plantilla
+						{m.entry_file_template()}
 					</a>
 				</span>
 			</p>
@@ -308,17 +314,17 @@
 	<div class="card p-6">
 		<EmptyState
 			icon="box"
-			title="Todavía no hay líneas"
+			title={m.entry_preview_none()}
 			description={metodo === 'manual'
-				? 'Buscá productos arriba para armar la entrada.'
-				: 'Subí la factura del proveedor y revisá lo que se va a ingresar.'}
+				? m.entry_preview_none_manual()
+				: m.entry_preview_none_file()}
 		/>
 	</div>
 {:else}
 	<div class="mb-4 grid gap-3 sm:grid-cols-4">
 		<div class="card p-3">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Líneas a ingresar
+				{m.entry_stat_lines()}
 			</p>
 			<p class="mt-1 text-xl font-bold text-[var(--text)]">
 				{incluidas.length}<span class="text-sm text-[var(--text-subtle)]">/{lineas.length}</span>
@@ -326,19 +332,19 @@
 		</div>
 		<div class="card p-3">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Unidades
+				{m.entry_stat_units()}
 			</p>
 			<p class="mt-1 text-xl font-bold text-[var(--text)]">{totalUnidades}</p>
 		</div>
 		<div class="card p-3">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Costo total
+				{m.entry_stat_cost()}
 			</p>
 			<p class="mt-1 text-xl font-bold text-[var(--text)]">{formatMoney(totalCosto)}</p>
 		</div>
 		<div class="card p-3 {sinCoincidencia.length ? 'border-[var(--warning)]' : ''}">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Sin coincidencia
+				{m.entry_stat_unmatched()}
 			</p>
 			<p
 				class="mt-1 text-xl font-bold {sinCoincidencia.length
@@ -357,10 +363,8 @@
 		>
 			<Icon name="alert" size={16} class="mt-0.5 shrink-0" />
 			<p>
-				{huerfanas.length}
-				{huerfanas.length === 1 ? 'línea está marcada' : 'líneas están marcadas'} para ingresar
-				pero no existen en el catálogo. Marcá <strong>Crear</strong> para darlas de alta, o
-				desmarcalas para dejarlas fuera.
+				{m.entry_orphans({ count: huerfanas.length })}
+				{m.entry_orphans_hint({ create: m.entry_create_word() })}
 			</p>
 		</div>
 	{/if}
@@ -371,15 +375,15 @@
 				<thead>
 					<tr>
 						<th scope="col" class="w-10">
-							<span class="sr-only">Incluir</span>
+							<span class="sr-only">{m.entry_col_include()}</span>
 						</th>
-						<th scope="col">Producto</th>
-						<th scope="col">Estado</th>
-						<th scope="col" class="num">Cantidad</th>
-						<th scope="col" class="num">Costo unit.</th>
-						<th scope="col" class="num">Subtotal</th>
-						<th scope="col" class="num">Stock</th>
-						<th scope="col"><span class="sr-only">Quitar</span></th>
+						<th scope="col">{m.entries_line_product()}</th>
+						<th scope="col">{m.entry_col_status()}</th>
+						<th scope="col" class="num">{m.entries_line_quantity()}</th>
+						<th scope="col" class="num">{m.entries_line_unit_cost()}</th>
+						<th scope="col" class="num">{m.entries_line_subtotal()}</th>
+						<th scope="col" class="num">{m.entry_col_stock()}</th>
+						<th scope="col"><span class="sr-only">{m.entry_col_remove()}</span></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -390,7 +394,7 @@
 									type="checkbox"
 									bind:checked={linea.incluir}
 									class="h-4 w-4 accent-[var(--accent)]"
-									aria-label="Incluir {linea.description}"
+									aria-label={m.entry_include_line({ product: linea.description })}
 								/>
 							</td>
 
@@ -399,9 +403,9 @@
 									{linea.matched?.name ?? linea.description}
 								</p>
 								<p class="text-xs text-[var(--text-subtle)]">
-									{linea.code || 'sin código'}
+									{linea.code || m.entry_no_code()}
 									{#if linea.issue}
-										· <span class="text-[var(--warning)]">{linea.issue}</span>
+										· <span class="text-[var(--warning)]">{importMessage(linea.issue)}</span>
 									{/if}
 								</p>
 							</td>
@@ -410,7 +414,7 @@
 								{#if linea.matched}
 									<span class="badge bg-[var(--positive-bg)] text-[var(--positive)]">
 										<Icon name="check" size={11} />
-										{linea.matched_by === 'barcode' ? 'Por código' : 'Por nombre'}
+										{linea.matched_by === 'barcode' ? m.entry_matched_barcode() : m.entry_matched_name()}
 									</span>
 								{:else}
 									<label
@@ -421,7 +425,7 @@
 											bind:checked={linea.crear}
 											class="h-4 w-4 accent-[var(--accent)]"
 										/>
-										Crear producto
+										{m.entry_create_product()}
 									</label>
 								{/if}
 							</td>
@@ -433,7 +437,7 @@
 									min="1"
 									step="1"
 									class="input h-8 w-20 text-right tabular-nums"
-									aria-label="Cantidad de {linea.description}"
+									aria-label={m.entry_quantity_of({ product: linea.description })}
 								/>
 							</td>
 
@@ -444,7 +448,7 @@
 									min="0"
 									step="0.01"
 									class="input h-8 w-24 text-right tabular-nums"
-									aria-label="Costo unitario de {linea.description}"
+									aria-label={m.entry_unit_cost_of({ product: linea.description })}
 								/>
 							</td>
 
@@ -469,7 +473,7 @@
 									type="button"
 									class="rounded p-1 text-[var(--text-subtle)] hover:text-[var(--negative)]"
 									onclick={() => (lineas = lineas.filter((l) => l.key !== linea.key))}
-									aria-label="Quitar {linea.description}"
+									aria-label={m.entry_remove_line({ product: linea.description })}
 								>
 									<Icon name="close" size={14} />
 								</button>
@@ -483,24 +487,24 @@
 								<td colspan="7" class="bg-[var(--surface-sunken)]">
 									<div class="grid gap-3 py-1 sm:grid-cols-3">
 										<Field
-											label="Código de barras"
+											label={m.entry_label_barcode()}
 											name="bc-{linea.key}"
 											bind:value={linea.nuevoBarcode}
 											icon="barcode"
 											required
-											error={linea.nuevoBarcode.trim() ? undefined : 'Obligatorio'}
+											error={linea.nuevoBarcode.trim() ? undefined : m.entry_required_short()}
 										/>
 										<Field
-											label="Precio de venta"
+											label={m.entry_label_sale_price()}
 											name="pv-{linea.key}"
 											bind:value={linea.nuevoPrecio}
 											inputmode="decimal"
 											required
-											hint="Sugerido: costo + 30 %"
-											error={Number(linea.nuevoPrecio) > 0 ? undefined : 'Obligatorio'}
+											hint={m.entry_price_hint()}
+											error={Number(linea.nuevoPrecio) > 0 ? undefined : m.entry_required_short()}
 										/>
 										<div>
-											<label class="label" for="cat-{linea.key}">Categoría</label>
+											<label class="label" for="cat-{linea.key}">{m.entry_label_category()}</label>
 											<select
 												id="cat-{linea.key}"
 												bind:value={linea.nuevaCategoria}
@@ -526,7 +530,7 @@
 		method="POST"
 		action="?/confirmar"
 		use:enhance={submit({
-			errorTitle: 'No se pudo registrar la entrada',
+			errorTitle: m.entry_submit_failed(),
 			setBusy: (v) => (guardando = v)
 		})}
 		class="card p-4"
@@ -534,46 +538,49 @@
 		<input type="hidden" name="lines" value={JSON.stringify(payload)} />
 		<input type="hidden" name="source" value={origen} />
 
-		<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Datos del documento</h2>
+		<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.entry_document_data()}</h2>
 
 		<div class="grid gap-4 sm:grid-cols-3">
 			<Field
-				label="Proveedor"
+				label={m.entry_label_supplier()}
 				name="supplier"
 				bind:value={supplier}
-				placeholder="Ej.: Distribuidora La Central"
+				placeholder={m.entry_supplier_placeholder()}
 			/>
 			<Field
-				label="N.º de factura"
+				label={m.entry_label_document_number()}
 				name="document_number"
 				bind:value={documentNumber}
-				hint="Evita cargar la misma factura dos veces."
+				hint={m.entry_document_hint()}
 			/>
-			<Field label="Notas" name="notes" bind:value={notes} placeholder="Opcional" />
+			<Field
+				label={m.entry_label_notes()}
+				name="notes"
+				bind:value={notes}
+				placeholder={m.entry_notes_placeholder()}
+			/>
 		</div>
 
 		<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
 			<p class="text-sm text-[var(--text-muted)]">
-				Van a entrar <strong class="text-[var(--text)]">{totalUnidades}</strong> unidades
+				{m.entry_summary_units({ units: totalUnidades })}
 				{#if aCrear.length}
-					y se van a crear
-					<strong class="text-[var(--text)]">{aCrear.length}</strong>
-					{aCrear.length === 1 ? 'producto' : 'productos'}
+					{m.entry_summary_creating({ count: aCrear.length })}
 				{/if}
-				· costo {formatMoney(totalCosto)}
+				{m.entry_summary_cost({ cost: formatMoney(totalCosto) })}
 			</p>
 
 			<div class="flex gap-2">
 				<button type="button" class="btn btn-ghost" onclick={limpiar} disabled={guardando}>
-					Descartar
+					{m.entry_discard()}
 				</button>
 				<button type="submit" class="btn btn-primary" disabled={!listo || guardando}>
 					{#if guardando}
 						<Spinner size={15} />
-						Ingresando…
+						{m.entry_saving()}
 					{:else}
 						<Icon name="check" size={15} />
-						Ingresar al inventario
+						{m.entry_submit()}
 					{/if}
 				</button>
 			</div>

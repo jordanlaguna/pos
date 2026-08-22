@@ -1,0 +1,51 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"returns_title": "Devoluciones",
+	"returns_description": "Devuelva productos de una venta y reponga el inventario automáticamente.",
+	"returns_registered": "Devolución registrada",
+	"returns_stock_back": "El stock volvió al inventario.",
+
+	"returns_pick_sale": "Elija la venta a devolver",
+	"returns_search_placeholder": "Número de factura…",
+	"returns_search_label": "Buscar venta por número de factura",
+	"returns_no_sales": "Sin ventas disponibles",
+	"returns_no_match": "Ninguna factura coincide con la búsqueda.",
+	"returns_all_returned": "Las ventas ya devueltas por completo no aparecen acá.",
+
+	"returns_invoice": "Factura {number}",
+	"returns_return_all": "Devolver todo",
+	"returns_change_sale": "Cambiar venta",
+	"returns_no_detail": "Sin detalle de productos",
+	"returns_no_detail_hint": "El backend no devolvió las líneas de esta venta, así que no se puede devolver por producto.",
+	"returns_could_not_register": "No se pudo registrar",
+
+	"returns_col_product": "Producto",
+	"returns_col_price": "Precio",
+	"returns_col_sold": "Vendido",
+	"returns_col_returned": "Devuelto",
+	"returns_col_available": "Disponible",
+	"returns_col_return": "Devolver",
+	"returns_units_of": "Unidades a devolver de {product}",
+	"returns_reason_label": "Motivo de la devolución *",
+	"returns_reason_placeholder": "Ej.: producto vencido, el cliente se arrepintió, error de cobro",
+
+	"returns_history": "Devoluciones registradas",
+	"returns_col_date": "Fecha",
+	"returns_col_invoice": "Factura",
+	"returns_col_reason": "Motivo",
+	"returns_col_type": "Tipo",
+	"returns_col_amount": "Monto",
+	"returns_full": "Total",
+	"returns_partial": "Parcial",
+	"returns_none": "Sin devoluciones",
+	"returns_none_hint": "Las devoluciones que registre van a aparecer acá.",
+
+	"returns_summary": "Resumen de la devolución",
+	"returns_indicate_units": "Indique cuántas unidades devolver de cada producto.",
+	"returns_tax_with_rate": "{tax} ({rate} %)",
+	"returns_to_refund": "A reembolsar",
+	"returns_stock_note": "Las unidades devueltas vuelven al inventario y se descuentan del arqueo de caja.",
+	"returns_register": "Registrar devolución",
+	"returns_at_least_one": "Indique al menos un producto con cantidad mayor que cero."
+}

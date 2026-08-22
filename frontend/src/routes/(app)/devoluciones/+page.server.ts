@@ -1,8 +1,11 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { api, apiSafe, toMessage } from '$lib/server/api';
+import { api, apiSafe } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
 import { formError, Validator } from '$lib/application/validation';
 import type { Sale, SaleDetail, SaleReturn } from '$lib/domain/types';
+import { F } from '$lib/ui/fields';
+import { m } from '$lib/paraglide/messages.js';
+import { apiMessage, validationErrors } from '$lib/ui/messages';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -49,9 +52,9 @@ export const actions: Actions = {
 		const user = requireUser(locals, url.pathname);
 		const form = await request.formData();
 		const v = new Validator(form);
-		const saleId = v.integer('sale_id', 'La venta', { min: 1 });
-		const reason = v.text('reason', 'El motivo', { max: 255 });
-		if (!v.ok) return fail(400, { errors: v.errors });
+		const saleId = v.integer('sale_id', F.sale(), { min: 1 });
+		const reason = v.text('reason', F.reason(), { max: 255 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
 		// Los campos vienen como `cantidad_<id_producto>`; se toman los mayores que cero.
 		const items: { id_product: number; quantity: number }[] = [];
@@ -66,7 +69,7 @@ export const actions: Actions = {
 
 		if (!items.length) {
 			return fail(400, {
-				errors: formError('Indicá al menos un producto con cantidad mayor que cero.')
+				errors: formError(m.returns_at_least_one())
 			});
 		}
 
@@ -79,7 +82,7 @@ export const actions: Actions = {
 			});
 			returnId = result.id_return;
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)) });
+			return fail(400, { errors: formError(apiMessage(error)) });
 		}
 
 		redirect(303, `/devoluciones?creada=${returnId}`);

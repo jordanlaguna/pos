@@ -4,6 +4,8 @@
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import { cart } from '$lib/ui/stores/cart.svelte';
 	import { theme } from '$lib/ui/stores/theme.svelte';
+	import { m } from '$lib/paraglide/messages.js';
+	import { roleLabel, roleLabelLower } from '$lib/ui/messages';
 	import type { CompanyOption } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
@@ -21,13 +23,13 @@
 	function motivo(c: CompanyOption): string {
 		switch (c.motivo) {
 			case 'invitacion_pendiente':
-				return 'Tiene una invitación sin responder.';
+				return m.company_reason_pending_invite();
 			case 'suspendida':
-				return 'Suspendida por falta de pago. Solo puede entrar el administrador.';
+				return m.company_reason_suspended();
 			case 'cancelada':
-				return 'Cancelada. Comuníquese con soporte para reactivarla.';
+				return m.company_reason_cancelled();
 			default:
-				return 'No disponible en este momento.';
+				return m.company_reason_unavailable();
 		}
 	}
 
@@ -35,15 +37,15 @@
 	function estado(c: CompanyOption): string {
 		switch (c.estado) {
 			case 'prueba':
-				return 'En período de prueba';
+				return m.company_status_trial();
 			case 'activa':
-				return 'Al día';
+				return m.company_status_current();
 			case 'vencida':
-				return 'Con pago vencido';
+				return m.company_status_overdue();
 			case 'suspendida':
-				return 'Suspendida';
+				return m.company_status_suspended();
 			case 'cancelada':
-				return 'Cancelada';
+				return m.company_status_cancelled();
 		}
 	}
 
@@ -52,7 +54,7 @@
 	const bloqueadas = $derived(data.companies.filter((c) => !c.puede_entrar && !c.pendiente));
 </script>
 
-<svelte:head><title>Elegir compañía · VentaSys</title></svelte:head>
+<svelte:head><title>{m.company_pick_tab()} · VentaSys</title></svelte:head>
 
 <main class="grid min-h-full place-items-center p-4 sm:p-8">
 	<div
@@ -62,16 +64,15 @@
 			type="button"
 			class="absolute top-4 right-4 rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]"
 			onclick={() => theme.toggle()}
-			title="Cambiar entre tema claro y oscuro"
-			aria-label="Cambiar tema"
+			title={m.nav_toggle_theme()}
+			aria-label={m.nav_toggle_theme_short()}
 		>
 			<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={18} />
 		</button>
 
-		<h1 class="text-2xl font-semibold text-[var(--text)]">¿A cuál compañía desea entrar?</h1>
+		<h1 class="text-2xl font-semibold text-[var(--text)]">{m.company_pick_title()}</h1>
 		<p class="mt-1 text-sm text-[var(--text-muted)]">
-			Su cuenta tiene acceso a {data.companies.length}
-			{data.companies.length === 1 ? 'compañía' : 'compañías'}.
+			{m.company_access_count({ count: data.companies.length })}
 		</p>
 
 		{#if form?.hecho}
@@ -127,12 +128,16 @@
 						<span class="min-w-0 flex-1">
 							<span class="block truncate font-medium text-[var(--text)]">{c.nombre}</span>
 							<span class="block text-xs text-[var(--text-muted)]">
-								Afiliado {c.afiliado} · Compañía {c.compania} — {estado(c)} ·
-								{c.rol === 'admin' ? 'Administrador' : 'Cajero'}
+								{m.company_row_detail({
+									affiliate: c.afiliado,
+									company: c.compania,
+									status: estado(c),
+									role: roleLabel(c.rol)
+								})}
 							</span>
 						</span>
 						{#if c.id === data.actual}
-							<span class="shrink-0 text-xs text-[var(--text-muted)]">actual</span>
+							<span class="shrink-0 text-xs text-[var(--text-muted)]">{m.company_current()}</span>
 						{/if}
 						{#if enviando === c.id}
 							<Spinner size={16} />
@@ -152,7 +157,7 @@
 				no se acepte, la membresía existe y no abre nada.
 			-->
 			<h2 class="mt-8 text-sm font-medium text-[var(--text-muted)]">
-				{invitaciones.length === 1 ? 'Le invitaron a una compañía' : 'Le invitaron a estas compañías'}
+				{m.company_invited({ count: invitaciones.length })}
 			</h2>
 			<div class="mt-3 grid gap-3">
 				{#each invitaciones as c (c.id)}
@@ -162,8 +167,11 @@
 						<span class="min-w-0 flex-1">
 							<span class="block truncate font-medium text-[var(--text)]">{c.nombre}</span>
 							<span class="block text-xs text-[var(--text-muted)]">
-								Afiliado {c.afiliado} · Compañía {c.compania} — le proponen entrar como
-								{c.rol === 'admin' ? 'administrador' : 'cajero'}
+								{m.company_invite_detail({
+									affiliate: c.afiliado,
+									company: c.compania,
+									role: roleLabelLower(c.rol)
+								})}
 							</span>
 						</span>
 						<span class="flex shrink-0 gap-2">
@@ -174,7 +182,7 @@
 									type="submit"
 									class="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-[var(--accent-text)] hover:opacity-90"
 								>
-									Aceptar
+									{m.company_accept()}
 								</button>
 							</form>
 							<form method="POST" action="?/invitacion" use:enhance>
@@ -184,7 +192,7 @@
 									type="submit"
 									class="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]"
 								>
-									Rechazar
+									{m.company_reject()}
 								</button>
 							</form>
 						</span>
@@ -199,7 +207,7 @@
 				simplemente desaparece de la lista se lee como «me borraron la
 				cuenta», y quien no puede entrar tiene que saber por qué y qué hacer.
 			-->
-			<h2 class="mt-8 text-sm font-medium text-[var(--text-muted)]">Sin acceso por ahora</h2>
+			<h2 class="mt-8 text-sm font-medium text-[var(--text-muted)]">{m.company_no_access()}</h2>
 			<div class="mt-3 grid gap-3">
 				{#each bloqueadas as c (c.id)}
 					<div
@@ -213,7 +221,7 @@
 						<span class="min-w-0 flex-1">
 							<span class="block truncate font-medium text-[var(--text)]">{c.nombre}</span>
 							<span class="block text-xs text-[var(--text-muted)]">
-								Afiliado {c.afiliado} · Compañía {c.compania}
+								{m.company_identity({ affiliate: c.afiliado, company: c.compania })}
 							</span>
 							<span class="mt-1 block text-xs text-[var(--danger-text)]">{motivo(c)}</span>
 						</span>
@@ -224,7 +232,7 @@
 
 		{#if !disponibles.length && !invitaciones.length}
 			<p class="mt-6 text-sm text-[var(--text-muted)]">
-				No hay ninguna compañía a la que pueda entrar en este momento.
+				{m.company_none_available()}
 			</p>
 		{/if}
 
@@ -234,7 +242,7 @@
 			class="mt-8 inline-flex items-center gap-2 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
 		>
 			<Icon name="logout" size={16} />
-			Salir
+			{m.nav_logout()}
 		</a>
 	</div>
 </main>

@@ -10,6 +10,8 @@
 	import type { BarItem } from '$lib/ui/components/charts/BarListChart.svelte';
 	import { formatMoney } from '$lib/domain/money';
 	import { formatDate, formatDelta, formatInt, toDateInput } from '$lib/ui/format';
+	import { m } from '$lib/paraglide/messages.js';
+	import { paymentLabel } from '$lib/ui/messages';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -33,12 +35,18 @@
 		applyRange(toDateInput(new Date(now.getFullYear(), now.getMonth(), 1)), toDateInput(now));
 	}
 
-	const PRESETS = [
-		{ label: 'Hoy', days: 1 },
-		{ label: '7 días', days: 7 },
-		{ label: '30 días', days: 30 },
-		{ label: '90 días', days: 90 }
-	];
+	/**
+	 * Los rangos rápidos. Solo los días: el rótulo se arma al pintar.
+	 *
+	 * Una constante de módulo con el texto adentro se evaluaría una vez por
+	 * proceso y todas las peticiones verían el idioma de la primera —el defecto
+	 * 17 otra vez—.
+	 */
+	const PRESETS = [1, 7, 30, 90];
+
+	function presetLabel(days: number): string {
+		return days === 1 ? m.reports_preset_today() : m.reports_preset_days({ days });
+	}
 
 	/** Marca el preset activo comparando contra el rango que devolvió el servidor. */
 	function isPreset(days: number): boolean {
@@ -48,25 +56,33 @@
 		return data.range.from === toDateInput(from) && data.range.to === toDateInput(to);
 	}
 
-	const paymentTotal = $derived(data.byPaymentMethod.reduce((acc, m) => acc + m.total, 0));
+	// Las variables de estas funciones se llaman `metodo` y no `m`: `m` es ahora
+	// el catálogo de mensajes, y un parámetro con ese nombre lo taparía justo
+	// donde hace falta.
+	const paymentTotal = $derived(
+		data.byPaymentMethod.reduce((acc, metodo) => acc + metodo.total, 0)
+	);
 
 	const topItems = $derived<BarItem[]>(
 		data.topProducts.map((p) => ({
 			key: p.id_product,
 			label: p.name,
 			value: p.total,
-			secondary: `${formatInt(p.quantity)} u vendidas`
+			secondary: m.reports_units_short({ units: formatInt(p.quantity) })
 		}))
 	);
 
 	const paymentItems = $derived<BarItem[]>(
-		data.byPaymentMethod.map((m) => ({
-			key: m.payment_method,
-			label: m.payment_method,
-			value: m.total,
-			secondary: `${formatInt(m.count)} ventas · ${
-				paymentTotal ? ((m.total / paymentTotal) * 100).toFixed(0) : 0
-			} % del total`
+		data.byPaymentMethod.map((metodo) => ({
+			key: metodo.payment_method,
+			// El valor se guarda en `sales.payment_method` y no se traduce nunca;
+			// `paymentLabel` traduce cómo se muestra.
+			label: paymentLabel(metodo.payment_method),
+			value: metodo.total,
+			secondary: m.reports_payment_share({
+				count: formatInt(metodo.count),
+				percent: paymentTotal ? ((metodo.total / paymentTotal) * 100).toFixed(0) : 0
+			})
 		}))
 	);
 
@@ -77,7 +93,7 @@
 	);
 </script>
 
-<PageHeader title="Reportes" description="Rendimiento del negocio en el periodo seleccionado." />
+<PageHeader title={m.reports_title()} description={m.reports_description()} />
 
 {#if !data.reportsAvailable}
 	<div
@@ -86,8 +102,8 @@
 	>
 		<Icon name="alert" size={16} class="mt-0.5 shrink-0" />
 		<p>
-			<strong>Los reportes no están disponibles.</strong> El backend no expone
-			<code>/reports/*</code>. Actualizá el FastAPI de <code>backend/</code> y reinicialo.
+			<strong>{m.reports_module_missing()}</strong>
+			{m.reports_module_missing_hint({ endpoint: '/reports/*', folder: 'backend/' })}
 		</p>
 	</div>
 {/if}
@@ -95,16 +111,16 @@
 <!-- Una sola fila de filtros, arriba de todo lo que condiciona. -->
 <div class="card mb-4 flex flex-wrap items-end gap-3 p-3">
 	<div class="flex flex-wrap gap-1.5">
-		{#each PRESETS as p (p.days)}
+		{#each PRESETS as days (days)}
 			<button
 				type="button"
-				class="badge border {isPreset(p.days)
+				class="badge border {isPreset(days)
 					? 'border-transparent bg-[var(--accent)] text-[var(--accent-text)]'
 					: 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]'}"
-				onclick={() => preset(p.days)}
+				onclick={() => preset(days)}
 			>
-				{#if isPreset(p.days)}<Icon name="check" size={12} />{/if}
-				{p.label}
+				{#if isPreset(days)}<Icon name="check" size={12} />{/if}
+				{presetLabel(days)}
 			</button>
 		{/each}
 		<button
@@ -112,13 +128,13 @@
 			class="badge border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]"
 			onclick={monthToDate}
 		>
-			Mes actual
+			{m.reports_preset_month()}
 		</button>
 	</div>
 
 	<div class="ml-auto flex flex-wrap items-end gap-2">
 		<div>
-			<label class="label" for="rango-desde">Desde</label>
+			<label class="label" for="rango-desde">{m.reports_from()}</label>
 			<input
 				id="rango-desde"
 				type="date"
@@ -129,7 +145,7 @@
 			/>
 		</div>
 		<div>
-			<label class="label" for="rango-hasta">Hasta</label>
+			<label class="label" for="rango-hasta">{m.reports_to()}</label>
 			<input
 				id="rango-hasta"
 				type="date"
@@ -146,30 +162,30 @@
 	{@const s = data.summary}
 	<div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 		<StatCard
-			label="Ventas netas"
+			label={m.reports_net_sales()}
 			value={formatMoney(s.net_total)}
 			icon="wallet"
 			delta={formatDelta(s.net_total, s.previous_net_total)}
 		/>
 		<StatCard
-			label="Facturas emitidas"
+			label={m.reports_invoices_issued()}
 			value={formatInt(s.sales_count)}
 			icon="receipt"
 			hint={rangeLabel}
 		/>
 		<StatCard
-			label="Ticket promedio"
+			label={m.reports_average_ticket()}
 			value={formatMoney(s.average_ticket)}
 			icon="trending"
-			hint="{formatInt(s.items_sold)} unidades vendidas"
+			hint={m.reports_units_sold({ units: formatInt(s.items_sold) })}
 		/>
 		<StatCard
-			label="Devoluciones"
+			label={m.reports_returns()}
 			value={formatMoney(s.returns_total)}
 			icon="undo"
 			tone={s.returns_total > 0 ? 'negative' : 'neutral'}
 			deltaIsGood={false}
-			hint={s.returns_total > 0 ? 'Descontadas de las ventas netas' : 'Sin devoluciones'}
+			hint={s.returns_total > 0 ? m.reports_returns_deducted() : m.reports_no_returns()}
 		/>
 	</div>
 {/if}
@@ -177,7 +193,7 @@
 <div class="grid gap-4">
 	<SalesTrendChart
 		data={data.salesByDay}
-		title="Ventas por día"
+		title={m.reports_sales_by_day()}
 		subtitle={rangeLabel}
 		{loading}
 	/>
@@ -185,21 +201,21 @@
 	<div class="grid gap-4 lg:grid-cols-2">
 		<BarListChart
 			items={topItems}
-			title="Productos más vendidos"
-			subtitle="Por monto facturado en el periodo"
-			valueHeader="Facturado"
-			secondaryHeader="Unidades"
-			emptyMessage="No hubo ventas en el periodo seleccionado."
+			title={m.reports_top_products()}
+			subtitle={m.reports_top_products_hint()}
+			valueHeader={m.reports_billed()}
+			secondaryHeader={m.reports_units()}
+			emptyMessage={m.reports_no_sales_in_range()}
 			{loading}
 		/>
 
 		<BarListChart
 			items={paymentItems}
-			title="Ventas por método de pago"
-			subtitle="Total cobrado por cada medio"
-			valueHeader="Total"
-			secondaryHeader="Detalle"
-			emptyMessage="No hubo ventas en el periodo seleccionado."
+			title={m.reports_by_payment()}
+			subtitle={m.reports_by_payment_hint()}
+			valueHeader={m.reports_total()}
+			secondaryHeader={m.reports_breakdown()}
+			emptyMessage={m.reports_no_sales_in_range()}
 			{loading}
 		/>
 	</div>
@@ -208,16 +224,16 @@
 	<section class="card p-4">
 		<header class="mb-3 flex items-center justify-between gap-3">
 			<div>
-				<h2 class="text-sm font-bold text-[var(--text)]">Alertas de inventario</h2>
+				<h2 class="text-sm font-bold text-[var(--text)]">{m.reports_stock_alerts()}</h2>
 				<p class="mt-0.5 text-xs text-[var(--text-subtle)]">
-					Productos con {data.lowStockThreshold} unidades o menos
+					{m.reports_stock_threshold({ threshold: data.lowStockThreshold })}
 				</p>
 			</div>
 			<a
 				href="/inventario"
 				class="text-xs font-semibold text-[var(--accent)] hover:underline"
 			>
-				Ir a inventario
+				{m.reports_go_to_inventory()}
 			</a>
 		</header>
 
@@ -226,10 +242,10 @@
 				<table class="data-table">
 					<thead>
 						<tr>
-							<th scope="col">Producto</th>
-							<th scope="col">Código</th>
-							<th scope="col" class="num">Stock</th>
-							<th scope="col">Estado</th>
+							<th scope="col">{m.reports_col_product()}</th>
+							<th scope="col">{m.reports_col_barcode()}</th>
+							<th scope="col" class="num">{m.reports_col_stock()}</th>
+							<th scope="col">{m.reports_col_status()}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -242,12 +258,12 @@
 									{#if product.stock <= 0}
 										<span class="badge bg-[var(--negative-bg)] text-[var(--negative)]">
 											<Icon name="alert" size={11} />
-											Agotado
+											{m.reports_out_of_stock()}
 										</span>
 									{:else}
 										<span class="badge bg-[var(--warning-bg)] text-[var(--warning)]">
 											<Icon name="alert" size={11} />
-											Stock bajo
+											{m.reports_low_stock()}
 										</span>
 									{/if}
 								</td>
@@ -259,8 +275,8 @@
 		{:else}
 			<EmptyState
 				icon="check"
-				title="Todo el inventario está en orden"
-				description="Ningún producto está por debajo del umbral."
+				title={m.reports_inventory_ok()}
+				description={m.reports_inventory_ok_hint()}
 				compact
 			/>
 		{/if}

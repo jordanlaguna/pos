@@ -12,11 +12,13 @@
 	import { formatDateTime } from '$lib/ui/format';
 	import {
 		CURRENCIES,
-		TEMPLATES,
+		TEMPLATE_IDS,
 		ID_TYPES,
 		type TemplateId,
 		type Settings
 	} from '$lib/domain/settings';
+	import { m } from '$lib/paraglide/messages.js';
+	import { currencyName, templateInfo } from '$lib/ui/catalogs';
 	import type { Client, SaleDetail } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
@@ -26,13 +28,31 @@
 	let seccion = $state<Seccion>('negocio');
 	let submitting = $state(false);
 
-	const SECCIONES: { id: Seccion; label: string; icon: 'idcard' | 'wallet' | 'receipt' | 'bolt' }[] =
-		[
-			{ id: 'negocio', label: 'Negocio', icon: 'idcard' },
-			{ id: 'moneda', label: 'Moneda e impuesto', icon: 'wallet' },
-			{ id: 'documentos', label: 'Documentos', icon: 'receipt' },
-			{ id: 'electronica', label: 'Factura electrónica', icon: 'bolt' }
-		];
+	/**
+	 * Las cuatro pestañas. Solo el identificador y el icono: el rótulo se pide al
+	 * catálogo al pintar, porque una constante de módulo con el texto adentro se
+	 * evalúa una vez por proceso y todas las peticiones verían el idioma de la
+	 * primera (defecto 17).
+	 */
+	const SECCIONES: { id: Seccion; icon: 'idcard' | 'wallet' | 'receipt' | 'bolt' }[] = [
+		{ id: 'negocio', icon: 'idcard' },
+		{ id: 'moneda', icon: 'wallet' },
+		{ id: 'documentos', icon: 'receipt' },
+		{ id: 'electronica', icon: 'bolt' }
+	];
+
+	function seccionRotulo(id: Seccion): string {
+		switch (id) {
+			case 'negocio':
+				return m.settings_tab_business();
+			case 'moneda':
+				return m.settings_tab_currency();
+			case 'documentos':
+				return m.settings_tab_documents();
+			case 'electronica':
+				return m.settings_tab_einvoicing();
+		}
+	}
 
 	// ---------------------------------------------------------------- borrador
 	/*
@@ -96,11 +116,9 @@
 	);
 
 	function aplicarMoneda(codigo: string) {
-		const preset = CURRENCIES.find((m) => m.code === codigo);
+		const preset = CURRENCIES.find((moneda) => moneda.code === codigo);
 		if (!preset) return;
-		// `label` es la etiqueta del selector, no parte de la moneda que se guarda.
-		const { label: _label, ...valores } = preset;
-		currency = { ...valores };
+		currency = { ...preset };
 	}
 
 	function elegirLogo(event: Event) {
@@ -169,18 +187,18 @@
 </script>
 
 <PageHeader
-	title="Configuración"
-	description="Los datos del negocio, la moneda, el impuesto y cómo se ve lo que se imprime."
+	title={m.settings_title()}
+	description={m.settings_description()}
 >
 	{#snippet actions()}
 		{#if data.actualizado}
 			<span class="hidden text-xs text-[var(--text-subtle)] sm:inline">
-				Última modificación: {formatDateTime(data.actualizado)}
+				{m.settings_last_change({ date: formatDateTime(data.actualizado) })}
 			</span>
 		{/if}
 		<button type="submit" form="config-form" class="btn btn-primary" disabled={submitting}>
-			{#if submitting}<Spinner size={15} />Guardando…{:else}
-				<Icon name="check" size={15} />Guardar cambios
+			{#if submitting}<Spinner size={15} />{m.common_saving()}{:else}
+				<Icon name="check" size={15} />{m.common_save_changes()}
 			{/if}
 		</button>
 	{/snippet}
@@ -208,7 +226,7 @@
 			aria-current={seccion === item.id ? 'true' : undefined}
 		>
 			<Icon name={item.icon} size={15} />
-			{item.label}
+			{seccionRotulo(item.id)}
 		</button>
 	{/each}
 </div>
@@ -240,28 +258,28 @@
 	<div style:display={seccion === 'negocio' ? '' : 'none'}>
 		<div class="grid gap-4 lg:grid-cols-3">
 			<div class="card p-5 lg:col-span-2">
-				<h2 class="mb-4 text-sm font-bold text-[var(--text)]">Datos del negocio</h2>
+				<h2 class="mb-4 text-sm font-bold text-[var(--text)]">{m.settings_business_data()}</h2>
 				<div class="grid gap-4 sm:grid-cols-2">
 					<Field
-						label="Nombre comercial"
+						label={m.settings_trade_name()}
 						name="negocio_nombre"
 						bind:value={business.name}
 						required
 						icon="tag"
 						error={form?.errors?.negocio_nombre}
-						hint="Es el que sale en el menú y encabeza el documento."
+						hint={m.settings_trade_name_hint()}
 						class="sm:col-span-2"
 					/>
 					<Field
-						label="Razón social"
+						label={m.settings_legal_name()}
 						name="negocio_razon_social"
 						bind:value={business.legalName}
 						error={form?.errors?.negocio_razon_social}
-						hint="Solo si difiere del nombre comercial."
+						hint={m.settings_legal_name_hint()}
 					/>
 
 					<div>
-						<label class="label" for="tipo-id">Tipo de identificación</label>
+						<label class="label" for="tipo-id">{m.settings_id_type()}</label>
 						<select
 							id="tipo-id"
 							name="negocio_tipo_identificacion"
@@ -275,21 +293,21 @@
 					</div>
 
 					<Field
-						label="Cédula"
+						label={m.settings_tax_id()}
 						name="negocio_identificacion"
 						bind:value={business.taxId}
 						icon="idcard"
 						error={form?.errors?.negocio_identificacion}
 					/>
 					<Field
-						label="Teléfono"
+						label={m.settings_phone()}
 						name="negocio_telefono"
 						bind:value={business.phone}
 						icon="phone"
 						error={form?.errors?.negocio_telefono}
 					/>
 					<Field
-						label="Correo"
+						label={m.settings_email()}
 						name="negocio_correo"
 						type="email"
 						bind:value={business.email}
@@ -297,13 +315,13 @@
 						error={form?.errors?.negocio_correo}
 					/>
 					<Field
-						label="Sitio web"
+						label={m.settings_website()}
 						name="negocio_sitio_web"
 						bind:value={business.website}
 						error={form?.errors?.negocio_sitio_web}
 					/>
 					<Field
-						label="Dirección"
+						label={m.settings_address()}
 						name="negocio_direccion"
 						bind:value={business.address}
 						error={form?.errors?.negocio_direccion}
@@ -315,18 +333,18 @@
 			<div class="space-y-4">
 				<!-- ------------------------------------------------------- logo -->
 				<div class="card p-5">
-					<h2 class="mb-1 text-sm font-bold text-[var(--text)]">Logo</h2>
+					<h2 class="mb-1 text-sm font-bold text-[var(--text)]">{m.settings_logo()}</h2>
 					<p class="mb-3 text-xs text-[var(--text-subtle)]">
-						Aparece en el menú y en el documento. PNG, JPG o WebP, hasta 250 KB.
+						{m.settings_logo_hint()}
 					</p>
 
 					<div
 						class="mb-3 grid h-28 place-items-center rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-sunken)] p-2"
 					>
 						{#if logoUrl}
-							<img src={logoUrl} alt="Logo del negocio" class="max-h-24 w-auto object-contain" />
+							<img src={logoUrl} alt={m.settings_logo_alt()} class="max-h-24 w-auto object-contain" />
 						{:else}
-							<span class="text-xs text-[var(--text-subtle)]">Sin logo</span>
+							<span class="text-xs text-[var(--text-subtle)]">{m.settings_no_logo()}</span>
 						{/if}
 					</div>
 
@@ -347,21 +365,20 @@
 					{#if data.tieneLogo}
 						<label class="mt-3 flex items-center gap-2 text-xs text-[var(--text-muted)]">
 							<input type="checkbox" name="quitar_logo" bind:checked={quitarLogo} />
-							Quitar el logo actual
+							{m.settings_remove_logo()}
 						</label>
 					{/if}
 
 					<p class="mt-3 text-[11px] leading-relaxed text-[var(--text-subtle)]">
-						Los SVG no se admiten: son XML y pueden traer código dentro. El logo se sirve desde
-						el mismo origen que el POS, así que solo se aceptan imágenes.
+						{m.settings_no_svg()}
 					</p>
 				</div>
 
 				<!-- ------------------------------------------------ color de la app -->
 				<div class="card p-5">
-					<h2 class="mb-1 text-sm font-bold text-[var(--text)]">Color de la interfaz</h2>
+					<h2 class="mb-1 text-sm font-bold text-[var(--text)]">{m.settings_accent()}</h2>
 					<p class="mb-3 text-xs text-[var(--text-subtle)]">
-						El tono para el tema oscuro y el color del texto se calculan a partir de este.
+						{m.settings_accent_hint()}
 					</p>
 
 					<div class="flex items-center gap-3">
@@ -370,7 +387,7 @@
 							name="apariencia_color"
 							bind:value={colorAcento}
 							class="h-10 w-14 cursor-pointer rounded border border-[var(--border)] bg-transparent"
-							aria-label="Color de la interfaz"
+							aria-label={m.settings_accent()}
 						/>
 						<code class="text-xs text-[var(--text-muted)]">{colorAcento}</code>
 					</div>
@@ -381,10 +398,10 @@
 								class="mb-1.5 block rounded px-2 py-1.5 text-xs font-semibold"
 								style="background:{acento.light}; color:{acento.inkLight}"
 							>
-								Tema claro
+								{m.settings_theme_light()}
 							</span>
 							<span class="text-[var(--text-subtle)]">
-								contraste {acento.contrastLight.toFixed(1)}:1
+								{m.settings_contrast({ ratio: acento.contrastLight.toFixed(1) })}
 							</span>
 						</div>
 						<div class="rounded-lg border border-[var(--border)] p-2">
@@ -392,10 +409,10 @@
 								class="mb-1.5 block rounded px-2 py-1.5 text-xs font-semibold"
 								style="background:{acento.dark}; color:{acento.inkDark}"
 							>
-								Tema oscuro
+								{m.settings_theme_dark()}
 							</span>
 							<span class="text-[var(--text-subtle)]">
-								contraste {acento.contrastDark.toFixed(1)}:1
+								{m.settings_contrast({ ratio: acento.contrastDark.toFixed(1) })}
 							</span>
 						</div>
 					</div>
@@ -406,8 +423,7 @@
 						>
 							<Icon name="info" size={13} class="mt-px shrink-0" />
 							<span>
-								Este tono no se distingue lo suficiente sobre el fondo de los gráficos, así que
-								las barras conservan el color validado. El resto de la interfaz sí lo usa.
+								{m.settings_accent_chart_warning()}
 							</span>
 						</p>
 					{/if}
@@ -420,47 +436,53 @@
 	<div style:display={seccion === 'moneda' ? '' : 'none'}>
 		<div class="grid gap-4 lg:grid-cols-3">
 			<div class="card p-5 lg:col-span-2">
-				<h2 class="mb-1 text-sm font-bold text-[var(--text)]">Moneda</h2>
+				<h2 class="mb-1 text-sm font-bold text-[var(--text)]">{m.settings_currency()}</h2>
 				<p class="mb-4 text-xs text-[var(--text-subtle)]">
-					Elegí una y se completa el resto. Los separadores quedan editables porque la
-					convención local no siempre coincide con el estándar.
+					{m.settings_currency_hint()}
 				</p>
 
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div class="sm:col-span-2">
-						<label class="label" for="moneda-preset">Moneda</label>
+						<label class="label" for="moneda-preset">{m.settings_currency()}</label>
 						<select
 							id="moneda-preset"
 							class="input"
 							value={currency.code}
 							onchange={(e) => aplicarMoneda(e.currentTarget.value)}
 						>
-							{#each CURRENCIES as m (m.code)}
-								<option value={m.code}>{m.label} ({m.code})</option>
+							{#each CURRENCIES as moneda (moneda.code)}
+								<option value={moneda.code}>
+									{m.settings_currency_option({
+										name: currencyName(moneda.code),
+										code: moneda.code
+									})}
+								</option>
 							{/each}
-							{#if !CURRENCIES.some((m) => m.code === currency.code)}
-								<option value={currency.code}>{currency.code} (personalizada)</option>
+							{#if !CURRENCIES.some((moneda) => moneda.code === currency.code)}
+								<option value={currency.code}>
+									{m.settings_currency_custom({ code: currency.code })}
+								</option>
 							{/if}
 						</select>
 					</div>
 
 					<Field
-						label="Código"
+						label={m.settings_currency_code()}
 						name="moneda_codigo"
 						bind:value={currency.code}
 						required
 						error={form?.errors?.moneda_codigo}
-						hint="ISO 4217: CRC, USD, EUR…"
+						hint={m.settings_currency_code_hint()}
 					/>
 					<Field
-						label="Símbolo"
+						label={m.settings_currency_symbol()}
 						name="moneda_simbolo"
 						bind:value={currency.symbol}
 						required
 						error={form?.errors?.moneda_simbolo}
 					/>
 					<Field
-						label="Decimales"
+						label={m.settings_currency_decimals()}
 						name="moneda_decimales"
 						type="number"
 						min="0"
@@ -471,7 +493,7 @@
 					/>
 
 					<div>
-						<label class="label" for="sep-miles">Separador de miles</label>
+						<label class="label" for="sep-miles">{m.settings_thousands_separator()}</label>
 						<input
 							id="sep-miles"
 							class="input"
@@ -479,10 +501,10 @@
 							maxlength="1"
 							bind:value={currency.thousandsSeparator}
 						/>
-						<p class="mt-1 text-xs text-[var(--text-subtle)]">Vacío = sin separar.</p>
+						<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.settings_thousands_empty()}</p>
 					</div>
 					<div>
-						<label class="label" for="sep-decimal">Separador decimal</label>
+						<label class="label" for="sep-decimal">{m.settings_decimal_separator()}</label>
 						<input
 							id="sep-decimal"
 							class="input"
@@ -499,44 +521,43 @@
 								name="moneda_simbolo_al_final"
 								bind:checked={currency.symbolAtEnd}
 							/>
-							Símbolo después de la cifra
+							{m.settings_symbol_at_end()}
 						</label>
 						<label class="flex items-center gap-2 text-[var(--text-muted)]">
 							<input type="checkbox" name="moneda_espacio" bind:checked={currency.space} />
-							Espacio entre símbolo y cifra
+							{m.settings_symbol_space()}
 						</label>
 					</div>
 				</div>
 
-				<h2 class="mt-6 mb-1 text-sm font-bold text-[var(--text)]">Impuesto</h2>
+				<h2 class="mt-6 mb-1 text-sm font-bold text-[var(--text)]">{m.settings_tax()}</h2>
 				<p class="mb-4 text-xs text-[var(--text-subtle)]">
-					Se aplica al cobrar. Las devoluciones de ventas anteriores siguen usando la tasa con
-					la que se cobraron, no esta.
+					{m.settings_tax_hint()}
 				</p>
 				<div class="grid gap-4 sm:grid-cols-2">
 					<Field
-						label="Nombre del impuesto"
+						label={m.settings_tax_name()}
 						name="impuesto_nombre"
 						bind:value={impuestoNombre}
 						required
 						error={form?.errors?.impuesto_nombre}
-						hint="IVA, ISV, IGV…"
+						hint={m.settings_tax_name_hint()}
 					/>
 					<Field
-						label="Tasa (%)"
+						label={m.settings_tax_rate()}
 						name="impuesto_tasa"
 						inputmode="decimal"
 						bind:value={tasaPorcentaje}
 						required
 						error={form?.errors?.impuesto_tasa}
-						hint="13 para el IVA de Costa Rica."
+						hint={m.settings_tax_rate_hint()}
 					/>
 				</div>
 			</div>
 
 			<!-- Vista previa de la moneda -->
 			<div class="card h-fit p-5">
-				<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Así se van a ver los montos</h2>
+				<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.settings_money_preview()}</h2>
 				{#key claveMoneda}
 					<dl class="space-y-2 text-sm">
 						{#each [1450, 79800, 3175119.2, -277] as valor (valor)}
@@ -547,8 +568,11 @@
 						{/each}
 					</dl>
 					<p class="mt-3 text-xs text-[var(--text-subtle)]">
-						Una venta de {formatMoney(10000)} lleva {impuestoNombre}
-						{formatMoney(round2(10000 * borrador.tax.rate))}.
+						{m.settings_money_example({
+							amount: formatMoney(10000),
+							tax: impuestoNombre,
+							taxAmount: formatMoney(round2(10000 * borrador.tax.rate))
+						})}
 					</p>
 				{/key}
 			</div>
@@ -560,25 +584,26 @@
 		<div class="grid gap-4 lg:grid-cols-5">
 			<div class="space-y-4 lg:col-span-2">
 				<div class="card p-5">
-					<h2 class="mb-1 text-sm font-bold text-[var(--text)]">Plantilla</h2>
+					<h2 class="mb-1 text-sm font-bold text-[var(--text)]">{m.settings_template()}</h2>
 					<p class="mb-3 text-xs text-[var(--text-subtle)]">
-						Lo que se imprime al cobrar y desde cada factura.
+						{m.settings_template_hint()}
 					</p>
 
 					<div class="space-y-2">
-						{#each TEMPLATES as plantilla (plantilla.id)}
+						{#each TEMPLATE_IDS as id (id)}
+							{@const plantilla = templateInfo(id)}
 							<label
 								class="flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors
-									{document.template === plantilla.id
+									{document.template === id
 									? 'border-[var(--accent)] bg-[var(--surface-sunken)]'
 									: 'border-[var(--border)] hover:bg-[var(--surface-sunken)]'}"
 							>
 								<input
 									type="radio"
 									name="documento_plantilla"
-									value={plantilla.id}
-									checked={document.template === plantilla.id}
-									onchange={() => seleccionarPlantilla(plantilla.id)}
+									value={id}
+									checked={document.template === id}
+									onchange={() => seleccionarPlantilla(id)}
 									class="mt-0.5"
 								/>
 								<span class="min-w-0 flex-1">
@@ -596,7 +621,7 @@
 
 					{#if document.template === 'tiquete'}
 						<div class="mt-4">
-							<span class="label">Ancho del rollo</span>
+							<span class="label">{m.settings_roll_width()}</span>
 							<div class="flex gap-4 text-sm text-[var(--text-muted)]">
 								{#each [58, 80] as ancho (ancho)}
 									<label class="flex items-center gap-2">
@@ -607,7 +632,7 @@
 											checked={document.receiptWidth === ancho}
 											onchange={() => (document = { ...document, receiptWidth: ancho as 58 | 80 })}
 										/>
-										{ancho} mm
+										{m.settings_roll_mm({ mm: ancho })}
 									</label>
 								{/each}
 							</div>
@@ -619,7 +644,7 @@
 				</div>
 
 				<div class="card p-5">
-					<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Contenido y marca</h2>
+					<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.settings_content_and_brand()}</h2>
 
 					<div class="mb-4 flex items-center gap-3">
 						<input
@@ -627,12 +652,12 @@
 							name="documento_color"
 							bind:value={document.color}
 							class="h-10 w-14 cursor-pointer rounded border border-[var(--border)] bg-transparent"
-							aria-label="Color del documento"
+							aria-label={m.settings_document_color()}
 						/>
 						<div class="min-w-0">
-							<p class="text-xs font-semibold text-[var(--text)]">Color del documento</p>
+							<p class="text-xs font-semibold text-[var(--text)]">{m.settings_document_color()}</p>
 							<p class="text-[11px] text-[var(--text-subtle)]">
-								Franjas y cabeceras. No afecta al tiquete térmico.
+								{m.settings_document_color_hint()}
 							</p>
 						</div>
 					</div>
@@ -644,7 +669,7 @@
 								name="documento_mostrar_logo"
 								bind:checked={document.showLogo}
 							/>
-							Mostrar el logo
+							{m.settings_show_logo()}
 						</label>
 						<label class="flex items-center gap-2">
 							<input
@@ -652,36 +677,36 @@
 								name="documento_mostrar_codigo"
 								bind:checked={document.showBarcode}
 							/>
-							Mostrar el código de barras de cada producto
+							{m.settings_show_barcode()}
 						</label>
 					</div>
 
 					<div class="mt-4 space-y-4">
 						<Field
-							label="Mensaje de despedida"
+							label={m.settings_thanks_message()}
 							name="documento_mensaje"
 							bind:value={document.thanksMessage}
 							error={form?.errors?.documento_mensaje}
 						/>
 						<Field
-							label="Leyenda legal"
+							label={m.settings_legal_notice()}
 							name="documento_leyenda"
 							bind:value={document.legalNotice}
 							error={form?.errors?.documento_leyenda}
-							hint="Mientras no se emita factura electrónica, conviene decirlo acá."
+							hint={m.settings_legal_notice_hint()}
 						/>
 						<div>
-							<label class="label" for="doc-notas">Notas y condiciones</label>
+							<label class="label" for="doc-notas">{m.settings_notes()}</label>
 							<textarea
 								id="doc-notas"
 								name="documento_notas"
 								rows="3"
 								class="input resize-y"
 								bind:value={document.notes}
-								placeholder="Ej.: Los cambios se aceptan dentro de los 8 días con la factura."
+								placeholder={m.settings_notes_placeholder()}
 							></textarea>
 							<p class="mt-1 text-xs text-[var(--text-subtle)]">
-								Solo en las facturas de página completa.
+								{m.settings_notes_hint()}
 							</p>
 						</div>
 					</div>
@@ -693,8 +718,8 @@
 				<div class="card p-4">
 					<div class="mb-3 flex items-center gap-2">
 						<Icon name="eye" size={15} class="text-[var(--text-subtle)]" />
-						<h2 class="text-sm font-bold text-[var(--text)]">Vista previa</h2>
-						<span class="text-xs text-[var(--text-subtle)]">con datos de ejemplo</span>
+						<h2 class="text-sm font-bold text-[var(--text)]">{m.settings_preview()}</h2>
+						<span class="text-xs text-[var(--text-subtle)]">{m.settings_preview_sample()}</span>
 					</div>
 					<div class="overflow-x-auto rounded-lg bg-[var(--surface-sunken)] p-4">
 						<DocumentSheet
@@ -715,10 +740,9 @@
 	<div style:display={seccion === 'electronica' ? '' : 'none'}>
 		<div class="grid gap-4 lg:grid-cols-3">
 			<div class="card p-5 lg:col-span-2">
-				<h2 class="mb-1 text-sm font-bold text-[var(--text)]">Facturación electrónica</h2>
+				<h2 class="mb-1 text-sm font-bold text-[var(--text)]">{m.settings_einvoicing()}</h2>
 				<p class="mb-4 text-xs text-[var(--text-subtle)]">
-					Datos del emisor ante Hacienda. Se guardan para tenerlos listos; VentaSys todavía no
-					emite comprobantes.
+					{m.settings_einvoicing_hint()}
 				</p>
 
 				<div
@@ -726,16 +750,12 @@
 				>
 					<Icon name="alert" size={16} class="mt-px shrink-0" />
 					<div class="space-y-1.5">
-						<p class="font-semibold">Todavía no emite comprobantes.</p>
+						<p class="font-semibold">{m.settings_einvoicing_warning_title()}</p>
 						<p class="leading-relaxed">
-							Emitir de verdad exige firmar el XML con la llave criptográfica del negocio,
-							enviarlo a Hacienda y esperar la respuesta de aceptación. Nada de eso está
-							implementado, así que activar esta casilla no hace que se emita: solo deja
-							anotado que el negocio factura electrónicamente.
+							{m.settings_einvoicing_warning_1()}
 						</p>
 						<p class="leading-relaxed">
-							La llave y su PIN no se piden ni se guardan. Guardar una credencial que el
-							sistema no usa es regalar el riesgo sin ganar nada.
+							{m.settings_einvoicing_warning_2()}
 						</p>
 					</div>
 				</div>
@@ -748,50 +768,49 @@
 						class="mt-1"
 					/>
 					<span>
-						El negocio factura electrónicamente
+						{m.settings_einvoicing_enabled()}
 						<span class="block text-xs text-[var(--text-subtle)]">
-							Cambia el título del documento a «Factura electrónica». Conviene ajustar también
-							la leyenda legal en la pestaña de Documentos.
+							{m.settings_einvoicing_enabled_hint()}
 						</span>
 					</span>
 				</label>
 
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div>
-						<label class="label" for="fe-ambiente">Ambiente</label>
+						<label class="label" for="fe-ambiente">{m.settings_environment()}</label>
 						<select
 							id="fe-ambiente"
 							name="electronica_ambiente"
 							class="input"
 							bind:value={eInvoicing.environment}
 						>
-							<option value="sandbox">Pruebas (sandbox)</option>
-							<option value="produccion">Producción</option>
+							<option value="sandbox">{m.settings_environment_sandbox()}</option>
+							<option value="produccion">{m.settings_environment_production()}</option>
 						</select>
 					</div>
 					<Field
-						label="Actividad económica"
+						label={m.settings_economic_activity()}
 						name="electronica_actividad"
 						bind:value={eInvoicing.economicActivity}
 						error={form?.errors?.electronica_actividad}
-						hint="Código de 6 dígitos inscrito ante Hacienda."
+						hint={m.settings_economic_activity_hint()}
 					/>
 					<Field
-						label="Sucursal"
+						label={m.settings_branch()}
 						name="electronica_sucursal"
 						bind:value={eInvoicing.branch}
 						error={form?.errors?.electronica_sucursal}
-						hint="3 dígitos. Normalmente 001."
+						hint={m.settings_branch_hint()}
 					/>
 					<Field
-						label="Terminal"
+						label={m.settings_terminal()}
 						name="electronica_terminal"
 						bind:value={eInvoicing.terminal}
 						error={form?.errors?.electronica_terminal}
-						hint="5 dígitos. Una por caja."
+						hint={m.settings_terminal_hint()}
 					/>
 					<Field
-						label="Usuario de ATV"
+						label={m.settings_atv_user()}
 						name="electronica_usuario"
 						bind:value={eInvoicing.atvUser}
 						error={form?.errors?.electronica_usuario}
@@ -801,46 +820,41 @@
 			</div>
 
 			<div class="card h-fit p-5">
-				<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Lo que falta para emitir</h2>
+				<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.settings_missing_title()}</h2>
 				<ol class="space-y-3 text-xs leading-relaxed text-[var(--text-muted)]">
 					<li class="flex gap-2">
 						<span class="font-bold text-[var(--text-subtle)]">1.</span>
 						<span>
-							<strong class="text-[var(--text)]">Código CABYS por producto.</strong>
-							Hacienda exige la clasificación de bienes y servicios en cada línea. Hoy el
-							catálogo no tiene ese campo.
+							<strong class="text-[var(--text)]">{m.settings_missing_1_title()}</strong>
+							{m.settings_missing_1()}
 						</span>
 					</li>
 					<li class="flex gap-2">
 						<span class="font-bold text-[var(--text-subtle)]">2.</span>
 						<span>
-							<strong class="text-[var(--text)]">Consecutivo y clave.</strong>
-							Numeración de 20 dígitos por sucursal y terminal, y una clave de 50 que
-							incorpora la cédula y la fecha.
+							<strong class="text-[var(--text)]">{m.settings_missing_2_title()}</strong>
+							{m.settings_missing_2()}
 						</span>
 					</li>
 					<li class="flex gap-2">
 						<span class="font-bold text-[var(--text-subtle)]">3.</span>
 						<span>
-							<strong class="text-[var(--text)]">Firma XAdES.</strong>
-							El XML se firma con la llave criptográfica del contribuyente. Es la pieza que
-							obliga a manejar un secreto en el servidor.
+							<strong class="text-[var(--text)]">{m.settings_missing_3_title()}</strong>
+							{m.settings_missing_3()}
 						</span>
 					</li>
 					<li class="flex gap-2">
 						<span class="font-bold text-[var(--text-subtle)]">4.</span>
 						<span>
-							<strong class="text-[var(--text)]">Envío y respuesta.</strong>
-							Se manda a Hacienda y se espera la aceptación, que es asíncrona: hay que
-							guardar el estado y reintentar.
+							<strong class="text-[var(--text)]">{m.settings_missing_4_title()}</strong>
+							{m.settings_missing_4()}
 						</span>
 					</li>
 					<li class="flex gap-2">
 						<span class="font-bold text-[var(--text-subtle)]">5.</span>
 						<span>
-							<strong class="text-[var(--text)]">Contingencia.</strong>
-							Si Hacienda no responde, la venta igual tiene que poder cobrarse y enviarse
-							después. Un POS no puede quedarse esperando con el cliente enfrente.
+							<strong class="text-[var(--text)]">{m.settings_missing_5_title()}</strong>
+							{m.settings_missing_5()}
 						</span>
 					</li>
 				</ol>

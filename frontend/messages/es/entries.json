@@ -1,0 +1,182 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "Entradas de mercadería: el historial y la pantalla de carga. Van juntas porque comparten la mitad de los rótulos —producto, cantidad, costo, subtotal— y separarlas los duplicaría.",
+
+	"entries_title": "Entradas de inventario",
+	"entries_description": "Historial de mercadería recibida. Cada carga deja constancia de quién, cuándo y de dónde.",
+	"entries_catalog": "Catálogo",
+	"entries_new": "Nueva entrada",
+	"entries_created_toast": "Entrada registrada",
+	"entries_created_detail": "El stock ya está actualizado.",
+
+	"$comentario_modulo": "El aviso de que falta el módulo lo lee quien instala, no el cajero. Se traduce igual: quien instala también puede tener el POS en otro idioma.",
+	"entries_module_missing": "El módulo de entradas no está disponible.",
+	"entries_module_missing_hint": "El backend no expone {endpoint}. Actualice el FastAPI de {folder} y corra la migración.",
+
+	"entries_col_date": "Fecha",
+	"entries_col_supplier": "Proveedor",
+	"entries_col_document": "Documento",
+	"entries_col_source": "Origen",
+	"entries_col_loaded_by": "Cargó",
+	"entries_col_units": "Unidades",
+	"entries_col_cost": "Costo",
+	"entries_col_status": "Estado",
+
+	"$comentario_origen": "'manual', 'excel' y 'xml' son los valores que guarda `stock_entries.source` y con los que el backend valida. El valor no se traduce; se traduce cómo se muestra.",
+	"entries_source_manual": "Manual",
+	"entries_source_excel": "Excel",
+	"entries_source_xml": "XML Hacienda",
+
+	"entries_status_cancelled": "Anulada",
+	"entries_status_applied": "Aplicada",
+	"entries_view_detail": "Ver detalle de la entrada {entry}",
+	"entries_cancel_entry": "Anular la entrada {entry}",
+
+	"entries_none": "Todavía no hay entradas",
+	"entries_none_hint": "Cargue la primera factura de proveedor para empezar a llevar el historial.",
+
+	"entries_detail_title": "Entrada #{entry}",
+	"entries_detail_subtitle": "{supplier} · {date}",
+	"entries_no_supplier": "Sin proveedor",
+	"entries_line_product": "Producto",
+	"entries_line_quantity": "Cantidad",
+	"entries_line_unit_cost": "Costo unit.",
+	"entries_line_subtotal": "Subtotal",
+	"entries_total": "Total",
+
+	"entries_cancel_title": "Anular entrada",
+	"entries_cancel_units": "Se van a restar {units} unidades del inventario, dejándolo como estaba antes de esta carga.",
+	"entries_cancel_sold_note": "Si parte de esa mercadería ya se vendió, el backend no permitirá la anulación: el stock quedaría en negativo. En ese caso hay que ajustarlo a mano.",
+	"entries_cancel_confirm": "Anular entrada",
+	"entries_cancel_failed": "No se pudo anular",
+	"entries_cancelled_ok": "Entrada anulada; el stock volvió atrás.",
+
+	"$comentario_nueva": "La pantalla de carga.",
+
+	"entry_new_title": "Entrada de mercadería",
+	"entry_new_description": "Sume stock desde una factura del proveedor o a mano. Nada entra hasta que lo confirme.",
+	"entry_new_see_entries": "Ver entradas",
+
+	"entry_method_manual": "Manual",
+	"entry_method_file": "Desde archivo",
+	"entry_search_placeholder": "Busque el producto por nombre o código de barras…",
+	"entry_search_label": "Buscar producto para agregar a la entrada",
+	"entry_search_stock": "stock {stock}",
+	"entry_search_hint": "Busque y toque cada producto que llegó. Después ajuste cantidad y costo en la tabla.",
+
+	"entry_file_label": "Factura del proveedor",
+	"entry_file_reading": "Leyendo…",
+	"entry_file_analyze": "Analizar",
+	"entry_file_read_failed": "No se pudo leer el archivo",
+	"entry_file_xml": "XML",
+	"entry_file_xml_hint": "factura electrónica de Hacienda (v4.3 o 4.4), la que llega por correo. Se leen proveedor, consecutivo y líneas.",
+	"entry_file_sheet": "Excel o CSV",
+	"entry_file_sheet_hint": "con columnas {code}, {description}, {quantity} y {cost}. El orden no importa.",
+
+	"$comentario_columnas": "Los encabezados que busca el lector de hojas de cálculo (`server/import/spreadsheet.ts`). Van aparte de los rótulos de campo porque son nombres de columna de un archivo ajeno, no etiquetas de un formulario: aquí no llevan artículo. Traducirlos NO cambia lo que el lector acepta —su lista de sinónimos está en español y en inglés— así que el día que la interfaz esté en portugués habrá que agregar los sinónimos portugueses ahí.",
+	"entry_column_code": "Código",
+	"entry_column_description": "Descripción",
+	"entry_column_quantity": "Cantidad",
+	"entry_column_cost": "Costo",
+	"entry_file_template": "Descargar plantilla",
+
+	"entry_preview_none": "Todavía no hay líneas",
+	"entry_preview_none_manual": "Busque productos arriba para armar la entrada.",
+	"entry_preview_none_file": "Suba la factura del proveedor y revise lo que se va a ingresar.",
+
+	"entry_stat_lines": "Líneas a ingresar",
+	"entry_stat_units": "Unidades",
+	"entry_stat_cost": "Costo total",
+	"entry_stat_unmatched": "Sin coincidencia",
+
+	"entry_orphans": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 línea está marcada para ingresar pero no existe en el catálogo.",
+				"countPlural=other": "{count} líneas están marcadas para ingresar pero no existen en el catálogo."
+			}
+		}
+	],
+	"entry_orphans_hint": "Marque {create} para darlas de alta, o desmárquelas para dejarlas fuera.",
+	"entry_create_word": "Crear",
+
+	"entry_col_include": "Incluir",
+	"entry_col_status": "Estado",
+	"entry_col_stock": "Stock",
+	"entry_col_remove": "Quitar",
+	"entry_include_line": "Incluir {product}",
+	"entry_quantity_of": "Cantidad de {product}",
+	"entry_unit_cost_of": "Costo unitario de {product}",
+	"entry_remove_line": "Quitar {product}",
+	"entry_no_code": "sin código",
+	"entry_matched_barcode": "Por código",
+	"entry_matched_name": "Por nombre",
+	"entry_create_product": "Crear producto",
+
+	"entry_label_barcode": "Código de barras",
+	"entry_label_sale_price": "Precio de venta",
+	"entry_price_hint": "Sugerido: costo + 30 %",
+	"entry_label_category": "Categoría",
+	"entry_required_short": "Obligatorio",
+
+	"entry_document_data": "Datos del documento",
+	"entry_label_supplier": "Proveedor",
+	"entry_supplier_placeholder": "Ej.: Distribuidora La Central",
+	"entry_label_document_number": "N.º de factura",
+	"entry_document_hint": "Evita cargar la misma factura dos veces.",
+	"entry_label_notes": "Notas",
+	"entry_notes_placeholder": "Opcional",
+
+	"entry_summary_units": "Van a entrar {units} unidades",
+	"entry_summary_creating": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "y se va a crear 1 producto",
+				"countPlural=other": "y se van a crear {count} productos"
+			}
+		}
+	],
+	"entry_summary_cost": "· costo {cost}",
+	"entry_discard": "Descartar",
+	"entry_saving": "Ingresando…",
+	"entry_submit": "Ingresar al inventario",
+	"entry_submit_failed": "No se pudo registrar la entrada",
+
+	"$comentario_lectura": "Lo que dicen los lectores de archivos (`server/import/*`). Devuelven un código y la frase se arma en la interfaz, igual que con el backend: un adaptador no sabe en qué idioma está la pantalla.",
+	"import_csv_unreadable": "No se pudo leer el CSV. Revise que sea texto plano separado por comas o punto y coma.",
+	"import_xlsx_unreadable": "No se pudo leer el Excel. Guárdelo como .xlsx (no .xls) e intente de nuevo.",
+	"import_sheet_empty": "El archivo está vacío o solo tiene la fila de encabezados.",
+	"import_no_quantity_column": "No se encontró la columna de cantidad. Tiene que llamarse «Cantidad» (o Cant, Unidades).",
+	"import_no_identifier_column": "No se encontró cómo identificar el producto. Agregue una columna «Código» o «Descripción».",
+	"import_no_data_rows": "No se encontró ninguna fila con datos.",
+	"import_not_an_invoice": "El archivo no parece una factura electrónica: no se encontró el nodo raíz esperado.",
+	"import_xml_unreadable": "No se pudo leer el XML. ¿Está completo y sin modificar?",
+	"import_invoice_without_lines": "La factura no tiene líneas de detalle.",
+	"import_no_cost_column": "No se encontró columna de costo; las líneas entran con costo cero.",
+	"import_bad_quantity": "La línea no trae una cantidad válida.",
+	"import_bad_quantity_in_row": "Cantidad inválida en la fila {row}.",
+	"import_fractional_quantity": "Cantidad fraccionaria ({quantity}); el inventario lleva unidades enteras.",
+	"import_fractional_quantity_in_row": "Cantidad fraccionaria ({quantity}) en la fila {row}.",
+	"import_lines_need_review": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 línea necesita revisión manual.",
+				"countPlural=other": "{count} líneas necesitan revisión manual."
+			}
+		}
+	],
+
+	"entry_pick_file_first": "Elija un archivo primero.",
+	"entry_file_too_big": "El archivo pesa {size} MB; el máximo es {max} MB.",
+	"entry_format_unsupported": "Formato no admitido. Use .xml, .xlsx o .csv.",
+	"entry_read_failed": "No se pudo leer el archivo.",
+	"entry_detail_unreadable": "No se pudo leer el detalle de la entrada.",
+	"entry_mark_one_line": "Marque al menos una línea para ingresar."
+}

@@ -1,8 +1,11 @@
 import { fail } from '@sveltejs/kit';
-import { api, apiSafe, toMessage } from '$lib/server/api';
+import { api, apiSafe } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth';
 import { formError, Validator } from '$lib/application/validation';
 import type { StockEntry } from '$lib/domain/types';
+import { F } from '$lib/ui/fields';
+import { m } from '$lib/paraglide/messages.js';
+import { apiMessage, validationErrors } from '$lib/ui/messages';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -21,14 +24,14 @@ export const actions: Actions = {
 	anular: async ({ request, locals, url }) => {
 		requireAdmin(locals, url.pathname);
 		const v = new Validator(await request.formData());
-		const id = v.integer('id_entry', 'La entrada', { min: 1 });
-		if (!v.ok) return fail(400, { errors: v.errors });
+		const id = v.integer('id_entry', F.entry(), { min: 1 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
 		try {
 			await api(`/inventory/entry/${id}/cancel`, { method: 'POST', token: locals.token });
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)) });
+			return fail(400, { errors: formError(apiMessage(error)) });
 		}
-		return { success: 'Entrada anulada; el stock volvió atrás.' };
+		return { success: m.entries_cancelled_ok() };
 	}
 };

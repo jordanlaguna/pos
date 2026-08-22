@@ -9,6 +9,8 @@
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney, round2, taxName, taxRate } from '$lib/domain/money';
 	import { formatDateTime, formatInt } from '$lib/ui/format';
+	import { m } from '$lib/paraglide/messages.js';
+	import { paymentLabel } from '$lib/ui/messages';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -83,22 +85,22 @@
 		const creada = page.url.searchParams.get('creada');
 		if (creada && creada !== avisada) {
 			avisada = creada;
-			toasts.success('Devolución registrada', 'El stock volvió al inventario.');
+			toasts.success(m.returns_registered(), m.returns_stock_back());
 		}
 	});
 
 </script>
 
 <PageHeader
-	title="Devoluciones"
-	description="Devolvé productos de una venta y reponé el inventario automáticamente."
+	title={m.returns_title()}
+	description={m.returns_description()}
 />
 
 <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
 	<section class="min-w-0">
 		{#if !selected}
 			<div class="card p-4">
-				<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Elegí la venta a devolver</h2>
+				<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.returns_pick_sale()}</h2>
 
 				<div class="relative mb-3">
 					<span
@@ -109,8 +111,8 @@
 					<input
 						bind:value={saleSearch}
 						type="search"
-						placeholder="Número de factura…"
-						aria-label="Buscar venta por número de factura"
+						placeholder={m.returns_search_placeholder()}
+						aria-label={m.returns_search_label()}
 						class="input pl-9"
 					/>
 				</div>
@@ -127,7 +129,7 @@
 										{sale.sale_number}
 									</span>
 									<span class="block text-xs text-[var(--text-subtle)]">
-										{formatDateTime(sale.created_at)} · {sale.payment_method}
+										{formatDateTime(sale.created_at)} · {paymentLabel(sale.payment_method)}
 									</span>
 								</span>
 								<span class="shrink-0 text-sm font-semibold tabular-nums text-[var(--text)]">
@@ -140,10 +142,8 @@
 						<li>
 							<EmptyState
 								icon="receipt"
-								title="Sin ventas disponibles"
-								description={saleSearch
-									? 'Ninguna factura coincide con la búsqueda.'
-									: 'Las ventas ya devueltas por completo no aparecen acá.'}
+								title={m.returns_no_sales()}
+								description={saleSearch ? m.returns_no_match() : m.returns_all_returned()}
 								compact
 							/>
 						</li>
@@ -155,20 +155,20 @@
 				<div class="mb-4 flex flex-wrap items-start justify-between gap-3">
 					<div>
 						<h2 class="text-sm font-bold text-[var(--text)]">
-							Factura {selected.sale_number}
+							{m.returns_invoice({ number: selected.sale_number })}
 						</h2>
 						<p class="text-xs text-[var(--text-subtle)]">
-							{formatDateTime(selected.created_at)} · {selected.payment_method} ·
+							{formatDateTime(selected.created_at)} · {paymentLabel(selected.payment_method)} ·
 							{formatMoney(selected.total)}
 						</p>
 					</div>
 					<div class="flex gap-2">
 						<button type="button" class="btn btn-ghost py-1.5 text-xs" onclick={returnAll}>
-							Devolver todo
+							{m.returns_return_all()}
 						</button>
 						<a href="/devoluciones" class="btn btn-ghost py-1.5 text-xs">
 							<Icon name="close" size={13} />
-							Cambiar venta
+							{m.returns_change_sale()}
 						</a>
 					</div>
 				</div>
@@ -176,8 +176,8 @@
 				{#if !selected.items.length}
 					<EmptyState
 						icon="alert"
-						title="Sin detalle de productos"
-						description="El backend no devolvió las líneas de esta venta, así que no se puede devolver por producto. Aplicá el endpoint GET /sales/sale/{'{'}id{'}'} del patch."
+						title={m.returns_no_detail()}
+						description={m.returns_no_detail_hint()}
 						compact
 					/>
 				{:else}
@@ -186,7 +186,7 @@
 						method="POST"
 						action="?/crear"
 						use:enhance={submit({
-							errorTitle: 'No se pudo registrar',
+							errorTitle: m.returns_could_not_register(),
 							setBusy: (v) => (submitting = v)
 						})}
 					>
@@ -196,12 +196,12 @@
 							<table class="data-table">
 								<thead>
 									<tr>
-										<th scope="col">Producto</th>
-										<th scope="col" class="num">Precio</th>
-										<th scope="col" class="num">Vendido</th>
-										<th scope="col" class="num">Devuelto</th>
-										<th scope="col" class="num">Disponible</th>
-										<th scope="col" class="num">Devolver</th>
+										<th scope="col">{m.returns_col_product()}</th>
+										<th scope="col" class="num">{m.returns_col_price()}</th>
+										<th scope="col" class="num">{m.returns_col_sold()}</th>
+										<th scope="col" class="num">{m.returns_col_returned()}</th>
+										<th scope="col" class="num">{m.returns_col_available()}</th>
+										<th scope="col" class="num">{m.returns_col_return()}</th>
 									</tr>
 								</thead>
 								<tbody>
@@ -225,7 +225,7 @@
 													step="1"
 													disabled={left === 0}
 													value={quantities[item.id_product] ?? 0}
-													aria-label="Unidades a devolver de {item.name}"
+													aria-label={m.returns_units_of({ product: item.name })}
 													onchange={(e) => {
 														const raw = Math.trunc(
 															Number((e.currentTarget as HTMLInputElement).value)
@@ -243,14 +243,14 @@
 						</div>
 
 						<div class="mt-4">
-							<label class="label" for="return-reason">Motivo de la devolución *</label>
+							<label class="label" for="return-reason">{m.returns_reason_label()}</label>
 							<textarea
 								id="return-reason"
 								name="reason"
 								rows="2"
 								required
 								class="input resize-y"
-								placeholder="Ej.: producto vencido, el cliente se arrepintió, error de cobro"
+								placeholder={m.returns_reason_placeholder()}
 								aria-invalid={form?.errors?.reason ? 'true' : undefined}
 							></textarea>
 							{#if form?.errors?.reason}
@@ -264,17 +264,17 @@
 
 		<!-- Historial -->
 		<section class="mt-6">
-			<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Devoluciones registradas</h2>
+			<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.returns_history()}</h2>
 			<div class="card overflow-hidden">
 				<div class="table-wrap">
 					<table class="data-table">
 						<thead>
 							<tr>
-								<th scope="col">Fecha</th>
-								<th scope="col">Factura</th>
-								<th scope="col">Motivo</th>
-								<th scope="col">Tipo</th>
-								<th scope="col" class="num">Monto</th>
+								<th scope="col">{m.returns_col_date()}</th>
+								<th scope="col">{m.returns_col_invoice()}</th>
+								<th scope="col">{m.returns_col_reason()}</th>
+								<th scope="col">{m.returns_col_type()}</th>
+								<th scope="col" class="num">{m.returns_col_amount()}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -300,7 +300,7 @@
 												? 'bg-[var(--negative-bg)] text-[var(--negative)]'
 												: 'bg-[var(--warning-bg)] text-[var(--warning)]'}"
 										>
-											{record.is_full ? 'Total' : 'Parcial'}
+											{record.is_full ? m.returns_full() : m.returns_partial()}
 										</span>
 									</td>
 									<td class="num font-semibold tabular-nums">
@@ -312,8 +312,8 @@
 									<td colspan="5">
 										<EmptyState
 											icon="undo"
-											title="Sin devoluciones"
-											description="Las devoluciones que registres van a aparecer acá."
+											title={m.returns_none()}
+											description={m.returns_none_hint()}
 											compact
 										/>
 									</td>
@@ -329,7 +329,7 @@
 	<!-- Resumen del reembolso -->
 	{#if selected && selected.items.length}
 		<aside class="card h-fit p-4 lg:sticky lg:top-0">
-			<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Resumen de la devolución</h2>
+			<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.returns_summary()}</h2>
 
 			{#if hasSelection}
 				<ul class="mb-3 space-y-1.5 text-sm">
@@ -349,31 +349,36 @@
 				</ul>
 			{:else}
 				<p class="mb-3 text-sm text-[var(--text-subtle)]">
-					Indicá cuántas unidades devolver de cada producto.
+					{m.returns_indicate_units()}
 				</p>
 			{/if}
 
 			<dl class="space-y-1.5 border-t border-[var(--border)] pt-3 text-sm">
 				<div class="flex justify-between text-[var(--text-muted)]">
-					<dt>Subtotal</dt>
+					<dt>{m.common_subtotal()}</dt>
 					<dd class="tabular-nums">{formatMoney(refundSubtotal)}</dd>
 				</div>
 				<div class="flex justify-between text-[var(--text-muted)]">
 					<!-- El porcentaje es el de la venta original, no el configurado hoy. -->
-					<dt>{taxName()} ({(saleTaxRate * 100).toFixed(saleTaxRate * 100 % 1 === 0 ? 0 : 1)} %)</dt>
+					<dt>
+							{m.returns_tax_with_rate({
+								tax: taxName(),
+								rate: (saleTaxRate * 100).toFixed((saleTaxRate * 100) % 1 === 0 ? 0 : 1)
+							})}
+						</dt>
 					<dd class="tabular-nums">{formatMoney(refundTotal - refundSubtotal)}</dd>
 				</div>
 				<div
 					class="flex justify-between border-t border-[var(--border)] pt-2 text-lg font-bold text-[var(--text)]"
 				>
-					<dt>A reembolsar</dt>
+					<dt>{m.returns_to_refund()}</dt>
 					<dd class="tabular-nums">{formatMoney(refundTotal)}</dd>
 				</div>
 			</dl>
 
 			<p class="mt-3 flex items-start gap-1.5 text-xs text-[var(--text-subtle)]">
 				<Icon name="info" size={13} class="mt-0.5 shrink-0" />
-				Las unidades devueltas vuelven al inventario y se descuentan del arqueo de caja.
+				{m.returns_stock_note()}
 			</p>
 
 			<button
@@ -384,10 +389,10 @@
 			>
 				{#if submitting}
 					<Spinner size={15} />
-					Registrando…
+					{m.common_registering()}
 				{:else}
 					<Icon name="undo" size={15} />
-					Registrar devolución
+					{m.returns_register()}
 				{/if}
 			</button>
 		</aside>

@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { round2 } from '$lib/domain/money';
-import type { ParsedLine, ParseResult } from '$lib/domain/types';
+import type { ImportNote, ParsedLine, ParseResult } from '$lib/domain/types';
+import { ImportError } from './errors';
 
 /**
  * Lector de facturas electrónicas de Hacienda (Costa Rica).
@@ -74,7 +75,7 @@ function codesOf(line: Node): string[] {
 }
 
 export function parseHaciendaXml(xml: string): ParseResult {
-	const warnings: string[] = [];
+	const warnings: ImportNote[] = [];
 
 	let root: Node;
 	try {
@@ -86,17 +87,15 @@ export function parseHaciendaXml(xml: string): ParseResult {
 			)
 		);
 		if (!key) {
-			throw new Error(
-				'El archivo no parece una factura electrónica: no se encontró el nodo raíz esperado.'
-			);
+			throw new ImportError({ code: 'import_not_an_invoice' });
 		}
 		root = parsed[key] as Node;
 	} catch (error) {
-		throw new Error(
-			error instanceof Error && error.message.startsWith('El archivo')
-				? error.message
-				: 'No se pudo leer el XML. ¿Está completo y sin modificar?'
-		);
+		// El «no parece una factura» de arriba pasa tal cual; cualquier otra cosa
+		// es un XML que el analizador no pudo abrir.
+		throw error instanceof ImportError
+			? error
+			: new ImportError({ code: 'import_xml_unreadable' });
 	}
 
 	const emisor = (root.Emisor ?? {}) as Node;
@@ -108,7 +107,7 @@ export function parseHaciendaXml(xml: string): ParseResult {
 	const rawLines = asArray(detalle.LineaDetalle);
 
 	if (rawLines.length === 0) {
-		throw new Error('La factura no tiene líneas de detalle.');
+		throw new ImportError({ code: 'import_invoice_without_lines' });
 	}
 
 	const lines: ParsedLine[] = [];
@@ -140,9 +139,9 @@ export function parseHaciendaXml(xml: string): ParseResult {
 		// Las facturas de servicios traen líneas sin cantidad entera; se avisa en
 		// vez de descartarlas en silencio.
 		if (!(quantity > 0)) {
-			line.issue = 'La línea no trae una cantidad válida.';
+			line.issue = { code: 'import_bad_quantity' };
 		} else if (!Number.isInteger(quantity)) {
-			line.issue = `Cantidad fraccionaria (${quantity}); el inventario lleva unidades enteras.`;
+			line.issue = { code: 'import_fractional_quantity', quantity };
 		}
 
 		// Se guardan todos los códigos para el emparejado posterior.
@@ -153,9 +152,7 @@ export function parseHaciendaXml(xml: string): ParseResult {
 
 	const conIssue = lines.filter((l) => l.issue).length;
 	if (conIssue) {
-		warnings.push(
-			`${conIssue} ${conIssue === 1 ? 'línea necesita' : 'líneas necesitan'} revisión manual.`
-		);
+		warnings.push({ code: 'import_lines_need_review', count: conIssue });
 	}
 
 	return {

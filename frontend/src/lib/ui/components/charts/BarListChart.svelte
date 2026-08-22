@@ -12,6 +12,7 @@
 	import { formatMoney } from '$lib/domain/money';
 	import ChartCard from './ChartCard.svelte';
 	import EmptyState from '../EmptyState.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	interface Props {
 		items: BarItem[];
@@ -29,9 +30,9 @@
 		title,
 		subtitle,
 		loading = false,
-		valueHeader = 'Total',
-		secondaryHeader = 'Detalle',
-		emptyMessage = 'No hay datos en el periodo seleccionado.'
+		valueHeader = m.reports_total(),
+		secondaryHeader = m.reports_breakdown(),
+		emptyMessage = m.chart_no_data_hint()
 	}: Props = $props();
 
 	// Categorías nominales (productos, métodos de pago): un solo tono para todas
@@ -45,7 +46,7 @@
 <ChartCard {title} {subtitle} {loading}>
 	{#snippet chart()}
 		{#if !items.length}
-			<EmptyState icon="chart" title="Sin datos" description={emptyMessage} compact />
+			<EmptyState icon="chart" title={m.chart_no_data()} description={emptyMessage} compact />
 		{:else}
 			<ul class="flex flex-col gap-1.5">
 				{#each items as item (item.key)}
@@ -108,7 +109,7 @@
 		<table class="data-table">
 			<thead>
 				<tr>
-					<th scope="col">Concepto</th>
+					<th scope="col">{m.chart_col_concept()}</th>
 					<th scope="col" class="num">{valueHeader}</th>
 					<th scope="col" class="num">{secondaryHeader}</th>
 				</tr>

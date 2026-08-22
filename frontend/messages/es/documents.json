@@ -1,0 +1,46 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "El documento impreso: tiquete, factura clásica y factura moderna. Está aparte de las pantallas porque el idioma del documento NO es el de la pantalla (RN-29): la factura es para el cliente y para Hacienda, así que una compañía costarricense la emite en español aunque su cajero use el POS en portugués. Hoy todas las claves se resuelven con el idioma de la sesión; T-811 las resolverá con `document_locale`. Lo que cambia entonces es de dónde sale el idioma, no estas claves.",
+
+	"doc_invoice": "Factura",
+	"doc_einvoice": "Factura electrónica",
+	"doc_invoice_number": "Factura {number}",
+
+	"doc_issuer": "Emisor",
+	"doc_issuer_incomplete": "Complete los datos del negocio en Configuración.",
+	"doc_issuer_add_contact": "Agregue teléfono y correo en Configuración",
+	"doc_tax_id": "Cédula {id}",
+	"doc_phone": "Tel. {phone}",
+
+	"doc_client": "Cliente",
+	"doc_bill_to": "Facturar a",
+	"doc_walk_in": "Cliente de contado",
+	"doc_walk_in_hint": "Venta sin cliente registrado",
+	"doc_client_id": "Cédula",
+
+	"doc_date": "Fecha",
+	"doc_payment_method": "Método de pago",
+	"doc_payment": "Pago",
+	"doc_served_by": "Atendido por",
+
+	"doc_col_product": "Producto",
+	"doc_col_description": "Descripción",
+	"doc_col_quantity": "Cant.",
+	"doc_col_unit_price": "P. unit.",
+	"doc_col_unit_price_long": "P. unitario",
+	"doc_col_total": "Total",
+
+	"doc_no_detail": "El backend no expone el detalle de esta venta.",
+	"doc_no_detail_hint": "Aplique el endpoint {endpoint} del patch para verlo.",
+
+	"doc_subtotal": "Subtotal",
+	"doc_total": "Total",
+	"doc_cash_received": "Efectivo recibido",
+	"doc_change": "Vuelto",
+	"doc_returned": "Devuelto",
+	"doc_returns_applied": "Devoluciones aplicadas",
+
+	"doc_notes": "Notas",
+	"doc_notes_and_terms": "Notas y condiciones"
+}

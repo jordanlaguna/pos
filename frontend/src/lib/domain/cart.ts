@@ -25,15 +25,29 @@ export interface TicketLines {
 	lines: CartLine[];
 }
 
-export interface Decision {
-	ok: boolean;
-	/** Motivo del rechazo, listo para mostrar. */
-	message?: string;
-	/** Cantidad que queda en la línea si la decisión fue que sí. */
-	quantity?: number;
-}
+/**
+ * Motivo del rechazo, como **código y datos**: nunca como frase.
+ *
+ * Es la misma regla que RN-30 le impone al backend, aplicada acá adentro. El
+ * dominio no puede armar la frase porque no sabe —ni tiene por qué saber— en qué
+ * idioma está la pantalla; quien la arma es la interfaz, con su catálogo
+ * (`$lib/ui/messages.ts`). De paso las pruebas dejan de comparar cadenas:
+ * afirman qué código sale de qué situación, que es lo que de verdad importa.
+ */
+export type CartRejection =
+	| { code: 'cart_quantity_not_positive' }
+	| { code: 'cart_out_of_stock'; product: string }
+	| { code: 'cart_reserved_elsewhere'; free: number; product: string; reserved: number }
+	| { code: 'cart_only_units'; stock: number; product: string }
+	| { code: 'cart_only_units_with_current'; stock: number; product: string; current: number }
+	| { code: 'cart_only_free_units'; free: number; product: string }
+	| { code: 'cart_max_tickets'; max: number }
+	| { code: 'cart_line_not_found' };
 
-const SI: Decision = { ok: true };
+export type Decision =
+	/** `quantity` es lo que queda en la línea cuando la respuesta es que sí. */
+	| { ok: true; quantity?: number }
+	| { ok: false; reason: CartRejection };
 
 /**
  * Unidades de un producto apartadas en las **otras** ventas abiertas.
@@ -68,24 +82,38 @@ export function canAdd(
 	current: CartLine | undefined,
 	reserved: number
 ): Decision {
-	if (quantity <= 0) return { ok: false, message: 'La cantidad debe ser mayor que cero.' };
-	if (product.stock <= 0) return { ok: false, message: `${product.name} no tiene existencias.` };
+	if (quantity <= 0) return { ok: false, reason: { code: 'cart_quantity_not_positive' } };
+	if (product.stock <= 0)
+		return { ok: false, reason: { code: 'cart_out_of_stock', product: product.name } };
 
 	const resulting = (current?.quantity ?? 0) + quantity;
 
 	if (resulting + reserved > product.stock) {
-		const libre = Math.max(0, product.stock - reserved);
+		if (reserved) {
+			return {
+				ok: false,
+				reason: {
+					code: 'cart_reserved_elsewhere',
+					free: Math.max(0, product.stock - reserved),
+					product: product.name,
+					reserved
+				}
+			};
+		}
 		return {
 			ok: false,
-			message: reserved
-				? `Solo quedan ${libre} de ${product.name}: hay ${reserved} apartadas en otra venta.`
-				: `Solo hay ${product.stock} unidades de ${product.name}${
-						current ? ` y ya llevás ${current.quantity}` : ''
-					}.`
+			reason: current
+				? {
+						code: 'cart_only_units_with_current',
+						stock: product.stock,
+						product: product.name,
+						current: current.quantity
+					}
+				: { code: 'cart_only_units', stock: product.stock, product: product.name }
 		};
 	}
 
-	return { ...SI, quantity: resulting };
+	return { ok: true, quantity: resulting };
 }
 
 /**
@@ -98,8 +126,14 @@ export function canSetQuantity(line: CartLine, quantity: number, reserved: numbe
 	if (quantity <= 0) return { ok: true, quantity: 0 };
 
 	if (quantity + reserved > line.stock) {
-		const libre = Math.max(0, line.stock - reserved);
-		return { ok: false, message: `Solo quedan ${libre} unidades de ${line.name}.` };
+		return {
+			ok: false,
+			reason: {
+				code: 'cart_only_free_units',
+				free: Math.max(0, line.stock - reserved),
+				product: line.name
+			}
+		};
 	}
 
 	// Se trunca: media unidad de arroz no existe en el mostrador.

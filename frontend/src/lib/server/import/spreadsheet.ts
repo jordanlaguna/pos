@@ -1,6 +1,7 @@
 import readXlsxFile from 'read-excel-file/node';
 import { parseAmount, round2 } from '$lib/domain/money';
-import type { ParsedLine, ParseResult } from '$lib/domain/types';
+import type { ImportFailure, ImportNote, ParsedLine, ParseResult } from '$lib/domain/types';
+import { ImportError } from './errors';
 
 /**
  * Lector de planillas para entrada de mercadería: `.xlsx` y `.csv`.
@@ -92,7 +93,7 @@ export async function parseSpreadsheet(
 	buffer: Buffer,
 	filename: string
 ): Promise<ParseResult> {
-	const warnings: string[] = [];
+	const warnings: ImportNote[] = [];
 	const isCsv = /\.csv$/i.test(filename);
 
 	let rows: unknown[][];
@@ -101,32 +102,26 @@ export async function parseSpreadsheet(
 			? parseCsv(buffer.toString('utf-8'))
 			: ((await readXlsxFile(buffer)) as unknown as unknown[][]);
 	} catch {
-		throw new Error(
-			isCsv
-				? 'No se pudo leer el CSV. Revisá que sea texto plano separado por comas o punto y coma.'
-				: 'No se pudo leer el Excel. Guardalo como .xlsx (no .xls) e intentá de nuevo.'
-		);
+		throw new ImportError({
+			code: isCsv ? 'import_csv_unreadable' : 'import_xlsx_unreadable'
+		});
 	}
 
 	rows = rows.filter((row) => row.some((cell) => String(cell ?? '').trim()));
 	if (rows.length < 2) {
-		throw new Error('El archivo está vacío o solo tiene la fila de encabezados.');
+		throw new ImportError({ code: 'import_sheet_empty' });
 	}
 
 	const columns = mapColumns(rows[0]);
 
 	if (columns.quantity === undefined) {
-		throw new Error(
-			'No se encontró la columna de cantidad. Debe llamarse «Cantidad» (o Cant, Unidades).'
-		);
+		throw new ImportError({ code: 'import_no_quantity_column' });
 	}
 	if (columns.code === undefined && columns.description === undefined) {
-		throw new Error(
-			'No se encontró cómo identificar el producto. Agregá una columna «Código» o «Descripción».'
-		);
+		throw new ImportError({ code: 'import_no_identifier_column' });
 	}
 	if (columns.cost === undefined) {
-		warnings.push('No se encontró columna de costo; las líneas entran con costo cero.');
+		warnings.push({ code: 'import_no_cost_column' });
 	}
 
 	const lines: ParsedLine[] = [];
@@ -155,9 +150,13 @@ export async function parseSpreadsheet(
 		if (!(line.quantity > 0)) {
 			// Se informa la fila del archivo, no el índice del arreglo: es lo que
 			// el usuario ve en Excel al ir a corregirla.
-			line.issue = `Cantidad inválida en la fila ${i + 1}.`;
+			line.issue = { code: 'import_bad_quantity_in_row', row: i + 1 };
 		} else if (!Number.isInteger(line.quantity)) {
-			line.issue = `Cantidad fraccionaria (${line.quantity}) en la fila ${i + 1}.`;
+			line.issue = {
+				code: 'import_fractional_quantity_in_row',
+				quantity: line.quantity,
+				row: i + 1
+			};
 		}
 
 		if (code) (line as ParsedLine & { allCodes?: string[] }).allCodes = [code];
@@ -165,7 +164,7 @@ export async function parseSpreadsheet(
 		lines.push(line);
 	}
 
-	if (!lines.length) throw new Error('No se encontró ninguna fila con datos.');
+	if (!lines.length) throw new ImportError({ code: 'import_no_data_rows' });
 
 	return {
 		source: 'excel',

@@ -1,8 +1,11 @@
 import { fail } from '@sveltejs/kit';
-import { api, apiSafe, toMessage } from '$lib/server/api';
+import { api, apiSafe } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
 import { formError, Validator } from '$lib/application/validation';
 import type { CashSessionReport } from '$lib/domain/types';
+import { F } from '$lib/ui/fields';
+import { m } from '$lib/paraglide/messages.js';
+import { apiMessage, validationErrors } from '$lib/ui/messages';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -28,9 +31,9 @@ export const actions: Actions = {
 	abrir: async ({ request, locals, url }) => {
 		const user = requireUser(locals, url.pathname);
 		const v = new Validator(await request.formData());
-		const openingAmount = v.decimal('opening_amount', 'El monto de apertura', { min: 0 });
-		const notes = v.text('notes', 'Las notas', { required: false, max: 255 });
-		if (!v.ok) return fail(400, { errors: v.errors });
+		const openingAmount = v.decimal('opening_amount', F.openingAmount(), { min: 0 });
+		const notes = v.text('notes', F.notes(), { required: false, max: 255 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
 		try {
 			await api('/cash/open', {
@@ -39,18 +42,18 @@ export const actions: Actions = {
 				body: { user_id: user.id_user, opening_amount: openingAmount, notes }
 			});
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)) });
+			return fail(400, { errors: formError(apiMessage(error)) });
 		}
-		return { success: 'Caja abierta. Ya podés registrar ventas del turno.' };
+		return { success: m.cash_opened() };
 	},
 
 	movimiento: async ({ request, locals, url }) => {
 		const user = requireUser(locals, url.pathname);
 		const v = new Validator(await request.formData());
-		const type = v.oneOf('type', 'El tipo de movimiento', ['entrada', 'salida'] as const);
-		const amount = v.decimal('amount', 'El monto', { min: 0.01 });
-		const reason = v.text('reason', 'El motivo', { max: 255 });
-		if (!v.ok) return fail(400, { errors: v.errors });
+		const type = v.oneOf('type', F.movementType(), ['entrada', 'salida'] as const);
+		const amount = v.decimal('amount', F.amount(), { min: 0.01 });
+		const reason = v.text('reason', F.reason(), { max: 255 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
 		try {
 			await api('/cash/movement', {
@@ -59,7 +62,7 @@ export const actions: Actions = {
 				body: { user_id: user.id_user, type, amount, reason }
 			});
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)) });
+			return fail(400, { errors: formError(apiMessage(error)) });
 		}
 		return { success: `Movimiento de ${type} registrado.` };
 	},
@@ -67,9 +70,9 @@ export const actions: Actions = {
 	cerrar: async ({ request, locals, url }) => {
 		const user = requireUser(locals, url.pathname);
 		const v = new Validator(await request.formData());
-		const closingAmount = v.decimal('closing_amount', 'El monto contado', { min: 0 });
-		const notes = v.text('notes', 'Las notas', { required: false, max: 255 });
-		if (!v.ok) return fail(400, { errors: v.errors });
+		const closingAmount = v.decimal('closing_amount', F.closingAmount(), { min: 0 });
+		const notes = v.text('notes', F.notes(), { required: false, max: 255 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
 		try {
 			const report = await api<CashSessionReport>('/cash/close', {
@@ -77,9 +80,9 @@ export const actions: Actions = {
 				token: locals.token,
 				body: { user_id: user.id_user, closing_amount: closingAmount, notes }
 			});
-			return { success: 'Caja cerrada.', closedSessionId: report.id };
+			return { success: m.cash_closed_done(), closedSessionId: report.id };
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)) });
+			return fail(400, { errors: formError(apiMessage(error)) });
 		}
 	}
 };

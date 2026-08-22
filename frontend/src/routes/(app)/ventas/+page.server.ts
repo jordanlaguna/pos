@@ -1,10 +1,19 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { api, apiSafe, toMessage } from '$lib/server/api';
+import { api, apiSafe } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
 import { loadSettings } from '$lib/server/settings';
 import { prepareSale } from '$lib/application/checkout';
 import { Validator } from '$lib/application/validation';
 import { PAYMENT_METHODS, type CashSession, type Category, type Client, type Product } from '$lib/domain/types';
+/*
+ * La acción arma la frase acá y no en el navegador porque el idioma efectivo lo
+ * resuelve el servidor (plan §8.4) y Paraglide funciona igual de bien de este
+ * lado. Lo que RN-30 prohíbe es que **FastAPI** escriba texto; el BFF es parte
+ * del POS, así que es justamente «el POS armando la frase».
+ */
+import { m } from '$lib/paraglide/messages.js';
+import { apiMessage, checkoutMessage, firstError, validationErrors } from '$lib/ui/messages';
+import { F } from '$lib/ui/fields';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -33,8 +42,8 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const v = new Validator(form);
 
-		const paymentMethod = v.oneOf('payment_method', 'El método de pago', PAYMENT_METHODS);
-		const cashReceived = v.decimal('cash_received', 'El monto recibido', { min: 0 });
+		const paymentMethod = v.oneOf('payment_method', F.paymentMethod(), PAYMENT_METHODS);
+		const cashReceived = v.decimal('cash_received', F.cashReceived(), { min: 0 });
 		const clientRaw = String(form.get('client_id') ?? '').trim();
 		const clientId = clientRaw ? Number(clientRaw) : null;
 
@@ -42,12 +51,12 @@ export const actions: Actions = {
 		try {
 			lines = JSON.parse(String(form.get('lines') ?? '[]'));
 		} catch {
-			return fail(400, { message: 'No se pudo leer el detalle de la venta.' });
+			return fail(400, { message: m.checkout_unreadable_lines() });
 		}
 		if (!Array.isArray(lines) || lines.length === 0) {
-			return fail(400, { message: 'Agregá al menos un producto antes de cobrar.' });
+			return fail(400, { message: m.checkout_no_lines() });
 		}
-		if (!v.ok) return fail(400, { message: Object.values(v.errors)[0], errors: v.errors });
+		if (!v.ok) return fail(400, { message: firstError(v.errors), errors: validationErrors(v.errors) });
 
 		const token = locals.token;
 
@@ -56,7 +65,7 @@ export const actions: Actions = {
 		try {
 			catalog = await api<Product[]>('/products/products_list', { token });
 		} catch (error) {
-			return fail(502, { message: toMessage(error) });
+			return fail(502, { message: apiMessage(error) });
 		}
 
 		/*
@@ -85,8 +94,10 @@ export const actions: Actions = {
 
 		if (!preparada.ok) {
 			return fail(400, {
-				message: preparada.message,
-				...(preparada.field ? { errors: { [preparada.field]: 'Monto insuficiente.' } } : {})
+				message: checkoutMessage(preparada.reason),
+				...(preparada.field
+					? { errors: { [preparada.field]: m.checkout_amount_insufficient() } }
+					: {})
 			});
 		}
 
@@ -99,7 +110,7 @@ export const actions: Actions = {
 			});
 			saleId = result.id_sale;
 		} catch (error) {
-			return fail(400, { message: toMessage(error) });
+			return fail(400, { message: apiMessage(error) });
 		}
 
 		redirect(303, `/facturas/${saleId}?nueva=1`);
@@ -110,8 +121,8 @@ export const actions: Actions = {
 		const user = requireUser(locals, url.pathname);
 		const form = await request.formData();
 		const v = new Validator(form);
-		const openingAmount = v.decimal('opening_amount', 'El monto de apertura', { min: 0 });
-		if (!v.ok) return fail(400, { message: Object.values(v.errors)[0] });
+		const openingAmount = v.decimal('opening_amount', F.openingAmount(), { min: 0 });
+		if (!v.ok) return fail(400, { message: firstError(v.errors) });
 
 		try {
 			await api<CashSession>('/cash/open', {
@@ -120,7 +131,7 @@ export const actions: Actions = {
 				body: { user_id: user.id_user, opening_amount: openingAmount }
 			});
 		} catch (error) {
-			return fail(400, { message: toMessage(error) });
+			return fail(400, { message: apiMessage(error) });
 		}
 
 		return { opened: true };

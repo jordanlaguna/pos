@@ -137,7 +137,7 @@ describe('métodos que no son efectivo', () => {
 describe('venta que no se puede cobrar', () => {
 	it('sin líneas', () => {
 		const r = prepareSale(peticion({ lines: [] }), CATALOGO, IVA, AHORA);
-		expect(r).toEqual({ ok: false, message: 'Agregá al menos un producto antes de cobrar.', field: undefined });
+		expect(r).toEqual({ ok: false, reason: { code: 'checkout_no_lines' }, field: undefined });
 	});
 
 	it('con algo que no es una lista', () => {
@@ -154,7 +154,7 @@ describe('venta que no se puede cobrar', () => {
 		for (const malo of ['', '123', 'abcdefghijklmn', '202608162143050']) {
 			const r = prepareSale(peticion({ saleNumber: malo }), CATALOGO, IVA, AHORA);
 			expect(r.ok, malo).toBe(false);
-			if (!r.ok) expect(r.message).toBe('El número de factura no es válido.');
+			if (!r.ok) expect(r.reason).toEqual({ code: 'checkout_bad_sale_number' });
 		}
 	});
 
@@ -166,7 +166,7 @@ describe('venta que no se puede cobrar', () => {
 			AHORA
 		);
 		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.message).toBe('Un producto de la venta ya no existe.');
+		if (!r.ok) expect(r.reason).toEqual({ code: 'checkout_product_gone' });
 	});
 
 	it('con una cantidad que no tiene sentido', () => {
@@ -178,7 +178,8 @@ describe('venta que no se puede cobrar', () => {
 				AHORA
 			);
 			expect(r.ok, String(q)).toBe(false);
-			if (!r.ok) expect(r.message).toBe('Cantidad inválida para Arroz 1 kg.');
+			if (!r.ok)
+				expect(r.reason).toEqual({ code: 'checkout_bad_quantity', product: 'Arroz 1 kg' });
 		}
 	});
 
@@ -190,14 +191,19 @@ describe('venta que no se puede cobrar', () => {
 			AHORA
 		);
 		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.message).toBe('Stock insuficiente para Escaso: quedan 2.');
+		if (!r.ok)
+			expect(r.reason).toEqual({
+				code: 'checkout_insufficient_stock',
+				product: 'Escaso',
+				available: 2
+			});
 	});
 
 	it('con efectivo que no alcanza, señalando el campo', () => {
 		const r = prepareSale(peticion({ cashReceived: 1000 }), CATALOGO, IVA, AHORA);
 		expect(r.ok).toBe(false);
 		if (!r.ok) {
-			expect(r.message).toBe('El monto recibido no cubre el total de la venta.');
+			expect(r.reason).toEqual({ code: 'checkout_cash_short' });
 			expect(r.field).toBe('cash_received');
 		}
 	});

@@ -1,0 +1,18 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"sales_charge": "Cobrar",
+	"sales_open_register": "Abrir caixa",
+	"sales_search_placeholder": "Escaneie o código ou digite o nome do produto…",
+	"sales_ticket_label": "Venda {position}",
+	"sales_add_product": "Adicionar {product}",
+	"sales_units_in_ticket": [
+		{
+			"declarations": ["input units", "local unitsPlural = units: plural"],
+			"selectors": ["unitsPlural"],
+			"match": {
+				"unitsPlural=one": "1 item",
+				"unitsPlural=other": "{units} itens"
+			}
+		}
+	]
+}

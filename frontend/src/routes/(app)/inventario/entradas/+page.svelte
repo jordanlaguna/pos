@@ -9,6 +9,7 @@
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney } from '$lib/domain/money';
 	import { formatDateTime, formatInt } from '$lib/ui/format';
+	import { m } from '$lib/paraglide/messages.js';
 	import type { StockEntry } from '$lib/domain/types';
 	import type { PageData } from './$types';
 
@@ -17,11 +18,31 @@
 	let detalle = $state<StockEntry | null>(null);
 	let anular = $state<StockEntry | null>(null);
 
-	const ORIGEN: Record<string, { texto: string; icono: 'edit' | 'grid' | 'receipt' }> = {
-		manual: { texto: 'Manual', icono: 'edit' },
-		excel: { texto: 'Excel', icono: 'grid' },
-		xml: { texto: 'XML Hacienda', icono: 'receipt' }
+	/**
+	 * El rótulo y el icono de cada origen.
+	 *
+	 * Las claves son los valores que guarda `stock_entries.source`: no se
+	 * traducen nunca —el backend valida contra ellos— y lo que se traduce es cómo
+	 * se muestran. El rótulo se pide al catálogo dentro de una función y no en una
+	 * constante de módulo: una constante se evaluaría una vez por proceso y todas
+	 * las peticiones verían el idioma de la primera (defecto 17).
+	 */
+	const ICONO: Record<string, 'edit' | 'grid' | 'receipt'> = {
+		manual: 'edit',
+		excel: 'grid',
+		xml: 'receipt'
 	};
+
+	function origenRotulo(source: string): string {
+		switch (source) {
+			case 'excel':
+				return m.entries_source_excel();
+			case 'xml':
+				return m.entries_source_xml();
+			default:
+				return m.entries_source_manual();
+		}
+	}
 
 	// El alta termina en redirect, así que el aviso no puede salir de enhance.
 	let avisada = $state<string | null>(null);
@@ -29,23 +50,23 @@
 		const creada = page.url.searchParams.get('creada');
 		if (creada && creada !== avisada) {
 			avisada = creada;
-			toasts.success('Entrada registrada', 'El stock ya está actualizado.');
+			toasts.success(m.entries_created_toast(), m.entries_created_detail());
 		}
 	});
 </script>
 
 <PageHeader
-	title="Entradas de inventario"
-	description="Historial de mercadería recibida. Cada carga deja constancia de quién, cuándo y de dónde."
+	title={m.entries_title()}
+	description={m.entries_description()}
 >
 	{#snippet actions()}
 		<a href="/inventario" class="btn btn-ghost">
 			<Icon name="box" size={15} />
-			Catálogo
+			{m.entries_catalog()}
 		</a>
 		<a href="/inventario/entradas/nueva" class="btn btn-primary">
 			<Icon name="plus" size={15} />
-			Nueva entrada
+			{m.entries_new()}
 		</a>
 	{/snippet}
 </PageHeader>
@@ -57,9 +78,8 @@
 	>
 		<Icon name="alert" size={16} class="mt-0.5 shrink-0" />
 		<p>
-			<strong>El módulo de entradas no está disponible.</strong> El backend no expone
-			<code>/inventory/*</code>. Actualizá el FastAPI de <code>backend/</code> y corré la
-			migración.
+			<strong>{m.entries_module_missing()}</strong>
+			{m.entries_module_missing_hint({ endpoint: '/inventory/*', folder: 'backend/' })}
 		</p>
 	</div>
 {/if}
@@ -69,28 +89,28 @@
 		<table class="data-table">
 			<thead>
 				<tr>
-					<th scope="col">Fecha</th>
-					<th scope="col">Proveedor</th>
-					<th scope="col">Documento</th>
-					<th scope="col">Origen</th>
-					<th scope="col">Cargó</th>
-					<th scope="col" class="num">Unidades</th>
-					<th scope="col" class="num">Costo</th>
-					<th scope="col">Estado</th>
-					<th scope="col"><span class="sr-only">Acciones</span></th>
+					<th scope="col">{m.entries_col_date()}</th>
+					<th scope="col">{m.entries_col_supplier()}</th>
+					<th scope="col">{m.entries_col_document()}</th>
+					<th scope="col">{m.entries_col_source()}</th>
+					<th scope="col">{m.entries_col_loaded_by()}</th>
+					<th scope="col" class="num">{m.entries_col_units()}</th>
+					<th scope="col" class="num">{m.entries_col_cost()}</th>
+					<th scope="col">{m.entries_col_status()}</th>
+					<th scope="col"><span class="sr-only">{m.common_actions()}</span></th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each data.entries as entry (entry.id)}
-					{@const origen = ORIGEN[entry.source] ?? ORIGEN.manual}
+					{@const icono = ICONO[entry.source] ?? 'edit'}
 					<tr class:opacity-60={entry.status === 'anulada'}>
 						<td class="whitespace-nowrap text-xs">{formatDateTime(entry.created_at)}</td>
 						<td class="max-w-[14rem] truncate">{entry.supplier ?? '—'}</td>
 						<td class="font-mono text-xs">{entry.document_number ?? '—'}</td>
 						<td>
 							<span class="badge bg-[var(--surface-sunken)] text-[var(--text-muted)]">
-								<Icon name={origen.icono} size={11} />
-								{origen.texto}
+								<Icon name={icono} size={11} />
+								{origenRotulo(entry.source)}
 							</span>
 						</td>
 						<td class="text-xs">{entry.user_name ?? `#${entry.user_id}`}</td>
@@ -100,12 +120,12 @@
 							{#if entry.status === 'anulada'}
 								<span class="badge bg-[var(--negative-bg)] text-[var(--negative)]">
 									<Icon name="close" size={11} />
-									Anulada
+									{m.entries_status_cancelled()}
 								</span>
 							{:else}
 								<span class="badge bg-[var(--positive-bg)] text-[var(--positive)]">
 									<Icon name="check" size={11} />
-									Aplicada
+									{m.entries_status_applied()}
 								</span>
 							{/if}
 						</td>
@@ -115,7 +135,7 @@
 									type="button"
 									class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"
 									onclick={() => (detalle = entry)}
-									aria-label="Ver detalle de la entrada {entry.id}"
+									aria-label={m.entries_view_detail({ entry: entry.id })}
 								>
 									<Icon name="eye" size={15} />
 								</button>
@@ -124,7 +144,7 @@
 										type="button"
 										class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--negative-bg)] hover:text-[var(--negative)]"
 										onclick={() => (anular = entry)}
-										aria-label="Anular la entrada {entry.id}"
+										aria-label={m.entries_cancel_entry({ entry: entry.id })}
 									>
 										<Icon name="undo" size={15} />
 									</button>
@@ -137,12 +157,12 @@
 						<td colspan="9">
 							<EmptyState
 								icon="box"
-								title="Todavía no hay entradas"
-								description="Cargá la primera factura de proveedor para empezar a llevar el historial."
+								title={m.entries_none()}
+								description={m.entries_none_hint()}
 							>
 								<a href="/inventario/entradas/nueva" class="btn btn-primary">
 									<Icon name="plus" size={15} />
-									Nueva entrada
+									{m.entries_new()}
 								</a>
 							</EmptyState>
 						</td>
@@ -156,18 +176,21 @@
 <!-- ------------------------------------------------------------ detalle -->
 <Modal
 	open={detalle !== null}
-	title="Entrada #{detalle?.id ?? ''}"
+	title={m.entries_detail_title({ entry: detalle?.id ?? '' })}
 	description={detalle
-		? `${detalle.supplier ?? 'Sin proveedor'} · ${formatDateTime(detalle.created_at)}`
+		? m.entries_detail_subtitle({
+				supplier: detalle.supplier ?? m.entries_no_supplier(),
+				date: formatDateTime(detalle.created_at)
+			})
 		: undefined}
 	size="lg"
 	onclose={() => (detalle = null)}
 >
 	{#if detalle}
 		<dl class="mb-4 grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
-			<dt class="text-[var(--text-subtle)]">Documento</dt>
+			<dt class="text-[var(--text-subtle)]">{m.entries_col_document()}</dt>
 			<dd class="text-[var(--text)]">{detalle.document_number ?? '—'}</dd>
-			<dt class="text-[var(--text-subtle)]">Cargó</dt>
+			<dt class="text-[var(--text-subtle)]">{m.entries_col_loaded_by()}</dt>
 			<dd class="text-[var(--text)]">{detalle.user_name ?? `#${detalle.user_id}`}</dd>
 		</dl>
 
@@ -181,10 +204,10 @@
 			<table class="data-table">
 				<thead>
 					<tr>
-						<th scope="col">Producto</th>
-						<th scope="col" class="num">Cantidad</th>
-						<th scope="col" class="num">Costo unit.</th>
-						<th scope="col" class="num">Subtotal</th>
+						<th scope="col">{m.entries_line_product()}</th>
+						<th scope="col" class="num">{m.entries_line_quantity()}</th>
+						<th scope="col" class="num">{m.entries_line_unit_cost()}</th>
+						<th scope="col" class="num">{m.entries_line_subtotal()}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -199,7 +222,7 @@
 				</tbody>
 				<tfoot>
 					<tr>
-						<td colspan="3" class="text-right font-semibold">Total</td>
+						<td colspan="3" class="text-right font-semibold">{m.entries_total()}</td>
 						<td class="num font-bold tabular-nums">{formatMoney(detalle.total_cost)}</td>
 					</tr>
 				</tfoot>
@@ -211,33 +234,31 @@
 <!-- ------------------------------------------------------------- anular -->
 <Modal
 	open={anular !== null}
-	title="Anular entrada"
+	title={m.entries_cancel_title()}
 	size="sm"
 	onclose={() => (anular = null)}
 >
 	<p class="text-sm text-[var(--text-muted)]">
-		Se van a restar <strong class="text-[var(--text)]">{anular?.items_count ?? 0}</strong>
-		unidades del inventario, dejándolo como estaba antes de esta carga.
+		{m.entries_cancel_units({ units: anular?.items_count ?? 0 })}
 	</p>
 	<p class="mt-2 text-xs text-[var(--text-subtle)]">
-		Si parte de esa mercadería ya se vendió, el backend no va a permitir la anulación: el stock
-		quedaría en negativo. En ese caso hay que ajustarlo a mano.
+		{m.entries_cancel_sold_note()}
 	</p>
 
 	{#snippet footer()}
-		<button type="button" class="btn btn-ghost" onclick={() => (anular = null)}>Cancelar</button>
+		<button type="button" class="btn btn-ghost" onclick={() => (anular = null)}>{m.common_cancel()}</button>
 		<form
 			method="POST"
 			action="?/anular"
 			use:enhance={submit({
-				errorTitle: 'No se pudo anular',
+				errorTitle: m.entries_cancel_failed(),
 				onSuccess: () => (anular = null)
 			})}
 		>
 			<input type="hidden" name="id_entry" value={anular?.id ?? ''} />
 			<button type="submit" class="btn btn-danger">
 				<Icon name="undo" size={15} />
-				Anular entrada
+				{m.entries_cancel_confirm()}
 			</button>
 		</form>
 	{/snippet}

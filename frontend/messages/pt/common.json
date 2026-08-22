@@ -1,0 +1,12 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"common_cancel": "Cancelar",
+	"common_subtotal": "Subtotal",
+	"common_total": "Total",
+	"common_registering": "Salvando…",
+
+	"payment_cash": "Dinheiro",
+	"payment_credit_card": "Cartão de crédito",
+	"payment_bank_transfer": "Transferência bancária",
+	"payment_mobile": "Pagamento por celular"
+}

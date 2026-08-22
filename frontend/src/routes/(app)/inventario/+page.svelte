@@ -10,6 +10,7 @@
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney } from '$lib/domain/money';
 	import { formatInt } from '$lib/ui/format';
+	import { m } from '$lib/paraglide/messages.js';
 	import type { Product } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
@@ -93,30 +94,30 @@
 				return;
 			}
 		}
-		toasts.error('No se pudo generar un código libre. Escribilo a mano.');
+		toasts.error(m.inventory_barcode_failed());
 	}
 
 </script>
 
-<PageHeader title="Inventario" description="Productos, existencias y categorías.">
+<PageHeader title={m.inventory_title()} description={m.inventory_description()}>
 	{#snippet actions()}
 		<a href="/inventario/entradas" class="btn btn-ghost">
 			<Icon name="download" size={15} />
-			Entradas
+			{m.inventory_entries()}
 		</a>
 		<button type="button" class="btn btn-ghost" onclick={() => (categoryModal = true)}>
 			<Icon name="tag" size={15} />
-			Nueva categoría
+			{m.inventory_new_category()}
 		</button>
 		<button
 			type="button"
 			class="btn btn-primary"
 			onclick={openCreate}
 			disabled={data.categories.length === 0}
-			title={data.categories.length === 0 ? 'Creá una categoría primero' : undefined}
+			title={data.categories.length === 0 ? m.inventory_category_first() : undefined}
 		>
 			<Icon name="plus" size={15} />
-			Nuevo producto
+			{m.inventory_new_product()}
 		</button>
 	{/snippet}
 </PageHeader>
@@ -124,19 +125,19 @@
 <div class="mb-4 grid gap-3 sm:grid-cols-3">
 	<div class="card p-3">
 		<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-			Productos
+			{m.inventory_products()}
 		</p>
 		<p class="mt-1 text-xl font-bold text-[var(--text)]">{formatInt(data.products.length)}</p>
 	</div>
 	<div class="card p-3">
 		<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-			Valor del inventario
+			{m.inventory_value()}
 		</p>
 		<p class="mt-1 text-xl font-bold text-[var(--text)]">{formatMoney(inventoryValue)}</p>
 	</div>
 	<div class="card p-3">
 		<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-			Stock bajo
+			{m.inventory_low_stock()}
 		</p>
 		<p
 			class="mt-1 text-xl font-bold {lowStockCount
@@ -150,7 +151,7 @@
 
 <div class="card mb-4 flex flex-wrap items-end gap-3 p-3">
 	<div class="min-w-[12rem] flex-1">
-		<label class="label" for="inv-buscar">Buscar</label>
+		<label class="label" for="inv-buscar">{m.common_search()}</label>
 		<div class="relative">
 			<span
 				class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--text-subtle)]"
@@ -161,16 +162,16 @@
 				id="inv-buscar"
 				bind:value={search}
 				type="search"
-				placeholder="Nombre, código o descripción…"
+				placeholder={m.inventory_search_placeholder()}
 				class="input pl-9"
 			/>
 		</div>
 	</div>
 
 	<div>
-		<label class="label" for="inv-categoria">Categoría</label>
+		<label class="label" for="inv-categoria">{m.inventory_category()}</label>
 		<select id="inv-categoria" bind:value={categoryFilter} class="input w-44">
-			<option value="todas">Todas</option>
+			<option value="todas">{m.common_all_f()}</option>
 			{#each data.categories as category (category.id)}
 				<option value={category.id}>{category.name}</option>
 			{/each}
@@ -179,7 +180,7 @@
 
 	<label class="flex cursor-pointer items-center gap-2 pb-2 text-sm text-[var(--text-muted)]">
 		<input type="checkbox" bind:checked={onlyLowStock} class="h-4 w-4 accent-[var(--accent)]" />
-		Solo stock bajo
+		{m.inventory_only_low_stock()}
 	</label>
 </div>
 
@@ -188,12 +189,12 @@
 		<table class="data-table">
 			<thead>
 				<tr>
-					<th scope="col">Producto</th>
-					<th scope="col">Código</th>
-					<th scope="col">Categoría</th>
-					<th scope="col" class="num">Precio</th>
-					<th scope="col" class="num">Stock</th>
-					<th scope="col"><span class="sr-only">Acciones</span></th>
+					<th scope="col">{m.inventory_col_product()}</th>
+					<th scope="col">{m.inventory_col_barcode()}</th>
+					<th scope="col">{m.inventory_col_category()}</th>
+					<th scope="col" class="num">{m.inventory_col_price()}</th>
+					<th scope="col" class="num">{m.inventory_col_stock()}</th>
+					<th scope="col"><span class="sr-only">{m.common_actions()}</span></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -228,7 +229,7 @@
 									type="button"
 									class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"
 									onclick={() => openEdit(product)}
-									aria-label="Editar {product.name}"
+									aria-label={m.inventory_edit_product({ product: product.name })}
 								>
 									<Icon name="edit" size={15} />
 								</button>
@@ -236,7 +237,7 @@
 									type="button"
 									class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--negative-bg)] hover:text-[var(--negative)]"
 									onclick={() => (deleteTarget = product)}
-									aria-label="Eliminar {product.name}"
+									aria-label={m.inventory_delete_product({ product: product.name })}
 								>
 									<Icon name="trash" size={15} />
 								</button>
@@ -248,10 +249,10 @@
 						<td colspan="6">
 							<EmptyState
 								icon="box"
-								title="Sin productos"
+								title={m.inventory_no_products()}
 								description={search || categoryFilter !== 'todas' || onlyLowStock
-									? 'Ningún producto coincide con los filtros.'
-									: 'Agregá tu primer producto para empezar a vender.'}
+									? m.inventory_no_match()
+									: m.inventory_add_first()}
 								compact
 							/>
 						</td>
@@ -265,8 +266,8 @@
 <!-- --------------------------------------------------- alta / edición -->
 <Modal
 	open={productModal}
-	title={editing ? 'Editar producto' : 'Nuevo producto'}
-	description={editing ? editing.name : 'Los campos marcados son obligatorios.'}
+	title={editing ? m.inventory_edit_title() : m.inventory_new_product()}
+	description={editing ? editing.name : m.common_required_fields()}
 	busy={submitting}
 	onclose={() => (productModal = false)}
 >
@@ -285,7 +286,7 @@
 		{/if}
 
 		<Field
-			label="Nombre"
+			label={m.inventory_label_name()}
 			name="name"
 			bind:value={fName}
 			required
@@ -293,7 +294,7 @@
 			class="sm:col-span-2"
 		/>
 		<Field
-			label="Descripción"
+			label={m.inventory_label_description()}
 			name="description"
 			bind:value={fDescription}
 			required
@@ -302,7 +303,7 @@
 		/>
 
 		<Field
-			label="Precio"
+			label={m.inventory_label_price()}
 			name="price"
 			bind:value={fPrice}
 			inputmode="decimal"
@@ -310,7 +311,7 @@
 			error={form?.errors?.price}
 		/>
 		<Field
-			label="Stock"
+			label={m.inventory_label_stock()}
 			name="stock"
 			bind:value={fStock}
 			inputmode="numeric"
@@ -320,20 +321,20 @@
 
 		<div class="sm:col-span-2">
 			<Field
-				label="Código de barras"
+				label={m.inventory_label_barcode()}
 				name="barcode"
 				bind:value={fBarcode}
 				icon="barcode"
 				required
 				error={form?.errors?.barcode}
-				hint="Escaneá el código real o generá uno interno."
+				hint={m.inventory_barcode_hint()}
 			>
 				<button
 					type="button"
 					class="rounded p-1.5 text-[var(--text-subtle)] hover:text-[var(--accent)]"
 					onclick={generateBarcode}
-					title="Generar código interno"
-					aria-label="Generar código de barras interno"
+					title={m.inventory_generate_barcode()}
+					aria-label={m.inventory_generate_barcode_label()}
 				>
 					<Icon name="refresh" size={15} />
 				</button>
@@ -341,7 +342,7 @@
 		</div>
 
 		<div class="sm:col-span-2">
-			<label class="label" for="product-category">Categoría *</label>
+			<label class="label" for="product-category">{m.inventory_label_category_required()}</label>
 			<select
 				id="product-category"
 				name="category_id"
@@ -367,15 +368,15 @@
 			onclick={() => (productModal = false)}
 			disabled={submitting}
 		>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button type="submit" form="product-form" class="btn btn-primary" disabled={submitting}>
 			{#if submitting}
 				<Spinner size={15} />
-				Guardando…
+				{m.common_saving()}
 			{:else}
 				<Icon name="check" size={15} />
-				{editing ? 'Guardar cambios' : 'Agregar producto'}
+				{editing ? m.common_save_changes() : m.inventory_add_product()}
 			{/if}
 		</button>
 	{/snippet}
@@ -384,27 +385,27 @@
 <!-- ------------------------------------------------------- categoría -->
 <Modal
 	open={categoryModal}
-	title="Nueva categoría"
+	title={m.inventory_new_category()}
 	size="sm"
 	onclose={() => (categoryModal = false)}
 >
 	<form id="category-form" method="POST" action="?/crearCategoria" use:enhance={submit({ onSuccess: () => (categoryModal = false) })}>
 		<Field
-			label="Nombre"
+			label={m.inventory_label_name()}
 			name="name"
 			required
-			placeholder="Ej.: Congelados"
+			placeholder={m.inventory_category_placeholder()}
 			error={form?.errors?.name}
 		/>
 	</form>
 
 	{#snippet footer()}
 		<button type="button" class="btn btn-ghost" onclick={() => (categoryModal = false)}>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button type="submit" form="category-form" class="btn btn-primary">
 			<Icon name="check" size={15} />
-			Crear
+			{m.common_create()}
 		</button>
 	{/snippet}
 </Modal>
@@ -412,29 +413,28 @@
 <!-- ---------------------------------------------------------- borrar -->
 <Modal
 	open={deleteTarget !== null}
-	title="Eliminar producto"
+	title={m.inventory_delete_title()}
 	size="sm"
 	onclose={() => (deleteTarget = null)}
 >
 	<p class="text-sm text-[var(--text-muted)]">
-		¿Seguro que querés eliminar
-		<strong class="text-[var(--text)]">{deleteTarget?.name}</strong>? Esta acción no se puede
-		deshacer.
+		{m.inventory_delete_confirm()}
+		<strong class="text-[var(--text)]">{deleteTarget?.name}</strong>?
+		{m.common_cannot_be_undone()}
 	</p>
 	<p class="mt-2 text-xs text-[var(--text-subtle)]">
-		Si el producto ya tiene ventas registradas, el backend no permitirá borrarlo para no
-		romper el histórico de facturas.
+		{m.inventory_delete_history_note()}
 	</p>
 
 	{#snippet footer()}
 		<button type="button" class="btn btn-ghost" onclick={() => (deleteTarget = null)}>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<form method="POST" action="?/eliminar" use:enhance={submit({ onSuccess: () => (deleteTarget = null) })}>
 			<input type="hidden" name="id_product" value={deleteTarget?.id_product ?? ''} />
 			<button type="submit" class="btn btn-danger">
 				<Icon name="trash" size={15} />
-				Eliminar
+				{m.common_delete()}
 			</button>
 		</form>
 	{/snippet}

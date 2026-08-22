@@ -332,6 +332,34 @@ export interface MatchedProduct {
 }
 
 /**
+ * Lo que un lector de archivos tiene que decir, en código y datos.
+ *
+ * Los lectores (`$lib/server/import/*`) son adaptadores, no la interfaz: no
+ * saben en qué idioma está la pantalla. Devuelven qué pasó y la frase la arma
+ * `importMessage()` en `$lib/ui/messages` (RN-30, el mismo trato que el
+ * backend).
+ */
+export type ImportNote =
+	| { code: 'import_lines_need_review'; count: number }
+	| { code: 'import_no_cost_column' }
+	| { code: 'import_bad_quantity' }
+	| { code: 'import_bad_quantity_in_row'; row: number }
+	| { code: 'import_fractional_quantity'; quantity: number }
+	| { code: 'import_fractional_quantity_in_row'; quantity: number; row: number };
+
+/** Lo que impide leer el archivo del todo. */
+export type ImportFailure =
+	| { code: 'import_csv_unreadable' }
+	| { code: 'import_xlsx_unreadable' }
+	| { code: 'import_sheet_empty' }
+	| { code: 'import_no_quantity_column' }
+	| { code: 'import_no_identifier_column' }
+	| { code: 'import_no_data_rows' }
+	| { code: 'import_not_an_invoice' }
+	| { code: 'import_xml_unreadable' }
+	| { code: 'import_invoice_without_lines' };
+
+/**
  * Línea leída de un archivo, antes de confirmar. Todavía no tocó el inventario:
  * el cajero revisa la vista previa y decide qué entra.
  */
@@ -345,7 +373,7 @@ export interface ParsedLine {
 	/** Cómo se emparejó, para que se entienda por qué. */
 	matched_by: 'barcode' | 'name' | null;
 	/** Problema de la línea que impide usarla (cantidad inválida, etc.). */
-	issue?: string;
+	issue?: ImportNote;
 }
 
 export interface ParseResult {
@@ -355,7 +383,7 @@ export interface ParseResult {
 	issued_at: string | null;
 	lines: ParsedLine[];
 	/** Avisos no fatales: filas salteadas, columnas que no se encontraron… */
-	warnings: string[];
+	warnings: ImportNote[];
 }
 
 // -------------------------------------------------------------------- reportes

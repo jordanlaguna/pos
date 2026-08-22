@@ -1,0 +1,47 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"inventory_title": "Inventario",
+	"inventory_description": "Productos, existencias y categorías.",
+	"inventory_entries": "Entradas",
+	"inventory_new_category": "Nueva categoría",
+	"inventory_new_product": "Nuevo producto",
+	"inventory_category_first": "Cree una categoría primero",
+
+	"inventory_products": "Productos",
+	"inventory_value": "Valor del inventario",
+	"inventory_low_stock": "Stock bajo",
+	"inventory_search_placeholder": "Nombre, código o descripción…",
+	"inventory_category": "Categoría",
+	"inventory_only_low_stock": "Solo stock bajo",
+
+	"inventory_col_product": "Producto",
+	"inventory_col_barcode": "Código",
+	"inventory_col_category": "Categoría",
+	"inventory_col_price": "Precio",
+	"inventory_col_stock": "Stock",
+	"inventory_edit_product": "Editar {product}",
+	"inventory_delete_product": "Eliminar {product}",
+	"inventory_no_products": "Sin productos",
+	"inventory_no_match": "Ningún producto coincide con los filtros.",
+	"inventory_add_first": "Agregue su primer producto para empezar a vender.",
+
+	"inventory_edit_title": "Editar producto",
+	"inventory_label_name": "Nombre",
+	"inventory_label_description": "Descripción",
+	"inventory_label_price": "Precio",
+	"inventory_label_stock": "Stock",
+	"inventory_label_barcode": "Código de barras",
+	"inventory_barcode_hint": "Escanee el código real o genere uno interno.",
+	"inventory_generate_barcode": "Generar código interno",
+	"inventory_generate_barcode_label": "Generar código de barras interno",
+	"inventory_barcode_failed": "No se pudo generar un código libre. Escríbalo a mano.",
+	"inventory_label_category_required": "Categoría *",
+	"inventory_add_product": "Agregar producto",
+
+	"inventory_category_placeholder": "Ej.: Congelados",
+
+	"inventory_delete_title": "Eliminar producto",
+	"inventory_delete_confirm": "¿Seguro que quiere eliminar",
+	"inventory_delete_history_note": "Si el producto ya tiene ventas registradas, el backend no permitirá borrarlo para no romper el histórico de facturas."
+}

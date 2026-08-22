@@ -114,11 +114,6 @@ export interface StoredSettings {
 
 // ------------------------------------------------------------------- monedas
 
-export interface CurrencyPreset extends CurrencySettings {
-	/** Etiqueta del selector. No es parte de la moneda: no se guarda. */
-	label: string;
-}
-
 /**
  * Monedas preconfiguradas.
  *
@@ -128,69 +123,35 @@ export interface CurrencyPreset extends CurrencySettings {
  * comercio costarricense. Cuando la convención local y el estándar no coinciden,
  * manda la convención local, y para eso hay que poder escribirla.
  */
-export const CURRENCIES: CurrencyPreset[] = [
-	{ code: 'CRC', label: 'Colón costarricense', symbol: '₡', decimals: 2, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: false, space: false },
-	{ code: 'USD', label: 'Dólar estadounidense', symbol: '$', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
-	{ code: 'EUR', label: 'Euro', symbol: '€', decimals: 2, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: true, space: true },
-	{ code: 'MXN', label: 'Peso mexicano', symbol: '$', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
-	{ code: 'GTQ', label: 'Quetzal guatemalteco', symbol: 'Q', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
-	{ code: 'HNL', label: 'Lempira hondureño', symbol: 'L', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: true },
-	{ code: 'NIO', label: 'Córdoba nicaragüense', symbol: 'C$', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
-	{ code: 'PAB', label: 'Balboa panameño', symbol: 'B/.', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
-	{ code: 'DOP', label: 'Peso dominicano', symbol: 'RD$', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
-	{ code: 'COP', label: 'Peso colombiano', symbol: '$', decimals: 0, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: false, space: false },
-	{ code: 'PEN', label: 'Sol peruano', symbol: 'S/', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: true },
-	{ code: 'CLP', label: 'Peso chileno', symbol: '$', decimals: 0, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: false, space: false },
-	{ code: 'ARS', label: 'Peso argentino', symbol: '$', decimals: 2, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: false, space: false }
+export const CURRENCIES: CurrencySettings[] = [
+	{ code: 'CRC', symbol: '₡', decimals: 2, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: false, space: false },
+	{ code: 'USD', symbol: '$', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
+	{ code: 'EUR', symbol: '€', decimals: 2, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: true, space: true },
+	{ code: 'MXN', symbol: '$', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
+	{ code: 'GTQ', symbol: 'Q', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
+	{ code: 'HNL', symbol: 'L', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: true },
+	{ code: 'NIO', symbol: 'C$', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
+	{ code: 'PAB', symbol: 'B/.', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
+	{ code: 'DOP', symbol: 'RD$', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: false },
+	{ code: 'COP', symbol: '$', decimals: 0, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: false, space: false },
+	{ code: 'PEN', symbol: 'S/', decimals: 2, thousandsSeparator: ',', decimalSeparator: '.', symbolAtEnd: false, space: true },
+	{ code: 'CLP', symbol: '$', decimals: 0, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: false, space: false },
+	{ code: 'ARS', symbol: '$', decimals: 2, thousandsSeparator: '.', decimalSeparator: ',', symbolAtEnd: false, space: false }
 ];
 
 // ---------------------------------------------------------------- plantillas
 
-export interface TemplateInfo {
-	id: TemplateId;
-	name: string;
-	description: string;
-	/** Papel para el que está pensada. */
-	paper: string;
-}
-
-export const TEMPLATES: TemplateInfo[] = [
-	{
-		id: 'tiquete',
-		name: 'Tiquete térmico',
-		description:
-			'Una columna, sin colores, pensado para el rollo de la impresora del mostrador. Es lo que quiere una pulpería o un abarrotes: sale en dos segundos y no gasta tinta.',
-		paper: 'Rollo de 58 u 80 mm'
-	},
-	{
-		id: 'clasica',
-		name: 'Factura clásica',
-		description:
-			'Página completa, franja de color con el nombre del negocio, datos del emisor y del cliente enfrentados, tabla sobria y bloque de totales a la derecha. Sirve para mandar por correo.',
-		paper: 'Carta / A4'
-	},
-	{
-		id: 'moderna',
-		name: 'Factura moderna',
-		description:
-			'Página completa con encabezado en diagonal, logo destacado, tabla con cabecera de color y pie de contacto. La misma información que la clásica, con más presencia de marca.',
-		paper: 'Carta / A4'
-	}
-];
+/**
+ * Las plantillas que existen, en el orden en que se ofrecen.
+ *
+ * Solo los identificadores. El nombre, el papel y la descripción son texto para
+ * una persona y viven en el catálogo del idioma (`settings.json`): acá dentro
+ * serían una constante de módulo, o sea el mismo texto para todas las
+ * peticiones del proceso —el defecto 17— además de intraducible.
+ */
+export const TEMPLATE_IDS: readonly TemplateId[] = ['tiquete', 'clasica', 'moderna'];
 
 // ------------------------------------------------------- valores por omisión
-
-/**
- * Un preajuste sin su etiqueta.
- *
- * `label` es el texto del selector de la pantalla de configuración, no parte de
- * la moneda. Copiar el preajuste entero metía «Colón costarricense» dentro de lo
- * que se guarda en el backend, y un `as CurrencySettings` era justamente lo que
- * impedía que TypeScript lo dijera.
- */
-function currencyOnly({ label, ...currency }: CurrencyPreset): CurrencySettings {
-	return currency;
-}
 
 export const DEFAULT_SETTINGS: Settings = {
 	business: {
@@ -203,7 +164,7 @@ export const DEFAULT_SETTINGS: Settings = {
 		address: '',
 		website: ''
 	},
-	currency: currencyOnly(CURRENCIES[0]),
+	currency: { ...CURRENCIES[0] },
 	tax: { name: 'IVA', rate: 0.13 },
 	document: {
 		template: 'tiquete',
@@ -226,7 +187,14 @@ export const DEFAULT_SETTINGS: Settings = {
 	}
 };
 
-/** Tipos de identificación de Hacienda (Costa Rica). */
+/**
+ * Tipos de identificación de Hacienda (Costa Rica).
+ *
+ * El rótulo se queda acá, y no en el catálogo, porque es el nombre legal del
+ * documento en Costa Rica: «Cédula jurídica» no se traduce a portugués, se
+ * cambia por la lista de otro país. El día que VentaSys se venda fuera, lo que
+ * cambia es la lista entera según el país de la compañía, no su traducción.
+ */
 export const ID_TYPES = [
 	{ code: '01', label: 'Cédula física' },
 	{ code: '02', label: 'Cédula jurídica' },

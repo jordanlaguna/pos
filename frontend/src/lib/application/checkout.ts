@@ -53,12 +53,25 @@ export interface SalePayload {
 	products: { id_product: number; stock: number }[];
 }
 
+/**
+ * Motivo del rechazo, como código y datos. Igual que en el dominio y por lo
+ * mismo: esta capa no sabe en qué idioma está la pantalla (RN-30 aplicada
+ * adentro). La frase la arma `$lib/ui/messages.ts`.
+ */
+export type CheckoutRejection =
+	| { code: 'checkout_no_lines' }
+	| { code: 'checkout_bad_sale_number' }
+	| { code: 'checkout_product_gone' }
+	| { code: 'checkout_bad_quantity'; product: string }
+	| { code: 'checkout_insufficient_stock'; product: string; available: number }
+	| { code: 'checkout_cash_short' };
+
 export type CheckoutResult =
-	| { ok: false; message: string; field?: string }
+	| { ok: false; reason: CheckoutRejection; field?: string }
 	| { ok: true; payload: SalePayload; totals: Totals };
 
-function no(message: string, field?: string): CheckoutResult {
-	return { ok: false, message, field };
+function no(reason: CheckoutRejection, field?: string): CheckoutResult {
+	return { ok: false, reason, field };
 }
 
 export function prepareSale(
@@ -68,23 +81,27 @@ export function prepareSale(
 	now: Date
 ): CheckoutResult {
 	if (!Array.isArray(request.lines) || request.lines.length === 0) {
-		return no('Agregá al menos un producto antes de cobrar.');
+		return no({ code: 'checkout_no_lines' });
 	}
 	// 14 dígitos, `yyyyMMddHHmmss`. Lo genera el POS; si llega otra cosa, algo
 	// se manipuló por el camino.
 	if (!/^\d{14}$/.test(request.saleNumber)) {
-		return no('El número de factura no es válido.');
+		return no({ code: 'checkout_bad_sale_number' });
 	}
 
 	const priced: { id_product: number; price: number; quantity: number }[] = [];
 	for (const line of request.lines) {
 		const product = catalog.find((p) => p.id_product === Number(line.id_product));
-		if (!product) return no('Un producto de la venta ya no existe.');
+		if (!product) return no({ code: 'checkout_product_gone' });
 
 		const quantity = Math.trunc(Number(line.quantity));
-		if (!(quantity > 0)) return no(`Cantidad inválida para ${product.name}.`);
+		if (!(quantity > 0)) return no({ code: 'checkout_bad_quantity', product: product.name });
 		if (quantity > product.stock) {
-			return no(`Stock insuficiente para ${product.name}: quedan ${product.stock}.`);
+			return no({
+				code: 'checkout_insufficient_stock',
+				product: product.name,
+				available: product.stock
+			});
 		}
 
 		// El precio sale del catálogo. Lo que mandó el navegador ni se mira.
@@ -98,7 +115,7 @@ export function prepareSale(
 	const isCash = request.paymentMethod === CASH_METHOD;
 	const received = isCash ? round2(request.cashReceived) : totals.total;
 	if (isCash && received < totals.total) {
-		return no('El monto recibido no cubre el total de la venta.', 'cash_received');
+		return no({ code: 'checkout_cash_short' }, 'cash_received');
 	}
 
 	return {

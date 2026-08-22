@@ -4,6 +4,7 @@
 	import { formatDayLabel, formatInt } from '$lib/ui/format';
 	import ChartCard from './ChartCard.svelte';
 	import EmptyState from '../EmptyState.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	interface Props {
 		data: SalesByDay[];
@@ -15,7 +16,7 @@
 
 	let {
 		data,
-		title = 'Ventas por día',
+		title = m.reports_sales_by_day(),
 		subtitle,
 		loading = false,
 		height = 240
@@ -111,8 +112,8 @@
 		{#if !points.length}
 			<EmptyState
 				icon="chart"
-				title="Sin ventas en el periodo"
-				description="Elegí otro rango de fechas para ver la tendencia."
+				title={m.chart_no_sales()}
+				description={m.chart_no_sales_hint()}
 				compact
 			/>
 		{:else}
@@ -129,7 +130,7 @@
 					{height}
 					viewBox="0 0 {width} {height}"
 					role="img"
-					aria-label="Ventas por día. Use las flechas para recorrer los días."
+					aria-label={m.chart_sales_by_day_label()}
 					tabindex="0"
 					class="block touch-none outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
 					onkeydown={onKeydown}
@@ -258,9 +259,9 @@
 		<table class="data-table">
 			<thead>
 				<tr>
-					<th scope="col">Día</th>
-					<th scope="col" class="num">Ventas</th>
-					<th scope="col" class="num">Total</th>
+					<th scope="col">{m.chart_col_day()}</th>
+					<th scope="col" class="num">{m.chart_col_sales()}</th>
+					<th scope="col" class="num">{m.chart_col_total()}</th>
 				</tr>
 			</thead>
 			<tbody>

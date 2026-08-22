@@ -5,6 +5,7 @@
 	import Icon from '$lib/ui/components/Icon.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import { theme } from '$lib/ui/stores/theme.svelte';
+	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -23,7 +24,7 @@
 	}
 </script>
 
-<svelte:head><title>Iniciar sesión · VentaSys</title></svelte:head>
+<svelte:head><title>{m.auth_sign_in()} · VentaSys</title></svelte:head>
 
 <main class="grid min-h-full place-items-center p-4 sm:p-8">
 	<!--
@@ -54,7 +55,7 @@
 			type="button"
 			class="absolute top-5 right-5 z-10 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-2 text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]"
 			onclick={() => theme.toggle()}
-			aria-label="Cambiar entre tema claro y oscuro"
+			aria-label={m.nav_toggle_theme()}
 		>
 			<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={16} />
 		</button>
@@ -71,21 +72,20 @@
 				</span>
 				<div>
 					<p class="text-lg font-bold">VentaSys</p>
-					<p class="text-xs text-white/70">Sistema de punto de venta</p>
+					<p class="text-xs text-white/70">{m.auth_tagline()}</p>
 				</div>
 			</div>
 
 			<div class="relative my-auto max-w-md pt-10">
 				<h2 class="text-4xl font-bold tracking-tight">
-					Cobrá rápido.<br />Cuadrá sin sustos.
+					{m.auth_pitch_1()}<br />{m.auth_pitch_2()}
 				</h2>
 				<p class="mt-4 text-[0.95rem] leading-relaxed text-white/80">
-					Ventas con escáner, control de inventario, arqueo de caja por turno, devoluciones
-					con reposición de stock y reportes en vivo.
+					{m.auth_pitch_body()}
 				</p>
 
 				<ul class="mt-8 space-y-3 text-sm text-white/80">
-					{#each ['Escáner de código de barras y atajos de teclado', 'Corte Z con diferencia de caja', 'Devoluciones que regresan el stock', 'Reportes de ventas y productos más vendidos'] as feature}
+					{#each [m.auth_feature_scanner(), m.auth_feature_z(), m.auth_feature_returns(), m.auth_feature_reports()] as feature}
 						<li class="flex items-start gap-2.5">
 							<Icon
 								name="check"
@@ -102,9 +102,9 @@
 		<!-- Formulario -->
 		<div class="flex items-center justify-center px-6 pt-24 pb-12 sm:px-10 lg:px-12 lg:py-16">
 			<div class="w-full max-w-sm">
-				<h1 class="text-3xl font-bold tracking-tight text-[var(--text)]">Iniciar sesión</h1>
+				<h1 class="text-3xl font-bold tracking-tight text-[var(--text)]">{m.auth_sign_in()}</h1>
 				<p class="mt-1.5 mb-7 text-sm text-[var(--text-muted)]">
-					Ingresá con tu correo para abrir la caja.
+					{m.auth_sign_in_hint()}
 				</p>
 
 				{#if page.url.searchParams.has('registrado') && !form?.errors?.form}
@@ -113,7 +113,7 @@
 						role="status"
 					>
 						<Icon name="check" size={16} class="mt-0.5 shrink-0" />
-						<span>Cuenta creada. Ya podés iniciar sesión con tu correo.</span>
+						<span>{m.auth_account_created()}</span>
 					</div>
 				{/if}
 
@@ -140,19 +140,19 @@
 					class="space-y-4"
 				>
 					<Field
-						label="Correo electrónico"
+						label={m.auth_email()}
 						name="email"
 						type="email"
 						bind:value={email}
 						icon="mail"
-						placeholder="usuario@ventasys.cr"
+						placeholder={m.auth_email_placeholder()}
 						autocomplete="username"
 						required
 						error={form?.errors?.email}
 					/>
 
 					<Field
-						label="Contraseña"
+						label={m.auth_password()}
 						name="password"
 						type={showPassword ? 'text' : 'password'}
 						bind:value={password}
@@ -166,7 +166,7 @@
 							type="button"
 							class="rounded p-1.5 text-[var(--text-subtle)] hover:text-[var(--text)]"
 							onclick={() => (showPassword = !showPassword)}
-							aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+							aria-label={showPassword ? m.auth_hide_password() : m.auth_show_password()}
 						>
 							<Icon name={showPassword ? 'eyeoff' : 'eye'} size={15} />
 						</button>
@@ -175,10 +175,10 @@
 					<button type="submit" class="btn btn-primary w-full" disabled={submitting}>
 						{#if submitting}
 							<Spinner size={15} />
-							Entrando…
+							{m.auth_entering()}
 						{:else}
 							<Icon name="logout" size={15} />
-							Entrar
+							{m.auth_enter()}
 						{/if}
 					</button>
 				</form>
@@ -186,7 +186,7 @@
 				{#if data.demo}
 					<div class="mt-6 rounded-lg border border-dashed border-[var(--border)] p-3">
 						<p class="mb-2 text-xs font-semibold text-[var(--text-subtle)]">
-							Modo demostración — datos de ejemplo
+							{m.auth_demo_mode()}
 						</p>
 						<div class="flex flex-wrap gap-2">
 							<button
@@ -194,23 +194,23 @@
 								class="btn btn-ghost px-2.5 py-1 text-xs"
 								onclick={() => fillDemo('admin@ventasys.cr')}
 							>
-								Administrador
+								{m.role_admin()}
 							</button>
 							<button
 								type="button"
 								class="btn btn-ghost px-2.5 py-1 text-xs"
 								onclick={() => fillDemo('cajero@ventasys.cr')}
 							>
-								Cajero
+								{m.role_cashier()}
 							</button>
 						</div>
 					</div>
 				{/if}
 
 				<p class="mt-6 text-center text-sm text-[var(--text-muted)]">
-					¿No tenés cuenta?
+					{m.auth_no_account()}
 					<a href="/registro" class="font-semibold text-[var(--accent)] hover:underline">
-						Registrate
+						{m.auth_register_link()}
 					</a>
 				</p>
 			</div>

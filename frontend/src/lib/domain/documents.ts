@@ -50,22 +50,40 @@ export function brandTones(hex: string): BrandTones {
 	};
 }
 
-/** Nombre del documento según se emita o no factura electrónica. */
-export function documentTitle(settings: Settings): string {
-	return settings.eInvoicing.enabled ? 'Factura electrónica' : 'Factura';
+/** Qué documento es, en código. El nombre lo pone la plantilla. */
+export function documentKind(settings: Settings): 'einvoice' | 'invoice' {
+	return settings.eInvoicing.enabled ? 'einvoice' : 'invoice';
+}
+
+/**
+ * Una línea de los datos del emisor: qué es y qué dice.
+ *
+ * `kind` distingue las dos que llevan rótulo —«Cédula 3-101…», «Tel. 2222-3333»—
+ * de las que se imprimen tal cual. El rótulo lo pone la plantilla: acá no se
+ * escribe texto para una persona (RN-30).
+ */
+export interface IssuerLine {
+	kind: 'legalName' | 'taxId' | 'address' | 'phone' | 'email' | 'website';
+	value: string;
 }
 
 /** Datos del emisor listos para imprimir, sin las líneas vacías. */
-export function issuerLines(settings: Settings): string[] {
+export function issuerLines(settings: Settings): IssuerLine[] {
 	const { business } = settings;
-	return [
-		business.legalName && business.legalName !== business.name ? business.legalName : '',
-		business.taxId ? `Cédula ${business.taxId}` : '',
-		business.address,
-		business.phone ? `Tel. ${business.phone}` : '',
-		business.email,
-		business.website
-	].filter(Boolean);
+	const posibles: IssuerLine[] = [
+		{
+			kind: 'legalName',
+			// La razón social solo se imprime si aporta algo: repetir el nombre
+			// comercial dos veces seguidas se lee como un error de la factura.
+			value: business.legalName && business.legalName !== business.name ? business.legalName : ''
+		},
+		{ kind: 'taxId', value: business.taxId },
+		{ kind: 'address', value: business.address },
+		{ kind: 'phone', value: business.phone },
+		{ kind: 'email', value: business.email },
+		{ kind: 'website', value: business.website }
+	];
+	return posibles.filter((linea) => Boolean(linea.value));
 }
 
 /** Total devuelto de una venta. Cero si no tiene devoluciones. */

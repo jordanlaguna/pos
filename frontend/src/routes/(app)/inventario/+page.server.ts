@@ -1,9 +1,11 @@
 import { fail } from '@sveltejs/kit';
-import { api, apiSafe, toMessage } from '$lib/server/api';
+import { api, apiSafe } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth';
 import { toLocalIso } from '$lib/domain/datetime';
 import { formError, Validator } from '$lib/application/validation';
 import type { Category, Product } from '$lib/domain/types';
+import { F } from '$lib/ui/fields';
+import { apiMessage, validationErrors } from '$lib/ui/messages';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -21,12 +23,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 /** Campos comunes al alta y la edición de un producto. */
 function readProduct(v: Validator) {
 	return {
-		name: v.text('name', 'El nombre', { max: 100 }),
-		description: v.text('description', 'La descripción', { max: 255 }),
-		price: v.decimal('price', 'El precio', { min: 0 }),
-		stock: v.integer('stock', 'El stock', { min: 0 }),
-		barcode: v.text('barcode', 'El código de barras', { min: 3, max: 100 }),
-		category_id: v.integer('category_id', 'La categoría', { min: 1 })
+		name: v.text('name', F.name(), { max: 100 }),
+		description: v.text('description', F.description(), { max: 255 }),
+		price: v.decimal('price', F.price(), { min: 0 }),
+		stock: v.integer('stock', F.stock(), { min: 0 }),
+		barcode: v.text('barcode', F.barcode(), { min: 3, max: 100 }),
+		category_id: v.integer('category_id', F.category(), { min: 1 })
 	};
 }
 
@@ -35,7 +37,7 @@ export const actions: Actions = {
 		requireAdmin(locals, url.pathname);
 		const v = new Validator(await request.formData());
 		const product = readProduct(v);
-		if (!v.ok) return fail(400, { errors: v.errors, action: 'crear' });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), action: 'crear' });
 
 		try {
 			await api('/products/add_product', {
@@ -44,7 +46,7 @@ export const actions: Actions = {
 				body: { ...product, created_at: toLocalIso(new Date()) }
 			});
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)), action: 'crear' });
+			return fail(400, { errors: formError(apiMessage(error)), action: 'crear' });
 		}
 		return { success: 'Producto agregado correctamente.' };
 	},
@@ -53,9 +55,9 @@ export const actions: Actions = {
 		requireAdmin(locals, url.pathname);
 		const form = await request.formData();
 		const v = new Validator(form);
-		const id = v.integer('id_product', 'El producto', { min: 1 });
+		const id = v.integer('id_product', F.product(), { min: 1 });
 		const product = readProduct(v);
-		if (!v.ok) return fail(400, { errors: v.errors, action: 'actualizar' });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), action: 'actualizar' });
 
 		try {
 			await api(`/products/update_product/${id}`, {
@@ -64,7 +66,7 @@ export const actions: Actions = {
 				body: product
 			});
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)), action: 'actualizar' });
+			return fail(400, { errors: formError(apiMessage(error)), action: 'actualizar' });
 		}
 		return { success: 'Producto actualizado correctamente.' };
 	},
@@ -72,13 +74,13 @@ export const actions: Actions = {
 	eliminar: async ({ request, locals, url }) => {
 		requireAdmin(locals, url.pathname);
 		const v = new Validator(await request.formData());
-		const id = v.integer('id_product', 'El producto', { min: 1 });
-		if (!v.ok) return fail(400, { errors: v.errors, action: 'eliminar' });
+		const id = v.integer('id_product', F.product(), { min: 1 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), action: 'eliminar' });
 
 		try {
 			await api(`/products/delete_product/${id}`, { method: 'DELETE', token: locals.token });
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)), action: 'eliminar' });
+			return fail(400, { errors: formError(apiMessage(error)), action: 'eliminar' });
 		}
 		return { success: 'Producto eliminado.' };
 	},
@@ -86,8 +88,8 @@ export const actions: Actions = {
 	crearCategoria: async ({ request, locals, url }) => {
 		requireAdmin(locals, url.pathname);
 		const v = new Validator(await request.formData());
-		const name = v.text('name', 'El nombre de la categoría', { max: 100 });
-		if (!v.ok) return fail(400, { errors: v.errors, action: 'categoria' });
+		const name = v.text('name', F.categoryName(), { max: 100 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), action: 'categoria' });
 
 		try {
 			await api('/categories/register_category', {
@@ -96,7 +98,7 @@ export const actions: Actions = {
 				body: { name }
 			});
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)), action: 'categoria' });
+			return fail(400, { errors: formError(apiMessage(error)), action: 'categoria' });
 		}
 		return { success: 'Categoría creada.' };
 	}

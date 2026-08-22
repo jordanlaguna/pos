@@ -10,18 +10,37 @@ import { mockRequest } from './mock/handler';
  * jamás ve la IP del backend.
  */
 
-export class ApiError extends Error {
+/**
+ * Un «no» del backend, tal como viaja: código y datos, nunca una frase.
+ *
+ * La frase la arma `apiMessage()` en `$lib/ui/messages` (RN-30). Acá no se
+ * escribe texto para nadie: `message` es para el registro, no para la pantalla.
+ * El tipo está declarado suelto y no como la clase porque `$lib/ui` no puede
+ * importar `$lib/server` —lo prohíbe SvelteKit, y con razón— y `ApiError` lo
+ * cumple por estructura.
+ */
+export interface ApiFailure {
 	readonly status: number;
-	readonly detail: unknown;
+	readonly code: string;
+	readonly data: Readonly<Record<string, unknown>>;
+}
 
-	constructor(status: number, message: string, detail?: unknown) {
-		super(message);
+export class ApiError extends Error implements ApiFailure {
+	readonly status: number;
+	readonly code: string;
+	readonly data: Readonly<Record<string, unknown>>;
+
+	constructor(status: number, code: string, data: Record<string, unknown> = {}) {
+		// El mensaje técnico: es lo que sale en un `console.error` o en un
+		// traceback, no lo que ve una persona.
+		super(`${code} (HTTP ${status})`);
 		this.name = 'ApiError';
 		this.status = status;
-		this.detail = detail;
+		this.code = code;
+		this.data = data;
 	}
 
-	/** Errores 4xx son culpa del usuario y su mensaje se le puede mostrar tal cual. */
+	/** Errores 4xx son culpa de quien pidió; 5xx, del servidor. */
 	get isClientError(): boolean {
 		return this.status >= 400 && this.status < 500;
 	}
@@ -36,32 +55,45 @@ export interface ApiOptions {
 	signal?: AbortSignal;
 }
 
-/** FastAPI devuelve los errores como `{"detail": ...}`. Lo aplanamos a texto. */
-function extractDetail(payload: unknown, fallback: string): string {
-	if (typeof payload === 'string' && payload.trim()) return payload.trim();
+/**
+ * El código y los datos que trae un error del backend.
+ *
+ * La forma normal es `{"detail": {"code": "insufficient_stock", ...}}`. Las otras
+ * dos son ajenas a nosotros y por eso quedan como códigos propios del POS:
+ *
+ * - **Un `detail` que es texto.** Lo produce Starlette por su cuenta —«Not
+ *   Found» en una ruta que no existe, «Method Not Allowed»— y está en inglés.
+ *   No se muestra: se registra y la pantalla dice lo suyo.
+ * - **Un `detail` que es una lista.** Son los errores de validación de Pydantic,
+ *   también en inglés y nombrando el campo de la base (`payment_method`). Se
+ *   resumen en un código y el detalle queda en `data` para el registro.
+ */
+function extractFailure(payload: unknown): { code: string; data: Record<string, unknown> } {
 	if (payload && typeof payload === 'object') {
 		const detail = (payload as { detail?: unknown }).detail;
-		if (typeof detail === 'string' && detail.trim()) return detail.trim();
-		// Errores de validación de Pydantic: [{loc, msg, type}, ...]
-		if (Array.isArray(detail)) {
-			const messages = detail
-				.map((d) => {
-					if (d && typeof d === 'object') {
-						const loc = Array.isArray((d as { loc?: unknown[] }).loc)
-							? (d as { loc: unknown[] }).loc.filter((p) => p !== 'body').join('.')
-							: '';
-						const msg = String((d as { msg?: unknown }).msg ?? '');
-						return loc ? `${loc}: ${msg}` : msg;
-					}
-					return String(d);
-				})
-				.filter(Boolean);
-			if (messages.length) return messages.join(' · ');
+
+		if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+			const { code, ...data } = detail as { code?: unknown } & Record<string, unknown>;
+			if (typeof code === 'string' && code) return { code, data };
+			return { code: 'unexpected', data: { detail } };
 		}
-		const message = (payload as { message?: unknown }).message;
-		if (typeof message === 'string' && message.trim()) return message.trim();
+
+		if (Array.isArray(detail)) {
+			const fields = detail
+				.map((d) =>
+					d && typeof d === 'object' && Array.isArray((d as { loc?: unknown[] }).loc)
+						? (d as { loc: unknown[] }).loc.filter((p) => p !== 'body').join('.')
+						: ''
+				)
+				.filter(Boolean);
+			return { code: 'invalid_request', data: { fields, detail } };
+		}
+
+		if (typeof detail === 'string' && detail.trim()) {
+			return { code: 'unexpected', data: { detail: detail.trim() } };
+		}
 	}
-	return fallback;
+	return { code: 'unexpected', data: payload === null ? {} : { payload } };
 }
 
 function buildUrl(path: string, query?: ApiOptions['query']): string {
@@ -105,13 +137,11 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
 		});
 	} catch (error) {
 		const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
-		throw new ApiError(
-			503,
-			isTimeout
-				? `El backend no respondió en ${API_TIMEOUT_MS} ms (${API_BASE_URL}).`
-				: `No se pudo conectar con el backend en ${API_BASE_URL}.`,
-			error
-		);
+		throw new ApiError(503, isTimeout ? 'timeout' : 'unreachable', {
+			base: API_BASE_URL,
+			ms: API_TIMEOUT_MS,
+			cause: error
+		});
 	}
 
 	const text = await response.text();
@@ -125,11 +155,8 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
 	}
 
 	if (!response.ok) {
-		throw new ApiError(
-			response.status,
-			extractDetail(payload, `El backend respondió ${response.status}.`),
-			payload
-		);
+		const { code, data } = extractFailure(payload);
+		throw new ApiError(response.status, code, data);
 	}
 
 	return payload as T;
@@ -151,9 +178,16 @@ export async function apiSafe<T>(
 	}
 }
 
-/** Convierte cualquier excepción en un mensaje presentable en español. */
-export function toMessage(error: unknown): string {
-	if (error instanceof ApiError) return error.message;
-	if (error instanceof Error) return error.message;
-	return 'Ocurrió un error inesperado.';
+/**
+ * Lo que se registra de un fallo. **No** es lo que se le muestra a nadie.
+ *
+ * La frase para la pantalla la arma `apiMessage()` en `$lib/ui/messages`, con el
+ * catálogo del idioma que corresponda.
+ */
+export function toLog(error: unknown): string {
+	if (error instanceof ApiError) {
+		return `${error.message} ${JSON.stringify(error.data)}`;
+	}
+	if (error instanceof Error) return `${error.name}: ${error.message}`;
+	return String(error);
 }

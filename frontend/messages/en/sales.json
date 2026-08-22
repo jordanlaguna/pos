@@ -1,0 +1,18 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"sales_charge": "Charge",
+	"sales_open_register": "Open register",
+	"sales_search_placeholder": "Scan the barcode or type the product name…",
+	"sales_ticket_label": "Sale {position}",
+	"sales_add_product": "Add {product}",
+	"sales_units_in_ticket": [
+		{
+			"declarations": ["input units", "local unitsPlural = units: plural"],
+			"selectors": ["unitsPlural"],
+			"match": {
+				"unitsPlural=one": "1 item",
+				"unitsPlural=other": "{units} items"
+			}
+		}
+	]
+}

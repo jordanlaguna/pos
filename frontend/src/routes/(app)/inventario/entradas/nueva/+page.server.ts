@@ -1,12 +1,15 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { api, apiSafe, toMessage } from '$lib/server/api';
+import { api, apiSafe } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth';
 import { parseHaciendaXml } from '$lib/server/import/hacienda';
+import { ImportError } from '$lib/server/import/errors';
 import { parseSpreadsheet } from '$lib/server/import/spreadsheet';
 import { matchLines } from '$lib/server/import/match';
 import { formError } from '$lib/application/validation';
 import type { Category, ParseResult, Product } from '$lib/domain/types';
 import type { Actions, PageServerLoad } from './$types';
+import { m } from '$lib/paraglide/messages.js';
+import { apiMessage, importFailureMessage } from '$lib/ui/messages';
 
 /** Tope de tamaño. Una factura de proveedor no llega ni de lejos a esto. */
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -34,12 +37,15 @@ export const actions: Actions = {
 		const file = form.get('archivo');
 
 		if (!(file instanceof File) || file.size === 0) {
-			return fail(400, { errors: formError('Elegí un archivo primero.') });
+			return fail(400, { errors: formError(m.entry_pick_file_first()) });
 		}
 		if (file.size > MAX_BYTES) {
 			return fail(400, {
 				errors: formError(
-					`El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)} MB; el máximo es 5 MB.`
+					m.entry_file_too_big({
+						size: (file.size / 1024 / 1024).toFixed(1),
+						max: MAX_BYTES / 1024 / 1024
+					})
 				)
 			});
 		}
@@ -55,12 +61,18 @@ export const actions: Actions = {
 				parsed = await parseSpreadsheet(buffer, name);
 			} else {
 				return fail(400, {
-					errors: formError('Formato no soportado. Usá .xml, .xlsx o .csv.')
+					errors: formError(m.entry_format_unsupported())
 				});
 			}
 		} catch (error) {
+			// El lector devuelve código y datos (RN-30): la frase se arma acá, que es
+			// la interfaz. Lo que no sea un ImportError es un fallo nuestro.
 			return fail(400, {
-				errors: formError(error instanceof Error ? error.message : 'No se pudo leer el archivo.')
+				errors: formError(
+					error instanceof ImportError
+						? importFailureMessage(error.failure)
+						: m.entry_read_failed()
+				)
 			});
 		}
 
@@ -70,7 +82,7 @@ export const actions: Actions = {
 			});
 			parsed.lines = matchLines(parsed.lines, products);
 		} catch (error) {
-			return fail(502, { errors: formError(toMessage(error)) });
+			return fail(502, { errors: formError(apiMessage(error)) });
 		}
 
 		return { parsed, filename: file.name };
@@ -85,10 +97,10 @@ export const actions: Actions = {
 		try {
 			lines = JSON.parse(String(form.get('lines') ?? '[]'));
 		} catch {
-			return fail(400, { errors: formError('No se pudo leer el detalle de la entrada.') });
+			return fail(400, { errors: formError(m.entry_detail_unreadable()) });
 		}
 		if (!Array.isArray(lines) || lines.length === 0) {
-			return fail(400, { errors: formError('Marcá al menos una línea para ingresar.') });
+			return fail(400, { errors: formError(m.entry_mark_one_line()) });
 		}
 
 		const source = String(form.get('source') ?? 'manual');
@@ -115,7 +127,7 @@ export const actions: Actions = {
 			);
 			entryId = result.id_entry;
 		} catch (error) {
-			return fail(400, { errors: formError(toMessage(error)) });
+			return fail(400, { errors: formError(apiMessage(error)) });
 		}
 
 		redirect(303, `/inventario/entradas?creada=${entryId}`);

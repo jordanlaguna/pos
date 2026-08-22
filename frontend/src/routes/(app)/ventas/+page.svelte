@@ -12,6 +12,8 @@
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney, parseAmount, changeDue, taxLabel } from '$lib/domain/money';
 	import { PAYMENT_METHODS, type Product } from '$lib/domain/types';
+	import { m } from '$lib/paraglide/messages.js';
+	import { cartMessage, paymentLabel } from '$lib/ui/messages';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -38,13 +40,13 @@
 			const client = data.clients.find((c) => String(c.id_client) === ticket.clientId);
 			if (client) return `${client.name} ${client.last_name}`.trim();
 		}
-		return `Venta ${cart.positionOf(ticket.id)}`;
+		return m.sales_ticket_label({ position: cart.positionOf(ticket.id) });
 	}
 
 	function nuevaVenta() {
 		const result = cart.open();
 		if (!result.ok) {
-			toasts.warning(result.message ?? 'No se pueden abrir más ventas.');
+			toasts.warning(cartMessage(result.reason));
 			return;
 		}
 		searchInput?.focus();
@@ -83,7 +85,7 @@
 	function addProduct(product: Product, quantity = 1) {
 		const result = cart.add(product, quantity);
 		if (!result.ok) {
-			toasts.warning(result.message ?? 'No se pudo agregar el producto.');
+			toasts.warning(cartMessage(result.reason));
 			return;
 		}
 		searchTerm = '';
@@ -115,14 +117,14 @@
 		const exact = data.products.find((p) => p.barcode === term);
 		const chosen = exact ?? matches[highlighted];
 		if (chosen) addProduct(chosen);
-		else toasts.error('Producto no encontrado.', `No hay coincidencias para «${term}».`);
+		else toasts.error(m.sales_product_not_found(), m.sales_no_matches({ term }));
 	}
 
 	// ------------------------------------------------------------------ cobro
 
 	async function openPayment() {
 		if (cart.isEmpty) {
-			toasts.warning('El carrito está vacío.');
+			toasts.warning(m.sales_cart_is_empty());
 			return;
 		}
 		if (!hasCashSession) {
@@ -192,12 +194,11 @@
 		>
 		<Icon name="alert" size={18} class="shrink-0 text-[var(--warning)]" />
 		<p class="flex-1 text-sm text-[var(--warning)]">
-			<strong>La caja está cerrada.</strong> Abrila para que las ventas queden dentro del arqueo
-			del turno.
+			<strong>{m.sales_register_closed()}</strong> {m.sales_register_closed_hint()}
 		</p>
 		<button type="button" class="btn btn-primary py-1.5 text-xs" onclick={() => (cashOpen = true)}>
 			<Icon name="wallet" size={14} />
-			Abrir caja
+			{m.sales_open_register()}
 		</button>
 	</div>
 {/if}
@@ -222,10 +223,11 @@
 				type="search"
 				autofocus
 				autocomplete="off"
-				placeholder="Escaneá el código o escribí el nombre del producto…"
-				aria-label="Buscar producto por código de barras o nombre"
+				placeholder={m.sales_search_placeholder()}
+				aria-label={m.sales_search_label()}
 				class="input h-12 pr-16 pl-11 text-base"
 			/>
+			<!-- «F2» es el nombre de una tecla, no una palabra: no se traduce. -->
 			<kbd
 				class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-subtle)]"
 			>
@@ -236,7 +238,7 @@
 				<ul
 					class="absolute inset-x-0 top-[calc(100%+0.25rem)] z-20 max-h-80 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-1 shadow-xl"
 					role="listbox"
-					aria-label="Resultados de búsqueda"
+					aria-label={m.sales_search_results()}
 				>
 					{#each matches as product, index (product.id_product)}
 						<li>
@@ -268,7 +270,7 @@
 											? 'text-[var(--text-subtle)]'
 											: 'text-[var(--negative)]'}"
 									>
-										{product.stock} en stock
+										{m.sales_in_stock({ stock: product.stock })}
 									</span>
 								</span>
 							</button>
@@ -287,7 +289,7 @@
 					: 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]'}"
 				onclick={() => (activeCategory = 'todas')}
 			>
-				Todas
+				{m.sales_all_categories()}
 			</button>
 			{#each data.categories as category (category.id)}
 				<button
@@ -312,7 +314,7 @@
 					class="card flex min-h-24 flex-col justify-between p-3 text-left transition-colors enabled:hover:border-[var(--accent)] disabled:opacity-45"
 					onclick={() => addProduct(product)}
 					disabled={out}
-					title={out ? 'Sin existencias' : `Agregar ${product.name}`}
+					title={out ? m.sales_out_of_stock() : m.sales_add_product({ product: product.name })}
 				>
 					<span class="block">
 						<span class="line-clamp-2 text-xs font-medium text-[var(--text)]">
@@ -335,7 +337,7 @@
 									? 'text-[var(--warning)]'
 									: 'text-[var(--text-subtle)]'}"
 						>
-							{out ? 'Agotado' : `${product.stock} u`}
+							{out ? m.sales_sold_out() : m.sales_units_short({ stock: product.stock })}
 						</span>
 					</span>
 				</button>
@@ -343,8 +345,8 @@
 				<div class="col-span-full">
 					<EmptyState
 						icon="box"
-						title="No hay productos en esta categoría"
-						description="Cambiá de categoría o registrá productos en Inventario."
+						title={m.sales_no_products()}
+						description={m.sales_no_products_hint()}
 						compact
 					/>
 				</div>
@@ -362,7 +364,7 @@
 		<div
 			class="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-[var(--border)] px-2 pt-2"
 			role="tablist"
-			aria-label="Ventas en espera"
+			aria-label={m.sales_pending_tickets()}
 		>
 			{#each cart.tickets as ticket (ticket.id)}
 				{@const activa = ticket.id === cart.activeId}
@@ -381,7 +383,7 @@
 							cart.switchTo(ticket.id);
 							searchInput?.focus();
 						}}
-						title={unidades ? `${unidades} artículos` : 'Venta vacía'}
+						title={unidades ? m.sales_units_in_ticket({ units: unidades }) : m.sales_ticket_empty()}
 					>
 						<Icon name="cart" size={13} />
 						{ticketLabel(ticket)}
@@ -402,8 +404,8 @@
 							type="button"
 							class="absolute right-1.5 rounded p-0.5 text-[var(--text-subtle)] opacity-0 group-hover:opacity-100 hover:text-[var(--negative)] focus-visible:opacity-100"
 							onclick={() => cart.close(ticket.id)}
-							title="Descartar esta venta"
-							aria-label="Descartar {ticketLabel(ticket)}"
+							title={m.sales_ticket_discard()}
+							aria-label={m.sales_ticket_discard_named({ ticket: ticketLabel(ticket) })}
 						>
 							<Icon name="close" size={12} />
 						</button>
@@ -416,8 +418,8 @@
 				class="my-1 ml-1 shrink-0 rounded-lg px-2 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)] disabled:opacity-40"
 				onclick={nuevaVenta}
 				disabled={!cart.canOpenMore}
-				title={cart.canOpenMore ? 'Dejar en espera y abrir otra venta (F3)' : 'Máximo alcanzado'}
-				aria-label="Nueva venta en espera"
+				title={cart.canOpenMore ? m.sales_ticket_hold() : m.sales_ticket_max()}
+				aria-label={m.sales_ticket_new()}
 			>
 				<Icon name="plus" size={15} />
 			</button>
@@ -442,8 +444,8 @@
 						cart.clear();
 						searchInput?.focus();
 					}}
-					title="Vaciar la venta"
-					aria-label="Vaciar la venta"
+					title={m.sales_ticket_clear()}
+					aria-label={m.sales_ticket_clear()}
 				>
 					<Icon name="trash" size={15} />
 				</button>
@@ -454,10 +456,10 @@
 			{#if cart.isEmpty}
 				<EmptyState
 					icon="barcode"
-					title="Sin productos"
+					title={m.sales_cart_empty()}
 					description={cart.tickets.length > 1
-						? 'Escaneá un código o tocá un producto. F4 cambia de venta.'
-						: 'Escaneá un código o tocá un producto para empezar.'}
+						? m.sales_cart_empty_hint_switch()
+						: m.sales_cart_empty_hint()}
 					compact
 				/>
 			{:else}
@@ -469,7 +471,7 @@
 									{line.name}
 								</p>
 								<p class="text-xs tabular-nums text-[var(--text-subtle)]">
-									{formatMoney(line.price)} c/u
+									{formatMoney(line.price)} {m.sales_each()}
 								</p>
 							</div>
 
@@ -478,7 +480,7 @@
 									type="button"
 									class="grid h-7 w-7 place-items-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]"
 									onclick={() => cart.decrement(line.id_product)}
-									aria-label="Quitar una unidad de {line.name}"
+									aria-label={m.sales_remove_one({ product: line.name })}
 								>
 									<Icon name="minus" size={13} />
 								</button>
@@ -489,12 +491,12 @@
 									value={line.quantity}
 									min="1"
 									max={line.stock}
-									aria-label="Cantidad de {line.name}"
+									aria-label={m.sales_quantity_of({ product: line.name })}
 									onchange={(e) => {
 										const next = Number((e.currentTarget as HTMLInputElement).value);
 										const result = cart.setQuantity(line.id_product, next);
 										if (!result.ok) {
-											toasts.warning(result.message ?? 'Cantidad no válida.');
+											toasts.warning(cartMessage(result.reason));
 											(e.currentTarget as HTMLInputElement).value = String(line.quantity);
 										}
 									}}
@@ -505,10 +507,10 @@
 									class="grid h-7 w-7 place-items-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)] disabled:opacity-40"
 									onclick={() => {
 										const result = cart.increment(line.id_product);
-										if (!result.ok) toasts.warning(result.message ?? '');
+										if (!result.ok) toasts.warning(cartMessage(result.reason));
 									}}
 									disabled={line.quantity >= line.stock}
-									aria-label="Agregar una unidad de {line.name}"
+									aria-label={m.sales_add_one({ product: line.name })}
 								>
 									<Icon name="plus" size={13} />
 								</button>
@@ -524,7 +526,7 @@
 								type="button"
 								class="shrink-0 rounded p-1 text-[var(--text-subtle)] hover:text-[var(--negative)]"
 								onclick={() => cart.remove(line.id_product)}
-								aria-label="Eliminar {line.name} de la venta"
+								aria-label={m.sales_remove_line({ product: line.name })}
 							>
 								<Icon name="close" size={14} />
 							</button>
@@ -537,17 +539,18 @@
 		<footer class="shrink-0 border-t border-[var(--border)] p-4">
 			<dl class="space-y-1.5 text-sm">
 				<div class="flex justify-between text-[var(--text-muted)]">
-					<dt>Subtotal</dt>
+					<dt>{m.common_subtotal()}</dt>
 					<dd class="tabular-nums">{formatMoney(totals.subtotal)}</dd>
 				</div>
 				<div class="flex justify-between text-[var(--text-muted)]">
+					<!-- El nombre del impuesto lo configura el negocio, no el idioma. -->
 					<dt>{taxLabel()}</dt>
 					<dd class="tabular-nums">{formatMoney(totals.tax)}</dd>
 				</div>
 				<div
 					class="flex justify-between border-t border-[var(--border)] pt-2 text-lg font-bold text-[var(--text)]"
 				>
-					<dt>Total</dt>
+					<dt>{m.common_total()}</dt>
 					<dd class="tabular-nums">{formatMoney(totals.total)}</dd>
 				</div>
 			</dl>
@@ -559,7 +562,7 @@
 				disabled={cart.isEmpty}
 			>
 				<Icon name="wallet" size={18} />
-				Cobrar
+				{m.sales_charge()}
 				<kbd class="rounded border border-white/30 px-1 text-[10px]">F1</kbd>
 			</button>
 		</footer>
@@ -570,8 +573,8 @@
 <!-- ------------------------------------------------------------ cobro -->
 <Modal
 	open={paymentOpen}
-	title="Cobrar venta"
-	description="Factura {currentSaleNumber}"
+	title={m.sales_charge_sale()}
+	description={m.sales_invoice_number({ number: currentSaleNumber })}
 	busy={submitting}
 	onclose={() => (paymentOpen = false)}
 >
@@ -580,7 +583,7 @@
 		method="POST"
 		action="?/cobrar"
 		use:enhance={submit({
-			errorTitle: 'No se pudo completar la venta',
+			errorTitle: m.sales_charge_failed(),
 			setBusy: (v) => (submitting = v),
 			// La venta solo se cierra cuando el backend la confirmó. Si había otra
 			// en espera, queda activa y el cajero sigue sin tocar nada.
@@ -600,13 +603,13 @@
 
 		<div class="rounded-lg bg-[var(--surface-sunken)] p-4 text-center">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Total a pagar
+				{m.sales_amount_due()}
 			</p>
 			<p class="mt-1 text-3xl font-bold text-[var(--text)]">{formatMoney(totals.total)}</p>
 		</div>
 
 		<div>
-			<span class="label">Método de pago</span>
+			<span class="label">{m.sales_payment_method()}</span>
 			<div class="grid grid-cols-2 gap-2">
 				{#each PAYMENT_METHODS as method}
 					<label
@@ -615,6 +618,11 @@
 							? 'border-[var(--accent)] bg-[var(--surface-sunken)] font-semibold text-[var(--text)]'
 							: 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]'}"
 					>
+						<!--
+							El `value` va sin traducir: es lo que se guarda en
+							`sales.payment_method` y contra lo que comparan las plantillas y
+							los reportes. Lo que se traduce es el rótulo.
+						-->
 						<input
 							type="radio"
 							name="payment_method"
@@ -623,7 +631,7 @@
 							class="sr-only"
 						/>
 						<Icon name={method === 'Efectivo' ? 'wallet' : 'idcard'} size={15} />
-						{method}
+						{paymentLabel(method)}
 					</label>
 				{/each}
 			</div>
@@ -632,13 +640,13 @@
 		{#if isCash}
 			<div>
 				<Field
-					label="Efectivo recibido"
+					label={m.sales_cash_received()}
 					name="cash_received"
 					bind:value={cashInput}
 					inputmode="decimal"
 					icon="wallet"
 					required
-					error={insufficient ? 'El monto no cubre el total.' : undefined}
+					error={insufficient ? m.sales_cash_short() : undefined}
 				/>
 				<div class="mt-2 flex flex-wrap gap-1.5">
 					{#each quickCash(totals.total) as amount}
@@ -656,7 +664,7 @@
 			<div
 				class="flex items-center justify-between rounded-lg border border-[var(--border)] px-4 py-3"
 			>
-				<span class="text-sm font-semibold text-[var(--text-muted)]">Vuelto</span>
+				<span class="text-sm font-semibold text-[var(--text-muted)]">{m.sales_change_due()}</span>
 				<span
 					class="text-xl font-bold tabular-nums {insufficient
 						? 'text-[var(--negative)]'
@@ -671,7 +679,7 @@
 		{/if}
 
 		<div>
-			<label class="label" for="client-select">Cliente (opcional)</label>
+			<label class="label" for="client-select">{m.sales_client_optional()}</label>
 			<select
 				id="client-select"
 				name="client_id"
@@ -679,7 +687,7 @@
 				onchange={(e) => cart.setClient(e.currentTarget.value)}
 				class="input"
 			>
-				<option value="">Cliente de contado</option>
+				<option value="">{m.sales_client_walk_in()}</option>
 				{#each data.clients as client (client.id_client)}
 					<option value={client.id_client}>
 						{client.name}
@@ -697,7 +705,7 @@
 			onclick={() => (paymentOpen = false)}
 			disabled={submitting}
 		>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button
 			type="submit"
@@ -707,10 +715,10 @@
 		>
 			{#if submitting}
 				<Spinner size={15} />
-				Registrando…
+				{m.common_registering()}
 			{:else}
 				<Icon name="check" size={15} />
-				Confirmar cobro
+				{m.sales_confirm_charge()}
 			{/if}
 		</button>
 	{/snippet}
@@ -719,8 +727,8 @@
 <!-- ------------------------------------------------------ abrir caja -->
 <Modal
 	open={cashOpen}
-	title="Abrir caja"
-	description="Contá el efectivo con el que arranca el turno."
+	title={m.sales_open_register()}
+	description={m.sales_open_register_hint()}
 	size="sm"
 	onclose={() => (cashOpen = false)}
 >
@@ -731,7 +739,7 @@
 		use:enhance={() => {
 			return async ({ result, update }) => {
 				if (result.type === 'success') {
-					toasts.success('Caja abierta', 'Ya podés registrar ventas del turno.');
+					toasts.success(m.sales_register_opened(), m.sales_register_opened_hint());
 					cashOpen = false;
 				}
 				await update();
@@ -739,23 +747,23 @@
 		}}
 	>
 		<Field
-			label="Monto de apertura"
+			label={m.sales_opening_amount()}
 			name="opening_amount"
 			value="0"
 			inputmode="decimal"
 			icon="wallet"
 			required
-			hint="Efectivo con el que inicia la gaveta."
+			hint={m.sales_opening_amount_hint()}
 		/>
 	</form>
 
 	{#snippet footer()}
 		<button type="button" class="btn btn-ghost" onclick={() => (cashOpen = false)}>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button type="submit" form="open-cash-form" class="btn btn-primary">
 			<Icon name="check" size={15} />
-			Abrir caja
+			{m.sales_open_register()}
 		</button>
 	{/snippet}
 </Modal>

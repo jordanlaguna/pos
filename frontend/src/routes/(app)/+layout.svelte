@@ -9,6 +9,8 @@
 	import { configureMoney } from '$lib/domain/money';
 	import { accentTheme, hexToRgb } from '$lib/domain/color';
 	import { businessName } from '$lib/domain/settings';
+	import { m } from '$lib/paraglide/messages.js';
+	import { roleLabel } from '$lib/ui/messages';
 	import { DEFAULT_SETTINGS } from '$lib/domain/settings';
 	import type { LayoutData } from './$types';
 
@@ -125,7 +127,7 @@
 			type="button"
 			class="fixed inset-0 z-30 bg-black/50 lg:hidden"
 			onclick={() => (mobileOpen = false)}
-			aria-label="Cerrar menú"
+			aria-label={m.nav_close_menu()}
 		></button>
 	{/if}
 
@@ -133,7 +135,7 @@
 		class="no-print fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface-raised)] transition-[width,transform] duration-200 lg:static lg:translate-x-0
 			{collapsed ? 'w-[4.5rem]' : 'w-60'}
 			{mobileOpen ? 'translate-x-0' : '-translate-x-full'}"
-		aria-label="Navegación principal"
+		aria-label={m.nav_main()}
 	>
 		<div class="flex h-14 shrink-0 items-center gap-2.5 border-b border-[var(--border)] px-3">
 			{#if logoUrl}
@@ -155,14 +157,14 @@
 			{#if !collapsed}
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-sm font-bold text-[var(--text)]">{marca}</p>
-					<p class="truncate text-[10px] text-[var(--text-subtle)]">Punto de venta</p>
+					<p class="truncate text-[10px] text-[var(--text-subtle)]">{m.nav_tagline()}</p>
 				</div>
 			{/if}
 			<button
 				type="button"
 				class="hidden shrink-0 rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] lg:block"
 				onclick={toggleMenu}
-				aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
+				aria-label={collapsed ? m.nav_expand_menu() : m.nav_collapse_menu()}
 			>
 				<Icon name="menu" size={16} />
 			</button>
@@ -192,7 +194,7 @@
 										class="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-subtle)] opacity-60 {collapsed
 											? 'justify-center px-0'
 											: ''}"
-										title="{item.label}: solo para administradores. Pedile a un administrador que te cambie el rol."
+										title={m.nav_locked({ section: item.label })}
 									>
 										<Icon name={item.icon} size={18} class="shrink-0" />
 										{#if !collapsed}
@@ -245,14 +247,17 @@
 			{#if !collapsed && data.user.company_name}
 				<div class="px-2 pt-1 pb-2">
 					<p class="truncate text-[10px] tracking-wide text-[var(--text-subtle)] uppercase">
-						Compañía
+						{m.nav_company()}
 					</p>
 					<p class="truncate text-xs font-medium text-[var(--text)]">
 						{data.user.company_name}
 					</p>
 					{#if data.user.branch_code && data.user.terminal_code}
 						<p class="truncate text-[10px] text-[var(--text-subtle)]">
-							Sucursal {data.user.branch_code} · Caja {data.user.terminal_code}
+							{m.nav_branch_terminal({
+								branch: data.user.branch_code,
+								terminal: data.user.terminal_code
+							})}
 						</p>
 					{/if}
 					{#if data.user.companies_available > 1}
@@ -266,7 +271,7 @@
 							class="mt-1.5 inline-flex items-center gap-1 text-[10px] text-[var(--accent-text)] hover:underline"
 						>
 							<Icon name="refresh" size={11} />
-							Cambiar de compañía
+							{m.nav_switch_company()}
 						</a>
 					{/if}
 				</div>
@@ -284,15 +289,15 @@
 				{#if !collapsed}
 					<div class="min-w-0 flex-1">
 						<p class="truncate text-xs font-semibold text-[var(--text)]">{data.user.name}</p>
-						<p class="truncate text-[10px] text-[var(--text-subtle)] capitalize">
-							{data.user.role}
+						<p class="truncate text-[10px] text-[var(--text-subtle)]">
+							{roleLabel(data.user.role)}
 						</p>
 					</div>
 					<form method="POST" action="/logout">
 						<button
 							type="submit"
 							class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--negative-bg)] hover:text-[var(--negative)]"
-							aria-label="Cerrar sesión"
+							aria-label={m.nav_logout()}
 						>
 							<Icon name="logout" size={15} />
 						</button>
@@ -310,7 +315,7 @@
 				type="button"
 				class="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-sunken)] lg:hidden"
 				onclick={() => (mobileOpen = true)}
-				aria-label="Abrir menú"
+				aria-label={m.nav_open_menu()}
 			>
 				<Icon name="menu" size={18} />
 			</button>
@@ -320,10 +325,10 @@
 			{#if data.demo}
 				<span
 					class="badge hidden bg-[var(--warning-bg)] text-[var(--warning)] sm:inline-flex"
-					title="El backend real no está conectado; se están usando datos de ejemplo."
+					title={m.nav_demo_hint()}
 				>
 					<Icon name="info" size={12} />
-					Demo
+					{m.nav_demo()}
 				</span>
 			{/if}
 
@@ -331,7 +336,7 @@
 				type="button"
 				class="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]"
 				onclick={() => theme.toggle()}
-				aria-label="Cambiar entre tema claro y oscuro"
+				aria-label={m.nav_toggle_theme()}
 			>
 				<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={16} />
 			</button>

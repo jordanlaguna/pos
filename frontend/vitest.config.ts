@@ -9,6 +9,12 @@ import { defineConfig } from 'vitest/config';
  * compilador de Svelte solo agregaría tiempo de arranque y una dependencia que
  * estas pruebas no tienen. Los componentes y los flujos se prueban con
  * Playwright, que sí levanta la aplicación de verdad.
+ *
+ * La excepción es `ui/loose-text.test.ts` (T-812), que importa `svelte/compiler`
+ * y `typescript` para **leer** el árbol de sintaxis de cada pantalla y cada
+ * acción buscando texto escrito a mano. No compila ni monta nada: los usa como
+ * analizadores. Cuesta medio segundo y es lo único que impide que los catálogos
+ * se queden atrás.
  */
 export default defineConfig({
 	resolve: {

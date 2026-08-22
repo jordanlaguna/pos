@@ -9,6 +9,7 @@
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatDate, fullName, initials, toDateInput } from '$lib/ui/format';
+	import { m } from '$lib/paraglide/messages.js';
 	import type { Person } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
@@ -57,8 +58,8 @@
 </script>
 
 <PageHeader
-	title="Usuarios"
-	description="Personas registradas y su nivel de acceso al sistema."
+	title={m.users_title()}
+	description={m.users_description()}
 />
 
 <div
@@ -66,14 +67,15 @@
 >
 	<Icon name="info" size={14} class="mt-0.5 shrink-0 text-[var(--info)]" />
 	<p>
-		<strong class="text-[var(--text)]">Administrador</strong> gestiona inventario, usuarios y
-		reportes. <strong class="text-[var(--text)]">Cajero</strong> solo vende, cobra y consulta
-		facturas. Las cuentas nuevas se crean desde la pantalla de registro.
+		<strong class="text-[var(--text)]">{m.users_roles_note_admin()}</strong>
+		{m.users_roles_note_1()}
+		<strong class="text-[var(--text)]">{m.users_roles_note_cashier()}</strong>
+		{m.users_roles_note_2()}
 	</p>
 </div>
 
 <div class="card mb-4 p-3">
-	<label class="label" for="usuario-buscar">Buscar</label>
+	<label class="label" for="usuario-buscar">{m.common_search()}</label>
 	<div class="relative">
 		<span
 			class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--text-subtle)]"
@@ -84,7 +86,7 @@
 			id="usuario-buscar"
 			bind:value={search}
 			type="search"
-			placeholder="Nombre, correo o cédula…"
+			placeholder={m.users_search_placeholder()}
 			class="input pl-9"
 		/>
 	</div>
@@ -95,12 +97,12 @@
 		<table class="data-table">
 			<thead>
 				<tr>
-					<th scope="col">Usuario</th>
-					<th scope="col">Cédula</th>
-					<th scope="col">Teléfono</th>
-					<th scope="col">Nacimiento</th>
-					<th scope="col">Rol</th>
-					<th scope="col"><span class="sr-only">Acciones</span></th>
+					<th scope="col">{m.users_col_user()}</th>
+					<th scope="col">{m.people_label_identification()}</th>
+					<th scope="col">{m.people_label_telephone()}</th>
+					<th scope="col">{m.users_col_birth()}</th>
+					<th scope="col">{m.users_col_role()}</th>
+					<th scope="col"><span class="sr-only">{m.common_actions()}</span></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -119,7 +121,7 @@
 									<p class="truncate font-medium text-[var(--text)]">
 										{fullName(person)}
 										{#if isMe}
-											<span class="text-xs font-normal text-[var(--text-subtle)]">(vos)</span>
+											<span class="text-xs font-normal text-[var(--text-subtle)]">{m.users_you()}</span>
 										{/if}
 									</p>
 									<p class="truncate text-xs text-[var(--text-subtle)]">{person.email}</p>
@@ -137,12 +139,12 @@
 									value={role}
 									class="input w-32 py-1 text-xs"
 									disabled={isMe}
-									title={isMe ? 'No podés cambiar tu propio rol.' : 'Cambiar rol'}
+									title={isMe ? m.users_cannot_change_own_role() : m.users_change_role()}
 									onchange={(e) => e.currentTarget.form?.requestSubmit()}
-									aria-label="Rol de {fullName(person)}"
+									aria-label={m.users_role_of({ person: fullName(person) })}
 								>
-									<option value="admin">Administrador</option>
-									<option value="cajero">Cajero</option>
+									<option value="admin">{m.role_admin()}</option>
+									<option value="cajero">{m.role_cashier()}</option>
 								</select>
 							</form>
 						</td>
@@ -151,7 +153,7 @@
 								type="button"
 								class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"
 								onclick={() => openEdit(person)}
-								aria-label="Editar {fullName(person)}"
+								aria-label={m.users_edit({ person: fullName(person) })}
 							>
 								<Icon name="edit" size={15} />
 							</button>
@@ -162,8 +164,8 @@
 						<td colspan="6">
 							<EmptyState
 								icon="user"
-								title="Sin usuarios"
-								description={search ? 'Nadie coincide con la búsqueda.' : undefined}
+								title={m.users_none()}
+								description={search ? m.users_no_match() : undefined}
 								compact
 							/>
 						</td>
@@ -176,7 +178,7 @@
 
 <Modal
 	open={modalOpen}
-	title="Editar usuario"
+	title={m.users_edit_title()}
 	description={editing ? fullName(editing) : undefined}
 	busy={submitting}
 	onclose={() => (modalOpen = false)}
@@ -194,7 +196,7 @@
 		<input type="hidden" name="id_person" value={editing?.id_person ?? ''} />
 
 		<Field
-			label="Nombre"
+			label={m.people_label_name()}
 			name="name"
 			bind:value={f.name}
 			icon="user"
@@ -202,7 +204,7 @@
 			error={form?.errors?.name}
 		/>
 		<Field
-			label="Cédula"
+			label={m.people_label_identification()}
 			name="identification"
 			bind:value={f.identification}
 			icon="idcard"
@@ -211,21 +213,21 @@
 			error={form?.errors?.identification}
 		/>
 		<Field
-			label="Primer apellido"
+			label={m.people_label_first_last_name()}
 			name="lastName"
 			bind:value={f.lastName}
 			required
 			error={form?.errors?.lastName}
 		/>
 		<Field
-			label="Segundo apellido"
+			label={m.people_label_second_last_name()}
 			name="secondName"
 			bind:value={f.secondName}
 			required
 			error={form?.errors?.secondName}
 		/>
 		<Field
-			label="Teléfono"
+			label={m.people_label_telephone()}
 			name="telephone"
 			bind:value={f.telephone}
 			icon="phone"
@@ -234,7 +236,7 @@
 			error={form?.errors?.telephone}
 		/>
 		<Field
-			label="Fecha de nacimiento"
+			label={m.people_label_birth_date()}
 			name="birth_date"
 			type="date"
 			bind:value={f.birth_date}
@@ -242,13 +244,13 @@
 			error={form?.errors?.birth_date}
 		/>
 		<Field
-			label="Correo electrónico"
+			label={m.people_label_email()}
 			name="email"
 			type="email"
 			bind:value={f.email}
 			icon="mail"
 			required
-			hint="Es también el usuario con el que inicia sesión."
+			hint={m.users_email_hint()}
 			error={form?.errors?.email}
 			class="sm:col-span-2"
 		/>
@@ -261,15 +263,15 @@
 			onclick={() => (modalOpen = false)}
 			disabled={submitting}
 		>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button type="submit" form="user-form" class="btn btn-primary" disabled={submitting}>
 			{#if submitting}
 				<Spinner size={15} />
-				Guardando…
+				{m.common_saving()}
 			{:else}
 				<Icon name="check" size={15} />
-				Guardar cambios
+				{m.common_save_changes()}
 			{/if}
 		</button>
 	{/snippet}

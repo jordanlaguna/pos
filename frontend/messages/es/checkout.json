@@ -1,0 +1,12 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"checkout_no_lines": "Agregue al menos un producto antes de cobrar.",
+	"checkout_bad_sale_number": "El número de factura no es válido.",
+	"checkout_product_gone": "Un producto de la venta ya no existe.",
+	"checkout_bad_quantity": "Cantidad inválida para {product}.",
+	"checkout_insufficient_stock": "Stock insuficiente para {product}: quedan {available}.",
+	"checkout_cash_short": "El monto recibido no cubre el total de la venta.",
+	"checkout_unreadable_lines": "No se pudo leer el detalle de la venta.",
+	"checkout_amount_insufficient": "Monto insuficiente."
+}

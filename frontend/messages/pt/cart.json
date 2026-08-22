@@ -1,0 +1,4 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"cart_reserved_elsewhere": "Restam apenas {free} de {product}: {reserved} estão reservadas em outra venda."
+}

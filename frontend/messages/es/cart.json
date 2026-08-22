@@ -1,0 +1,12 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"cart_quantity_not_positive": "La cantidad debe ser mayor que cero.",
+	"cart_out_of_stock": "{product} no tiene existencias.",
+	"cart_reserved_elsewhere": "Solo quedan {free} de {product}: hay {reserved} apartadas en otra venta.",
+	"cart_only_units": "Solo hay {stock} unidades de {product}.",
+	"cart_only_units_with_current": "Solo hay {stock} unidades de {product} y ya lleva {current}.",
+	"cart_only_free_units": "Solo quedan {free} unidades de {product}.",
+	"cart_max_tickets": "No se pueden tener más de {max} ventas en espera.",
+	"cart_line_not_found": "El producto no está en la venta."
+}

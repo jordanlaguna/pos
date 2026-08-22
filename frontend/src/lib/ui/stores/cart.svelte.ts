@@ -6,7 +6,8 @@ import {
 	newLine,
 	nextActiveId,
 	reservedElsewhere,
-	unitCount
+	unitCount,
+	type CartRejection
 } from '$lib/domain/cart';
 import { computeTotals, lineTotal, taxRate, type Totals } from '$lib/domain/money';
 import type { CartLine, Product } from '$lib/domain/types';
@@ -36,11 +37,12 @@ export interface Ticket {
 	createdAt: number;
 }
 
-export interface AddResult {
-	ok: boolean;
-	/** Motivo del rechazo, listo para mostrar. */
-	message?: string;
-}
+/**
+ * El almacén devuelve el mismo código y datos que el dominio, no una frase: la
+ * pantalla la arma con `cartMessage()`. Así el aviso que ve el cajero sale del
+ * catálogo y no de acá.
+ */
+export type AddResult = { ok: true } | { ok: false; reason: CartRejection };
 
 interface Persisted {
 	tickets: Ticket[];
@@ -113,10 +115,7 @@ class Cart {
 	/** Abre otra venta y la deja activa. La anterior queda en espera. */
 	open(): AddResult {
 		if (!this.canOpenMore) {
-			return {
-				ok: false,
-				message: `No se pueden tener más de ${MAX_TICKETS} ventas en espera.`
-			};
+			return { ok: false, reason: { code: 'cart_max_tickets', max: MAX_TICKETS } };
 		}
 		this.sequence += 1;
 		const ticket = blankTicket(this.sequence);
@@ -241,7 +240,7 @@ class Cart {
 	/** Fija la cantidad exacta de una línea. Cero o menos la elimina. */
 	setQuantity(idProduct: number, quantity: number): AddResult {
 		const line = this.lines.find((l) => l.id_product === idProduct);
-		if (!line) return { ok: false, message: 'El producto no está en la venta.' };
+		if (!line) return { ok: false, reason: { code: 'cart_line_not_found' } };
 
 		const apartadas = reservedElsewhere(this.tickets, this.activeId, idProduct);
 		const decision = canSetQuantity(line, quantity, apartadas);
@@ -259,13 +258,13 @@ class Cart {
 
 	increment(idProduct: number): AddResult {
 		const line = this.lines.find((l) => l.id_product === idProduct);
-		if (!line) return { ok: false };
+		if (!line) return { ok: false, reason: { code: 'cart_line_not_found' } };
 		return this.setQuantity(idProduct, line.quantity + 1);
 	}
 
 	decrement(idProduct: number): AddResult {
 		const line = this.lines.find((l) => l.id_product === idProduct);
-		if (!line) return { ok: false };
+		if (!line) return { ok: false, reason: { code: 'cart_line_not_found' } };
 		return this.setQuantity(idProduct, line.quantity - 1);
 	}
 

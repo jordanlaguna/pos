@@ -1,8 +1,11 @@
 import { fail } from '@sveltejs/kit';
-import { toMessage } from '$lib/server/api';
+
 import { requireAdmin } from '$lib/server/auth';
 import { invalidateSettings, loadSettings, saveSettings } from '$lib/server/settings';
 import { formError, Validator } from '$lib/application/validation';
+import { F } from '$lib/ui/fields';
+import { m } from '$lib/paraglide/messages.js';
+import { apiMessage, validationErrors } from '$lib/ui/messages';
 import {
 	isHexColor,
 	mergeSettings,
@@ -54,7 +57,7 @@ function separator(form: FormData, field: string, fallback: string): string {
 function hex(v: Validator, form: FormData, field: string, label: string, fallback: string): string {
 	const value = form.get(field);
 	if (isHexColor(value)) return value.toLowerCase();
-	v.add(field, `${label} debe ser un color en formato #rrggbb.`);
+	v.add(field, m.settings_bad_color({ field: label }));
 	return fallback;
 }
 
@@ -64,11 +67,11 @@ async function readLogo(form: FormData, v: Validator): Promise<LogoSettings | un
 	if (!(file instanceof File) || file.size === 0) return undefined;
 
 	if (!LOGO_TYPES.includes(file.type)) {
-		v.add('logo', 'El logo debe ser PNG, JPG o WebP. Los SVG no se admiten por seguridad.');
+		v.add('logo', m.settings_logo_bad_type());
 		return undefined;
 	}
 	if (file.size > MAX_LOGO_BYTES) {
-		v.add('logo', `El logo no puede pesar más de ${Math.round(MAX_LOGO_BYTES / 1024)} KB.`);
+		v.add('logo', m.settings_logo_too_big({ max: Math.round(MAX_LOGO_BYTES / 1024) }));
 		return undefined;
 	}
 
@@ -83,61 +86,61 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const v = new Validator(form);
 
-		const nombre = v.text('negocio_nombre', 'El nombre del negocio', { max: 120 });
-		const razonSocial = v.text('negocio_razon_social', 'La razón social', {
+		const nombre = v.text('negocio_nombre', F.businessName(), { max: 120 });
+		const razonSocial = v.text('negocio_razon_social', F.businessLegalName(), {
 			required: false,
 			max: 160
 		});
-		const identificacion = v.text('negocio_identificacion', 'La cédula', {
+		const identificacion = v.text('negocio_identificacion', F.businessIdentification(), {
 			required: false,
 			max: 30
 		});
 		const tipoIdentificacion = v.oneOf(
 			'negocio_tipo_identificacion',
-			'El tipo de identificación',
+			F.businessIdType(),
 			ID_TYPES.map((t) => t.code),
 			{ required: false }
 		);
-		const telefono = v.text('negocio_telefono', 'El teléfono', { required: false, max: 30 });
-		const correo = v.email('negocio_correo', 'El correo', { required: false });
-		const direccion = v.text('negocio_direccion', 'La dirección', { required: false, max: 300 });
-		const sitioWeb = v.text('negocio_sitio_web', 'El sitio web', { required: false, max: 120 });
+		const telefono = v.text('negocio_telefono', F.businessTelephone(), { required: false, max: 30 });
+		const correo = v.email('negocio_correo', F.businessEmail(), { required: false });
+		const direccion = v.text('negocio_direccion', F.businessAddress(), { required: false, max: 300 });
+		const sitioWeb = v.text('negocio_sitio_web', F.businessWebsite(), { required: false, max: 120 });
 
-		const codigo = v.text('moneda_codigo', 'El código de moneda', { max: 8 });
-		const simbolo = v.text('moneda_simbolo', 'El símbolo de moneda', { max: 5 });
-		const decimales = v.integer('moneda_decimales', 'Los decimales', { min: 0, max: 4 });
+		const codigo = v.text('moneda_codigo', F.currencyCode(), { max: 8 });
+		const simbolo = v.text('moneda_simbolo', F.currencySymbol(), { max: 5 });
+		const decimales = v.integer('moneda_decimales', F.decimals(), { min: 0, max: 4 });
 
-		const impuestoNombre = v.text('impuesto_nombre', 'El nombre del impuesto', { max: 20 });
+		const impuestoNombre = v.text('impuesto_nombre', F.taxName(), { max: 20 });
 		// En pantalla se escribe 13, no 0.13: nadie piensa el IVA en fracciones.
-		const tasaPorcentaje = v.decimal('impuesto_tasa', 'La tasa de impuesto', { min: 0, max: 100 });
+		const tasaPorcentaje = v.decimal('impuesto_tasa', F.taxRate(), { min: 0, max: 100 });
 
-		const plantilla = v.oneOf('documento_plantilla', 'La plantilla', [
+		const plantilla = v.oneOf('documento_plantilla', F.documentTemplate(), [
 			'tiquete',
 			'clasica',
 			'moderna'
 		] as const);
-		const anchoTiquete = v.oneOf('documento_ancho', 'El ancho del tiquete', ['58', '80'] as const);
-		const mensajeGracias = v.text('documento_mensaje', 'El mensaje de despedida', {
+		const anchoTiquete = v.oneOf('documento_ancho', F.documentWidth(), ['58', '80'] as const);
+		const mensajeGracias = v.text('documento_mensaje', F.documentFarewell(), {
 			required: false,
 			max: 120
 		});
-		const leyenda = v.text('documento_leyenda', 'La leyenda', { required: false, max: 240 });
-		const notas = v.text('documento_notas', 'Las notas', { required: false, max: 600 });
+		const leyenda = v.text('documento_leyenda', F.documentLegend(), { required: false, max: 240 });
+		const notas = v.text('documento_notas', F.documentNotes(), { required: false, max: 600 });
 
-		const colorDocumento = hex(v, form, 'documento_color', 'El color del documento', '#0e7490');
-		const colorAcento = hex(v, form, 'apariencia_color', 'El color de la interfaz', '#0e7490');
+		const colorDocumento = hex(v, form, 'documento_color', m.settings_field_document_color(), '#0e7490');
+		const colorAcento = hex(v, form, 'apariencia_color', m.settings_field_accent_color(), '#0e7490');
 
-		const ambiente = v.oneOf('electronica_ambiente', 'El ambiente', [
+		const ambiente = v.oneOf('electronica_ambiente', F.einvoicingEnvironment(), [
 			'sandbox',
 			'produccion'
 		] as const);
-		const actividad = v.text('electronica_actividad', 'La actividad económica', {
+		const actividad = v.text('electronica_actividad', F.einvoicingActivity(), {
 			required: false,
 			max: 10
 		});
-		const sucursal = v.text('electronica_sucursal', 'La sucursal', { required: false, max: 3 });
-		const terminal = v.text('electronica_terminal', 'La terminal', { required: false, max: 5 });
-		const usuarioAtv = v.text('electronica_usuario', 'El usuario de ATV', {
+		const sucursal = v.text('electronica_sucursal', F.einvoicingBranch(), { required: false, max: 3 });
+		const terminal = v.text('electronica_terminal', F.einvoicingTerminal(), { required: false, max: 5 });
+		const usuarioAtv = v.text('electronica_usuario', F.einvoicingAtvUser(), {
 			required: false,
 			max: 120
 		});
@@ -145,7 +148,7 @@ export const actions: Actions = {
 		const logo = await readLogo(form, v);
 		const quitarLogo = checked(form, 'quitar_logo');
 
-		if (!v.ok) return fail(400, { errors: v.errors });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
 		/*
 		 * Se arma el objeto y se vuelve a pasar por `mergeSettings`. Parece
@@ -214,9 +217,9 @@ export const actions: Actions = {
 			// un negocio no tiene por qué obligar a los demás a volver a pedir la
 			// suya (T-224).
 			invalidateSettings(admin.company_id);
-			return fail(400, { errors: formError(toMessage(error)) });
+			return fail(400, { errors: formError(apiMessage(error)) });
 		}
 
-		return { success: 'Configuración guardada.' };
+		return { success: m.settings_saved() };
 	}
 };

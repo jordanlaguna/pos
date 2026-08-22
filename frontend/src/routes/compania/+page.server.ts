@@ -1,8 +1,10 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { api, toMessage } from '$lib/server/api';
+import { api } from '$lib/server/api';
 import { setSessionCookie } from '$lib/server/auth';
+import { m } from '$lib/paraglide/messages.js';
 import type { ChooseCompanyResponse, CompanyOption } from '$lib/domain/types';
 import type { Actions, PageServerLoad } from './$types';
+import { apiMessage } from '$lib/ui/messages';
 
 /**
  * Elegir compañía (RF-27, plan §3.5).
@@ -46,7 +48,7 @@ export const actions: Actions = {
 
 		const companyId = companyIdDe(await request.formData());
 		if (companyId === null) {
-			return fail(400, { message: 'Elija una compañía para continuar.' });
+			return fail(400, { message: m.company_choose_one() });
 		}
 
 		try {
@@ -59,7 +61,7 @@ export const actions: Actions = {
 			// compañía. No conviven: una sesión, una compañía (RN-27).
 			setSessionCookie(cookies, elegida.access_token);
 		} catch (error) {
-			return fail(403, { message: toMessage(error) });
+			return fail(403, { message: apiMessage(error) });
 		}
 
 		redirect(303, url.searchParams.get('redirectTo') ?? '/ventas');
@@ -79,7 +81,7 @@ export const actions: Actions = {
 		const companyId = companyIdDe(form);
 		const accion = String(form.get('accion') ?? '');
 		if (companyId === null || !['aceptar', 'rechazar'].includes(accion)) {
-			return fail(400, { message: 'No se entendió la respuesta a la invitación.' });
+			return fail(400, { message: m.company_bad_invite_answer() });
 		}
 
 		try {
@@ -89,14 +91,14 @@ export const actions: Actions = {
 				token: locals.token
 			});
 		} catch (error) {
-			return fail(400, { message: toMessage(error) });
+			return fail(400, { message: apiMessage(error) });
 		}
 
 		return {
 			hecho:
 				accion === 'aceptar'
-					? 'Invitación aceptada. Ya puede entrar a esa compañía.'
-					: 'Invitación rechazada.'
+					? m.company_invite_accepted()
+					: m.company_invite_rejected()
 		};
 	}
 };

@@ -8,9 +8,29 @@ import {
 	quickCash,
 	reservedElsewhere,
 	saleNumber,
-	unitCount
+	unitCount,
+	type Decision
 } from './cart';
 import type { CartLine, Product } from './types';
+
+/*
+ * Desde T-804 el dominio devuelve código y datos, no frases. Estas pruebas
+ * afirman **qué código sale de qué situación**, que es la regla; que la frase
+ * esté bien escrita es cosa del catálogo. Antes comparaban la cadena, y con eso
+ * cualquier cambio de redacción rompía una prueba de lógica.
+ */
+
+/** Estrecha la unión al caso «sí». Falla nombrando el código si salió que no. */
+function aceptado(d: Decision) {
+	if (!d.ok) return expect.fail(`se esperaba que sí, y salió «${d.reason.code}»`);
+	return d;
+}
+
+/** Estrecha la unión al caso «no» y devuelve el motivo. */
+function rechazo(d: Decision) {
+	if (d.ok) return expect.fail('se esperaba un rechazo y salió que sí');
+	return d.reason;
+}
 
 function producto(stock: number, nombre = 'Arroz 1 kg'): Product {
 	return {
@@ -67,41 +87,45 @@ describe('unitCount', () => {
 
 describe('canAdd', () => {
 	it('acepta lo que cabe', () => {
-		const d = canAdd(producto(10), 3, undefined, 0);
-		expect(d.ok).toBe(true);
-		expect(d.quantity).toBe(3);
+		expect(aceptado(canAdd(producto(10), 3, undefined, 0)).quantity).toBe(3);
 	});
 
 	it('acumula sobre lo que ya lleva la línea', () => {
 		// Igual que `AddProductToSaleTable` del original, pero validando el stock
 		// contra el total resultante y no solo contra lo nuevo.
-		const d = canAdd(producto(10), 2, linea(3), 0);
-		expect(d.quantity).toBe(5);
+		expect(aceptado(canAdd(producto(10), 2, linea(3), 0)).quantity).toBe(5);
 	});
 
 	it('rechaza cantidades que no tienen sentido', () => {
 		for (const q of [0, -1]) {
-			const d = canAdd(producto(10), q, undefined, 0);
-			expect(d.ok).toBe(false);
-			expect(d.message).toBe('La cantidad debe ser mayor que cero.');
+			expect(rechazo(canAdd(producto(10), q, undefined, 0))).toEqual({
+				code: 'cart_quantity_not_positive'
+			});
 		}
 	});
 
 	it('rechaza un producto sin existencias', () => {
-		const d = canAdd(producto(0), 1, undefined, 0);
-		expect(d.ok).toBe(false);
-		expect(d.message).toBe('Arroz 1 kg no tiene existencias.');
+		expect(rechazo(canAdd(producto(0), 1, undefined, 0))).toEqual({
+			code: 'cart_out_of_stock',
+			product: 'Arroz 1 kg'
+		});
 	});
 
 	it('rechaza pasarse del stock', () => {
-		const d = canAdd(producto(3), 5, undefined, 0);
-		expect(d.ok).toBe(false);
-		expect(d.message).toBe('Solo hay 3 unidades de Arroz 1 kg.');
+		expect(rechazo(canAdd(producto(3), 5, undefined, 0))).toEqual({
+			code: 'cart_only_units',
+			stock: 3,
+			product: 'Arroz 1 kg'
+		});
 	});
 
 	it('y lo dice contando lo que ya llevaba', () => {
-		const d = canAdd(producto(3), 2, linea(2), 0);
-		expect(d.message).toBe('Solo hay 3 unidades de Arroz 1 kg y ya llevás 2.');
+		expect(rechazo(canAdd(producto(3), 2, linea(2), 0))).toEqual({
+			code: 'cart_only_units_with_current',
+			stock: 3,
+			product: 'Arroz 1 kg',
+			current: 2
+		});
 	});
 
 	it('descuenta lo apartado en otras ventas', () => {
@@ -112,14 +136,21 @@ describe('canAdd', () => {
 		 */
 		expect(canAdd(producto(3), 1, undefined, 2).ok).toBe(true);
 
-		const d = canAdd(producto(3), 2, undefined, 2);
-		expect(d.ok).toBe(false);
-		expect(d.message).toBe('Solo quedan 1 de Arroz 1 kg: hay 2 apartadas en otra venta.');
+		expect(rechazo(canAdd(producto(3), 2, undefined, 2))).toEqual({
+			code: 'cart_reserved_elsewhere',
+			free: 1,
+			product: 'Arroz 1 kg',
+			reserved: 2
+		});
 	});
 
 	it('cuando lo apartado supera el stock, lo libre es cero y no negativo', () => {
-		const d = canAdd(producto(3), 1, undefined, 5);
-		expect(d.message).toBe('Solo quedan 0 de Arroz 1 kg: hay 5 apartadas en otra venta.');
+		expect(rechazo(canAdd(producto(3), 1, undefined, 5))).toEqual({
+			code: 'cart_reserved_elsewhere',
+			free: 0,
+			product: 'Arroz 1 kg',
+			reserved: 5
+		});
 	});
 
 	it('llenar el stock exacto sí se puede', () => {
@@ -130,33 +161,33 @@ describe('canAdd', () => {
 
 describe('canSetQuantity', () => {
 	it('fija la cantidad exacta', () => {
-		const d = canSetQuantity(linea(2), 5, 0);
-		expect(d.ok).toBe(true);
-		expect(d.quantity).toBe(5);
+		expect(aceptado(canSetQuantity(linea(2), 5, 0)).quantity).toBe(5);
 	});
 
 	it('trunca los decimales', () => {
-		expect(canSetQuantity(linea(2), 3.9, 0).quantity).toBe(3);
+		expect(aceptado(canSetQuantity(linea(2), 3.9, 0)).quantity).toBe(3);
 	});
 
 	it('cero o menos significa quitar la línea', () => {
 		for (const q of [0, -3]) {
-			const d = canSetQuantity(linea(2), q, 0);
-			expect(d.ok).toBe(true);
-			expect(d.quantity).toBe(0);
+			expect(aceptado(canSetQuantity(linea(2), q, 0)).quantity).toBe(0);
 		}
 	});
 
 	it('rechaza pasarse del stock', () => {
-		const d = canSetQuantity(linea(2, 10), 11, 0);
-		expect(d.ok).toBe(false);
-		expect(d.message).toBe('Solo quedan 10 unidades de Arroz 1 kg.');
+		expect(rechazo(canSetQuantity(linea(2, 10), 11, 0))).toEqual({
+			code: 'cart_only_free_units',
+			free: 10,
+			product: 'Arroz 1 kg'
+		});
 	});
 
 	it('descuenta lo apartado en otras ventas', () => {
-		const d = canSetQuantity(linea(2, 10), 9, 3);
-		expect(d.ok).toBe(false);
-		expect(d.message).toBe('Solo quedan 7 unidades de Arroz 1 kg.');
+		expect(rechazo(canSetQuantity(linea(2, 10), 9, 3))).toEqual({
+			code: 'cart_only_free_units',
+			free: 7,
+			product: 'Arroz 1 kg'
+		});
 	});
 
 	it('llegar justo al tope se puede', () => {

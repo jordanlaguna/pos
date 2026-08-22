@@ -10,6 +10,8 @@
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { currencySettings, formatMoney, parseAmount, round2 } from '$lib/domain/money';
 	import { formatDateTime, formatInt, formatTime } from '$lib/ui/format';
+	import { m } from '$lib/paraglide/messages.js';
+	import { paymentLabel } from '$lib/ui/messages';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -52,8 +54,8 @@
 </script>
 
 <PageHeader
-	title="Caja"
-	description="Apertura, movimientos de efectivo y cierre de turno."
+	title={m.cash_title()}
+	description={m.cash_description()}
 >
 	{#snippet actions()}
 		{#if isOpen}
@@ -63,20 +65,20 @@
 				onclick={() => startMovement('entrada')}
 			>
 				<Icon name="plus" size={15} />
-				Entrada
+				{m.cash_movement_in()}
 			</button>
 			<button type="button" class="btn btn-ghost" onclick={() => startMovement('salida')}>
 				<Icon name="minus" size={15} />
-				Salida
+				{m.cash_movement_out()}
 			</button>
 			<button type="button" class="btn btn-primary" onclick={openCloseModal}>
 				<Icon name="lock" size={15} />
-				Cerrar caja
+				{m.cash_close_register()}
 			</button>
 		{:else}
 			<button type="button" class="btn btn-primary" onclick={() => (openModal = true)}>
 				<Icon name="wallet" size={15} />
-				Abrir caja
+				{m.cash_open_register()}
 			</button>
 		{/if}
 	{/snippet}
@@ -86,12 +88,12 @@
 	<div class="card p-6">
 		<EmptyState
 			icon="wallet"
-			title="La caja está cerrada"
-			description="Abrí la caja con el efectivo inicial para empezar el turno. Las ventas se atribuyen al turno abierto."
+			title={m.cash_closed()}
+			description={m.cash_closed_hint()}
 		>
 			<button type="button" class="btn btn-primary" onclick={() => (openModal = true)}>
 				<Icon name="wallet" size={15} />
-				Abrir caja
+				{m.cash_open_register()}
 			</button>
 		</EmptyState>
 	</div>
@@ -100,7 +102,7 @@
 	<div class="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 		<div class="card p-4">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Apertura
+				{m.cash_opening()}
 			</p>
 			<p class="mt-1 text-xl font-bold text-[var(--text)]">
 				{formatMoney(session.opening_amount)}
@@ -112,72 +114,71 @@
 
 		<div class="card p-4">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Ventas del turno
+				{m.cash_shift_sales()}
 			</p>
 			<p class="mt-1 text-xl font-bold text-[var(--text)]">
 				{formatMoney(session.sales_total)}
 			</p>
 			<p class="mt-1 text-xs text-[var(--text-subtle)]">
-				{formatInt(session.sales_count)}
-				{session.sales_count === 1 ? 'venta' : 'ventas'}
+				{m.cash_sales_count({ count: session.sales_count })}
 			</p>
 		</div>
 
 		<div class="card p-4">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Efectivo en ventas
+				{m.cash_cash_sales()}
 			</p>
 			<p class="mt-1 text-xl font-bold text-[var(--text)]">
 				{formatMoney(session.cash_sales)}
 			</p>
 			<p class="mt-1 text-xs text-[var(--text-subtle)]">
-				Solo el efectivo pasa por la gaveta
+				{m.cash_only_cash_hint()}
 			</p>
 		</div>
 
 		<div class="card border-[var(--accent)] p-4">
 			<p class="text-xs font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
-				Debe haber en caja
+				{m.cash_expected_in_register()}
 			</p>
 			<p class="mt-1 text-xl font-bold text-[var(--accent)]">
 				{formatMoney(session.expected_amount)}
 			</p>
-			<p class="mt-1 text-xs text-[var(--text-subtle)]">Apertura + efectivo ± movimientos</p>
+			<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.cash_expected_formula()}</p>
 		</div>
 	</div>
 
 	<div class="grid gap-4 lg:grid-cols-2">
 		<!-- Desglose -->
 		<section class="card p-4">
-			<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Desglose del turno</h2>
+			<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.cash_breakdown()}</h2>
 
 			<dl class="space-y-2 text-sm">
 				<div class="flex justify-between">
-					<dt class="text-[var(--text-muted)]">Monto de apertura</dt>
+					<dt class="text-[var(--text-muted)]">{m.cash_opening_amount()}</dt>
 					<dd class="tabular-nums text-[var(--text)]">
 						{formatMoney(session.opening_amount)}
 					</dd>
 				</div>
 				<div class="flex justify-between">
-					<dt class="text-[var(--text-muted)]">Ventas en efectivo</dt>
+					<dt class="text-[var(--text-muted)]">{m.cash_sales_in_cash()}</dt>
 					<dd class="tabular-nums text-[var(--positive)]">
 						+{formatMoney(session.cash_sales)}
 					</dd>
 				</div>
 				<div class="flex justify-between">
-					<dt class="text-[var(--text-muted)]">Entradas de efectivo</dt>
+					<dt class="text-[var(--text-muted)]">{m.cash_movements_in()}</dt>
 					<dd class="tabular-nums text-[var(--positive)]">
 						+{formatMoney(session.movements_in)}
 					</dd>
 				</div>
 				<div class="flex justify-between">
-					<dt class="text-[var(--text-muted)]">Salidas de efectivo</dt>
+					<dt class="text-[var(--text-muted)]">{m.cash_movements_out()}</dt>
 					<dd class="tabular-nums text-[var(--negative)]">
 						−{formatMoney(session.movements_out)}
 					</dd>
 				</div>
 				<div class="flex justify-between">
-					<dt class="text-[var(--text-muted)]">Devoluciones</dt>
+					<dt class="text-[var(--text-muted)]">{m.cash_returns()}</dt>
 					<dd class="tabular-nums text-[var(--negative)]">
 						−{formatMoney(session.returns_total)}
 					</dd>
@@ -185,7 +186,7 @@
 				<div
 					class="flex justify-between border-t border-[var(--border)] pt-2 text-base font-bold"
 				>
-					<dt class="text-[var(--text)]">Esperado en gaveta</dt>
+					<dt class="text-[var(--text)]">{m.cash_expected_in_drawer()}</dt>
 					<dd class="tabular-nums text-[var(--text)]">
 						{formatMoney(session.expected_amount)}
 					</dd>
@@ -194,20 +195,20 @@
 
 			{#if session.by_payment_method.length}
 				<h3 class="mt-5 mb-2 text-xs font-bold tracking-wide text-[var(--text-subtle)] uppercase">
-					Por método de pago
+					{m.cash_by_payment_method()}
 				</h3>
 				<table class="data-table">
 					<thead>
 						<tr>
-							<th scope="col">Método</th>
-							<th scope="col" class="num">Ventas</th>
-							<th scope="col" class="num">Total</th>
+							<th scope="col">{m.cash_col_method()}</th>
+							<th scope="col" class="num">{m.cash_col_sales()}</th>
+							<th scope="col" class="num">{m.common_total()}</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each session.by_payment_method as row (row.payment_method)}
 							<tr>
-								<td>{row.payment_method}</td>
+								<td>{paymentLabel(row.payment_method)}</td>
 								<td class="num tabular-nums">{formatInt(row.count)}</td>
 								<td class="num tabular-nums">{formatMoney(row.total)}</td>
 							</tr>
@@ -219,7 +220,7 @@
 
 		<!-- Movimientos -->
 		<section class="card flex flex-col p-4">
-			<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Movimientos de efectivo</h2>
+			<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.cash_movements()}</h2>
 
 			{#if session.movements.length}
 				<ul class="divide-y divide-[var(--border)]">
@@ -253,8 +254,8 @@
 			{:else}
 				<EmptyState
 					icon="wallet"
-					title="Sin movimientos"
-					description="Registrá entradas o salidas de efectivo que no sean ventas."
+					title={m.cash_no_movements()}
+					description={m.cash_no_movements_hint()}
 					compact
 				/>
 			{/if}
@@ -264,22 +265,22 @@
 
 <!-- Historial de turnos -->
 <section class="mt-6">
-	<h2 class="mb-3 text-sm font-bold text-[var(--text)]">Turnos anteriores</h2>
+	<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.cash_previous_shifts()}</h2>
 	<div class="card overflow-hidden">
 		<div class="table-wrap">
 			<table class="data-table">
 				<thead>
 					<tr>
-						<th scope="col">Apertura</th>
-						<th scope="col">Cierre</th>
+						<th scope="col">{m.cash_col_opened()}</th>
+						<th scope="col">{m.cash_col_closed()}</th>
 						{#if data.user.role === 'admin'}
-							<th scope="col">Cajero</th>
+							<th scope="col">{m.cash_col_cashier()}</th>
 						{/if}
-						<th scope="col" class="num">Inicial</th>
-						<th scope="col" class="num">Ventas</th>
-						<th scope="col" class="num">Esperado</th>
-						<th scope="col" class="num">Contado</th>
-						<th scope="col" class="num">Diferencia</th>
+						<th scope="col" class="num">{m.cash_col_initial()}</th>
+						<th scope="col" class="num">{m.cash_col_sales()}</th>
+						<th scope="col" class="num">{m.cash_col_expected()}</th>
+						<th scope="col" class="num">{m.cash_col_counted()}</th>
+						<th scope="col" class="num">{m.cash_col_difference()}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -298,7 +299,7 @@
 								{#if row.difference == null || row.difference === 0}
 									<span class="badge bg-[var(--positive-bg)] text-[var(--positive)]">
 										<Icon name="check" size={11} />
-										Cuadrada
+										{m.cash_balanced()}
 									</span>
 								{:else}
 									<span
@@ -307,7 +308,7 @@
 											: 'bg-[var(--negative-bg)] text-[var(--negative)]'}"
 									>
 										<Icon name="alert" size={11} />
-										{row.difference > 0 ? 'Sobrante' : 'Faltante'}
+										{row.difference > 0 ? m.cash_over() : m.cash_short()}
 										{formatMoney(Math.abs(row.difference))}
 									</span>
 								{/if}
@@ -318,8 +319,8 @@
 							<td colspan="8">
 								<EmptyState
 									icon="clock"
-									title="Sin turnos cerrados"
-									description="El historial aparece al cerrar la caja."
+									title={m.cash_no_closed_shifts()}
+									description={m.cash_no_closed_shifts_hint()}
 									compact
 								/>
 							</td>
@@ -334,8 +335,8 @@
 <!-- ------------------------------------------------------ abrir caja -->
 <Modal
 	open={openModal}
-	title="Abrir caja"
-	description="Contá el efectivo con el que arranca el turno."
+	title={m.cash_open_register()}
+	description={m.cash_open_hint()}
 	size="sm"
 	busy={submitting}
 	onclose={() => (openModal = false)}
@@ -351,32 +352,32 @@
 		class="space-y-4"
 	>
 		<Field
-			label="Monto de apertura ({currency.code})"
+			label={m.cash_opening_amount_in({ currency: currency.code })}
 			name="opening_amount"
 			value="0"
 			inputmode="decimal"
 			icon="wallet"
 			required
 			error={form?.errors?.opening_amount}
-			hint="Efectivo con el que inicia la gaveta, en {currency.code}."
+			hint={m.cash_opening_amount_hint({ currency: currency.code })}
 		>
 			<span class="pr-1 text-sm font-semibold text-[var(--text-subtle)]">{currency.symbol}</span>
 		</Field>
 		<Field
-			label="Notas (opcional)"
+			label={m.cash_notes_optional()}
 			name="notes"
-			placeholder="Ej.: turno de la mañana"
+			placeholder={m.cash_notes_placeholder()}
 			error={form?.errors?.notes}
 		/>
 	</form>
 
 	{#snippet footer()}
 		<button type="button" class="btn btn-ghost" onclick={() => (openModal = false)}>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button type="submit" form="open-form" class="btn btn-primary" disabled={submitting}>
-			{#if submitting}<Spinner size={15} />Abriendo…{:else}
-				<Icon name="check" size={15} />Abrir caja
+			{#if submitting}<Spinner size={15} />{m.cash_opening_now()}{:else}
+				<Icon name="check" size={15} />{m.cash_open_register()}
 			{/if}
 		</button>
 	{/snippet}
@@ -385,10 +386,8 @@
 <!-- ------------------------------------------------------ movimiento -->
 <Modal
 	open={moveModal}
-	title={moveType === 'entrada' ? 'Entrada de efectivo' : 'Salida de efectivo'}
-	description={moveType === 'entrada'
-		? 'Dinero que entra a la gaveta sin ser una venta.'
-		: 'Dinero que sale de la gaveta: pagos, retiros, vueltos.'}
+	title={moveType === 'entrada' ? m.cash_movement_in_title() : m.cash_movement_out_title()}
+	description={moveType === 'entrada' ? m.cash_movement_in_hint() : m.cash_movement_out_hint()}
 	size="sm"
 	onclose={() => (moveModal = false)}
 >
@@ -397,7 +396,7 @@
 		class="space-y-4">
 		<input type="hidden" name="type" value={moveType} />
 		<Field
-			label="Monto ({currency.code})"
+			label={m.cash_amount_in({ currency: currency.code })}
 			name="amount"
 			inputmode="decimal"
 			icon="wallet"
@@ -407,21 +406,23 @@
 			<span class="pr-1 text-sm font-semibold text-[var(--text-subtle)]">{currency.symbol}</span>
 		</Field>
 		<Field
-			label="Motivo"
+			label={m.cash_reason()}
 			name="reason"
 			required
-			placeholder={moveType === 'entrada' ? 'Ej.: cambio del banco' : 'Ej.: pago a proveedor'}
+			placeholder={moveType === 'entrada'
+				? m.cash_reason_in_placeholder()
+				: m.cash_reason_out_placeholder()}
 			error={form?.errors?.reason}
 		/>
 	</form>
 
 	{#snippet footer()}
 		<button type="button" class="btn btn-ghost" onclick={() => (moveModal = false)}>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button type="submit" form="move-form" class="btn btn-primary">
 			<Icon name="check" size={15} />
-			Registrar
+			{m.cash_register_movement()}
 		</button>
 	{/snippet}
 </Modal>
@@ -429,8 +430,8 @@
 <!-- ------------------------------------------------------ cerrar caja -->
 <Modal
 	open={closeModal}
-	title="Cerrar caja"
-	description="Contá el efectivo real de la gaveta antes de confirmar."
+	title={m.cash_close_register()}
+	description={m.cash_close_hint()}
 	busy={submitting}
 	onclose={() => (closeModal = false)}
 >
@@ -446,7 +447,7 @@
 	>
 		<div class="rounded-lg bg-[var(--surface-sunken)] p-4">
 			<div class="flex justify-between text-sm">
-				<span class="text-[var(--text-muted)]">Debe haber en gaveta</span>
+				<span class="text-[var(--text-muted)]">{m.cash_must_be_in_drawer()}</span>
 				<span class="font-bold tabular-nums text-[var(--text)]">
 					{formatMoney(session?.expected_amount ?? 0)}
 				</span>
@@ -454,7 +455,7 @@
 		</div>
 
 		<Field
-			label="Efectivo contado ({currency.code})"
+			label={m.cash_counted_in({ currency: currency.code })}
 			name="closing_amount"
 			bind:value={countedInput}
 			inputmode="decimal"
@@ -472,7 +473,7 @@
 				? 'border-[var(--positive)]'
 				: 'border-[var(--negative)]'}"
 		>
-			<span class="text-sm font-semibold text-[var(--text-muted)]">Diferencia</span>
+			<span class="text-sm font-semibold text-[var(--text-muted)]">{m.cash_difference()}</span>
 			<span
 				class="text-xl font-bold tabular-nums {previewDifference === 0
 					? 'text-[var(--positive)]'
@@ -484,16 +485,14 @@
 
 		{#if previewDifference !== 0}
 			<p class="text-xs text-[var(--text-muted)]">
-				{previewDifference > 0
-					? 'Hay más efectivo del esperado. Anotá el motivo antes de cerrar.'
-					: 'Falta efectivo respecto de lo esperado. Anotá el motivo antes de cerrar.'}
+				{previewDifference > 0 ? m.cash_over_hint() : m.cash_short_hint()}
 			</p>
 		{/if}
 
 		<Field
-			label="Notas del cierre (opcional)"
+			label={m.cash_close_notes()}
 			name="notes"
-			placeholder="Ej.: faltante por vuelto mal dado"
+			placeholder={m.cash_close_notes_placeholder()}
 			error={form?.errors?.notes}
 		/>
 	</form>
@@ -505,11 +504,11 @@
 			onclick={() => (closeModal = false)}
 			disabled={submitting}
 		>
-			Cancelar
+			{m.common_cancel()}
 		</button>
 		<button type="submit" form="close-form" class="btn btn-primary" disabled={submitting}>
-			{#if submitting}<Spinner size={15} />Cerrando…{:else}
-				<Icon name="lock" size={15} />Cerrar caja
+			{#if submitting}<Spinner size={15} />{m.cash_closing_now()}{:else}
+				<Icon name="lock" size={15} />{m.cash_close_register()}
 			{/if}
 		</button>
 	{/snippet}
