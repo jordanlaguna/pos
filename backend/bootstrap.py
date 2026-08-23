@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
-"""Da de alta una compañía y su primer administrador.
+"""Da de alta una compañía y su primer administrador, o una cuenta de soporte.
 
-Es el único guion que habla con la base directamente, y tiene que ser así: una
-compañía nueva no se puede crear por la API porque no hay sesión sin membresía y
-no hay membresía sin compañía. Es el huevo y la gallina que T-903 tiene que
-resolver bien; mientras tanto, esto es el arranque manual.
-
-Cuando exista el panel de soporte (F3, RF-6) esto será un formulario y el guion
-quedará solo para instalaciones nuevas.
+Es el único guion que habla con la base directamente, y tiene que ser así: ni
+una compañía nueva ni la primera cuenta de soporte se pueden crear por la API,
+porque no hay sesión sin membresía, no hay membresía sin compañía, y no hay
+panel de soporte sin alguien marcado como soporte. Es el huevo y la gallina, y
+esto es el arranque manual.
 
     python bootstrap.py --nombre "Abastecedor La Esquina" \
         --email admin@ventasys.cr --password admin123
 
     python bootstrap.py --afiliado 2 --compania 1 --nombre "Repuestos Yamaha" \
         --email dueno@yamaha.cr --password otra123
+
+    python bootstrap.py --soporte --email soporte@ventasys.cr --password soporte123
+
+Desde F3 el alta de compañías **también** se hace desde el panel de soporte
+(RF-6), y las dos usan el mismo código: `app/services/crud_company.py`. Este
+guion queda para instalaciones nuevas y para el día que el panel no esté
+disponible, que es justo el día en que uno quiere una herramienta que no
+dependa de nada.
 
 Es repetible: si la compañía ya existe la reutiliza, y si la persona ya existe
 le agrega la membresía en vez de crear otra cuenta —que es exactamente el caso
@@ -25,10 +31,9 @@ import sys
 from datetime import datetime
 
 from app.database.database import SessionLocal
-from app.models.model_company import Branch, Company, Plan, Terminal, UserCompany
 from app.models.model_person import Person
-from app.models.model_settings import Settings
 from app.models.model_user import User
+from app.services import crud_company
 from app.utils.security import hash_password
 from app.utils.tenancy import compania, sin_filtro
 
@@ -37,148 +42,139 @@ def _ahora() -> datetime:
     return datetime.now().replace(microsecond=0)
 
 
-def _plan(db, nombre: str) -> Plan:
-    plan = sin_filtro(db.query(Plan).filter(Plan.nombre == nombre)).first()
-    if plan:
-        return plan
-    plan = Plan(
-        nombre=nombre,
-        precio_mensual=25000,
-        max_sucursales=1,
-        max_terminales=3,
-        max_usuarios=10,
-        factura_electronica=0,
-    )
-    db.add(plan)
-    db.flush()
-    return plan
+def _cuenta_de_soporte(db, args) -> list[str]:
+    """Crea —o marca— la cuenta que administra la plataforma (T-301, RN-4).
 
+    No lleva compañía ni membresía: soporte no pertenece a ninguna, y por eso su
+    token no lleva `cid` y el filtro de `tenancy.py` le hace fallar cerrado
+    cualquier consulta a una tabla de negocio. Para ver los datos de un cliente
+    tiene que *entrar como* esa compañía, y eso queda en la bitácora.
 
-def _compania(db, afiliado: int, compania_num: int, nombre: str, plan: Plan) -> tuple[Company, bool]:
-    existente = sin_filtro(
-        db.query(Company).filter(Company.afiliado == afiliado, Company.compania == compania_num)
-    ).first()
-    if existente:
-        return existente, False
-
-    company = Company(
-        afiliado=afiliado,
-        compania=compania_num,
-        nombre=nombre,
-        plan_id=plan.id,
-        estado="activa",
-        creada_el=_ahora(),
-        locale="es",
-        document_locale="es",
-    )
-    db.add(company)
-    db.flush()
-    return company, True
-
-
-def _sucursal_y_terminal(db, company: Company) -> tuple[Branch, Terminal]:
-    """Sucursal 001 y terminal 00001. Los formatos son los que pide Hacienda."""
-    sucursal = sin_filtro(
-        db.query(Branch).filter(Branch.company_id == company.id, Branch.codigo == "001")
-    ).first()
-    if not sucursal:
-        sucursal = Branch(company_id=company.id, codigo="001", nombre="Casa matriz", activa=True)
-        db.add(sucursal)
-        db.flush()
-
-    terminal = sin_filtro(
-        db.query(Terminal).filter(
-            Terminal.company_id == company.id,
-            Terminal.branch_id == sucursal.id,
-            Terminal.codigo == "00001",
-        )
-    ).first()
-    if not terminal:
-        terminal = Terminal(
-            company_id=company.id,
-            branch_id=sucursal.id,
-            codigo="00001",
-            nombre="Caja 1",
-            activa=True,
-        )
-        db.add(terminal)
-        db.flush()
-
-    return sucursal, terminal
-
-
-def _configuracion(db, company: Company) -> None:
-    """La fila de configuración, vacía. El POS aplica sus valores por omisión."""
-    existente = sin_filtro(db.query(Settings).filter(Settings.company_id == company.id)).first()
-    if not existente:
-        db.add(Settings(company_id=company.id, data="{}"))
-
-
-def _persona_y_usuario(db, args) -> tuple[User, bool]:
+    Si el correo ya existe, lo marca como soporte en vez de fallar. Es lo que
+    hace falta para promover una cuenta que ya estaba, y es idempotente: correrlo
+    dos veces no hace nada la segunda.
+    """
     user = sin_filtro(db.query(User).filter(User.email == args.email)).first()
-    if user:
-        return user, False
-
-    persona = Person(
-        birth_date=args.nacimiento,
-        identification=args.cedula or args.email,
-        name=args.nombre_persona,
-        lastName=args.apellido,
-        secondName=args.segundo_apellido,
-        telephone=args.telefono,
-    )
-    db.add(persona)
-    db.flush()
-
-    user = User(
-        email=args.email,
-        password=hash_password(args.password),
-        id_person=persona.id_person,
-    )
-    db.add(user)
-    db.flush()
-    return user, True
-
-
-def _membresia(db, user: User, company: Company, rol: str) -> bool:
-    existente = sin_filtro(
-        db.query(UserCompany).filter(
-            UserCompany.user_id == user.id_user, UserCompany.company_id == company.id
+    if user is None:
+        persona = Person(
+            birth_date=args.nacimiento,
+            identification=args.cedula or args.email,
+            name=args.nombre_persona,
+            lastName=args.apellido,
+            secondName=args.segundo_apellido,
+            telephone=args.telefono,
         )
-    ).first()
-    # Las membresías que crea este guion nacen **aceptadas**, a diferencia de
-    # las que concede un administrador desde el POS (T-229). Acá no hay a quién
-    # pedirle permiso: quien corre `bootstrap.py` es el operador del sistema,
-    # con acceso a la base, dando de alta a alguien con una contraseña que él
-    # mismo eligió. Una invitación que nadie puede aceptar dejaría la
-    # instalación sin poder entrar.
-    if existente:
-        if existente.rol != rol or not existente.activa or existente.aceptada_el is None:
-            existente.rol = rol
-            existente.activa = True
-            existente.aceptada_el = existente.aceptada_el or _ahora()
-            return True
-        return False
+        db.add(persona)
+        db.flush()
 
-    db.add(
-        UserCompany(
-            user_id=user.id_user,
-            company_id=company.id,
-            rol=rol,
-            activa=True,
-            creada_el=_ahora(),
-            aceptada_el=_ahora(),
+        user = User(
+            email=args.email,
+            password=hash_password(args.password),
+            id_person=persona.id_person,
+            is_support=True,
         )
+        db.add(user)
+        db.flush()
+        creado = True
+    else:
+        creado = False
+        user.is_support = True
+
+    membresias = crud_company.membresias_de(db, user.id_user)
+    aviso = []
+    if membresias:
+        # Tener las dos cosas no rompe nada pero deja membresías inservibles: el
+        # login manda a soporte al panel y nunca le ofrece elegir compañía. Se
+        # avisa en vez de borrarlas, porque borrar filas no es tarea de un guion
+        # de arranque.
+        aviso = [
+            f"AVISO      esta cuenta tiene {membresias} membresía(s) de compañía, "
+            "que quedan sin uso: soporte no elige compañía."
+        ]
+
+    return [
+        f"Soporte    {user.email} (id {user.id_user}) "
+        f"{'creado' if creado else 'ya existía, marcado como soporte'}",
+        *aviso,
+    ]
+
+
+def _compania(db, args) -> list[str]:
+    plan = crud_company.plan_por_nombre(
+        db,
+        args.plan,
+        crear=True,
+        limites=(args.plan_max_sucursales, args.plan_max_terminales, args.plan_max_usuarios),
     )
-    return True
+    ya_estaba = crud_company.por_par(db, args.afiliado, args.compania) is not None
+
+    alta = crud_company.dar_de_alta(
+        db,
+        crud_company.DatosDeAlta(
+            afiliado=args.afiliado,
+            compania=args.compania,
+            nombre=args.nombre,
+            email=args.email,
+            password=args.password,
+            plan_id=plan.id,
+            estado=args.estado,
+            locale=args.idioma,
+            document_locale=args.idioma_documento,
+            rol=args.rol,
+            nombre_persona=args.nombre_persona,
+            apellido=args.apellido,
+            segundo_apellido=args.segundo_apellido,
+            cedula=args.cedula,
+            telefono=args.telefono,
+            nacimiento=args.nacimiento,
+            # Ver `DatosDeAlta.aceptar_membresia`: acá no hay a quién pedirle
+            # permiso, y una invitación que nadie puede aceptar dejaría la
+            # instalación sin poder entrar.
+            aceptar_membresia=True,
+        ),
+        plan,
+    )
+
+    # El resumen se arma ANTES del commit, y no es un capricho de estilo. Al
+    # confirmar, SQLAlchemy expira los objetos; leer `sucursal.codigo` después
+    # dispara una relectura de `branches`, que es tabla de negocio, y en este
+    # guion el contexto no tiene compañía. O sea: el filtro haría fallar un
+    # `print`. Es exactamente lo que tiene que pasar —leer una tabla de negocio
+    # sin compañía es un error— y la respuesta correcta no es aflojar el filtro
+    # sino no leer después de confirmar. Por eso `dar_de_alta` devuelve un
+    # objeto con los datos ya copiados y no las filas.
+    return [
+        f"Plan       {alta.plan_nombre} (id {alta.plan_id})",
+        f"Compañía   afiliado {alta.afiliado} · compañía {alta.compania} — "
+        f"{alta.nombre} (id {alta.company_id}) {'ya existía' if ya_estaba else 'creada'}",
+        f"Sucursal   {alta.branch_codigo} (id {alta.branch_id})",
+        f"Terminal   {alta.terminal_codigo} (id {alta.terminal_id})",
+        f"Usuario    {alta.email} (id {alta.user_id}) "
+        f"{'creado' if alta.usuario_nuevo else 'ya existía'}",
+        f"Membresía  rol {args.rol} en la compañía {alta.company_id} "
+        f"{'pendiente de aceptar' if alta.membresia_pendiente else 'otorgada'}",
+    ]
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Da de alta una compañía y su administrador.")
+    ap.add_argument(
+        "--soporte",
+        action="store_true",
+        help="crea (o marca) una cuenta de soporte, sin compañía ni membresía",
+    )
     ap.add_argument("--afiliado", type=int, default=1)
     ap.add_argument("--compania", type=int, default=1)
     ap.add_argument("--nombre", default="Compañía inicial", help="nombre comercial")
     ap.add_argument("--plan", default="Comercio")
+    # Los límites solo se usan si el plan hay que crearlo; uno que ya existe no
+    # se toca. −1 es «sin techo» (ver `app/domain/limits.py`).
+    ap.add_argument("--plan-max-sucursales", type=int, default=1)
+    ap.add_argument("--plan-max-terminales", type=int, default=3)
+    ap.add_argument("--plan-max-usuarios", type=int, default=10)
+    ap.add_argument("--estado", default="activa", help="prueba | activa | vencida | …")
+    ap.add_argument("--idioma", default="es", help="idioma de la pantalla")
+    ap.add_argument("--idioma-documento", default="es", help="idioma de la factura")
     ap.add_argument("--email", required=True, help="correo del administrador")
     ap.add_argument("--password", default="admin123")
     ap.add_argument("--rol", default="admin", choices=("admin", "cajero"))
@@ -197,38 +193,12 @@ def main() -> None:
         # `company_id` explícitamente. El sellado automático no aplica acá
         # justamente porque acá es donde se decide cuál es la compañía.
         with compania(None):
-            plan = _plan(db, args.plan)
-            company, nueva = _compania(db, args.afiliado, args.compania, args.nombre, plan)
-            sucursal, terminal = _sucursal_y_terminal(db, company)
-            _configuracion(db, company)
-            user, usuario_nuevo = _persona_y_usuario(db, args)
-            cambio = _membresia(db, user, company, args.rol)
-
-            # El resumen se arma ANTES del commit, y no es un capricho de
-            # estilo. Al confirmar, SQLAlchemy expira los objetos; leer
-            # `sucursal.codigo` después dispara una relectura de `branches`, que
-            # es tabla de negocio, y en este guion el contexto no tiene
-            # compañía. O sea: el filtro haría fallar un `print`. Es
-            # exactamente lo que tiene que pasar —leer una tabla de negocio sin
-            # compañía es un error— y la respuesta correcta no es aflojar el
-            # filtro sino no leer después de confirmar.
-            resumen = [
-                f"Plan       {plan.nombre} (id {plan.id})",
-                f"Compañía   afiliado {company.afiliado} · compañía {company.compania} — "
-                f"{company.nombre} (id {company.id}) {'creada' if nueva else 'ya existía'}",
-                f"Sucursal   {sucursal.codigo} {sucursal.nombre} (id {sucursal.id})",
-                f"Terminal   {terminal.codigo} {terminal.nombre} (id {terminal.id})",
-                f"Usuario    {user.email} (id {user.id_user}) "
-                f"{'creado' if usuario_nuevo else 'ya existía'}",
-                f"Membresía  rol {args.rol} en la compañía {company.id} "
-                f"{'otorgada' if cambio else 'ya la tenía'}",
-            ]
-
+            resumen = _cuenta_de_soporte(db, args) if args.soporte else _compania(db, args)
             db.commit()
             print("\n".join(resumen))
     except Exception as exc:  # noqa: BLE001
         db.rollback()
-        print(f"\nNo se pudo dar de alta la compañía: {exc}", file=sys.stderr)
+        print(f"\nNo se pudo completar el alta: {exc}", file=sys.stderr)
         sys.exit(1)
     finally:
         db.close()

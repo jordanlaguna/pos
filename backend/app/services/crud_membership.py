@@ -13,19 +13,10 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.domain.subscription import evaluar, motivo_de_bloqueo
 from app.models.model_company import AuditLog, Branch, Company, Terminal, UserCompany
+from app.utils import clock
 from app.utils.tenancy import sin_filtro
-
-#: Estados en los que se entra con normalidad. `vencida` entra a propósito: hay
-#: siete días de gracia y, pasados esos, el sistema queda en solo lectura pero
-#: la caja abierta siempre se puede cerrar (RN-1). Ese matiz lo aplica F3; acá
-#: solo se decide si la puerta abre.
-ESTADOS_QUE_ENTRAN = ("prueba", "activa", "vencida")
-
-#: Con la suscripción suspendida solo entra el administrador, y solo para ver el
-#: aviso de pago (spec §2). El cajero no puede hacer nada útil y verlo intentarlo
-#: es peor que decirle por qué.
-ESTADO_SOLO_ADMIN = "suspendida"
 
 
 def companias_de(db: Session, user_id: int) -> list[tuple[UserCompany, Company]]:
@@ -144,17 +135,18 @@ def puede_entrar(company: Company, rol: str) -> tuple[bool, str | None]:
     """¿Deja entrar el estado de la suscripción? Devuelve el motivo en código.
 
     El motivo es un código y no una frase: lo traduce el POS (RN-30).
+
+    La regla vive en `domain/subscription.py` y acá solo se lee la fila y el
+    reloj. Antes estaba escrita en este archivo, y hasta F3 alcanzaba porque lo
+    único que se decidía era si la puerta abría; en cuanto apareció el segundo
+    lector —«y además, puede vender?»— tener la misma tabla de estados en dos
+    sitios era el camino conocido a que uno de los dos se quede viejo.
+
+    Un estado desconocido no entra: un error de dedo en la base cierra la puerta
+    en vez de abrirla.
     """
-    if company.estado in ESTADOS_QUE_ENTRAN:
-        return True, None
-    if company.estado == ESTADO_SOLO_ADMIN:
-        if rol == "admin":
-            return True, None
-        return False, "suspendida"
-    # 'cancelada' y cualquier estado que se invente después: no entra nadie.
-    # Es deliberadamente cerrado —un estado desconocido bloquea— porque la
-    # alternativa es que un error de dedo en la base abra la puerta.
-    return False, company.estado
+    suscripcion = evaluar(company.estado, company.vence_el, clock.today(), rol)
+    return suscripcion.puede_entrar, motivo_de_bloqueo(suscripcion)
 
 
 def registrar(

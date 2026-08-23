@@ -493,6 +493,24 @@ FUERA_DE_LA_BATERIA = {
     "/persons/persons_list": "probado en TestLasListasNoMezclan",
     "/persons/update/{id_person}": "identidad global: cada quien edita la suya",
     "/settings/": "probado en TestLaConfiguracion",
+    "/settings/locales": "escribe los idiomas de la compañía de la sesión; no recibe id ajeno (T-810)",
+    "/auth/locale": "escribe el idioma de quien trae el token; no recibe id ajeno (T-810)",
+    # El panel de soporte cruza compañías **a propósito**: es lo que hace. La
+    # batería de aislamiento no aplica —su premisa es «con el token de A no se ve
+    # B» y acá la respuesta correcta es ver las dos—, así que lo que hay que
+    # probar es lo otro: que un token de compañía no llegue nunca. Eso está en
+    # `test_soporte.py::TestLaPuertaDelPanel`, que recorre las siete rutas y
+    # exige 403 con el token de un administrador (T-302).
+    "/support/me": "panel de soporte; el 403 al token de compañía está en test_soporte.py",
+    "/support/plans": "panel de soporte; ídem",
+    "/support/companies": "panel de soporte; ídem, y cruzar compañías es su función",
+    "/support/companies/{company_id}": "panel de soporte; ídem",
+    "/support/companies/{company_id}/subscription": "panel de soporte; ídem",
+    "/support/companies/{company_id}/enter": (
+        "panel de soporte; el token que emite es de solo lectura y está probado "
+        "en TestEntrarComo"
+    ),
+    "/support/audit": "panel de soporte; la bitácora es del sistema entero (RF-9)",
     "/cash/current": "opera sobre el usuario de la sesión",
     "/cash/sessions": "probado en TestLaCaja",
     "/cash/session/{session_id}": "probado en TestLaCaja por la vía de la lista",

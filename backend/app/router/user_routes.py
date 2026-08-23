@@ -11,8 +11,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.models.model_company import UserCompany
-from app.models.model_person import Person
-from app.models.model_user import User
+from app.schemas.schemas_support import SuscripcionOut
 from app.schemas.schemas_user import (
     CurrentUser,
     MembershipGrant,
@@ -21,7 +20,8 @@ from app.schemas.schemas_user import (
     UserCreate,
     UserResponse,
 )
-from app.services import crud_membership, crud_user
+from app.domain.locale import DEFAULT_LOCALE, effective_locale, normalize_locale
+from app.services import crud_company, crud_membership, crud_user
 from app.utils.api_errors import api_error
 from app.utils.auth_dependency import Sesion, get_current_user, get_db, require_admin
 from app.utils.tenancy import sin_filtro
@@ -29,11 +29,25 @@ from app.utils.tenancy import sin_filtro
 router = APIRouter()
 
 
-def _display_name(db: Session, user: User) -> str:
-    person = sin_filtro(db.query(Person).filter(Person.id_person == user.id_person)).first()
-    if person:
-        return f"{person.name} {person.lastName}".strip() or user.email
-    return user.email
+#: El nombre para mostrar se resolvía acá; se mudó a `crud_user` cuando el panel
+#: de soporte necesitó lo mismo (T-303). Se deja el alias para no tocar las seis
+#: llamadas de este archivo.
+_display_name = crud_user.display_name
+
+
+def _cabe_otra_persona(db: Session, company_id: int) -> None:
+    """Frena el alta si el plan ya está lleno (RF-12, T-309).
+
+    Va en los dos endpoints que suman gente a una compañía —crear una cuenta y
+    sumar una que ya existe— y no en el servicio, porque el servicio lo usan
+    también `bootstrap.py` y el alta de compañía, que crean el primer
+    administrador: ahí no hay a quién decirle que no cabe.
+    """
+    cabe, actuales, maximo = crud_company.cabe_otro_usuario(db, company_id)
+    if not cabe:
+        raise api_error(
+            400, "plan_limit_reached", resource="users", current=actuales, max=maximo
+        )
 
 
 @router.get("/me", response_model=CurrentUser)
@@ -59,7 +73,21 @@ def read_me(
         company_name=company.nombre if company else None,
         branch_code=sucursal,
         terminal_code=terminal,
-        companies_available=len(crud_membership.companias_de(db, sesion.id_user)),
+        # Una sesión suplantada no tiene membresías en esta compañía, así que la
+        # cuenta daría 0 y el menú ofrecería «cambiar de compañía» a la nada.
+        companies_available=(
+            0 if sesion.suplantada else len(crud_membership.companias_de(db, sesion.id_user))
+        ),
+        subscription=(
+            SuscripcionOut.model_validate(sesion.suscripcion) if sesion.suscripcion else None
+        ),
+        impersonated_by=sesion.email if sesion.suplantada else None,
+        impersonation_reason=sesion.motivo if sesion.suplantada else None,
+        locale=effective_locale(sesion.user.locale, company.locale if company else None),
+        user_locale=normalize_locale(sesion.user.locale),
+        company_locale=normalize_locale(company.locale if company else None) or DEFAULT_LOCALE,
+        document_locale=normalize_locale(company.document_locale if company else None)
+        or DEFAULT_LOCALE,
     )
 
 
@@ -104,6 +132,8 @@ def grant_membership(
     user = crud_user.get_user_by_email(db, payload.email)
     if not user:
         raise api_error(404, "account_not_found")
+
+    _cabe_otra_persona(db, admin.company_id)
 
     membresia = crud_user.grant_membership(db, user.id_user, admin.company_id, payload.role)
     return UserResponse(
@@ -185,6 +215,7 @@ def create_user(
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
 ):
+    _cabe_otra_persona(db, admin.company_id)
     created, membresia = crud_user.create_user(db, user, admin.company_id)
     return UserResponse(
         id_user=created.id_user,

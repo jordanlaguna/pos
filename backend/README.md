@@ -81,6 +81,27 @@ membresía —que es como se arma el caso del contador que atiende varios locale
 
 Después, `seed.py` carga catálogo y ventas de ejemplo por HTTP.
 
+### La cuenta de soporte
+
+Desde F3 hay un panel que administra la plataforma (`/admin` en el POS,
+`/support` en el API). Quien entra ahí es una cuenta marcada como soporte, **sin
+compañía y sin membresías**, y la primera no se puede crear por la API por lo
+mismo que la primera compañía: no hay API que otorgue un permiso que todavía
+nadie tiene.
+
+```bash
+docker compose exec fastapi python bootstrap.py --soporte \
+    --email soporte@ventasys.cr --password soporte123
+```
+
+Si el correo ya existe, lo **marca** como soporte en vez de fallar; sirve para
+promover una cuenta que ya estaba. Avisa si esa persona tiene membresías de
+compañía, porque quedan sin uso: su login la manda al panel y nunca le ofrece
+elegir compañía.
+
+Desde el panel, las compañías siguientes se dan de alta con un formulario, con el
+mismo código (`app/services/crud_company.py`).
+
 ### Base con datos previos
 
 `create_all()` solo crea tablas que no existen; no modifica las que ya están. Si
@@ -103,6 +124,11 @@ docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' 
 # La membresía se acepta en vez de imponerse. Las que ya existían quedan aceptadas.
 docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
     < migrations/003-invitaciones.sql
+
+# F3: quién es soporte (`users.is_support`) y el índice de la bitácora por fecha.
+# Después de esta, la cuenta de soporte se crea con `bootstrap.py --soporte`.
+docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
+    < migrations/004-soporte.sql
 ```
 
 Ninguna es idempotente: MySQL 8 no tiene `ADD COLUMN IF NOT EXISTS`, así que

@@ -38,6 +38,7 @@ from app.router import (
     sale_routes,
     settings_routes,
     stock_entry_routes,
+    support_routes,
     user_routes,
 )
 
@@ -77,6 +78,11 @@ app.include_router(
     stock_entry_routes.router, prefix="/inventory", tags=["Inventory entries"]
 )
 app.include_router(settings_routes.router, prefix="/settings", tags=["Settings"])
+# El panel de soporte va bajo /support y no bajo /admin: `admin` ya es el rol del
+# administrador de una compañía, y dos cosas distintas con el mismo nombre en el
+# mismo API se confunden. En el POS las pantallas sí son /admin, que es el nombre
+# que pide T-302 y el que se lee bien en una barra de direcciones.
+app.include_router(support_routes.router, prefix="/support", tags=["Support"])
 
 
 @app.get("/")

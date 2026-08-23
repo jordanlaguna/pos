@@ -15,7 +15,18 @@ Cuáles heredan `TenantMixin` y cuáles no:
   ninguna compañía —soporte entrando, un intento de login fallido—.
 """
 
-from sqlalchemy import CHAR, Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import (
+    CHAR,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+)
 
 from app.database.database import Base
 from app.utils.tenancy import TenantMixin
@@ -124,6 +135,17 @@ class AuditLog(Base):
     """
 
     __tablename__ = "audit_log"
+
+    # Los dos índices que declara la migración, declarados también acá: una
+    # instalación nueva arma el esquema con `create_all` y una vieja lo trae de
+    # la migración, así que lo que no esté en los dos lados hace que el mismo
+    # código corra sobre esquemas distintos. El primero responde «qué se hizo en
+    # esta compañía» y el segundo «qué se hizo, en cualquiera, últimamente»
+    # —que es con lo que abre el panel de soporte (T-307)—.
+    __table_args__ = (
+        Index("idx_audit_company", "company_id", "creado_el"),
+        Index("idx_audit_creado", "creado_el"),
+    )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(Integer, nullable=False)

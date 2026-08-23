@@ -89,6 +89,32 @@ CONTADORA = {
     "password": "prueba123",
 }
 
+#: La cuenta de soporte (F3, RN-4). Sin compañía y sin membresías: es lo que la
+#: distingue de un administrador, y lo que hace que su token no lleve `cid`.
+SOPORTE = {
+    "email": "soporte@pruebas.ventasys.cr",
+    "password": "soporte123",
+}
+
+#: El plan de las compañías de prueba, **sin límite de usuarios**.
+#:
+#: No es una comodidad: es que la batería usa los usuarios como herramienta de
+#: aislamiento y no como personas del negocio. El fixture `cajero` crea uno nuevo
+#: en cada prueba a propósito —el arqueo se delimita por ventana de tiempo y por
+#: `user_id`, así que compartir cajero haría que una prueba viera el turno de
+#: otra— y son casi veinte pruebas. Con el plan «Comercio» (10 usuarios), a
+#: partir de la novena la batería empezaba a fallar por RF-12 y el mensaje
+#: apuntaba al alta de usuarios, que es lo único que no estaba mal.
+#:
+#: El límite se prueba aparte y a propósito, con un plan chico, en
+#: `test_soporte.py::TestElLimiteDelPlan`. −1 es «sin techo» (`domain/limits.py`).
+PLAN_DE_PRUEBAS = {
+    "plan": "Pruebas sin límites",
+    "plan_max_sucursales": -1,
+    "plan_max_terminales": -1,
+    "plan_max_usuarios": -1,
+}
+
 BACKEND = Path(__file__).resolve().parent.parent
 
 
@@ -105,7 +131,12 @@ def bootstrap(**opciones: str) -> None:
         "exec", "-T", "fastapi", "python", "bootstrap.py",
     ]
     for clave, valor in opciones.items():
-        orden += [f"--{clave.replace('_', '-')}", str(valor)]
+        orden.append(f"--{clave.replace('_', '-')}")
+        # `True` es una bandera sin valor (`--soporte`). Pasarle uno haría que
+        # argparse se queje de un argumento que no reconoce, y el mensaje
+        # apuntaría al guion en vez de a la llamada.
+        if valor is not True:
+            orden.append(str(valor))
 
     resultado = subprocess.run(
         orden, cwd=BACKEND, capture_output=True, text=True, encoding="utf-8", timeout=120
@@ -226,6 +257,7 @@ def api() -> Api:
         nombre_persona=ADMIN["name"],
         apellido=ADMIN["lastName"],
         cedula=ADMIN["identification"],
+        **PLAN_DE_PRUEBAS,
     )
 
     cliente = Api(API)
@@ -256,6 +288,7 @@ def api_b(api: Api) -> Api:
         nombre_persona="Beto",
         apellido="Segundo",
         cedula="200000001",
+        **PLAN_DE_PRUEBAS,
     )
 
     cliente = Api(API)
@@ -292,6 +325,41 @@ def contadora(api: Api, api_b: Api) -> dict:
         rol="cajero",
     )
     return CONTADORA
+
+
+@pytest.fixture(scope="session")
+def soporte(api: Api, api_b: Api) -> Api:
+    """Sesión del panel de soporte, sin compañía (F3, T-301).
+
+    Depende de las dos compañías porque lo que hace el panel es mirarlas: con una
+    sola, un listado que devuelve «todas» y uno que devuelve «la mía» se ven
+    igual.
+
+    El alta va por `bootstrap.py --soporte`, que es el único camino posible: no
+    hay API que pueda otorgar un permiso que todavía nadie tiene.
+    """
+    # Sin `cedula`: `bootstrap.py` usa el correo como identificación cuando no se
+    # le da una, y el correo es único por construcción. Una cédula escrita a mano
+    # choca contra la que dejó cualquier corrida anterior —`persons.identification`
+    # es UNIQUE global— y el alta falla por algo que no tiene nada que ver con lo
+    # que se está probando.
+    bootstrap(
+        soporte=True,
+        email=SOPORTE["email"],
+        password=SOPORTE["password"],
+        nombre_persona="Sole",
+        apellido="Soporte",
+    )
+
+    cliente = Api(API)
+    cuerpo = cliente.ok("POST", "/auth/login", SOPORTE)
+    assert cuerpo["tipo"] == "soporte", (
+        f"soporte tenía que recibir un token de soporte y recibió {cuerpo['tipo']}"
+    )
+    assert cuerpo.get("company_id") is None, "el token de soporte no lleva compañía"
+    cliente.token = cuerpo["access_token"]
+    cliente.user_id = cuerpo["user_id"]  # type: ignore[attr-defined]
+    return cliente
 
 
 @pytest.fixture(scope="session")

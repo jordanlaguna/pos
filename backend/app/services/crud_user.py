@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.model_company import UserCompany
+from app.models.model_person import Person
 from app.models.model_user import User
 from app.schemas.schemas_user import UserCreate
 from app.utils.security import hash_password, verify_password
@@ -127,6 +128,21 @@ def get_user_by_email(db: Session, email: str) -> User | None:
     # El correo es único en todo el sistema, no por compañía: es la identidad
     # con la que alguien se autentica antes de que se sepa dónde va a entrar.
     return sin_filtro(db.query(User).filter(User.email == email)).first()
+
+
+def display_name(db: Session, user: User) -> str:
+    """Cómo se llama esta persona, o su correo si no hay nombre.
+
+    Vive acá y no en un router porque lo necesitan dos: los usuarios de una
+    compañía y el panel de soporte. `persons` es identidad y no tabla de
+    negocio, así que la marca `sin_filtro` va escrita: la consulta puede ocurrir
+    con o sin compañía en el contexto, y quien lea esto tiene derecho a saber
+    que es a propósito.
+    """
+    persona = sin_filtro(db.query(Person).filter(Person.id_person == user.id_person)).first()
+    if persona:
+        return f"{persona.name} {persona.lastName}".strip() or user.email
+    return user.email
 
 
 def authenticate_user(db: Session, email: str, password: str) -> User | None:

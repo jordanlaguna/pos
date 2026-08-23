@@ -47,7 +47,8 @@ class LoginResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
-    #: 'sesion' | 'transito'
+    #: 'sesion' | 'transito' | 'soporte'. El último no lleva compañía ni lista:
+    #: soporte no pertenece a ninguna y su pantalla es el panel (RN-4).
     tipo: str
     user_id: int
     company_id: int | None = None
@@ -73,3 +74,35 @@ class ChooseCompanyResponse(BaseModel):
     user_id: int
     company_id: int
     rol: str
+
+
+class LocaleChoice(BaseModel):
+    """El idioma que elige una persona para su sesión (T-810).
+
+    `None` no es «español»: es «como esté configurada la compañía». Son dos
+    intenciones distintas y la diferencia se guarda —la columna admite nulo—,
+    porque si el dueño cambia el idioma del negocio, quien no eligió nada tiene
+    que seguirlo y quien eligió español tiene que quedarse en español.
+    """
+
+    locale: str | None = None
+
+
+class LocaleResponse(BaseModel):
+    """Los dos idiomas después del cambio, y el token que ya los lleva."""
+
+    access_token: str
+    token_type: str = "bearer"
+    #: El efectivo de la pantalla: lo de la persona, si no lo de la compañía.
+    locale: str
+    #: Lo que quedó guardado en la persona. Nulo si hereda.
+    user_locale: str | None = None
+    #: El del documento impreso, que no es el de la pantalla (RN-29).
+    document_locale: str = "es"
+
+
+class CompanyLocales(BaseModel):
+    """Los idiomas de la compañía: el de la pantalla y el del documento (T-810, T-811)."""
+
+    locale: str
+    document_locale: str

@@ -23,12 +23,23 @@ from app.schemas.schemas_auth import (
     ChooseCompanyResponse,
     CompanyOption,
     InvitationDecision,
+    LocaleChoice,
+    LocaleResponse,
     LoginRequest,
     LoginResponse,
 )
-from app.services import crud_membership, crud_user
+from app.domain.locale import DEFAULT_LOCALE, effective_locale, normalize_locale
+from app.services import crud_membership, crud_session, crud_user
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import TIPO_SESION, TIPO_TRANSITO, get_db, get_identidad
+from app.utils.auth_dependency import (
+    TIPO_SESION,
+    TIPO_SOPORTE,
+    TIPO_TRANSITO,
+    Sesion,
+    get_current_user,
+    get_db,
+    get_identidad,
+)
 from app.utils.jwt_handler import create_access_token
 
 router = APIRouter()
@@ -59,27 +70,6 @@ def _opcion(uc, company) -> CompanyOption:
     )
 
 
-def _token_de_sesion(db: Session, user: User, company_id: int, rol: str) -> str:
-    """El token de sesión: quién, dónde y con qué rol.
-
-    Sucursal y terminal viajan acá y no en cada petición porque son justo lo que
-    el cliente no puede elegir (RN-14). Que estén en el token también es lo que
-    permite que un cambio de compañía cambie de sucursal sin nada más.
-    """
-    sucursal, terminal = crud_membership.sucursal_y_terminal(db, company_id)
-    return create_access_token(
-        data={
-            "id_user": user.id_user,
-            "email": user.email,
-            "cid": company_id,
-            "bid": sucursal,
-            "tid": terminal,
-            "rol": rol,
-            "tipo": TIPO_SESION,
-        }
-    )
-
-
 def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
@@ -98,7 +88,26 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
         # convierte el login en un verificador de correos registrados.
         raise api_error(401, "invalid_credentials")
 
-    opciones = [_opcion(uc, company) for uc, company in crud_membership.companias_de(db, user.id_user)]
+    if user.is_support:
+        # Soporte no elige compañía porque no tiene ninguna (RN-4): su token va
+        # sin `cid` y su pantalla es el panel. Se decide acá y no después porque
+        # la lista de compañías de soporte estaría vacía y la pantalla de
+        # selección le diría «no tiene ninguna disponible», que es cierto y no
+        # es lo que hay que hacer con él.
+        token = crud_session.token_de_soporte(user)
+        crud_membership.registrar(
+            db,
+            user_id=user.id_user,
+            company_id=None,
+            accion="login_soporte",
+            detalle=None,
+            ip=_ip(request),
+        )
+        db.commit()
+        return LoginResponse(access_token=token, tipo=TIPO_SOPORTE, user_id=user.id_user)
+
+    membresias = crud_membership.companias_de(db, user.id_user)
+    opciones = [_opcion(uc, company) for uc, company in membresias]
     disponibles = [o for o in opciones if o.puede_entrar]
 
     # Una sola disponible: se entra sin pantalla intermedia. Se mira
@@ -106,6 +115,10 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
     # activa tampoco es una elección.
     if len(disponibles) == 1:
         elegida = disponibles[0]
+        company = next(c for _, c in membresias if c.id == elegida.id)
+        # El token se arma **antes** del commit: después, SQLAlchemy expira los
+        # objetos y leer `company.locale` dispararía otra consulta.
+        token = crud_session.token_de_sesion(db, user, company, elegida.rol)
         crud_membership.registrar(
             db,
             user_id=user.id_user,
@@ -116,7 +129,7 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
         db.commit()
         return LoginResponse(
-            access_token=_token_de_sesion(db, user, elegida.id, elegida.rol),
+            access_token=token,
             tipo=TIPO_SESION,
             user_id=user.id_user,
             company_id=elegida.id,
@@ -233,19 +246,73 @@ def elegir_compania(
         # saber qué hacer. El motivo es un código; la frase la arma el POS.
         raise api_error(403, "company_blocked", state=motivo)
 
+    # Igual que en el login: el token se arma antes del commit, porque después
+    # leer `company.locale` sería una relectura.
+    token = crud_session.token_de_sesion(db, user, company, uc.rol)
+    company_id = company.id
+    rol = uc.rol
+
     crud_membership.registrar(
         db,
         user_id=user.id_user,
-        company_id=company.id,
+        company_id=company_id,
         accion="elegir_compania",
-        detalle=f"rol {uc.rol}",
+        detalle=f"rol {rol}",
         ip=_ip(request),
     )
     db.commit()
 
     return ChooseCompanyResponse(
-        access_token=_token_de_sesion(db, user, company.id, uc.rol),
+        access_token=token,
         user_id=user.id_user,
+        company_id=company_id,
+        rol=rol,
+    )
+
+
+@router.post("/locale", response_model=LocaleResponse)
+def elegir_idioma(
+    datos: LocaleChoice,
+    request: Request,
+    db: Session = Depends(get_db),
+    sesion: Sesion = Depends(get_current_user),
+):
+    """El idioma que prefiere **esta persona** para su sesión (RN-28, T-810).
+
+    Emite un token nuevo, y no es un detalle de implementación: el idioma vive en
+    el token (plan §8.4), así que sin re-emitirlo el cambio no se vería hasta el
+    siguiente login. Es el mismo camino que «cambiar de compañía» (RF-28).
+
+    `locale` en nulo **borra la preferencia** en vez de guardar «español»: la
+    persona vuelve a heredar el de la compañía, que es lo que quiere decir «como
+    esté configurado» y no lo mismo que elegir español a mano.
+    """
+    elegido = None if datos.locale is None else normalize_locale(datos.locale)
+    if datos.locale is not None and elegido is None:
+        # Un idioma sin catálogo dejaría la pantalla a medio traducir sin avisar.
+        raise api_error(400, "unsupported_locale", locale=datos.locale)
+
+    company = crud_membership.compania(db, sesion.company_id)
+    if company is None:
+        raise api_error(404, "membership_not_found")
+
+    sesion.user.locale = elegido
+    token = crud_session.token_de_sesion(db, sesion.user, company, sesion.rol)
+    efectivo = effective_locale(elegido, company.locale)
+
+    crud_membership.registrar(
+        db,
+        user_id=sesion.id_user,
         company_id=company.id,
-        rol=uc.rol,
+        accion="idioma_usuario",
+        detalle=f"{elegido or 'hereda'} → {efectivo}",
+        ip=_ip(request),
+    )
+    db.commit()
+
+    return LocaleResponse(
+        access_token=token,
+        locale=efectivo,
+        user_locale=elegido,
+        document_locale=normalize_locale(company.document_locale) or DEFAULT_LOCALE,
     )

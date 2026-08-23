@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.schemas.schemas_support import SuscripcionOut
+
 
 class UserCreate(BaseModel):
     email: str
@@ -52,6 +54,38 @@ class CurrentUser(BaseModel):
     #: Cuántas compañías tiene disponibles. Si es una sola, el POS ni siquiera
     #: muestra la opción de cambiar (RN-25).
     companies_available: int = 1
+
+    #: Idioma de la pantalla y idioma del **documento**, que no son el mismo
+    #: (RN-29, T-811). El primero está además en el token, porque tiene que estar
+    #: resuelto antes de renderizar; el segundo viaja solo por acá, y eso es a
+    #: propósito: se relee en cada petición, así que cambiarlo en Configuración
+    #: surte efecto en el siguiente clic y no en el siguiente login.
+    locale: str = "es"
+    #: Lo que eligió la persona, en nulo si hereda el de la compañía. La pantalla
+    #: lo necesita para marcar «como esté configurado», que no es lo mismo que
+    #: haber elegido español.
+    user_locale: str | None = None
+    #: El de la compañía, que es lo que Configuración muestra y edita. No es el
+    #: mismo que `locale`: quien eligió uno propio ve el suyo en la pantalla y el
+    #: del negocio en Configuración.
+    company_locale: str = "es"
+    document_locale: str = "es"
+
+    #: El estado de la suscripción, evaluado contra el día de hoy (T-308, RF-10).
+    #: Viaja acá y no en el token por lo mismo que `document_locale`: se relee en
+    #: cada petición, así que un pago que entra hoy le devuelve el POS al cliente
+    #: en el siguiente clic. En el token quedaría congelado hasta el próximo
+    #: login, que es lo peor de los dos mundos —bloquea tarde y desbloquea
+    #: tarde—.
+    subscription: SuscripcionOut | None = None
+
+    #: Correo de quien está suplantando, si esta sesión es un *entrar como*
+    #: (RF-8). El POS lo usa para la franja permanente, que es lo que impide
+    #: confundir la vista de soporte con la del cliente. Nulo en una sesión
+    #: normal.
+    impersonated_by: str | None = None
+    #: El motivo que dio soporte al entrar, recortado como viene en el token.
+    impersonation_reason: str | None = None
 
     model_config = {"from_attributes": True}
 

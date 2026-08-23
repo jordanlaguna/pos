@@ -48,6 +48,23 @@ CODES: frozenset[str] = frozenset(
         "membership_not_found",
         "invalid_invitation_action",
         "invitation_already_accepted",
+        # ------------------------------------------------- soporte (F3, RN-4)
+        # El token no es de soporte, o dejó de serlo mientras estaba adentro.
+        "support_only",
+        # La suscripción venció y se le pasó la gracia: se consulta y se cierra
+        # la caja, no se vende. `state` es el estado efectivo.
+        "subscription_read_only",
+        # Soporte mirando de prestado: entrar como es para diagnosticar.
+        "impersonation_read_only",
+        # `resource` es 'branches', 'terminals' o 'users'; `current` y `max`, la
+        # cuenta. El POS arma «Ya tiene 3 cajas y el plan permite 3».
+        "plan_limit_reached",
+        "company_not_found",
+        "plan_not_found",
+        # `afiliado` y `compania`: el par que ya está tomado.
+        "company_already_exists",
+        "invalid_company_state",
+        "support_cannot_be_member",
         # ----------------------------------------------------------- caja
         # Cuatro códigos para la misma regla —la caja es de quien la abrió—
         # porque son cuatro frases distintas: consultar, abrir, mover, cerrar.
@@ -120,6 +137,7 @@ CODES: frozenset[str] = frozenset(
         "user_not_yours",
         "last_admin",
         # -------------------------------------------------- configuración
+        "unsupported_locale",
         "settings_too_large",
         "tax_rate_not_a_number",
         "tax_rate_out_of_range",
