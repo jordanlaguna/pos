@@ -6,12 +6,19 @@ import { parse } from 'svelte/compiler';
 import ts from 'typescript';
 
 /**
- * Ningún texto que vea una persona se escribe dentro de un componente (T-812).
+ * Ningún texto que vea una persona se escribe fuera de la interfaz (T-812,
+ * T-816).
  *
  * Es la red que impide que los catálogos se queden atrás. Sin ella, la próxima
  * pantalla se escribe con la cadena adentro —cuesta lo mismo en el momento— y
  * nadie se entera hasta que alguien pide el POS en portugués. Cada pantalla así
  * es una pantalla que hay que volver a abrir.
+ *
+ * Vigila **tres** sitios, que son los tres donde apareció el problema: el
+ * marcado, los sumideros de texto de las acciones, y los literales del dominio y
+ * la aplicación (RN-30). El tercero se agregó al reescribir RN-30: hasta
+ * entonces la regla ahí la sostenía una decisión y no una prueba, y `layers.ts`
+ * no la habría visto —una frase suelta no importa nada—.
  *
  * **Lee el árbol de sintaxis, no las líneas.** Un rastreador por líneas da
  * falsos positivos con lo que más abunda en este código —comentarios de varias
@@ -80,7 +87,7 @@ const PALABRA = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3}/;
 interface Hallazgo {
 	archivo: string;
 	linea: number;
-	tipo: 'texto suelto' | 'rótulo literal';
+	tipo: 'texto suelto' | 'rótulo literal' | 'frase en una capa de adentro';
 	texto: string;
 }
 
@@ -190,6 +197,20 @@ const SUMIDEROS = new Map<string, number[]>([
 	['toasts.info', [0, 1]]
 ]);
 
+/**
+ * Sumideros que reciben el texto **dentro de un objeto**.
+ *
+ * `error(404, { message: '…' })` de SvelteKit es el que hay, y se escapó de la
+ * primera versión de esta prueba: buscaba literales en posiciones, y acá el
+ * literal está una capa más adentro. Eran seis, todos en español, y ninguna de
+ * las dos mitades los veía —el marcado no los toca y no son una llamada a
+ * `formError`—. La lección es de la forma de la prueba: un sumidero se declara
+ * por dónde entra el texto, no por cómo se llama la función.
+ */
+const SUMIDEROS_OBJETO = new Map<string, { posicion: number; propiedades: string[] }>([
+	['error', { posicion: 1, propiedades: ['message'] }]
+]);
+
 /** Una frase: tres letras seguidas y un espacio. Un identificador no lo tiene. */
 const FRASE = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3}[^]*\s/;
 
@@ -205,31 +226,47 @@ function archivosTs(carpeta: string): string[] {
 	return encontrados;
 }
 
+/** El texto de un literal, si el nodo lo es. Una expresión no cuenta: ya pasó por el catálogo. */
+function textoLiteral(nodo: ts.Node): string | null {
+	if (ts.isStringLiteral(nodo) || ts.isNoSubstitutionTemplateLiteral(nodo)) return nodo.text;
+	if (ts.isTemplateExpression(nodo)) return nodo.head.text;
+	return null;
+}
+
 function revisarTs(archivo: string, fuente: string): Hallazgo[] {
 	const hallazgos: Hallazgo[] = [];
 	const sf = ts.createSourceFile(archivo, fuente, ts.ScriptTarget.Latest, true);
 
+	const anotar = (nodo: ts.Node, comoSeLlamo: string) =>
+		hallazgos.push({
+			archivo,
+			linea: sf.getLineAndCharacterOfPosition(nodo.getStart(sf)).line + 1,
+			tipo: 'rótulo literal',
+			texto: comoSeLlamo
+		});
+
 	function recorrer(nodo: ts.Node) {
 		if (ts.isCallExpression(nodo)) {
 			const nombre = nodo.expression.getText(sf);
-			const posiciones = SUMIDEROS.get(nombre);
-			if (posiciones) {
-				for (const i of posiciones) {
-					const arg = nodo.arguments[i];
-					if (!arg) continue;
-					const literal =
-						ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)
-							? arg.text
-							: ts.isTemplateExpression(arg)
-								? arg.head.text
-								: null;
+
+			for (const i of SUMIDEROS.get(nombre) ?? []) {
+				const arg = nodo.arguments[i];
+				if (!arg) continue;
+				const literal = textoLiteral(arg);
+				if (literal === null || !FRASE.test(literal)) continue;
+				anotar(arg, `${nombre}(… "${literal}" …)`);
+			}
+
+			const objeto = SUMIDEROS_OBJETO.get(nombre);
+			const arg = objeto ? nodo.arguments[objeto.posicion] : undefined;
+			if (objeto && arg && ts.isObjectLiteralExpression(arg)) {
+				for (const prop of arg.properties) {
+					if (!ts.isPropertyAssignment(prop)) continue;
+					const clave = prop.name.getText(sf).replace(/['"]/g, '');
+					if (!objeto.propiedades.includes(clave)) continue;
+					const literal = textoLiteral(prop.initializer);
 					if (literal === null || !FRASE.test(literal)) continue;
-					hallazgos.push({
-						archivo,
-						linea: sf.getLineAndCharacterOfPosition(arg.getStart(sf)).line + 1,
-						tipo: 'rótulo literal',
-						texto: `${nombre}(… "${literal}" …)`
-					});
+					anotar(prop, `${nombre}(…, { ${clave}: "${literal}" })`);
 				}
 			}
 		}
@@ -294,6 +331,139 @@ describe('ni en las acciones, que producen tantos mensajes como la pantalla', ()
 			hallazgos,
 			`Estas frases se escribieron a mano en una acción:\n${informe}\n\n` +
 				'Van al catálogo igual que las de la pantalla.'
+		).toEqual([]);
+	});
+});
+
+// ----------------------------- el tercero: el dominio y la aplicación (RN-30)
+
+/**
+ * Las capas de adentro no escriben texto para una persona.
+ *
+ * Acá no hay sumidero que vigilar: `formError` y `toasts` viven en `ui/`, que el
+ * dominio no puede importar, así que una prueba de llamadas no encontraría nada
+ * nunca —y una prueba que no puede fallar es peor que ninguna, porque tranquiliza
+ * igual—. Lo que hay que buscar es el literal mismo: una frase devuelta como
+ * valor, que es la forma en que esto se cuela (`documentTitle()` devolvía
+ * «Factura electrónica», `CURRENCIES[].label` decía «Colón costarricense», los
+ * lectores de archivos lanzaban `new Error('No se pudo leer el CSV…')`).
+ *
+ * **Dos disparadores, y el segundo importa.** Una frase es tres letras y un
+ * espacio; eso deja fuera los códigos (`cart_out_of_stock`) y las claves, que es
+ * casi todo lo que hay legítimamente acá. Pero deja pasar la palabra sola:
+ * «Efectivo» no tiene espacio. Por eso también dispara la tilde y los signos de
+ * apertura —«Cédula», «Anulación», «¿…?»—, que en un identificador o una clave
+ * no aparecen. Queda un hueco conocido: una palabra sola y sin tilde
+ * («Pendiente») pasa. No se cierra con esta forma de prueba; se cierra con la
+ * revisión del diff.
+ */
+const CAPAS_DE_ADENTRO = ['lib/domain', 'lib/application'];
+
+/** Español visible: una tilde o un signo de apertura. Un código no los lleva. */
+const ESPANOL = /[ÁÉÍÓÚÜÑáéíóúüñ¡¿]/;
+
+/**
+ * Literales que son **dato** y no texto para una persona, con su razón.
+ *
+ * Igual que `PERMITIDO`: cada entrada lleva la suya, porque una lista de
+ * excepciones sin razones es donde se esconde lo que molesta. Las dos que había
+ * y no eran dato —el agradecimiento del tiquete y la leyenda legal, que venían
+ * de fábrica en español y se imprimían— no están acá: se vaciaron, y el idioma
+ * lo pone quien da de alta la compañía (T-304).
+ */
+const DATOS = new Map<string, string>([
+	[
+		'Tarjeta de crédito',
+		'valor que se guarda en sales.payment_method y se compara en los reportes y ' +
+			'las tres plantillas; traducirlo haría que una venta cobrada en portugués ' +
+			'dejara de contarse como tarjeta. paymentLabel() traduce cómo se muestra'
+	],
+	['Transferencia bancaria', 'ídem: valor de sales.payment_method'],
+	['Pago móvil', 'ídem: valor de sales.payment_method'],
+	[
+		'Cédula física',
+		'nombre legal del documento en Costa Rica: no se traduce a portugués, se ' +
+			'cambia por la lista de otro país'
+	],
+	['Cédula jurídica', 'ídem: nombre legal del documento en Costa Rica']
+]);
+
+function revisarLiterales(archivo: string, fuente: string): Hallazgo[] {
+	const hallazgos: Hallazgo[] = [];
+	const sf = ts.createSourceFile(archivo, fuente, ts.ScriptTarget.Latest, true);
+
+	function recorrer(nodo: ts.Node) {
+		const literal = ts.isStringLiteral(nodo) || ts.isNoSubstitutionTemplateLiteral(nodo);
+		const texto = literal
+			? nodo.text
+			: ts.isTemplateExpression(nodo)
+				? nodo.head.text
+				: null;
+
+		if (texto !== null && (FRASE.test(texto) || ESPANOL.test(texto)) && !DATOS.has(texto)) {
+			hallazgos.push({
+				archivo,
+				linea: sf.getLineAndCharacterOfPosition(nodo.getStart(sf)).line + 1,
+				tipo: 'frase en una capa de adentro',
+				texto
+			});
+		}
+
+		ts.forEachChild(nodo, recorrer);
+	}
+
+	recorrer(sf);
+	return hallazgos;
+}
+
+describe('ni en las plantillas de documento, que hablan otro idioma (RN-29)', () => {
+	/*
+	 * El documento se emite en el idioma de la **compañía** y no en el de la
+	 * pantalla: la factura es para el cliente y para Hacienda. Las plantillas
+	 * reciben el diccionario ya resuelto (`documentLabels`), así que si alguna
+	 * importa el catálogo es porque escribió `m.doc_total()` —que compila, se ve
+	 * bien en español, y sale en el idioma del cajero el día que haya dos—.
+	 *
+	 * Es una prueba de importaciones y no de texto porque el error no es escribir
+	 * una cadena: es pedir el mensaje sin decir en qué idioma.
+	 */
+	const PLANTILLAS = ['Tiquete.svelte', 'FacturaClasica.svelte', 'FacturaModerna.svelte'];
+
+	it.each(PLANTILLAS)('%s no importa $lib/paraglide', (nombre) => {
+		const fuente = readFileSync(join(SRC, 'lib/ui/components/documents', nombre), 'utf-8');
+		const importa = /from\s+['"]\$lib\/paraglide/.test(fuente);
+		expect(
+			importa,
+			`${nombre} importa el catálogo. El texto del documento sale de ` +
+				'`documentLabels(docLocale)`, que es lo único que sabe en qué idioma se ' +
+				'emite (RN-29).'
+		).toBe(false);
+	});
+});
+
+describe('ni en el dominio ni en la aplicación, que no pueden traducir', () => {
+	const archivos = CAPAS_DE_ADENTRO.flatMap((c) => archivosTs(join(SRC, c)));
+
+	it('hay módulos que revisar', () => {
+		expect(archivos.length).toBeGreaterThan(5);
+	});
+
+	it('ningún literal tiene forma de frase en español', () => {
+		const hallazgos = archivos.flatMap((archivo) =>
+			revisarLiterales(relative(SRC, archivo).replace(/\\/g, '/'), readFileSync(archivo, 'utf-8'))
+		);
+
+		const informe = hallazgos
+			.map((h) => `  ${h.archivo}:${h.linea}  ${JSON.stringify(h.texto)}`)
+			.join('\n');
+
+		expect(
+			hallazgos,
+			`Estas frases están en una capa que no puede traducir (RN-30):\n${informe}\n\n` +
+				'El dominio y la aplicación devuelven un código y los datos; la frase la ' +
+				'arma la interfaz —$lib/ui/messages.ts para los «no», el catálogo para los ' +
+				'rótulos—. Si de verdad es un dato que se guarda o se compara, va a DATOS ' +
+				'en esta prueba, con su razón.'
 		).toEqual([]);
 	});
 });

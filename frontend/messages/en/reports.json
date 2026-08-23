@@ -1,3 +1,65 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "Reports: the dashboard screen and the two charts used only there.",
+
+	"reports_title": "Reports",
+	"reports_description": "How the business did over the selected period.",
+	"reports_module_missing": "Reports are not available.",
+	"reports_module_missing_hint": "The backend does not expose {endpoint}. Update the FastAPI in {folder} and restart it.",
+
+	"reports_preset_today": "Today",
+	"reports_preset_days": "{days} days",
+	"reports_preset_month": "This month",
+	"reports_from": "From",
+	"reports_to": "To",
+
+	"$comentario_statcard": "`StatCard` is shared, but its only label of its own compares with the previous period, which only makes sense in reports.",
+	"reports_vs_previous": "vs. previous period",
+
+	"reports_net_sales": "Net sales",
+	"reports_invoices_issued": "Invoices issued",
+	"reports_average_ticket": "Average sale",
+	"reports_units_sold": "{units} units sold",
+	"reports_returns": "Returns",
+	"reports_returns_deducted": "Deducted from net sales",
+	"reports_no_returns": "No returns",
+
+	"reports_sales_by_day": "Sales by day",
+	"reports_top_products": "Best-selling products",
+	"reports_top_products_hint": "By amount invoiced in the period",
+	"reports_billed": "Invoiced",
+	"reports_units": "Units",
+	"reports_no_sales_in_range": "There were no sales in the selected period.",
+	"reports_by_payment": "Sales by payment method",
+	"reports_by_payment_hint": "Total charged through each method",
+	"reports_total": "Total",
+	"reports_breakdown": "Breakdown",
+	"reports_units_short": "{units} units sold",
+	"reports_payment_share": "{count} sales · {percent} % of the total",
+
+	"reports_stock_alerts": "Inventory alerts",
+	"reports_stock_threshold": "Products with {threshold} units or fewer",
+	"reports_go_to_inventory": "Go to inventory",
+	"reports_col_product": "Product",
+	"reports_col_barcode": "Barcode",
+	"reports_col_stock": "Stock",
+	"reports_col_status": "Status",
+	"reports_out_of_stock": "Sold out",
+	"reports_low_stock": "Low stock",
+	"reports_inventory_ok": "The whole inventory is in order",
+	"reports_inventory_ok_hint": "No product is below the threshold.",
+
+	"$comentario_graficos": "The charts. The axis label and the equivalent table header are the same data seen two ways: anyone using a screen reader arrives through the table.",
+	"chart_show_chart": "Chart",
+	"chart_show_table": "Table",
+	"chart_no_sales": "No sales in the period",
+	"chart_no_sales_hint": "Pick another date range to see the trend.",
+	"chart_sales_by_day_label": "Sales by day. Use the arrow keys to move through the days.",
+	"chart_col_day": "Day",
+	"chart_col_sales": "Sales",
+	"chart_col_total": "Total",
+	"chart_no_data": "No data",
+	"chart_no_data_hint": "There is no data in the selected period.",
+	"chart_col_concept": "Item"
 }

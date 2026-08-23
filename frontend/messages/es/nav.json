@@ -32,6 +32,9 @@
 	"nav_toggle_theme": "Cambiar entre tema claro y oscuro",
 
 	"nav_toggle_theme_short": "Cambiar tema",
+	"nav_language": "Idioma",
+	"nav_language_auto": "El de la compañía",
+	"nav_language_apply": "Cambiar el idioma",
 
 	"role_admin": "Administrador",
 	"role_cashier": "Cajero",

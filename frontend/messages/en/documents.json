@@ -1,3 +1,51 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "The printed document: receipt, classic invoice and modern invoice. It is a separate catalog because the document's language is NOT the screen's language (RN-29): the invoice is for the customer and for the tax authority, so a Costa Rican company issues it in Spanish even if its cashier uses the POS in Portuguese. Today every key resolves with the session language; T-811 will resolve them with `document_locale`. What changes then is where the language comes from, not these keys.",
+
+	"doc_invoice": "Invoice",
+	"doc_einvoice": "Electronic invoice",
+	"doc_invoice_number": "Invoice {number}",
+
+	"doc_issuer": "Issuer",
+	"doc_issuer_incomplete": "Fill in the business details in Settings.",
+	"doc_issuer_add_contact": "Add a phone number and email in Settings",
+	"doc_tax_id": "ID {id}",
+	"doc_phone": "Tel. {phone}",
+
+	"doc_client": "Customer",
+	"doc_bill_to": "Bill to",
+	"doc_walk_in": "Walk-in customer",
+	"doc_walk_in_hint": "Sale without a registered customer",
+	"doc_client_id": "ID number",
+
+	"doc_date": "Date",
+	"doc_payment_method": "Payment method",
+	"doc_payment": "Payment",
+	"doc_served_by": "Served by",
+
+	"doc_col_product": "Product",
+	"doc_col_description": "Description",
+	"doc_col_quantity": "Qty",
+	"doc_col_unit_price": "Unit price",
+	"doc_col_unit_price_long": "Unit price",
+	"doc_col_total": "Total",
+
+	"doc_no_detail": "The backend does not expose the detail of this sale.",
+	"doc_no_detail_hint": "Apply the patch's {endpoint} endpoint to see it.",
+
+	"doc_subtotal": "Subtotal",
+	"doc_total": "Total",
+	"doc_cash_received": "Cash received",
+	"doc_change": "Change",
+	"doc_returned": "Returned",
+	"doc_returns_applied": "Returns applied",
+
+	"doc_notes": "Notes",
+	"doc_notes_and_terms": "Notes and terms",
+
+	"$comentario_semilla": "The two texts a company is born with (T-304, RF-6). They are not domain defaults —there they are born empty on purpose, because the domain does not read the catalog (RN-30)—: they are seeded at sign-up, which is when the document language is known. After that they belong to the owner: if he clears them, they stay cleared.",
+
+	"doc_default_thanks": "Thank you for your purchase!",
+	"doc_default_legal": "This document is not a tax receipt."
 }

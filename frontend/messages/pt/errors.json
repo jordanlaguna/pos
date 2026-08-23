@@ -1,3 +1,155 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"error_tab_title": "Erro {status}",
+	"error_forbidden_title": "Acesso restrito",
+	"error_not_found_title": "Página não encontrada",
+	"error_generic_title": "Algo deu errado",
+	"error_unexpected": "Ocorreu um erro inesperado.",
+	"error_admin_only": "Esta seção é só para administradores.",
+	"error_go_to_sales": "Ir para vendas",
+	"error_go_to_panel": "Ir ao painel de suporte",
+	"error_go_to_dashboard": "Ir ao painel geral",
+	"error_switch_user": "Trocar de usuário",
+
+	"error_page_missing": "A página que você procura não existe.",
+	"error_unexpected_backend": "Ocorreu um erro inesperado. Verifique a conexão com o backend.",
+
+	"$comentario_api": "Os «não» do backend. Chegam como código e dados —o backend não escreve texto para pessoas (RN-30)— e a frase é montada aqui. Um código por chave, com o mesmo nome: api_<código>.",
+
+	"api_unreachable": "Não foi possível conectar ao backend.",
+	"api_timeout": "O backend não respondeu em tempo.",
+	"api_unexpected": "O backend respondeu com um erro inesperado.",
+	"api_invalid_request": "Verifique os dados do formulário: o backend os rejeitou.",
+
+	"api_unauthorized": "A sessão expirou ou não é válida. Entre novamente.",
+	"api_no_company_in_token": "A sua sessão não tem empresa. Escolha uma para continuar.",
+	"api_membership_inactive": "O seu acesso a esta empresa não está mais ativo.",
+	"api_admin_only": "Esta operação é só para administradores.",
+	"api_invalid_credentials": "E-mail ou senha incorretos.",
+	"api_membership_not_found": "Não encontramos essa empresa entre as suas.",
+	"api_invalid_invitation_action": "Não entendemos a resposta ao convite.",
+	"api_invitation_already_accepted": "Você já havia aceitado este convite.",
+
+	"$comentario_soporte": "Os «não» do painel de suporte e do controle da assinatura (F3). Dois levam variante porque o dado que trazem é o único que torna a frase útil: «alcançou um limite» não diz qual recurso encheu, e «não pode operar» não diz o que pagar.",
+
+	"api_support_only": "Esta seção é só para o suporte.",
+	"api_subscription_read_only": [
+		{
+			"declarations": ["input state"],
+			"selectors": ["state"],
+			"match": {
+				"state=vencida": "A assinatura venceu e o período de tolerância acabou. Pode consultar seus dados e fechar o caixa, não vender.",
+				"state=suspendida": "A assinatura está suspensa. Pode consultar seus dados, não vender.",
+				"state=cancelada": "A assinatura está cancelada.",
+				"state=*": "A assinatura não permite registrar operações neste momento."
+			}
+		}
+	],
+	"api_impersonation_read_only": "Está vendo esta empresa como suporte: somente leitura.",
+	"api_plan_limit_reached": [
+		{
+			"declarations": ["input resource", "input current", "input max"],
+			"selectors": ["resource"],
+			"match": {
+				"resource=users": "O plano permite {max} usuários e já há {current}.",
+				"resource=terminals": "O plano permite {max} caixas e já há {current}.",
+				"resource=branches": "O plano permite {max} filiais e já há {current}.",
+				"resource=*": "O plano já está no limite: {current} de {max}."
+			}
+		}
+	],
+	"api_company_not_found": "Não encontramos essa empresa.",
+	"api_plan_not_found": "Não encontramos esse plano.",
+	"api_company_already_exists": "A empresa {compania} do afiliado {afiliado} já existe.",
+	"api_invalid_company_state": "«{state}» não é um estado de assinatura.",
+	"api_support_cannot_be_member": "{email} é uma conta de suporte e não pode pertencer a uma empresa.",
+
+	"api_cash_read_not_yours": "Você só pode consultar o seu próprio caixa.",
+	"api_cash_open_not_yours": "Você só pode abrir o seu próprio caixa.",
+	"api_cash_movement_not_yours": "Você só pode movimentar dinheiro do seu próprio caixa.",
+	"api_cash_close_not_yours": "Você só pode fechar o seu próprio caixa.",
+	"api_cash_session_not_found": "Não encontramos esse turno de caixa.",
+	"api_cash_session_not_yours": "Você não pode consultar este caixa.",
+	"api_cash_already_open": "Já existe um caixa aberto para este usuário.",
+	"api_cash_opening_negative": "O valor de abertura não pode ser negativo.",
+	"api_cash_no_open_session": "Não há caixa aberto. Abra um antes de continuar.",
+	"api_cash_insufficient": "Não há dinheiro suficiente no caixa. Disponível: {available}.",
+	"api_cash_invalid_movement_type": "O movimento tem que ser uma entrada ou uma saída.",
+	"api_cash_amount_not_positive": "O valor tem que ser maior que zero.",
+	"api_cash_missing_reason": "Informe o motivo do movimento.",
+	"api_cash_counted_negative": "O valor contado não pode ser negativo.",
+
+	"api_duplicate_sale_number": "Já existe uma venda com o número {sale_number}.",
+	"api_empty_sale": "A venda tem que ter pelo menos um produto.",
+	"api_invalid_sale_line": "A quantidade de {product} não é válida.",
+	"api_product_not_found": "Não encontramos o produto {product}.",
+	"api_product_without_price": "O produto {product} não tem preço definido.",
+	"api_insufficient_stock": "Não há estoque suficiente de {product}: restam {available} e foram pedidos {requested}.",
+	"api_totals_mismatch": "O {field} não coincide com o que o servidor calcula: o caixa diz {declared} e o servidor {computed}. Recarregue o catálogo, porque os preços podem ter mudado.",
+	"api_insufficient_payment": "O dinheiro recebido ({received}) não cobre o total da venda ({total}).",
+	"api_sale_not_found": "Não encontramos essa venda.",
+	"api_sale_details_not_found": "Essa venda não tem linhas de detalhe.",
+	"api_sale_failed": "Não foi possível registrar a venda. Nada ficou pela metade: tente de novo.",
+
+	"api_field_subtotal": "subtotal",
+	"api_field_tax": "imposto",
+	"api_field_total": "total",
+
+	"api_empty_return": "Escolha pelo menos um produto para devolver.",
+	"api_missing_return_reason": "Informe o motivo da devolução.",
+	"api_not_sold_in_this_sale": "O produto {product} não estava nesta venda.",
+	"api_invalid_return_quantity": "A quantidade de {product} a devolver não é válida.",
+	"api_excessive_return": [
+		{
+			"declarations": ["input product", "input remaining", "local remainingPlural = remaining: plural"],
+			"selectors": ["remainingPlural"],
+			"match": {
+				"remainingPlural=one": "Resta só 1 unidade de {product} para devolver.",
+				"remainingPlural=other": "Restam só {remaining} unidades de {product} para devolver."
+			}
+		}
+	],
+	"api_return_not_found": "Não encontramos essa devolução.",
+	"api_return_failed": "Não foi possível registrar a devolução. Nada ficou pela metade: tente de novo.",
+
+	"api_empty_entry": "A entrada tem que ter pelo menos uma linha.",
+	"api_invalid_entry_source": "A origem da entrada não é válida.",
+	"api_duplicate_document": "O documento {document_number} já foi carregado em {loaded_at}. Estorne essa entrada se quiser repetir.",
+	"api_invalid_entry_line": "A linha {line} tem uma quantidade inválida ou um custo negativo.",
+	"api_entry_product_not_found": "A entrada menciona o produto {product}, que não existe.",
+	"api_entry_missing_barcode": "A linha {line} cria um produto sem código de barras.",
+	"api_barcode_taken": "Já existe um produto com o código de barras {barcode}.",
+	"api_entry_line_without_product": "A linha {line} não diz qual produto entra nem qual criar.",
+	"api_entry_not_found": "Não encontramos essa entrada.",
+	"api_entry_already_cancelled": "Essa entrada já está estornada.",
+	"api_entry_cannot_cancel": "Não é possível estornar: de {product} restam {available} unidades e a entrada acrescentou {added}. Ajuste o estoque à mão.",
+	"api_entry_failed": "Não foi possível registrar a entrada. Nada ficou pela metade: tente de novo.",
+	"api_entry_cancel_failed": "Não foi possível estornar a entrada. O estoque ficou como estava.",
+
+	"api_product_has_sales": "Não é possível excluir: o produto já tem vendas registradas.",
+	"api_category_name_taken": "Já existe uma categoria chamada {name}.",
+
+	"api_person_identification_taken": "Já existe uma pessoa cadastrada com esse documento.",
+	"api_email_taken": "Já existe uma conta com esse e-mail.",
+	"api_person_not_found": "Não encontramos essa pessoa.",
+	"api_person_not_yours": "Você só pode editar os seus próprios dados.",
+	"api_client_identification_taken": "Já existe um cliente com esse documento.",
+	"api_client_not_found": "Não encontramos esse cliente.",
+	"api_client_update_failed": "Não foi possível salvar os dados do cliente.",
+	"api_invalid_role": "O perfil tem que ser administrador ou operador de caixa.",
+	"api_account_not_found": "Não existe nenhuma conta com esse e-mail.",
+	"api_user_not_found": "Não encontramos esse usuário.",
+	"api_user_not_yours": "Você não pode consultar este usuário.",
+	"api_last_admin": "Tem que ficar pelo menos um administrador na empresa.",
+
+	"api_unsupported_locale": "O POS não está traduzido para «{locale}».",
+	"api_settings_too_large": "As configurações são grandes demais.",
+	"api_tax_rate_not_a_number": "A alíquota do imposto não é um número.",
+	"api_tax_rate_out_of_range": "A alíquota do imposto se escreve entre 0 e 1: 13 % é 0,13.",
+	"api_settings_save_failed": "Não foi possível salvar as configurações.",
+
+	"$comentario_producto": "Quando o backend manda o id do produto mas não o nome —porque a linha já não existe—, a frase diz «#47» em vez de deixar o buraco. E se não manda nenhum dos dois, «(não identificado)».",
+	"api_product_by_id": "#{product_id}",
+	"api_product_unknown": "(não identificado)"
 }

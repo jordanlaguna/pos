@@ -1,3 +1,146 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "O português tem gênero, mas a concordância de gênero vem declarada em `$lib/ui/fields.ts`, que foi escrita a partir do espanhol: «La cédula» é feminino e «o documento» é masculino, e o mesmo campo não pode ser os dois. Por isso os dois primeiros aqui usam uma redação que não depende do gênero —«{field}: campo obrigatório»— e o resto só concorda em número, que é igual nos dois idiomas. A alternativa seria escolher palavras em português pelo gênero do espanhol, e isso é escrever mal para agradar a uma constante.",
+
+	"validation_required": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field}: campo obrigatório."
+			}
+		}
+	],
+	"validation_not_allowed": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field}: valor inválido."
+			}
+		}
+	],
+
+	"validation_too_short": [
+		{
+			"declarations": ["input field", "input concord", "input min"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} devem ter no mínimo {min} caracteres.",
+				"concord=fp": "{field} devem ter no mínimo {min} caracteres.",
+				"concord=*": "{field} deve ter no mínimo {min} caracteres."
+			}
+		}
+	],
+	"validation_too_long": [
+		{
+			"declarations": ["input field", "input concord", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} não podem passar de {max} caracteres.",
+				"concord=fp": "{field} não podem passar de {max} caracteres.",
+				"concord=*": "{field} não pode passar de {max} caracteres."
+			}
+		}
+	],
+	"validation_not_a_number": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} devem ser números.",
+				"concord=fp": "{field} devem ser números.",
+				"concord=*": "{field} deve ser um número."
+			}
+		}
+	],
+	"validation_not_an_integer": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} devem ser números inteiros.",
+				"concord=fp": "{field} devem ser números inteiros.",
+				"concord=*": "{field} deve ser um número inteiro."
+			}
+		}
+	],
+	"validation_below_min": [
+		{
+			"declarations": ["input field", "input concord", "input min"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} não podem ser menores que {min}.",
+				"concord=fp": "{field} não podem ser menores que {min}.",
+				"concord=*": "{field} não pode ser menor que {min}."
+			}
+		}
+	],
+	"validation_above_max": [
+		{
+			"declarations": ["input field", "input concord", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} não podem ser maiores que {max}.",
+				"concord=fp": "{field} não podem ser maiores que {max}.",
+				"concord=*": "{field} não pode ser maior que {max}."
+			}
+		}
+	],
+	"validation_bad_email": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} não têm um formato válido.",
+				"concord=fp": "{field} não têm um formato válido.",
+				"concord=*": "{field} não tem um formato válido."
+			}
+		}
+	],
+	"validation_digits_only": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} só podem conter dígitos.",
+				"concord=fp": "{field} só podem conter dígitos.",
+				"concord=*": "{field} só pode conter dígitos."
+			}
+		}
+	],
+	"validation_digit_length": [
+		{
+			"declarations": ["input field", "input concord", "input min", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} devem ter entre {min} e {max} dígitos.",
+				"concord=fp": "{field} devem ter entre {min} e {max} dígitos.",
+				"concord=*": "{field} deve ter entre {min} e {max} dígitos."
+			}
+		}
+	],
+	"validation_bad_date": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} não são datas válidas.",
+				"concord=fp": "{field} não são datas válidas.",
+				"concord=*": "{field} não é uma data válida."
+			}
+		}
+	],
+	"validation_future_date": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} não podem estar no futuro.",
+				"concord=fp": "{field} não podem estar no futuro.",
+				"concord=*": "{field} não pode estar no futuro."
+			}
+		}
+	]
 }

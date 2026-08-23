@@ -1,3 +1,51 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"returns_title": "Returns",
+	"returns_description": "Return products from a sale and put the stock back automatically.",
+	"returns_registered": "Return recorded",
+	"returns_stock_back": "The stock went back into inventory.",
+
+	"returns_pick_sale": "Choose the sale to return from",
+	"returns_search_placeholder": "Invoice number…",
+	"returns_search_label": "Search for a sale by invoice number",
+	"returns_no_sales": "No sales available",
+	"returns_no_match": "No invoice matches the search.",
+	"returns_all_returned": "Sales already returned in full do not show up here.",
+
+	"returns_invoice": "Invoice {number}",
+	"returns_return_all": "Return everything",
+	"returns_change_sale": "Change sale",
+	"returns_no_detail": "No product detail",
+	"returns_no_detail_hint": "The backend did not return this sale's lines, so it cannot be returned product by product.",
+	"returns_could_not_register": "Could not be recorded",
+
+	"returns_col_product": "Product",
+	"returns_col_price": "Price",
+	"returns_col_sold": "Sold",
+	"returns_col_returned": "Returned",
+	"returns_col_available": "Available",
+	"returns_col_return": "Return",
+	"returns_units_of": "Units of {product} to return",
+	"returns_reason_label": "Reason for the return *",
+	"returns_reason_placeholder": "E.g., expired product, the customer changed their mind, wrong charge",
+
+	"returns_history": "Recorded returns",
+	"returns_col_date": "Date",
+	"returns_col_invoice": "Invoice",
+	"returns_col_reason": "Reason",
+	"returns_col_type": "Type",
+	"returns_col_amount": "Amount",
+	"returns_full": "Full",
+	"returns_partial": "Partial",
+	"returns_none": "No returns",
+	"returns_none_hint": "The returns you record will show up here.",
+
+	"returns_summary": "Return summary",
+	"returns_indicate_units": "Enter how many units of each product to return.",
+	"returns_tax_with_rate": "{tax} ({rate} %)",
+	"returns_to_refund": "To refund",
+	"returns_stock_note": "The returned units go back into inventory and come off the register's cash count.",
+	"returns_register": "Record return",
+	"returns_at_least_one": "Enter at least one product with a quantity greater than zero."
 }

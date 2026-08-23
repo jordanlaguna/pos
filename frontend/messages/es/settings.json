@@ -22,6 +22,10 @@
 	"settings_phone": "Teléfono",
 	"settings_email": "Correo",
 	"settings_website": "Sitio web",
+	"settings_locale": "Idioma de la interfaz",
+	"settings_locale_hint": "Con el que entra quien no haya elegido otro para su sesión.",
+	"settings_document_locale": "Idioma del documento",
+	"settings_document_locale_hint": "La factura es para el cliente y para Hacienda, así que no sigue el idioma de la pantalla.",
 	"settings_address": "Dirección",
 
 	"settings_logo": "Logo",
@@ -29,6 +33,8 @@
 	"settings_logo_alt": "Logo del negocio",
 	"settings_no_logo": "Sin logo",
 	"settings_remove_logo": "Quitar el logo actual",
+	"settings_logo_missing": "El negocio no tiene logo configurado.",
+	"settings_logo_undecodable": "El logo guardado no se pudo decodificar.",
 	"settings_no_svg": "Los SVG no se admiten: son XML y pueden traer código dentro. El logo se sirve desde el mismo origen que el POS, así que solo se aceptan imágenes.",
 
 	"settings_accent": "Color de la interfaz",
@@ -145,4 +151,5 @@
 	"settings_field_accent_color": "El color de la interfaz",
 
 	"settings_missing_5": "Si Hacienda no responde, la venta igual tiene que poder cobrarse y enviarse después. Un POS no puede quedarse esperando con el cliente enfrente."
+
 }

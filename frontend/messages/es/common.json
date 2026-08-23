@@ -18,9 +18,14 @@
 	"common_actions": "Acciones",
 	"common_required_fields": "Los campos marcados son obligatorios.",
 	"common_cannot_be_undone": "Esta acción no se puede deshacer.",
+	"common_session_required": "Sesión requerida.",
+	"language_es": "Español",
+	"language_en": "Inglés",
+	"language_pt": "Portugués",
 
 	"payment_cash": "Efectivo",
 	"payment_credit_card": "Tarjeta de crédito",
 	"payment_bank_transfer": "Transferencia bancaria",
 	"payment_mobile": "Pago móvil"
+
 }

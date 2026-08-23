@@ -1,6 +1,8 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 
+	"$comentario": "Todos llevan `concord` porque todos concuerdan con el rótulo del campo: los dos primeros en género y número, el resto en número —«Las notas no puede superar» es lo que decían antes de T-808—. La concordancia la declara el campo una sola vez, en `$lib/ui/fields.ts`.",
+
 	"validation_required": [
 		{
 			"declarations": ["input field", "input concord"],
@@ -26,15 +28,125 @@
 		}
 	],
 
-	"validation_too_short": "{field} debe tener al menos {min} caracteres.",
-	"validation_too_long": "{field} no puede superar {max} caracteres.",
-	"validation_not_a_number": "{field} debe ser un número.",
-	"validation_not_an_integer": "{field} debe ser un número entero.",
-	"validation_below_min": "{field} no puede ser menor que {min}.",
-	"validation_above_max": "{field} no puede ser mayor que {max}.",
-	"validation_bad_email": "{field} no tiene un formato válido.",
-	"validation_digits_only": "{field} solo puede contener dígitos.",
-	"validation_digit_length": "{field} debe tener entre {min} y {max} dígitos.",
-	"validation_bad_date": "{field} no es una fecha válida.",
-	"validation_future_date": "{field} no puede estar en el futuro."
+	"validation_too_short": [
+		{
+			"declarations": ["input field", "input concord", "input min"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} deben tener al menos {min} caracteres.",
+				"concord=fp": "{field} deben tener al menos {min} caracteres.",
+				"concord=*": "{field} debe tener al menos {min} caracteres."
+			}
+		}
+	],
+	"validation_too_long": [
+		{
+			"declarations": ["input field", "input concord", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} no pueden superar {max} caracteres.",
+				"concord=fp": "{field} no pueden superar {max} caracteres.",
+				"concord=*": "{field} no puede superar {max} caracteres."
+			}
+		}
+	],
+	"validation_not_a_number": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} deben ser números.",
+				"concord=fp": "{field} deben ser números.",
+				"concord=*": "{field} debe ser un número."
+			}
+		}
+	],
+	"validation_not_an_integer": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} deben ser números enteros.",
+				"concord=fp": "{field} deben ser números enteros.",
+				"concord=*": "{field} debe ser un número entero."
+			}
+		}
+	],
+	"validation_below_min": [
+		{
+			"declarations": ["input field", "input concord", "input min"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} no pueden ser menores que {min}.",
+				"concord=fp": "{field} no pueden ser menores que {min}.",
+				"concord=*": "{field} no puede ser menor que {min}."
+			}
+		}
+	],
+	"validation_above_max": [
+		{
+			"declarations": ["input field", "input concord", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} no pueden ser mayores que {max}.",
+				"concord=fp": "{field} no pueden ser mayores que {max}.",
+				"concord=*": "{field} no puede ser mayor que {max}."
+			}
+		}
+	],
+	"validation_bad_email": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} no tienen un formato válido.",
+				"concord=fp": "{field} no tienen un formato válido.",
+				"concord=*": "{field} no tiene un formato válido."
+			}
+		}
+	],
+	"validation_digits_only": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} solo pueden contener dígitos.",
+				"concord=fp": "{field} solo pueden contener dígitos.",
+				"concord=*": "{field} solo puede contener dígitos."
+			}
+		}
+	],
+	"validation_digit_length": [
+		{
+			"declarations": ["input field", "input concord", "input min", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} deben tener entre {min} y {max} dígitos.",
+				"concord=fp": "{field} deben tener entre {min} y {max} dígitos.",
+				"concord=*": "{field} debe tener entre {min} y {max} dígitos."
+			}
+		}
+	],
+	"validation_bad_date": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} no son fechas válidas.",
+				"concord=fp": "{field} no son fechas válidas.",
+				"concord=*": "{field} no es una fecha válida."
+			}
+		}
+	],
+	"validation_future_date": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} no pueden estar en el futuro.",
+				"concord=fp": "{field} no pueden estar en el futuro.",
+				"concord=*": "{field} no puede estar en el futuro."
+			}
+		}
+	]
 }

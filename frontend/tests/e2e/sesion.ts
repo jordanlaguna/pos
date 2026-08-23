@@ -48,3 +48,16 @@ export async function entrarAVentas(page: Page, quien = ADMIN, compania = CON_DA
 	await page.goto('/ventas');
 	await expect(page.getByRole('button', { name: /Arroz/i }).first()).toBeVisible();
 }
+
+/**
+ * Cerrar sesión, haciendo clic en el botón.
+ *
+ * No sirve `page.goto('/logout')`: la ruta es **POST a propósito** —un GET la
+ * dispararía cualquier precarga del navegador— así que una navegación normal
+ * responde 405 y la prueba se queda esperando un formulario de login que no
+ * llega. El mismo selector vale en el POS y en el panel de soporte.
+ */
+export async function salir(page: Page) {
+	await page.locator('form[action="/logout"] button').first().click();
+	await expect(page).toHaveURL(/\/login/);
+}

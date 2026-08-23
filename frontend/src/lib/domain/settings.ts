@@ -172,8 +172,24 @@ export const DEFAULT_SETTINGS: Settings = {
 		showLogo: true,
 		showBarcode: false,
 		receiptWidth: 80,
-		thanksMessage: '¡Gracias por su compra!',
-		legalNotice: 'Este documento no tiene validez tributaria.',
+		/*
+		 * Vacíos, y no «¡Gracias por su compra!» y «Este documento no tiene validez
+		 * tributaria.», que es lo que decían (RN-30).
+		 *
+		 * Son texto que se imprime, y de fábrica venían en español: la factura de
+		 * una compañía brasileña salía con la despedida en español hasta que
+		 * alguien abriera Configuración. El dominio no puede traducirlos —no lee el
+		 * catálogo, y si lo leyera congelaría el idioma de la primera petición
+		 * (defecto 17)— y la interfaz no puede ponerlos como respaldo del vacío,
+		 * porque `optional()` distingue «nunca se configuró» de «se borró a
+		 * propósito» y ese respaldo borraría la diferencia: quien quite la
+		 * despedida la vería volver.
+		 *
+		 * Se siembran al dar de alta la compañía, que es cuando se conoce su idioma
+		 * (RF-6, T-304). Las tres plantillas ya los omiten si vienen vacíos.
+		 */
+		thanksMessage: '',
+		legalNotice: '',
 		notes: ''
 	},
 	appearance: { accentColor: '#0e7490' },

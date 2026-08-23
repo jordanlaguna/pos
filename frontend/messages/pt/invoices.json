@@ -1,3 +1,59 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "Faturas: o histórico e a fatura aberta. Os textos do modelo impresso NÃO ficam aqui —ficam em documents.json— porque o idioma do documento não é o da tela (RN-29, T-811).",
+
+	"invoices_title": "Faturas",
+	"invoices_description": "Histórico das vendas registradas no sistema.",
+	"invoices_new_sale": "Nova venda",
+
+	"invoices_search_placeholder": "Número da fatura ou valor…",
+	"invoices_payment_method": "Forma de pagamento",
+	"invoices_all_methods": "Todas",
+	"invoices_from": "De",
+	"invoices_to": "Até",
+	"invoices_today": "Hoje",
+	"invoices_clear": "Limpar",
+
+	"invoices_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{count} fatura",
+				"countPlural=other": "{count} faturas"
+			}
+		}
+	],
+	"invoices_sum": "Total: {total}",
+
+	"invoices_col_invoice": "Fatura",
+	"invoices_col_date": "Data",
+	"invoices_col_subtotal": "Subtotal",
+	"invoices_col_tax": "Imposto",
+	"invoices_col_total": "Total",
+	"invoices_view": "Ver",
+
+	"invoices_no_results": "Sem resultados",
+	"invoices_no_results_hint": "Tente outros filtros, ou limpe-os para ver tudo.",
+	"invoices_none": "Ainda não há faturas",
+	"invoices_none_hint": "As vendas que você cobrar vão aparecer aqui.",
+
+	"invoices_previous": "Anterior",
+	"invoices_next": "Próxima",
+	"invoices_page_of": "Página {page} de {total}",
+
+	"invoice_tab_title": "Fatura {number}",
+	"invoice_not_found": "Fatura não encontrada.",
+	"invoice_registered": "Venda registrada com sucesso.",
+	"invoice_print": "Imprimir",
+	"invoice_back": "Voltar para faturas",
+	"invoice_return": "Devolver",
+	"invoice_backend_pdf": "PDF do backend",
+	"invoice_fully_returned": "Venda devolvida por completo",
+	"invoice_partially_returned": "Venda com devoluções parciais",
+	"invoice_return_line": "{date} — {total} · {reason}",
+
+	"invoice_mock_no_pdf": "O modo demonstração não gera PDF. Use «Imprimir» para salvá-lo pelo navegador.",
+	"invoice_pdf_failed": "O backend não conseguiu gerar o PDF desta fatura."
 }

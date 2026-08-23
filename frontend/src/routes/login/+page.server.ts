@@ -11,6 +11,8 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (locals.user) redirect(303, url.searchParams.get('redirectTo') ?? '/ventas');
+	// Soporte ya tiene sesión, la suya: al panel, no al POS (RN-4).
+	if (locals.support) redirect(303, '/admin');
 	// En modo demo se muestran las credenciales en pantalla: nadie puede adivinarlas.
 	return { demo: USE_MOCK };
 };
@@ -25,6 +27,7 @@ export const actions: Actions = {
 		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), email });
 
 		let hayQueElegir = false;
+		let esSoporte = false;
 		try {
 			const result = await api<LoginResponse>('/auth/login', {
 				method: 'POST',
@@ -41,12 +44,19 @@ export const actions: Actions = {
 			// completa y no hay pantalla intermedia (RN-25): el cajero de un
 			// negocio de una sola caja no se entera de que esto existe.
 			hayQueElegir = result.tipo === 'transito';
+			// Soporte no elige compañía porque no tiene ninguna (RN-4): su pantalla
+			// es el panel, y `redirectTo` no aplica —lo que pidió, si pidió algo, era
+			// una pantalla del POS a la que no puede entrar—.
+			esSoporte = result.tipo === 'soporte';
 		} catch (error) {
 			return fail(401, { errors: formError(apiMessage(error)), email });
 		}
 
 		// El redirect va fuera del try: lanza una excepción que no es un error.
 		const destino = url.searchParams.get('redirectTo');
+		if (esSoporte) {
+			redirect(303, '/admin');
+		}
 		if (hayQueElegir) {
 			redirect(303, destino ? `/compania?redirectTo=${encodeURIComponent(destino)}` : '/compania');
 		}

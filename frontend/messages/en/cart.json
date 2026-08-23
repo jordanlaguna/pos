@@ -1,4 +1,12 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-	"cart_reserved_elsewhere": "Only {free} left of {product}: {reserved} are held in another sale."
+
+	"cart_quantity_not_positive": "The quantity must be greater than zero.",
+	"cart_out_of_stock": "{product} is out of stock.",
+	"cart_reserved_elsewhere": "Only {free} left of {product}: {reserved} are held in another sale.",
+	"cart_only_units": "There are only {stock} units of {product}.",
+	"cart_only_units_with_current": "There are only {stock} units of {product}, and {current} are already in the sale.",
+	"cart_only_free_units": "Only {free} units of {product} are left.",
+	"cart_max_tickets": "You cannot have more than {max} sales on hold.",
+	"cart_line_not_found": "That product is not in the sale."
 }

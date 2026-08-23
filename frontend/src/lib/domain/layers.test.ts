@@ -25,14 +25,24 @@ import { describe, expect, it } from 'vitest';
 
 const LIB = fileURLToPath(new URL('..', import.meta.url));
 
-/** Prohibido en el dominio: si algo de esto aparece, deja de ser puro. */
+/**
+ * Prohibido en el dominio: si algo de esto aparece, deja de ser puro.
+ *
+ * `$lib/paraglide` está por RN-30 y no por pureza: el catálogo de mensajes no
+ * arrastra Svelte ni el entorno, así que esta prueba no lo habría notado. Pero
+ * una capa que puede leer el catálogo puede armar la oración, y para armarla hay
+ * que saber el idioma de la pantalla —que es de la petición, no del dominio—. La
+ * aplicación lo tiene prohibido por la regla de más abajo, que solo le deja
+ * importar el dominio y a sí misma.
+ */
 const FUERA_DEL_DOMINIO = [
 	'svelte',
 	'$app/',
 	'$env/',
 	'$lib/ui/',
 	'$lib/server/',
-	'$lib/application/'
+	'$lib/application/',
+	'$lib/paraglide'
 ];
 
 function archivos(carpeta: string, ext = ['.ts']): string[] {
@@ -86,11 +96,16 @@ describe('el dominio es puro', () => {
 		(nombre, ruta) => {
 			for (const { modulo, linea } of imports(ruta as string)) {
 				for (const prohibido of FUERA_DEL_DOMINIO) {
+					const razon = modulo.startsWith('$lib/paraglide')
+						? 'El dominio no lee el catálogo de mensajes (RN-30): devuelve un código y ' +
+							'los datos, y la frase la arma la interfaz. Para armarla hay que saber el ' +
+							'idioma de la pantalla, que es de la petición y no de la regla.'
+						: 'El dominio no puede depender de Svelte, del entorno ni de otra capa: si ' +
+							'para probar una regla hace falta un componente, la regla está en el sitio ' +
+							'equivocado.';
 					expect(
 						modulo.startsWith(prohibido),
-						`${nombre}:${linea} importa «${modulo}». El dominio no puede depender de Svelte, ` +
-							`del entorno ni de otra capa: si para probar una regla hace falta un componente, ` +
-							`la regla está en el sitio equivocado.`
+						`${nombre}:${linea} importa «${modulo}». ${razon}`
 					).toBe(false);
 				}
 			}

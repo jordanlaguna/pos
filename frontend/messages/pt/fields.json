@@ -1,3 +1,79 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "Rótulos de campo como aparecem DENTRO de uma mensagem de validação: levam artigo. O rótulo desenhado sobre o input é outro (fica no catálogo da sua tela) porque lá não leva artigo e vai em maiúscula. Aqui o gênero é o do português, não o do espanhol: nenhuma mensagem de validação concorda em gênero (ver validation.json), então «o documento» pode traduzir «la cédula» sem quebrar a frase.",
+
+	"field_amount": "O valor",
+	"field_cash_received": "O valor recebido",
+	"field_closing_amount": "O valor contado",
+	"field_opening_amount": "O valor de abertura",
+	"field_price": "O preço",
+	"field_stock": "O estoque",
+	"field_tax_rate": "A alíquota do imposto",
+	"field_tax_name": "O nome do imposto",
+	"field_decimals": "A quantidade de decimais",
+
+	"field_name": "O nome",
+	"field_category_name": "O nome da categoria",
+	"field_description": "A descrição",
+	"field_barcode": "O código de barras",
+	"field_category": "A categoria",
+	"field_notes": "As observações",
+	"field_reason": "O motivo",
+
+	"field_first_last_name": "O primeiro sobrenome",
+	"field_second_last_name": "O segundo sobrenome",
+	"field_identification": "O documento",
+	"field_telephone": "O telefone",
+	"field_address": "O endereço",
+	"field_email": "O e-mail",
+	"field_password": "A senha",
+	"field_role": "O perfil",
+	"field_birth_date": "A data de nascimento",
+	"field_register_date": "A data de cadastro",
+
+	"field_client": "O cliente",
+	"field_person": "A pessoa",
+	"field_product": "O produto",
+	"field_user": "O usuário",
+	"field_sale": "A venda",
+	"field_entry": "A entrada",
+
+	"field_payment_method": "A forma de pagamento",
+	"field_movement_type": "O tipo de movimento",
+
+	"field_business_name": "O nome do negócio",
+	"field_business_legal_name": "A razão social",
+	"field_business_identification": "O documento",
+	"field_business_id_type": "O tipo de documento",
+	"field_business_address": "O endereço",
+	"field_business_telephone": "O telefone",
+	"field_business_email": "O e-mail",
+	"field_business_website": "O site",
+
+	"field_currency_code": "O código da moeda",
+	"field_currency_symbol": "O símbolo da moeda",
+
+	"field_document_template": "O modelo",
+	"field_document_width": "A largura do cupom",
+	"field_document_legend": "O aviso legal",
+	"field_document_farewell": "A mensagem de despedida",
+	"field_document_notes": "As observações",
+	"field_locale": "O idioma",
+	"field_document_locale": "O idioma do documento",
+
+	"field_einvoicing_environment": "O ambiente",
+	"field_einvoicing_activity": "A atividade econômica",
+	"field_einvoicing_branch": "A filial",
+	"field_einvoicing_terminal": "O terminal",
+	"field_einvoicing_atv_user": "O usuário do ATV",
+
+	"$comentario_soporte": "Os do painel de suporte (F3). «O afiliado» e «a empresa» são os dois números que formam a identidade de um cliente, então o rótulo diz o número e não o negócio.",
+
+	"field_company_name": "O nome do negócio",
+	"field_affiliate": "O número de afiliado",
+	"field_company_number": "O número de empresa",
+	"field_plan": "O plano",
+	"field_company_state": "O estado da assinatura",
+	"field_expires_on": "A data de vencimento"
 }

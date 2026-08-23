@@ -1,3 +1,51 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "O documento impresso: cupom, fatura clássica e fatura moderna. É um catálogo separado porque o idioma do documento NÃO é o da tela (RN-29): a fatura é para o cliente e para a autoridade fiscal, então uma empresa costarriquenha emite em espanhol mesmo que o seu operador use o POS em português.",
+
+	"doc_invoice": "Fatura",
+	"doc_einvoice": "Fatura eletrônica",
+	"doc_invoice_number": "Fatura {number}",
+
+	"doc_issuer": "Emissor",
+	"doc_issuer_incomplete": "Complete os dados do negócio em Configurações.",
+	"doc_issuer_add_contact": "Adicione telefone e e-mail em Configurações",
+	"doc_tax_id": "Documento {id}",
+	"doc_phone": "Tel. {phone}",
+
+	"doc_client": "Cliente",
+	"doc_bill_to": "Faturar para",
+	"doc_walk_in": "Cliente avulso",
+	"doc_walk_in_hint": "Venda sem cliente cadastrado",
+	"doc_client_id": "Documento",
+
+	"doc_date": "Data",
+	"doc_payment_method": "Forma de pagamento",
+	"doc_payment": "Pagamento",
+	"doc_served_by": "Atendido por",
+
+	"doc_col_product": "Produto",
+	"doc_col_description": "Descrição",
+	"doc_col_quantity": "Qtd.",
+	"doc_col_unit_price": "P. unit.",
+	"doc_col_unit_price_long": "Preço unitário",
+	"doc_col_total": "Total",
+
+	"doc_no_detail": "O backend não expõe o detalhe desta venda.",
+	"doc_no_detail_hint": "Aplique o endpoint {endpoint} do patch para vê-lo.",
+
+	"doc_subtotal": "Subtotal",
+	"doc_total": "Total",
+	"doc_cash_received": "Dinheiro recebido",
+	"doc_change": "Troco",
+	"doc_returned": "Devolvido",
+	"doc_returns_applied": "Devoluções aplicadas",
+
+	"doc_notes": "Observações",
+	"doc_notes_and_terms": "Observações e condições",
+
+	"$comentario_semilla": "Os dois textos com que nasce uma empresa (T-304, RF-6). Não são valores padrão do domínio —lá nascem vazios de propósito, porque o domínio não lê o catálogo (RN-30)—: são gravados no cadastro, que é quando se conhece o idioma do documento. Depois são do dono: se ele apagar, ficam apagados.",
+
+	"doc_default_thanks": "Obrigado pela sua compra!",
+	"doc_default_legal": "Este documento não tem validade fiscal."
 }

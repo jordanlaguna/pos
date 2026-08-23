@@ -10,7 +10,7 @@
 	import { accentTheme, hexToRgb } from '$lib/domain/color';
 	import { businessName } from '$lib/domain/settings';
 	import { m } from '$lib/paraglide/messages.js';
-	import { roleLabel } from '$lib/ui/messages';
+	import { roleLabel, subscriptionNotice } from '$lib/ui/messages';
 	import { DEFAULT_SETTINGS } from '$lib/domain/settings';
 	import type { LayoutData } from './$types';
 
@@ -73,6 +73,42 @@
 
 	const groups = $derived(visibleGroups(data.user.role));
 	const currentTitle = $derived(titleFor(page.url.pathname));
+
+	/*
+	 * Los dos avisos que van arriba de todo (F3).
+	 *
+	 * El de la suscripción se muestra en **cada pantalla** y no solo en ventas
+	 * (RF-10): el dueño puede entrar a mirar un reporte y ahí también tiene que
+	 * enterarse de que su pago vence el jueves. Sale nulo cuando no hay nada que
+	 * decir, porque un aviso permanente que no dice nada es un aviso que nadie
+	 * lee.
+	 *
+	 * El de la suplantación se muestra mientras soporte esté mirando esta
+	 * compañía, y por eso viaja en `/users/me` y no una sola vez al entrar: una
+	 * franja que se pierde al navegar no es permanente, y lo peor que puede pasar
+	 * en una visita de soporte es olvidar de quién son los datos que se están
+	 * viendo.
+	 */
+	const aviso = $derived(subscriptionNotice(data.user.subscription));
+	const enGracia = $derived(data.user.subscription?.aviso === 'en_gracia');
+	const bloqueado = $derived(data.user.subscription?.puede_vender === false);
+	const suplantacion = $derived(data.user.impersonated_by);
+
+	/*
+	 * Las opciones del selector de idioma (T-810).
+	 *
+	 * Son funciones y no una constante de módulo por lo de siempre: una constante
+	 * se evaluaría al importar y congelaría el idioma de la primera petición para
+	 * todas (defecto 17). `idiomaElegido` es lo que **eligió** la persona, no el
+	 * efectivo: «el de la compañía» tiene que verse marcado cuando hereda.
+	 */
+	const IDIOMAS = $derived([
+		{ value: 'auto', label: m.nav_language_auto() },
+		{ value: 'es', label: m.language_es() },
+		{ value: 'en', label: m.language_en() },
+		{ value: 'pt', label: m.language_pt() }
+	]);
+	const idiomaElegido = $derived(data.user?.user_locale ?? 'auto');
 
 	function isActive(href: string): boolean {
 		return page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
@@ -277,6 +313,60 @@
 				</div>
 			{/if}
 
+			{#if !collapsed}
+				<!--
+					El idioma de esta persona (T-810, RN-28).
+
+					Va en el menú y no en Configuración porque es de quien está sentado
+					en la caja, no del negocio: un local costarricense puede contratar a
+					una cajera nicaragüense que prefiera otra cosa, y no tiene por qué
+					pedirle permiso al administrador para leer su pantalla.
+
+					Es un formulario de verdad, con su botón: así funciona sin
+					JavaScript, igual que el resto del POS. «El de la compañía» no es lo
+					mismo que elegir español —hereda, y sigue al negocio si cambia—.
+				-->
+				<form
+					method="POST"
+					action="/idioma"
+					class="mt-2 border-t border-[var(--border)] px-2 pt-2"
+				>
+					<input type="hidden" name="redirectTo" value={page.url.pathname} />
+					<label
+						class="block text-[10px] font-semibold tracking-wide text-[var(--text-subtle)] uppercase"
+						for="nav-idioma"
+					>
+						{m.nav_language()}
+					</label>
+					<div class="mt-1 flex items-center gap-1">
+						<!--
+							Sin `value` ni `bind:`, con `selected` en cada opción: el select
+							queda **sin controlar** a propósito.
+
+							Con `value={…}`, Svelte lo reinicia al hidratar, y eso se come la
+							elección de quien alcanzó a tocarlo antes —que en una caja lenta
+							es lo normal—. Se descubrió con la prueba de punta a punta:
+							elegía «el de la compañía», el valor volvía a «inglés» solo, y el
+							formulario mandaba el idioma que ya estaba puesto.
+						-->
+						<select id="nav-idioma" name="locale" class="input h-8 min-w-0 flex-1 py-0 text-xs">
+							{#each IDIOMAS as opcion (opcion.value)}
+								<option value={opcion.value} selected={opcion.value === idiomaElegido}>
+									{opcion.label}
+								</option>
+							{/each}
+						</select>
+						<button
+							type="submit"
+							class="btn btn-ghost h-8 px-2"
+							aria-label={m.nav_language_apply()}
+						>
+							<Icon name="check" size={14} />
+						</button>
+					</div>
+				</form>
+			{/if}
+
 			<div
 				class="flex items-center gap-2.5 rounded-lg px-2 py-2 {collapsed ? 'justify-center' : ''}"
 			>
@@ -341,6 +431,56 @@
 				<Icon name={theme.current === 'dark' ? 'sun' : 'moon'} size={16} />
 			</button>
 		</header>
+
+		{#if suplantacion}
+			<!--
+				La franja de la visita de soporte (RF-8). Va antes del contenido, ocupa
+				el ancho completo y no se puede cerrar: es la única cosa en la pantalla
+				que dice que estos datos son de otro.
+			-->
+			<div
+				class="no-print flex flex-wrap items-center gap-2 border-b border-[var(--warning)] bg-[var(--warning-bg)] px-4 py-2 text-xs text-[var(--warning)]"
+			>
+				<Icon name="eye" size={14} class="shrink-0" />
+				<strong>{m.impersonation_banner({ compania: data.user.company_name ?? '' })}</strong>
+				<span class="badge bg-[var(--warning)] text-[var(--surface)]">
+					{m.impersonation_read_only()}
+				</span>
+				{#if data.user.impersonation_reason}
+					<span class="min-w-0 flex-1 truncate opacity-90">
+						{m.impersonation_reason({ motivo: data.user.impersonation_reason })}
+					</span>
+				{/if}
+				<form method="POST" action="/admin/salir" class="ml-auto">
+					<button type="submit" class="btn btn-ghost px-2 py-1 text-xs">
+						<Icon name="back" size={13} />
+						{m.impersonation_leave()}
+					</button>
+				</form>
+			</div>
+		{/if}
+
+		{#if aviso}
+			<!--
+				El estado de la suscripción (RF-11). Rojo cuando ya no se puede vender,
+				ámbar mientras quede gracia o falten días: el color es lo primero que se
+				mira y tiene que decir si hay que actuar hoy.
+			-->
+			<div
+				class="no-print flex flex-wrap items-center gap-2 border-b px-4 py-2 text-xs
+					{bloqueado
+					? 'border-[var(--negative)] bg-[var(--negative-bg)] text-[var(--negative)]'
+					: enGracia
+						? 'border-[var(--warning)] bg-[var(--warning-bg)] text-[var(--warning)]'
+						: 'border-[var(--border)] bg-[var(--surface-sunken)] text-[var(--text-muted)]'}"
+			>
+				<Icon name={bloqueado ? 'alert' : 'info'} size={14} class="shrink-0" />
+				<span class="min-w-0 flex-1">{aviso}</span>
+				{#if bloqueado || enGracia}
+					<span class="opacity-90">{m.subscription_contact()}</span>
+				{/if}
+			</div>
+		{/if}
 
 		<main class="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
 			{@render children()}

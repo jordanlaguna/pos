@@ -1,3 +1,44 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"nav_group_operations": "Operação",
+	"nav_group_admin": "Administração",
+
+	"nav_sales": "Vendas",
+	"nav_cash": "Caixa",
+	"nav_invoices": "Faturas",
+	"nav_returns": "Devoluções",
+	"nav_reports": "Relatórios",
+	"nav_inventory": "Estoque",
+	"nav_clients": "Clientes",
+	"nav_users": "Usuários",
+	"nav_settings": "Configurações",
+
+	"nav_main": "Navegação principal",
+	"nav_tagline": "Ponto de venda",
+	"nav_open_menu": "Abrir menu",
+	"nav_close_menu": "Fechar menu",
+	"nav_expand_menu": "Expandir menu",
+	"nav_collapse_menu": "Recolher menu",
+	"nav_locked": "{section}: só para administradores. Peça a um administrador para mudar o seu perfil.",
+
+	"nav_company": "Empresa",
+	"nav_branch_terminal": "Filial {branch} · Caixa {terminal}",
+	"nav_switch_company": "Trocar de empresa",
+	"nav_logout": "Sair",
+
+	"nav_demo": "Demo",
+	"nav_demo_hint": "O backend real não está conectado; estão sendo usados dados de exemplo.",
+	"nav_toggle_theme": "Alternar entre tema claro e escuro",
+
+	"nav_toggle_theme_short": "Alternar tema",
+	"nav_language": "Idioma",
+	"nav_language_auto": "O da empresa",
+	"nav_language_apply": "Mudar o idioma",
+
+	"role_admin": "Administrador",
+	"role_cashier": "Operador de caixa",
+	"$comentario_rol": "Os rótulos em minúscula são para quando o perfil aparece dentro de uma frase: «convidam você a entrar como operador de caixa».",
+	"role_admin_lower": "administrador",
+	"role_cashier_lower": "operador de caixa"
 }

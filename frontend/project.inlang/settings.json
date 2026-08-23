@@ -28,7 +28,8 @@
 			"./messages/{locale}/reports.json",
 			"./messages/{locale}/invoices.json",
 			"./messages/{locale}/settings.json",
-			"./messages/{locale}/documents.json"
+			"./messages/{locale}/documents.json",
+			"./messages/{locale}/admin.json"
 		]
 	}
 }

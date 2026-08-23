@@ -1,3 +1,136 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "English has no gender, but it does have number agreement, and every message declares `concord` because the caller always passes it (T-815). Where the verb does not change —«must», «cannot», «can only»— there is a single `*` case, and that is the point: the declaration is what keeps the signature identical across the three catalogs, not the number of branches.",
+
+	"validation_required": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} are required.",
+				"concord=fp": "{field} are required.",
+				"concord=*": "{field} is required."
+			}
+		}
+	],
+	"validation_not_allowed": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} are not valid.",
+				"concord=fp": "{field} are not valid.",
+				"concord=*": "{field} is not valid."
+			}
+		}
+	],
+
+	"validation_too_short": [
+		{
+			"declarations": ["input field", "input concord", "input min"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field} must be at least {min} characters long."
+			}
+		}
+	],
+	"validation_too_long": [
+		{
+			"declarations": ["input field", "input concord", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field} cannot be longer than {max} characters."
+			}
+		}
+	],
+	"validation_not_a_number": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} must be numbers.",
+				"concord=fp": "{field} must be numbers.",
+				"concord=*": "{field} must be a number."
+			}
+		}
+	],
+	"validation_not_an_integer": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} must be whole numbers.",
+				"concord=fp": "{field} must be whole numbers.",
+				"concord=*": "{field} must be a whole number."
+			}
+		}
+	],
+	"validation_below_min": [
+		{
+			"declarations": ["input field", "input concord", "input min"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field} cannot be less than {min}."
+			}
+		}
+	],
+	"validation_above_max": [
+		{
+			"declarations": ["input field", "input concord", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field} cannot be greater than {max}."
+			}
+		}
+	],
+	"validation_bad_email": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} are not in a valid format.",
+				"concord=fp": "{field} are not in a valid format.",
+				"concord=*": "{field} is not in a valid format."
+			}
+		}
+	],
+	"validation_digits_only": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field} can only contain digits."
+			}
+		}
+	],
+	"validation_digit_length": [
+		{
+			"declarations": ["input field", "input concord", "input min", "input max"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field} must be between {min} and {max} digits long."
+			}
+		}
+	],
+	"validation_bad_date": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=mp": "{field} are not valid dates.",
+				"concord=fp": "{field} are not valid dates.",
+				"concord=*": "{field} is not a valid date."
+			}
+		}
+	],
+	"validation_future_date": [
+		{
+			"declarations": ["input field", "input concord"],
+			"selectors": ["concord"],
+			"match": {
+				"concord=*": "{field} cannot be in the future."
+			}
+		}
+	]
 }

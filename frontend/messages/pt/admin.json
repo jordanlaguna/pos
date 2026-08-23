@@ -1,0 +1,217 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "O painel de suporte (F3) e os avisos de assinatura. Está traduzido como o resto do POS mesmo que hoje só uma pessoa o use: é a mesma aplicação, a mesma prova de texto solto o vigia, e no dia em que houver suporte em outro país o trabalho já está feito. Os estados da assinatura reutilizam as chaves `company_status_*` de auth.json: são as mesmas cinco palavras e tê-las duas vezes é tê-las diferentes.",
+
+	"admin_title": "Painel de suporte",
+	"admin_tagline": "Plataforma",
+	"admin_role": "Suporte",
+	"admin_nav": "Menu do painel",
+	"admin_nav_companies": "Empresas",
+	"admin_nav_audit": "Registro de atividade",
+	"admin_logout": "Sair",
+	"admin_back": "Voltar",
+
+	"$comentario_listado": "RF-5. A identidade de um cliente é o par (afiliado, empresa), então a tabela mostra assim mesmo: «1·2» se lê como número de cliente e é o que se dita por telefone.",
+
+	"admin_companies_title": "Empresas",
+	"admin_companies_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Um cliente nesta instalação",
+				"countPlural=other": "{count} clientes nesta instalação"
+			}
+		}
+	],
+	"admin_companies_empty": "Ainda não há nenhuma empresa. Cadastre a primeira.",
+	"admin_new_company": "Nova empresa",
+	"admin_pair": "{afiliado}·{compania}",
+	"admin_col_client": "Cliente",
+	"admin_col_company": "Negócio",
+	"admin_col_plan": "Plano",
+	"admin_col_state": "Estado",
+	"admin_col_expires": "Vence",
+	"admin_col_usage": "Uso",
+	"admin_col_month": "Este mês",
+	"admin_col_actions": "Ações",
+	"admin_open": "Abrir",
+	"admin_no_expiry": "Sem data",
+	"admin_no_plan": "Sem plano",
+
+	"$comentario_uso": "Quantos dos que o plano permite já estão em uso. Com o plano sem teto não se diz «0 de -1»: diz-se quantos há e nada mais.",
+
+	"admin_usage_users": "{used} de {max} usuários",
+	"admin_usage_users_unlimited": [
+		{
+			"declarations": ["input used", "local usedPlural = used: plural"],
+			"selectors": ["usedPlural"],
+			"match": {
+				"usedPlural=one": "1 usuário",
+				"usedPlural=other": "{used} usuários"
+			}
+		}
+	],
+	"admin_usage_terminals": "{used} de {max} caixas",
+	"admin_usage_terminals_unlimited": [
+		{
+			"declarations": ["input used", "local usedPlural = used: plural"],
+			"selectors": ["usedPlural"],
+			"match": {
+				"usedPlural=one": "1 caixa",
+				"usedPlural=other": "{used} caixas"
+			}
+		}
+	],
+	"admin_usage_products": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 produto",
+				"countPlural=other": "{count} produtos"
+			}
+		}
+	],
+	"admin_usage_sales": [
+		{
+			"declarations": ["input count", "input total", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 venda · {total}",
+				"countPlural=other": "{count} vendas · {total}"
+			}
+		}
+	],
+	"admin_usage_no_sales": "Sem vendas neste mês",
+
+	"$comentario_alta": "RF-6. O afiliado e a empresa podem ficar em branco: o backend pega o próximo livre, e calcular isso lá evita que dois cadastros ao mesmo tempo escolham o mesmo par.",
+
+	"admin_new_title": "Nova empresa",
+	"admin_new_intro": "Fica criada com a filial 001, o caixa 00001, a configuração e o primeiro administrador.",
+	"admin_section_business": "O negócio",
+	"admin_section_subscription": "A assinatura",
+	"admin_section_admin": "O primeiro administrador",
+	"admin_label_company_name": "Nome do negócio",
+	"admin_label_identification": "CNPJ",
+	"admin_label_affiliate": "Afiliado",
+	"admin_label_company_number": "Empresa",
+	"admin_label_pair_hint": "Em branco: pega-se o próximo livre. Repita o afiliado para abrir outra empresa do mesmo cliente.",
+	"admin_label_plan": "Plano",
+	"admin_label_state": "Estado",
+	"admin_label_expires": "Vence em",
+	"admin_label_expires_hint": "Com a data em branco, a assinatura não vence e ninguém recebe aviso.",
+	"admin_label_locale": "Idioma da tela",
+	"admin_label_document_locale": "Idioma da nota",
+	"admin_label_document_locale_hint": "A nota é para o cliente e para a autoridade fiscal: pode não ser o idioma de quem passa a venda.",
+	"admin_label_email": "E-mail",
+	"admin_label_password": "Senha",
+	"admin_label_name": "Nome",
+	"admin_label_last_name": "Primeiro sobrenome",
+	"admin_label_second_last_name": "Segundo sobrenome",
+	"admin_label_person_identification": "CPF",
+	"admin_label_telephone": "Telefone",
+	"admin_create": "Cadastrar",
+	"admin_cancel": "Cancelar",
+	"admin_created": "{nombre} ficou cadastrada. Filial {sucursal}, caixa {caja}.",
+	"admin_created_pending": "Esse e-mail já tinha conta no sistema, então o vínculo fica pendente até a pessoa aceitar ao entrar.",
+	"admin_texts_seeded": "Os textos do cupom ficaram gravados em {idioma}.",
+
+	"$comentario_ficha": "A ficha de uma empresa: o que precisa ver para atender um telefonema, e as duas coisas que se podem fazer —mudar a assinatura e entrar para olhar—.",
+
+	"admin_company_since": "Cadastrada em {fecha}",
+	"admin_company_id": "CNPJ {identificacion}",
+	"admin_company_no_id": "Sem CNPJ registrado",
+	"admin_admins": "Administradores",
+	"admin_no_admins": "Esta empresa não tem nenhum administrador ativo.",
+	"admin_usage_title": "Uso",
+	"admin_usage_month": "Vendas do mês",
+	"admin_subscription_title": "Assinatura",
+	"admin_subscription_stored": "Gravado",
+	"admin_subscription_effective": "Em vigor hoje",
+	"admin_subscription_derived": "O estado gravado diz «{guardado}» e a data já passou, então hoje se comporta como «{efectivo}».",
+	"admin_subscription_save": "Salvar a assinatura",
+	"admin_subscription_saved": "Assinatura atualizada.",
+	"admin_languages_title": "Idiomas",
+	"admin_company_not_found": "Não encontramos essa empresa.",
+
+	"$comentario_entrar": "RF-8 e RN-4. O motivo é obrigatório, a visita dura meia hora e é somente leitura. As três coisas são ditas na tela: quem entra tem que saber o que pode fazer, e quem auditar tem que poder ler por quê.",
+
+	"admin_enter_title": "Entrar como esta empresa",
+	"admin_enter_intro": "Para diagnosticar. Verá os dados do cliente em modo leitura, a visita dura {minutos} minutos e fica registrada com o seu motivo.",
+	"admin_enter_reason": "Motivo",
+	"admin_enter_reason_hint": "Quem auditar dentro de seis meses vai ler isto: «ver por que o caixa não fecha» serve, «revisão» não.",
+	"admin_enter": "Entrar para olhar",
+
+	"$comentario_bitacora": "RF-9. Guarda também os logins dos clientes, e é de propósito: a pergunta que se faz de verdade não é «o que o suporte fez» e sim «por que este operador não consegue entrar».",
+
+	"admin_audit_title": "Registro de atividade",
+	"admin_audit_intro": "Quem fez o quê, quando e sobre qual empresa.",
+	"admin_audit_company": "Empresa",
+	"admin_audit_action": "Ação",
+	"admin_audit_all": "Todas",
+	"admin_audit_apply": "Filtrar",
+	"admin_audit_empty": "Não há atividade registrada com esse filtro.",
+	"admin_audit_recent": "Atividade recente",
+	"admin_audit_see_all": "Ver o registro completo",
+	"admin_col_when": "Quando",
+	"admin_col_who": "Quem",
+	"admin_col_what": "O quê",
+	"admin_col_detail": "Detalhe",
+	"admin_col_where": "Onde",
+	"admin_col_ip": "IP",
+	"admin_audit_no_company": "A plataforma",
+	"admin_audit_unknown_user": "Conta apagada (#{id})",
+
+	"$comentario_acciones": "Os nomes das ações do registro. A chave repete o valor que o backend escreve, então uma ação nova se agrega aqui com o mesmo nome; enquanto não estiver, a tela mostra o código cru em vez de um buraco.",
+
+	"admin_action_login": "Entrou no sistema",
+	"admin_action_login_soporte": "Entrou no painel de suporte",
+	"admin_action_elegir_compania": "Escolheu empresa",
+	"admin_action_invitacion_aceptar": "Aceitou o convite",
+	"admin_action_invitacion_rechazar": "Recusou o convite",
+	"admin_action_idioma_usuario": "Mudou o próprio idioma",
+	"admin_action_idioma_compania": "Mudou o idioma da empresa",
+	"admin_action_alta_compania": "Cadastrou a empresa",
+	"admin_action_suscripcion": "Mudou a assinatura",
+	"admin_action_entrar_como": "Entrou como a empresa",
+
+	"$comentario_avisos": "Os avisos de assinatura que o cliente vê no POS (RF-11). O da tolerância e o de somente leitura são os que custam dinheiro, então dizem o que ainda se pode fazer e não só o que aconteceu.",
+
+	"subscription_trial": "Está em período de teste.",
+	"subscription_trial_until": "Está em período de teste até {fecha}.",
+	"subscription_due_today": "A assinatura vence hoje.",
+	"subscription_due_in": [
+		{
+			"declarations": ["input dias", "local diasPlural = dias: plural"],
+			"selectors": ["diasPlural"],
+			"match": {
+				"diasPlural=one": "A assinatura vence amanhã.",
+				"diasPlural=other": "A assinatura vence em {dias} dias."
+			}
+		}
+	],
+	"subscription_grace": [
+		{
+			"declarations": ["input dias", "local diasPlural = dias: plural"],
+			"selectors": ["diasPlural"],
+			"match": {
+				"diasPlural=one": "O pagamento está atrasado. Hoje é o último dia em que pode vender.",
+				"diasPlural=other": "O pagamento está atrasado. Pode continuar vendendo por {dias} dias."
+			}
+		}
+	],
+	"subscription_read_only": "O pagamento está atrasado e o prazo acabou. Pode consultar seus dados e fechar o caixa, mas não vender.",
+	"subscription_suspended": "A assinatura está suspensa. Fale com o suporte para reativá-la.",
+	"subscription_cancelled": "A assinatura está cancelada.",
+	"subscription_contact": "Fale com o suporte para regularizar.",
+	"subscription_blocked_title": "Não é possível vender",
+
+	"$comentario_franja": "A faixa da suplantação (RF-8). É permanente e fica acima de tudo de propósito: a pior coisa que pode acontecer numa visita de suporte é esquecer que se está olhando a empresa de outro.",
+
+	"impersonation_banner": "Está vendo {compania} como suporte.",
+	"impersonation_read_only": "Somente leitura",
+	"impersonation_reason": "Motivo: {motivo}",
+	"impersonation_leave": "Voltar ao painel"
+}

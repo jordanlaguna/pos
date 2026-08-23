@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 
-import { requireAdmin } from '$lib/server/auth';
+import { api } from '$lib/server/api';
+import { requireAdmin, setSessionCookie } from '$lib/server/auth';
 import { invalidateSettings, loadSettings, saveSettings } from '$lib/server/settings';
 import { formError, Validator } from '$lib/application/validation';
 import { F } from '$lib/ui/fields';
@@ -14,6 +15,9 @@ import {
 	type Settings
 } from '$lib/domain/settings';
 import type { Actions, PageServerLoad } from './$types';
+
+/** Los idiomas con catálogo. La misma lista que `app/domain/locale.py`. */
+const LOCALES = ['es', 'en', 'pt'] as const;
 
 /** Un logo más pesado que esto no mejora la factura; solo hace lenta cada pantalla. */
 const MAX_LOGO_BYTES = 250 * 1024;
@@ -80,7 +84,7 @@ async function readLogo(form: FormData, v: Validator): Promise<LogoSettings | un
 }
 
 export const actions: Actions = {
-	guardar: async ({ request, locals, url }) => {
+	guardar: async ({ request, cookies, locals, url }) => {
 		const admin = requireAdmin(locals, url.pathname);
 
 		const form = await request.formData();
@@ -144,6 +148,15 @@ export const actions: Actions = {
 			required: false,
 			max: 120
 		});
+
+		/*
+		 * Los dos idiomas de la compañía (T-810, T-811). No entran en la
+		 * configuración: viven en columnas de `companies`, porque el de la pantalla
+		 * hay que leerlo al emitir el token, antes de que exista configuración que
+		 * consultar.
+		 */
+		const idiomaInterfaz = v.oneOf('idioma_interfaz', F.locale(), LOCALES);
+		const idiomaDocumento = v.oneOf('idioma_documento', F.documentLocale(), LOCALES);
 
 		const logo = await readLogo(form, v);
 		const quitarLogo = checked(form, 'quitar_logo');
@@ -217,6 +230,23 @@ export const actions: Actions = {
 			// un negocio no tiene por qué obligar a los demás a volver a pedir la
 			// suya (T-224).
 			invalidateSettings(admin.company_id);
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+
+		try {
+			/*
+			 * El backend devuelve un token nuevo porque el idioma de la pantalla vive
+			 * en el token: si quien guarda no eligió uno propio, acaba de cambiar el
+			 * suyo. Sin renovar la cookie, la pantalla seguiría en el idioma anterior
+			 * hasta el siguiente login.
+			 */
+			const sesion = await api<{ access_token: string }>('/settings/locales', {
+				method: 'PUT',
+				body: { locale: idiomaInterfaz, document_locale: idiomaDocumento },
+				token: locals.token
+			});
+			setSessionCookie(cookies, sesion.access_token);
+		} catch (error) {
 			return fail(400, { errors: formError(apiMessage(error)) });
 		}
 

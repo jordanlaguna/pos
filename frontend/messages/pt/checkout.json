@@ -1,4 +1,12 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-	"checkout_cash_short": "O valor recebido não cobre o total da venda."
+
+	"checkout_no_lines": "Adicione pelo menos um produto antes de cobrar.",
+	"checkout_bad_sale_number": "O número da fatura não é válido.",
+	"checkout_product_gone": "Um produto da venda já não existe.",
+	"checkout_bad_quantity": "Quantidade inválida para {product}.",
+	"checkout_insufficient_stock": "Estoque insuficiente de {product}: restam {available}.",
+	"checkout_cash_short": "O valor recebido não cobre o total da venda.",
+	"checkout_unreadable_lines": "Não foi possível ler o detalhe da venda.",
+	"checkout_amount_insufficient": "Valor insuficiente."
 }

@@ -1,0 +1,217 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "The support panel (F3) and the subscription notices. It is translated like the rest of the POS even though one person uses it today: it is the same application, the same loose-text test guards it, and the day there is support staff in another country the work is done. Subscription states reuse the `company_status_*` keys from auth.json: same five words, and having them twice means having them differ.",
+
+	"admin_title": "Support panel",
+	"admin_tagline": "Platform",
+	"admin_role": "Support",
+	"admin_nav": "Panel menu",
+	"admin_nav_companies": "Companies",
+	"admin_nav_audit": "Audit log",
+	"admin_logout": "Sign out",
+	"admin_back": "Back",
+
+	"$comentario_listado": "RF-5. A customer's identity is the (affiliate, company) pair, so the table shows it as it is: «1·2» reads as a customer number and is what gets read out over the phone.",
+
+	"admin_companies_title": "Companies",
+	"admin_companies_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "One customer on this installation",
+				"countPlural=other": "{count} customers on this installation"
+			}
+		}
+	],
+	"admin_companies_empty": "There are no companies yet. Create the first one.",
+	"admin_new_company": "New company",
+	"admin_pair": "{afiliado}·{compania}",
+	"admin_col_client": "Customer",
+	"admin_col_company": "Business",
+	"admin_col_plan": "Plan",
+	"admin_col_state": "Status",
+	"admin_col_expires": "Expires",
+	"admin_col_usage": "Usage",
+	"admin_col_month": "This month",
+	"admin_col_actions": "Actions",
+	"admin_open": "Open",
+	"admin_no_expiry": "No date",
+	"admin_no_plan": "No plan",
+
+	"$comentario_uso": "How much of what the plan allows is already in use. With an uncapped plan it does not say «0 of -1»: it says how many there are and nothing else.",
+
+	"admin_usage_users": "{used} of {max} users",
+	"admin_usage_users_unlimited": [
+		{
+			"declarations": ["input used", "local usedPlural = used: plural"],
+			"selectors": ["usedPlural"],
+			"match": {
+				"usedPlural=one": "1 user",
+				"usedPlural=other": "{used} users"
+			}
+		}
+	],
+	"admin_usage_terminals": "{used} of {max} registers",
+	"admin_usage_terminals_unlimited": [
+		{
+			"declarations": ["input used", "local usedPlural = used: plural"],
+			"selectors": ["usedPlural"],
+			"match": {
+				"usedPlural=one": "1 register",
+				"usedPlural=other": "{used} registers"
+			}
+		}
+	],
+	"admin_usage_products": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 product",
+				"countPlural=other": "{count} products"
+			}
+		}
+	],
+	"admin_usage_sales": [
+		{
+			"declarations": ["input count", "input total", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 sale · {total}",
+				"countPlural=other": "{count} sales · {total}"
+			}
+		}
+	],
+	"admin_usage_no_sales": "No sales this month",
+
+	"$comentario_alta": "RF-6. The affiliate and the company can be left blank: the backend takes the next free one, and computing it there keeps two simultaneous sign-ups from picking the same pair.",
+
+	"admin_new_title": "New company",
+	"admin_new_intro": "It is created with branch 001, register 00001, its settings and the first administrator.",
+	"admin_section_business": "The business",
+	"admin_section_subscription": "The subscription",
+	"admin_section_admin": "The first administrator",
+	"admin_label_company_name": "Business name",
+	"admin_label_identification": "Company tax ID",
+	"admin_label_affiliate": "Affiliate",
+	"admin_label_company_number": "Company",
+	"admin_label_pair_hint": "Blank: the next free one is used. Repeat the affiliate to open another company for the same customer.",
+	"admin_label_plan": "Plan",
+	"admin_label_state": "Status",
+	"admin_label_expires": "Expires on",
+	"admin_label_expires_hint": "With the date blank, the subscription never expires and nobody gets a notice.",
+	"admin_label_locale": "Screen language",
+	"admin_label_document_locale": "Invoice language",
+	"admin_label_document_locale_hint": "The invoice is for the customer and for the tax authority: it need not be the language of whoever rings up the sale.",
+	"admin_label_email": "Email",
+	"admin_label_password": "Password",
+	"admin_label_name": "First name",
+	"admin_label_last_name": "Last name",
+	"admin_label_second_last_name": "Second last name",
+	"admin_label_person_identification": "ID number",
+	"admin_label_telephone": "Phone",
+	"admin_create": "Create",
+	"admin_cancel": "Cancel",
+	"admin_created": "{nombre} is now set up. Branch {sucursal}, register {caja}.",
+	"admin_created_pending": "That email already had an account, so the membership stays pending until the person accepts it when signing in.",
+	"admin_texts_seeded": "The receipt texts were seeded in {idioma}.",
+
+	"$comentario_ficha": "A company's file: what you need to see to take a phone call, and the two things you can do —change the subscription and look inside—.",
+
+	"admin_company_since": "Created on {fecha}",
+	"admin_company_id": "Tax ID {identificacion}",
+	"admin_company_no_id": "No tax ID on record",
+	"admin_admins": "Administrators",
+	"admin_no_admins": "This company has no active administrator.",
+	"admin_usage_title": "Usage",
+	"admin_usage_month": "Sales this month",
+	"admin_subscription_title": "Subscription",
+	"admin_subscription_stored": "Stored",
+	"admin_subscription_effective": "Effective today",
+	"admin_subscription_derived": "The stored status says «{guardado}» and the date has passed, so today it behaves as «{efectivo}».",
+	"admin_subscription_save": "Save the subscription",
+	"admin_subscription_saved": "Subscription updated.",
+	"admin_languages_title": "Languages",
+	"admin_company_not_found": "We could not find that company.",
+
+	"$comentario_entrar": "RF-8 and RN-4. The reason is required, the visit lasts half an hour and it is read only. All three are stated on screen: whoever goes in has to know what they can do, and whoever audits has to be able to read why.",
+
+	"admin_enter_title": "Enter as this company",
+	"admin_enter_intro": "For diagnosis. You will see the customer's data in read-only mode, the visit lasts {minutos} minutes and it is logged with your reason.",
+	"admin_enter_reason": "Reason",
+	"admin_enter_reason_hint": "Whoever audits this in six months will read it: «check why the register will not close» works, «review» does not.",
+	"admin_enter": "Go in and look",
+
+	"$comentario_bitacora": "RF-9. It also keeps the customers' sign-ins, on purpose: the question that actually gets asked is not «what did support do» but «why can this cashier not sign in».",
+
+	"admin_audit_title": "Audit log",
+	"admin_audit_intro": "Who did what, when, and to which company.",
+	"admin_audit_company": "Company",
+	"admin_audit_action": "Action",
+	"admin_audit_all": "All",
+	"admin_audit_apply": "Filter",
+	"admin_audit_empty": "No activity recorded with that filter.",
+	"admin_audit_recent": "Recent activity",
+	"admin_audit_see_all": "See the full audit log",
+	"admin_col_when": "When",
+	"admin_col_who": "Who",
+	"admin_col_what": "What",
+	"admin_col_detail": "Detail",
+	"admin_col_where": "Where",
+	"admin_col_ip": "IP",
+	"admin_audit_no_company": "The platform",
+	"admin_audit_unknown_user": "Deleted account (#{id})",
+
+	"$comentario_acciones": "The names of the audit log actions. The key repeats the value the backend writes, so a new action is added here under the same name; until it is, the screen shows the raw code instead of a hole.",
+
+	"admin_action_login": "Signed in",
+	"admin_action_login_soporte": "Signed in to the support panel",
+	"admin_action_elegir_compania": "Chose a company",
+	"admin_action_invitacion_aceptar": "Accepted the invitation",
+	"admin_action_invitacion_rechazar": "Declined the invitation",
+	"admin_action_idioma_usuario": "Changed their language",
+	"admin_action_idioma_compania": "Changed the company language",
+	"admin_action_alta_compania": "Created the company",
+	"admin_action_suscripcion": "Changed the subscription",
+	"admin_action_entrar_como": "Entered as the company",
+
+	"$comentario_avisos": "The subscription notices the customer sees in the POS (RF-11). The grace one and the read-only one are the ones that cost money, so they say what can still be done and not just what happened.",
+
+	"subscription_trial": "You are on a trial period.",
+	"subscription_trial_until": "You are on a trial period until {fecha}.",
+	"subscription_due_today": "The subscription expires today.",
+	"subscription_due_in": [
+		{
+			"declarations": ["input dias", "local diasPlural = dias: plural"],
+			"selectors": ["diasPlural"],
+			"match": {
+				"diasPlural=one": "The subscription expires tomorrow.",
+				"diasPlural=other": "The subscription expires in {dias} days."
+			}
+		}
+	],
+	"subscription_grace": [
+		{
+			"declarations": ["input dias", "local diasPlural = dias: plural"],
+			"selectors": ["diasPlural"],
+			"match": {
+				"diasPlural=one": "The payment is overdue. Today is the last day you can sell.",
+				"diasPlural=other": "The payment is overdue. You can keep selling for {dias} more days."
+			}
+		}
+	],
+	"subscription_read_only": "The payment is overdue and the grace period is over. You can review your data and close the register, but not sell.",
+	"subscription_suspended": "The subscription is suspended. Contact support to reactivate it.",
+	"subscription_cancelled": "The subscription is cancelled.",
+	"subscription_contact": "Contact support to settle the account.",
+	"subscription_blocked_title": "Selling is blocked",
+
+	"$comentario_franja": "The impersonation banner (RF-8). It is permanent and sits above everything on purpose: the worst thing that can happen on a support visit is forgetting that you are looking at someone else's company.",
+
+	"impersonation_banner": "You are viewing {compania} as support.",
+	"impersonation_read_only": "Read only",
+	"impersonation_reason": "Reason: {motivo}",
+	"impersonation_leave": "Back to the panel"
+}

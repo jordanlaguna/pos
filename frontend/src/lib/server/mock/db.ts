@@ -28,6 +28,38 @@ export interface MockUser {
 	password: string;
 	role: Role;
 	id_person: number | null;
+	/** Idioma que eligió la persona. En nulo hereda el de la compañía (T-809). */
+	locale?: string | null;
+	/**
+	 * Soporte: administra la plataforma y no pertenece a ninguna compañía (RN-4).
+	 *
+	 * Es una marca positiva y no la ausencia de membresías, igual que en la base
+	 * de verdad: quien rechaza la única invitación que tenía también se queda sin
+	 * ninguna.
+	 */
+	is_support?: boolean;
+}
+
+/** Un plan del catálogo: lo que el sistema deja hacer (F3). */
+export interface MockPlan {
+	id: number;
+	nombre: string;
+	precio_mensual: number;
+	max_sucursales: number;
+	max_terminales: number;
+	max_usuarios: number;
+	factura_electronica: boolean;
+}
+
+/** Una línea de la bitácora (RF-9). */
+export interface MockAudit {
+	id: number;
+	creado_el: string;
+	user_id: number;
+	company_id: number | null;
+	accion: string;
+	detalle: string | null;
+	ip: string | null;
 }
 
 export interface MockSale {
@@ -62,6 +94,16 @@ export interface MockCompany {
 	estado: string;
 	branch_code: string;
 	terminal_code: string;
+	/** Idioma con el que arranca quien entra a esta compañía (T-809). */
+	locale: string;
+	/** Idioma del documento impreso, que no es el de la pantalla (RN-29, T-811). */
+	document_locale: string;
+	/** Suscripción (F3): en qué plan está y hasta cuándo. */
+	plan_id?: number;
+	/** `YYYY-MM-DD`, o nulo si no vence. */
+	vence_el?: string | null;
+	identificacion?: string | null;
+	creada_el?: string;
 }
 
 /** Quién entra a qué compañía y con qué rol. */
@@ -93,10 +135,15 @@ export interface MockCompanyData {
  * identidad (RN-3)— y no una simplificación del mock.
  */
 export interface MockRoot {
+	/** Versión del seed que escribió este archivo. Ver `SEED_VERSION`. */
+	seed_version?: number;
 	persons: Person[];
 	users: MockUser[];
 	companies: MockCompany[];
 	memberships: MockMembership[];
+	/** El catálogo de planes y la bitácora: de la plataforma, no de una compañía. */
+	plans: MockPlan[];
+	audit: MockAudit[];
 	empresas: Record<number, MockCompanyData>;
 	counters: Record<string, number>;
 }
@@ -112,6 +159,22 @@ export interface MockRoot {
 export type MockDb = MockRoot & MockCompanyData;
 
 const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
+
+/**
+ * Versión de los datos de demostración. **Se sube al cambiar el seed.**
+ *
+ * El estado del simulado se guarda en disco para que las ventas de una sesión de
+ * demostración sigan ahí al reiniciar. El precio es que un archivo viejo
+ * sobrevive a un cambio del seed, y eso se paga en tiempo perdido: al darle a
+ * Carlos el POS en inglés (T-809), el archivo de antes no tenía ese campo, el
+ * token seguía diciendo `es` y la prueba de punta a punta fallaba señalando la
+ * pantalla —que era el único sitio donde no estaba el problema—.
+ *
+ * Con la versión, un seed nuevo descarta el archivo viejo y vuelve a sembrar. Se
+ * pierde el estado de la demostración, que es exactamente lo que hay que perder:
+ * los datos de prueba no valen más que la prueba.
+ */
+const SEED_VERSION = 4;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -141,7 +204,8 @@ function cargar(): MockRoot {
 		try {
 			const parsed = JSON.parse(readFileSync(DB_PATH, 'utf-8')) as MockRoot;
 			// Si el archivo quedó de una versión anterior del seed, se descarta.
-			if (parsed && parsed.empresas && parsed.counters && Array.isArray(parsed.users)) {
+			const vigente = parsed?.seed_version === SEED_VERSION;
+			if (vigente && parsed.empresas && parsed.counters && Array.isArray(parsed.users) && Array.isArray(parsed.plans)) {
 				raiz = parsed;
 				return raiz;
 			}
@@ -216,6 +280,13 @@ function iso(date: Date): string {
 	return date.toISOString();
 }
 
+/** `YYYY-MM-DD` a `days` de hoy. Para las fechas de vencimiento del demo. */
+function enDias(days: number): string {
+	const d = new Date();
+	d.setDate(d.getDate() + days);
+	return d.toISOString().slice(0, 10);
+}
+
 function daysAgo(days: number, hour = 12, minute = 0): Date {
 	const d = new Date();
 	d.setDate(d.getDate() - days);
@@ -266,7 +337,47 @@ const PRODUCT_SEED: Omit<Product, 'id_product' | 'created_at'>[] = [
 const PERSON_SEED: Omit<Person, 'id_person' | 'id_user'>[] = [
 	{ birth_date: '1990-04-12', identification: '113450678', name: 'Jordan', lastName: 'Laguna', secondName: 'Mora', telephone: '88451230', email: 'admin@ventasys.cr' },
 	{ birth_date: '1996-11-03', identification: '118920345', name: 'María', lastName: 'Rojas', secondName: 'Vargas', telephone: '87123344', email: 'cajero@ventasys.cr' },
-	{ birth_date: '1988-07-25', identification: '109887654', name: 'Carlos', lastName: 'Jiménez', secondName: 'Solano', telephone: '89905512', email: 'carlos@ventasys.cr' }
+	{ birth_date: '1988-07-25', identification: '109887654', name: 'Carlos', lastName: 'Jiménez', secondName: 'Solano', telephone: '89905512', email: 'carlos@ventasys.cr' },
+	{ birth_date: '1985-02-19', identification: '104556677', name: 'Sole', lastName: 'Soporte', secondName: 'Vargas', telephone: '88880000', email: 'soporte@ventasys.cr' }
+];
+
+/**
+ * El catálogo de planes del demo.
+ *
+ * Los precios son de mentira y el demo es el único lugar donde eso está bien: la
+ * base de verdad trae un solo plan y cuánto se cobra es una decisión comercial,
+ * no un dato que un seed pueda inventar. Acá hacen falta tres para que el panel
+ * se pueda mostrar: con uno solo, el desplegable de plan y la columna «uso» no
+ * enseñan nada.
+ */
+const PLAN_SEED: MockPlan[] = [
+	{
+		id: 1,
+		nombre: 'Básico',
+		precio_mensual: 15000,
+		max_sucursales: 1,
+		max_terminales: 1,
+		max_usuarios: 3,
+		factura_electronica: false
+	},
+	{
+		id: 2,
+		nombre: 'Comercio',
+		precio_mensual: 25000,
+		max_sucursales: 1,
+		max_terminales: 3,
+		max_usuarios: 10,
+		factura_electronica: false
+	},
+	{
+		id: 3,
+		nombre: 'Cadena',
+		precio_mensual: 60000,
+		max_sucursales: 5,
+		max_terminales: 15,
+		max_usuarios: 40,
+		factura_electronica: true
+	}
 ];
 
 const CLIENT_SEED: Omit<Client, 'id_client'>[] = [
@@ -299,7 +410,41 @@ function seed(): MockRoot {
 	const users: MockUser[] = [
 		{ id_user: 1, email: 'admin@ventasys.cr', password: 'admin123', role: 'admin', id_person: 1 },
 		{ id_user: 2, email: 'cajero@ventasys.cr', password: 'cajero123', role: 'cajero', id_person: 2 },
-		{ id_user: 3, email: 'carlos@ventasys.cr', password: 'cajero123', role: 'cajero', id_person: 3 }
+		/*
+		 * Carlos tiene el POS **en inglés**, y es el único.
+		 *
+		 * No es un adorno del demo: es lo que hace que el idioma del token se
+		 * pruebe de punta a punta sin tocar a los otros dos (T-809). Con todos en
+		 * español, la única prueba posible sería que el reclamo `loc` viaja, no
+		 * que la pantalla lo obedece.
+		 */
+		{
+			id_user: 3,
+			email: 'carlos@ventasys.cr',
+			password: 'cajero123',
+			role: 'cajero',
+			id_person: 3,
+			locale: 'en'
+		},
+		/*
+		 * La cuenta de soporte (F3, RN-4).
+		 *
+		 * Sin membresías: no aparece en `memberships` y por eso su login devuelve
+		 * un token sin compañía y su pantalla es el panel. Es lo que hace que el
+		 * demo pueda mostrar las dos aplicaciones —el POS y el panel— con las
+		 * mismas credenciales de siempre a la vista.
+		 *
+		 * `role` no significa nada acá y se pone 'admin' porque el tipo lo pide: el
+		 * rol es de la membresía y soporte no tiene ninguna.
+		 */
+		{
+			id_user: 4,
+			email: 'soporte@ventasys.cr',
+			password: 'soporte123',
+			role: 'admin',
+			id_person: 4,
+			is_support: true
+		}
 	];
 
 	const products: Product[] = PRODUCT_SEED.map((p, i) => ({
@@ -324,6 +469,7 @@ function seed(): MockRoot {
 	 * con una sola se entra directo (RN-25).
 	 */
 	const raizNueva: MockRoot = {
+		seed_version: SEED_VERSION,
 		persons,
 		users,
 		companies: [
@@ -334,16 +480,37 @@ function seed(): MockRoot {
 				nombre: 'Abastecedor La Esquina',
 				estado: 'activa',
 				branch_code: '001',
-				terminal_code: '00001'
+				terminal_code: '00001',
+				locale: 'es',
+				document_locale: 'es',
+				plan_id: 2,
+				// Un mes por delante: el demo no arranca con un aviso de pago encima,
+				// que sería lo primero que se ve al entrar.
+				vence_el: enDias(30),
+				identificacion: '3101234567',
+				creada_el: created
 			},
 			{
 				id: 2,
 				afiliado: 1,
 				compania: 2,
 				nombre: 'La Esquina · Sucursal Norte',
-				estado: 'activa',
+				estado: 'prueba',
 				branch_code: '001',
-				terminal_code: '00001'
+				terminal_code: '00001',
+				locale: 'es',
+				document_locale: 'es',
+				plan_id: 1,
+				/*
+				 * La segunda nace **en prueba y por vencer**, a propósito.
+				 *
+				 * Es lo que hace que el aviso de RF-11 se pueda ver en el demo sin
+				 * configurar nada, y lo que le da a la prueba de punta a punta un caso
+				 * donde mirar. La primera queda al día, que es el estado normal.
+				 */
+				vence_el: enDias(4),
+				identificacion: null,
+				creada_el: created
 			}
 		],
 		memberships: [
@@ -352,6 +519,11 @@ function seed(): MockRoot {
 			{ user_id: 2, company_id: 1, rol: 'cajero', activa: true, aceptada_el: created },
 			{ user_id: 3, company_id: 1, rol: 'cajero', activa: true, aceptada_el: created }
 		],
+		plans: PLAN_SEED.map((plan) => ({ ...plan })),
+		// La bitácora arranca vacía: lo que hay que ver en el demo es lo que se hace
+		// durante el demo. Una sembrada con líneas inventadas se confunde con las de
+		// verdad justo cuando se está probando el filtro.
+		audit: [],
 		empresas: {
 			1: {
 				clients,
@@ -376,7 +548,10 @@ function seed(): MockRoot {
 			returns: 0,
 			cash_sessions: 0,
 			cash_movements: 0,
-			stock_entries: 0
+			stock_entries: 0,
+			audit: 0,
+			companies: 2,
+			plans: PLAN_SEED.length
 		}
 	};
 

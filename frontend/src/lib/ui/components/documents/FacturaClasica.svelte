@@ -20,15 +20,28 @@
 		returnedTotal,
 		type DocumentProps
 	} from '$lib/domain/documents';
-	import { documentTitle, issuerText } from '$lib/ui/documents';
-	import { paymentLabel } from '$lib/ui/messages';
-	import { m } from '$lib/paraglide/messages.js';
+	import { documentLabels, issuerText } from '$lib/ui/documents';
 
-	let { sale, client, returns, settings, logoUrl, barcodes = {} }: DocumentProps = $props();
+	let {
+		sale,
+		client,
+		returns,
+		settings,
+		logoUrl,
+		barcodes = {},
+		docLocale
+	}: DocumentProps = $props();
+
+	/*
+	 * El texto del documento sale de acá y no de `m.*()` (RN-29, T-811): se emite
+	 * en el idioma de la compañía, no en el de la pantalla. La plantilla no importa
+	 * el catálogo, así que no tiene forma de equivocarse.
+	 */
+	const t = $derived(documentLabels(docLocale));
 
 	const doc = $derived(settings.document);
 	const marca = $derived(brandTones(doc.color));
-	const emisor = $derived(issuerText(issuerLines(settings)));
+	const emisor = $derived(issuerText(issuerLines(settings), t));
 	const devuelto = $derived(returnedTotal(returns));
 </script>
 
@@ -63,16 +76,16 @@
 		<div class="mb-6 flex justify-end">
 			<dl class="w-full max-w-xs space-y-1 text-sm">
 				<div class="flex items-baseline justify-between gap-4 border-b border-dashed border-slate-300 pb-1">
-					<dt class="font-semibold">{documentTitle(settings)} N.º</dt>
+					<dt class="font-semibold">{t.title(settings)} N.º</dt>
 					<dd class="font-mono">{sale.sale_number}</dd>
 				</div>
 				<div class="flex items-baseline justify-between gap-4 border-b border-dashed border-slate-300 pb-1">
-					<dt class="font-semibold">{m.doc_date()}</dt>
-					<dd>{formatDate(sale.created_at)}</dd>
+					<dt class="font-semibold">{t.date}</dt>
+					<dd>{formatDate(sale.created_at, docLocale)}</dd>
 				</div>
 				<div class="flex items-baseline justify-between gap-4 border-b border-dashed border-slate-300 pb-1">
-					<dt class="font-semibold">{m.doc_payment_method()}</dt>
-					<dd>{paymentLabel(sale.payment_method)}</dd>
+					<dt class="font-semibold">{t.paymentMethod}</dt>
+					<dd>{t.paymentName(sale.payment_method)}</dd>
 				</div>
 			</dl>
 		</div>
@@ -84,13 +97,13 @@
 					class="mb-1.5 text-xs font-bold tracking-widest uppercase"
 					style="color:{marca.base}"
 				>
-					{m.doc_issuer()}
+					{t.issuer}
 				</h2>
 				<p class="text-sm font-bold">{settings.business.name}</p>
 				{#each emisor as line (line)}
 					<p class="text-xs leading-relaxed text-slate-600">{line}</p>
 				{:else}
-					<p class="text-xs text-slate-400">{m.doc_issuer_incomplete()}</p>
+					<p class="text-xs text-slate-400">{t.issuerIncomplete}</p>
 				{/each}
 			</section>
 
@@ -99,19 +112,19 @@
 					class="mb-1.5 text-xs font-bold tracking-widest uppercase"
 					style="color:{marca.base}"
 				>
-					{m.doc_client()}
+					{t.client}
 				</h2>
 				{#if client}
 					<p class="text-sm font-bold">{fullName(client)}</p>
 					{#if client.identification}
-						<p class="text-xs text-slate-600">{m.doc_tax_id({ id: client.identification })}</p>
+						<p class="text-xs text-slate-600">{t.taxId(client.identification)}</p>
 					{/if}
 					{#if client.address}<p class="text-xs text-slate-600">{client.address}</p>{/if}
-					{#if client.telephone}<p class="text-xs text-slate-600">{m.doc_phone({ phone: client.telephone })}</p>{/if}
+					{#if client.telephone}<p class="text-xs text-slate-600">{t.phone(client.telephone)}</p>{/if}
 					{#if client.email}<p class="text-xs text-slate-600">{client.email}</p>{/if}
 				{:else}
-					<p class="text-sm font-bold">{m.doc_walk_in()}</p>
-					<p class="text-xs text-slate-600">{m.doc_walk_in_hint()}</p>
+					<p class="text-sm font-bold">{t.walkIn}</p>
+					<p class="text-xs text-slate-600">{t.walkInHint}</p>
 				{/if}
 			</section>
 		</div>
@@ -122,16 +135,16 @@
 				<thead>
 					<tr class="border-b-2" style="border-color:{marca.base}">
 						<th scope="col" class="py-2 text-left text-xs font-bold tracking-wider uppercase">
-							{m.doc_col_description()}
+							{t.colDescription}
 						</th>
 						<th scope="col" class="py-2 text-right text-xs font-bold tracking-wider uppercase">
-							{m.doc_col_quantity()}
+							{t.colQuantity}
 						</th>
 						<th scope="col" class="py-2 text-right text-xs font-bold tracking-wider uppercase">
-							{m.doc_col_unit_price_long()}
+							{t.colUnitPriceLong}
 						</th>
 						<th scope="col" class="py-2 text-right text-xs font-bold tracking-wider uppercase">
-							{m.doc_col_total()}
+							{t.colTotal}
 						</th>
 					</tr>
 				</thead>
@@ -155,7 +168,7 @@
 			</table>
 		{:else}
 			<p class="border-y border-dashed border-slate-200 py-6 text-center text-sm text-slate-500">
-				{m.doc_no_detail()}
+				{t.noDetail}
 			</p>
 		{/if}
 
@@ -164,7 +177,7 @@
 			<div class="w-full max-w-xs">
 				<dl class="space-y-1.5 text-sm">
 					<div class="flex justify-between">
-						<dt class="font-semibold">{m.doc_subtotal()}</dt>
+						<dt class="font-semibold">{t.subtotal}</dt>
 						<dd>{formatMoney(sale.subtotal)}</dd>
 					</div>
 					<div class="flex justify-between">
@@ -173,11 +186,11 @@
 					</div>
 					{#if sale.payment_method === 'Efectivo' && sale.cash_received > 0}
 						<div class="flex justify-between text-slate-600">
-							<dt>{m.doc_cash_received()}</dt>
+							<dt>{t.cashReceived}</dt>
 							<dd>{formatMoney(sale.cash_received)}</dd>
 						</div>
 						<div class="flex justify-between text-slate-600">
-							<dt>{m.doc_change()}</dt>
+							<dt>{t.change}</dt>
 							<dd>{formatMoney(sale.change_given)}</dd>
 						</div>
 					{/if}
@@ -187,13 +200,13 @@
 					class="ink-exact mt-2 flex items-baseline justify-between rounded px-4 py-3"
 					style="background:{marca.base}; color:{marca.ink}"
 				>
-					<span class="text-sm font-bold tracking-wider uppercase">{m.doc_total()}</span>
+					<span class="text-sm font-bold tracking-wider uppercase">{t.total}</span>
 					<span class="text-xl font-bold">{formatMoney(sale.total)}</span>
 				</div>
 
 				{#if devuelto > 0}
 					<p class="mt-2 text-right text-sm font-semibold text-red-700">
-						{m.doc_returned()}: −{formatMoney(devuelto)}
+						{t.returned}: −{formatMoney(devuelto)}
 					</p>
 				{/if}
 			</div>
@@ -202,12 +215,12 @@
 		{#if returns.length}
 			<section class="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3">
 				<h2 class="text-xs font-bold tracking-wider text-red-700 uppercase">
-					{m.doc_returns_applied()}
+					{t.returnsApplied}
 				</h2>
 				<ul class="mt-1 space-y-0.5 text-xs text-red-700">
 					{#each returns as devolucion (devolucion.id)}
 						<li>
-							{formatDateTime(devolucion.created_at)} — {formatMoney(devolucion.total)} ·
+							{formatDateTime(devolucion.created_at, docLocale)} — {formatMoney(devolucion.total)} ·
 							{devolucion.reason}
 						</li>
 					{/each}
@@ -218,13 +231,13 @@
 		<!-- Pie: atención y notas -->
 		<div class="mt-8 grid gap-6 text-xs sm:grid-cols-2">
 			<section>
-				<h2 class="mb-1 font-bold" style="color:{marca.base}">{m.doc_served_by()}</h2>
+				<h2 class="mb-1 font-bold" style="color:{marca.base}">{t.servedBy}</h2>
 				<p class="text-slate-600">{sale.user_name ?? '—'}</p>
-				<p class="text-slate-600">{formatDateTime(sale.created_at)}</p>
+				<p class="text-slate-600">{formatDateTime(sale.created_at, docLocale)}</p>
 			</section>
 			{#if doc.notes}
 				<section>
-					<h2 class="mb-1 font-bold" style="color:{marca.base}">{m.doc_notes_and_terms()}</h2>
+					<h2 class="mb-1 font-bold" style="color:{marca.base}">{t.notesAndTerms}</h2>
 					<p class="leading-relaxed whitespace-pre-line text-slate-600">{doc.notes}</p>
 				</section>
 			{/if}

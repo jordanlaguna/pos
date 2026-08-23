@@ -19,6 +19,15 @@ export interface DocumentProps {
 	logoUrl: string | null;
 	/** Código de barras por producto, para cuando la plantilla los muestra. */
 	barcodes?: Record<number, string>;
+	/**
+	 * Idioma en el que se emite el documento (RN-29, T-811).
+	 *
+	 * **No es el de la pantalla.** La factura es para el cliente y para Hacienda:
+	 * una compañía costarricense la emite en español aunque su cajero tenga el POS
+	 * en portugués. Sale de `companies.document_locale` y llega hasta acá porque
+	 * es la plantilla la que lo necesita.
+	 */
+	docLocale: string;
 }
 
 /**

@@ -1,4 +1,12 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-	"checkout_cash_short": "The amount received does not cover the sale total."
+
+	"checkout_no_lines": "Add at least one product before charging.",
+	"checkout_bad_sale_number": "The invoice number is not valid.",
+	"checkout_product_gone": "A product in the sale no longer exists.",
+	"checkout_bad_quantity": "Invalid quantity for {product}.",
+	"checkout_insufficient_stock": "Not enough stock for {product}: {available} left.",
+	"checkout_cash_short": "The amount received does not cover the sale total.",
+	"checkout_unreadable_lines": "The sale detail could not be read.",
+	"checkout_amount_insufficient": "Amount not enough."
 }

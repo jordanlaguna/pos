@@ -16,7 +16,7 @@
 import type { CheckoutRejection } from '$lib/application/checkout';
 import type { Errors, ValidationError } from '$lib/application/validation';
 import type { CartRejection } from '$lib/domain/cart';
-import type { ImportFailure, ImportNote } from '$lib/domain/types';
+import type { ImportFailure, ImportNote, Subscription } from '$lib/domain/types';
 import { m } from '$lib/paraglide/messages.js';
 import { formatDate } from './format';
 
@@ -85,27 +85,27 @@ export function validationMessage(e: ValidationError): string {
 		case 'validation_not_allowed':
 			return m.validation_not_allowed({ field: e.label.text, concord: e.label.concord });
 		case 'validation_too_short':
-			return m.validation_too_short({ field: e.label.text, min: e.min });
+			return m.validation_too_short({ field: e.label.text, min: e.min, concord: e.label.concord });
 		case 'validation_too_long':
-			return m.validation_too_long({ field: e.label.text, max: e.max });
+			return m.validation_too_long({ field: e.label.text, max: e.max, concord: e.label.concord });
 		case 'validation_not_a_number':
-			return m.validation_not_a_number({ field: e.label.text });
+			return m.validation_not_a_number({ field: e.label.text, concord: e.label.concord });
 		case 'validation_not_an_integer':
-			return m.validation_not_an_integer({ field: e.label.text });
+			return m.validation_not_an_integer({ field: e.label.text, concord: e.label.concord });
 		case 'validation_below_min':
-			return m.validation_below_min({ field: e.label.text, min: e.min });
+			return m.validation_below_min({ field: e.label.text, min: e.min, concord: e.label.concord });
 		case 'validation_above_max':
-			return m.validation_above_max({ field: e.label.text, max: e.max });
+			return m.validation_above_max({ field: e.label.text, max: e.max, concord: e.label.concord });
 		case 'validation_bad_email':
-			return m.validation_bad_email({ field: e.label.text });
+			return m.validation_bad_email({ field: e.label.text, concord: e.label.concord });
 		case 'validation_digits_only':
-			return m.validation_digits_only({ field: e.label.text });
+			return m.validation_digits_only({ field: e.label.text, concord: e.label.concord });
 		case 'validation_digit_length':
-			return m.validation_digit_length({ field: e.label.text, min: e.min, max: e.max });
+			return m.validation_digit_length({ field: e.label.text, min: e.min, max: e.max, concord: e.label.concord });
 		case 'validation_bad_date':
-			return m.validation_bad_date({ field: e.label.text });
+			return m.validation_bad_date({ field: e.label.text, concord: e.label.concord });
 		case 'validation_future_date':
-			return m.validation_future_date({ field: e.label.text });
+			return m.validation_future_date({ field: e.label.text, concord: e.label.concord });
 		case 'validation_text':
 			// Ya viene resuelto por quien lo puso: un error del backend, o una regla
 			// propia de la pantalla.
@@ -221,6 +221,16 @@ export const API_CODES = [
 	'membership_not_found',
 	'invalid_invitation_action',
 	'invitation_already_accepted',
+	// soporte y suscripción (F3)
+	'support_only',
+	'subscription_read_only',
+	'impersonation_read_only',
+	'plan_limit_reached',
+	'company_not_found',
+	'plan_not_found',
+	'company_already_exists',
+	'invalid_company_state',
+	'support_cannot_be_member',
 	// caja
 	'cash_read_not_yours',
 	'cash_open_not_yours',
@@ -287,6 +297,7 @@ export const API_CODES = [
 	'user_not_yours',
 	'last_admin',
 	// configuración
+	'unsupported_locale',
 	'settings_too_large',
 	'tax_rate_not_a_number',
 	'tax_rate_out_of_range',
@@ -423,6 +434,36 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_invalid_invitation_action();
 		case 'invitation_already_accepted':
 			return m.api_invitation_already_accepted();
+
+		// ------------------------------------------- soporte y suscripción (F3)
+		case 'support_only':
+			return m.api_support_only();
+		case 'subscription_read_only':
+			// `state` es el estado **efectivo** de la suscripción, y la frase cambia
+			// con él: al que venció hay que decirle que pague y al suspendido, que
+			// llame. Un solo texto para los tres no le sirve a ninguno.
+			return m.api_subscription_read_only({ state: texto(d.state) });
+		case 'impersonation_read_only':
+			return m.api_impersonation_read_only();
+		case 'plan_limit_reached':
+			return m.api_plan_limit_reached({
+				resource: texto(d.resource),
+				current: numero(d.current),
+				max: numero(d.max)
+			});
+		case 'company_not_found':
+			return m.api_company_not_found();
+		case 'plan_not_found':
+			return m.api_plan_not_found();
+		case 'company_already_exists':
+			return m.api_company_already_exists({
+				afiliado: numero(d.afiliado),
+				compania: numero(d.compania)
+			});
+		case 'invalid_company_state':
+			return m.api_invalid_company_state({ state: texto(d.state) });
+		case 'support_cannot_be_member':
+			return m.api_support_cannot_be_member({ email: texto(d.email) });
 
 		// --------------------------------------------------------------- caja
 		case 'cash_read_not_yours':
@@ -576,6 +617,8 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_last_admin();
 
 		// ----------------------------------------------------- configuración
+		case 'unsupported_locale':
+			return m.api_unsupported_locale({ locale: texto(d.locale) });
 		case 'settings_too_large':
 			return m.api_settings_too_large();
 		case 'tax_rate_not_a_number':
@@ -643,5 +686,104 @@ export function paymentLabel(method: string): string {
 			// Un método que llegue de la base sin rótulo se muestra tal cual, que es
 			// mejor que dejar el hueco en blanco en la pantalla de cobro.
 			return method;
+	}
+}
+
+// ---------------------------------------------- soporte y suscripción (F3)
+
+/**
+ * Cómo se llama un estado de suscripción en pantalla.
+ *
+ * El **valor** (`'activa'`) no se traduce: es lo que guarda `companies.estado` y
+ * lo que se manda al cambiarlo. Lo que se traduce es cómo se muestra, igual que
+ * con los métodos de pago. Las cinco palabras son las de la pantalla de
+ * selección de compañía, y se reusan sus claves: tenerlas dos veces es tenerlas
+ * distintas.
+ */
+export function companyStateLabel(state: string): string {
+	switch (state) {
+		case 'prueba':
+			return m.company_status_trial();
+		case 'activa':
+			return m.company_status_current();
+		case 'vencida':
+			return m.company_status_overdue();
+		case 'suspendida':
+			return m.company_status_suspended();
+		case 'cancelada':
+			return m.company_status_cancelled();
+		default:
+			// Un estado que llegue de la base sin rótulo se muestra tal cual. En el
+			// panel de soporte eso es información: significa que alguien escribió
+			// algo raro en esa fila, y el sistema lo trata como bloqueado.
+			return state;
+	}
+}
+
+/**
+ * El aviso de suscripción que ve el cliente (RF-11, T-308).
+ *
+ * Recibe el estado ya evaluado por el backend —los días, la gracia y el código
+ * del aviso— y devuelve la frase. Nulo cuando no hay nada que decir: una
+ * suscripción al día y con el vencimiento lejos no necesita un aviso, y un aviso
+ * permanente que no dice nada es un aviso que nadie lee.
+ */
+export function subscriptionNotice(s: Subscription | null | undefined): string | null {
+	if (!s?.aviso) return null;
+
+	switch (s.aviso) {
+		case 'en_prueba':
+			return s.vence_el
+				? m.subscription_trial_until({ fecha: formatDate(s.vence_el) })
+				: m.subscription_trial();
+		case 'vence_pronto':
+			// `dias` viene del backend y es 0 el día del vencimiento. «Vence en 0
+			// días» es una frase que nadie escribiría a mano.
+			if (s.dias === null || s.dias <= 0) return m.subscription_due_today();
+			return m.subscription_due_in({ dias: s.dias });
+		case 'en_gracia':
+			return m.subscription_grace({ dias: s.gracia });
+		case 'solo_lectura':
+			return m.subscription_read_only();
+		case 'suspendida':
+			return m.subscription_suspended();
+		case 'cancelada':
+			return m.subscription_cancelled();
+		default:
+			return faltaMensaje(s.aviso);
+	}
+}
+
+/**
+ * Qué dice una línea de la bitácora (RF-9).
+ *
+ * La acción llega como el código que escribió el backend (`alta_compania`). Una
+ * que todavía no tenga rótulo se muestra cruda: en una bitácora, un código que
+ * no se entiende sigue siendo información, y un hueco en blanco no.
+ */
+export function auditActionLabel(accion: string): string {
+	switch (accion) {
+		case 'login':
+			return m.admin_action_login();
+		case 'login_soporte':
+			return m.admin_action_login_soporte();
+		case 'elegir_compania':
+			return m.admin_action_elegir_compania();
+		case 'invitacion_aceptar':
+			return m.admin_action_invitacion_aceptar();
+		case 'invitacion_rechazar':
+			return m.admin_action_invitacion_rechazar();
+		case 'idioma_usuario':
+			return m.admin_action_idioma_usuario();
+		case 'idioma_compania':
+			return m.admin_action_idioma_compania();
+		case 'alta_compania':
+			return m.admin_action_alta_compania();
+		case 'suscripcion':
+			return m.admin_action_suscripcion();
+		case 'entrar_como':
+			return m.admin_action_entrar_como();
+		default:
+			return accion;
 	}
 }

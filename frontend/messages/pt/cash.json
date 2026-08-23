@@ -1,3 +1,88 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"cash_title": "Caixa",
+	"cash_description": "Abertura, movimentos de dinheiro e fechamento do turno.",
+	"cash_movement_in": "Entrada",
+	"cash_movement_out": "Saída",
+	"cash_close_register": "Fechar caixa",
+	"cash_open_register": "Abrir caixa",
+
+	"cash_closed": "O caixa está fechado",
+	"cash_closed_hint": "Abra o caixa com o dinheiro inicial para começar o turno. As vendas ficam no turno aberto.",
+
+	"cash_opening": "Abertura",
+	"cash_shift_sales": "Vendas do turno",
+	"cash_sales_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{count} venda",
+				"countPlural=other": "{count} vendas"
+			}
+		}
+	],
+	"cash_cash_sales": "Dinheiro em vendas",
+	"cash_only_cash_hint": "Só o dinheiro passa pela gaveta",
+	"cash_expected_in_register": "Deve haver no caixa",
+	"cash_expected_formula": "Abertura + dinheiro ± movimentos",
+
+	"cash_breakdown": "Detalhe do turno",
+	"cash_opening_amount": "Valor de abertura",
+	"cash_sales_in_cash": "Vendas em dinheiro",
+	"cash_movements_in": "Entradas de dinheiro",
+	"cash_movements_out": "Saídas de dinheiro",
+	"cash_returns": "Devoluções",
+	"cash_expected_in_drawer": "Esperado na gaveta",
+	"cash_by_payment_method": "Por forma de pagamento",
+	"cash_col_method": "Forma",
+	"cash_col_sales": "Vendas",
+
+	"cash_movements": "Movimentos de dinheiro",
+	"cash_no_movements": "Sem movimentos",
+	"cash_no_movements_hint": "Registre entradas ou saídas de dinheiro que não sejam vendas.",
+
+	"cash_previous_shifts": "Turnos anteriores",
+	"cash_col_opened": "Abertura",
+	"cash_col_closed": "Fechamento",
+	"cash_col_cashier": "Operador",
+	"cash_col_initial": "Inicial",
+	"cash_col_expected": "Esperado",
+	"cash_col_counted": "Contado",
+	"cash_col_difference": "Diferença",
+	"cash_balanced": "Fechou",
+	"cash_over": "Sobra",
+	"cash_short": "Falta",
+	"cash_no_closed_shifts": "Sem turnos fechados",
+	"cash_no_closed_shifts_hint": "O histórico aparece ao fechar o caixa.",
+
+	"cash_open_hint": "Conte o dinheiro com que começa o turno.",
+	"cash_opening_amount_in": "Valor de abertura ({currency})",
+	"cash_opening_amount_hint": "Dinheiro com que a gaveta começa, em {currency}.",
+	"cash_notes_optional": "Observações (opcional)",
+	"cash_notes_placeholder": "Ex.: turno da manhã",
+	"cash_opening_now": "Abrindo…",
+	"cash_opened": "Caixa aberto. Já é possível registrar vendas do turno.",
+
+	"cash_movement_in_title": "Entrada de dinheiro",
+	"cash_movement_out_title": "Saída de dinheiro",
+	"cash_movement_in_hint": "Dinheiro que entra na gaveta sem ser uma venda.",
+	"cash_movement_out_hint": "Dinheiro que sai da gaveta: pagamentos, retiradas, trocos.",
+	"cash_amount_in": "Valor ({currency})",
+	"cash_reason": "Motivo",
+	"cash_reason_in_placeholder": "Ex.: troco do banco",
+	"cash_reason_out_placeholder": "Ex.: pagamento a fornecedor",
+	"cash_register_movement": "Registrar",
+
+	"cash_close_hint": "Conte o dinheiro real da gaveta antes de confirmar.",
+	"cash_must_be_in_drawer": "Deve haver na gaveta",
+	"cash_counted_in": "Dinheiro contado ({currency})",
+	"cash_difference": "Diferença",
+	"cash_over_hint": "Há mais dinheiro do que o esperado. Anote o motivo antes de fechar.",
+	"cash_short_hint": "Falta dinheiro em relação ao esperado. Anote o motivo antes de fechar.",
+	"cash_close_notes": "Observações do fechamento (opcional)",
+	"cash_close_notes_placeholder": "Ex.: falta por troco dado errado",
+	"cash_closing_now": "Fechando…",
+	"cash_closed_done": "Caixa fechado."
 }

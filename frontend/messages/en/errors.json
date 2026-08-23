@@ -1,3 +1,156 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"error_tab_title": "Error {status}",
+	"error_forbidden_title": "Restricted access",
+	"error_not_found_title": "Page not found",
+	"error_generic_title": "Something went wrong",
+	"error_unexpected": "An unexpected error occurred.",
+	"error_go_to_sales": "Go to sales",
+	"error_go_to_panel": "Go to the support panel",
+	"error_go_to_dashboard": "Go to the dashboard",
+	"error_switch_user": "Switch user",
+
+	"error_page_missing": "The page you are looking for does not exist.",
+	"error_unexpected_backend": "An unexpected error occurred. Check the connection to the backend.",
+	"error_admin_only": "This section is for administrators only.",
+
+	"$comentario_api": "The backend's «no». It arrives as a code plus data —the backend does not write text for people (RN-30)— and the sentence is built here. One code per key, with the same name: api_<code>. Adding a code in the backend (app/utils/api_errors.py) without its key here makes `npm run check` fail.",
+
+	"api_unreachable": "Could not connect to the backend.",
+	"api_timeout": "The backend did not respond in time.",
+	"api_unexpected": "The backend responded with an unexpected error.",
+	"api_invalid_request": "Check the form data: the backend rejected it.",
+
+	"api_unauthorized": "Your session expired or is not valid. Please sign in again.",
+	"api_no_company_in_token": "Your session has no company. Choose one to continue.",
+	"api_membership_inactive": "Your access to this company is no longer active.",
+	"api_admin_only": "This operation is for administrators only.",
+	"api_invalid_credentials": "Incorrect email or password.",
+	"api_membership_not_found": "We could not find that company among yours.",
+	"api_invalid_invitation_action": "The reply to the invitation was not understood.",
+	"api_invitation_already_accepted": "You had already accepted this invitation.",
+
+	"$comentario_soporte": "The support panel's «no»s and the subscription check (F3). Two carry a variant because the data they bring is the only thing that makes the sentence useful: «a limit was reached» does not say which resource filled up, and «you cannot operate» does not say what to pay.",
+
+	"api_support_only": "This section is for support staff only.",
+	"api_subscription_read_only": [
+		{
+			"declarations": ["input state"],
+			"selectors": ["state"],
+			"match": {
+				"state=vencida": "The subscription expired and the grace period is over. You can review your data and close the register, but not sell.",
+				"state=suspendida": "The subscription is suspended. You can review your data, but not sell.",
+				"state=cancelada": "The subscription is cancelled.",
+				"state=*": "The subscription does not allow recording operations right now."
+			}
+		}
+	],
+	"api_impersonation_read_only": "You are viewing this company as support: read only.",
+	"api_plan_limit_reached": [
+		{
+			"declarations": ["input resource", "input current", "input max"],
+			"selectors": ["resource"],
+			"match": {
+				"resource=users": "The plan allows {max} users and there are already {current}.",
+				"resource=terminals": "The plan allows {max} registers and there are already {current}.",
+				"resource=branches": "The plan allows {max} branches and there are already {current}.",
+				"resource=*": "The plan is already at its limit: {current} of {max}."
+			}
+		}
+	],
+	"api_company_not_found": "We could not find that company.",
+	"api_plan_not_found": "We could not find that plan.",
+	"api_company_already_exists": "Company {compania} of affiliate {afiliado} already exists.",
+	"api_invalid_company_state": "«{state}» is not a subscription status.",
+	"api_support_cannot_be_member": "{email} is a support account and cannot belong to a company.",
+
+	"api_cash_read_not_yours": "You can only view your own register.",
+	"api_cash_open_not_yours": "You can only open your own register.",
+	"api_cash_movement_not_yours": "You can only move cash in your own register.",
+	"api_cash_close_not_yours": "You can only close your own register.",
+	"api_cash_session_not_found": "We could not find that register shift.",
+	"api_cash_session_not_yours": "You cannot view this register.",
+	"api_cash_already_open": "This user already has an open register.",
+	"api_cash_opening_negative": "The opening amount cannot be negative.",
+	"api_cash_no_open_session": "There is no open register. Open one before continuing.",
+	"api_cash_insufficient": "There is not enough cash in the register. Available: {available}.",
+	"api_cash_invalid_movement_type": "The movement has to be cash in or cash out.",
+	"api_cash_amount_not_positive": "The amount has to be greater than zero.",
+	"api_cash_missing_reason": "Enter the reason for the movement.",
+	"api_cash_counted_negative": "The counted amount cannot be negative.",
+
+	"api_duplicate_sale_number": "A sale with number {sale_number} already exists.",
+	"api_empty_sale": "The sale has to include at least one product.",
+	"api_invalid_sale_line": "The quantity of {product} is not valid.",
+	"api_product_not_found": "We could not find the product {product}.",
+	"api_product_without_price": "The product {product} has no price set.",
+	"api_insufficient_stock": "There is not enough stock of {product}: {available} left and {requested} requested.",
+	"api_totals_mismatch": "The {field} does not match the one the server calculates: the register says {declared} and the server {computed}. Reload the catalog, because prices may have changed.",
+	"api_insufficient_payment": "The cash received ({received}) does not cover the sale total ({total}).",
+	"api_sale_not_found": "We could not find that sale.",
+	"api_sale_details_not_found": "That sale has no detail lines.",
+	"api_sale_failed": "The sale could not be recorded. Nothing was left half done: please try again.",
+
+	"api_field_subtotal": "subtotal",
+	"api_field_tax": "tax",
+	"api_field_total": "total",
+
+	"api_empty_return": "Choose at least one product to return.",
+	"api_missing_return_reason": "Enter the reason for the return.",
+	"api_not_sold_in_this_sale": "The product {product} was not in this sale.",
+	"api_invalid_return_quantity": "The quantity of {product} to return is not valid.",
+	"api_excessive_return": [
+		{
+			"declarations": ["input product", "input remaining", "local remainingPlural = remaining: plural"],
+			"selectors": ["remainingPlural"],
+			"match": {
+				"remainingPlural=one": "Only 1 unit of {product} is left to return.",
+				"remainingPlural=other": "Only {remaining} units of {product} are left to return."
+			}
+		}
+	],
+	"api_return_not_found": "We could not find that return.",
+	"api_return_failed": "The return could not be recorded. Nothing was left half done: please try again.",
+
+	"api_empty_entry": "The entry has to include at least one line.",
+	"api_invalid_entry_source": "The source of the entry is not valid.",
+	"api_duplicate_document": "Document {document_number} was already loaded on {loaded_at}. Void that entry if you want to load it again.",
+	"api_invalid_entry_line": "Line {line} has an invalid quantity or a negative cost.",
+	"api_entry_product_not_found": "The entry mentions the product {product}, which does not exist.",
+	"api_entry_missing_barcode": "Line {line} creates a product without a barcode.",
+	"api_barcode_taken": "There is already a product with the barcode {barcode}.",
+	"api_entry_line_without_product": "Line {line} says neither which product comes in nor which one to create.",
+	"api_entry_not_found": "We could not find that entry.",
+	"api_entry_already_cancelled": "That entry is already voided.",
+	"api_entry_cannot_cancel": "It cannot be voided: {available} units of {product} are left and the entry added {added}. Adjust the stock by hand.",
+	"api_entry_failed": "The entry could not be recorded. Nothing was left half done: please try again.",
+	"api_entry_cancel_failed": "The entry could not be voided. The stock was left as it was.",
+
+	"api_product_has_sales": "It cannot be deleted: the product already has sales recorded.",
+	"api_category_name_taken": "There is already a category named {name}.",
+
+	"api_person_identification_taken": "There is already a person registered with that ID number.",
+	"api_email_taken": "There is already an account with that email address.",
+	"api_person_not_found": "We could not find that person.",
+	"api_person_not_yours": "You can only edit your own details.",
+	"api_client_identification_taken": "There is already a customer with that ID number.",
+	"api_client_not_found": "We could not find that customer.",
+	"api_client_update_failed": "The customer's details could not be saved.",
+	"api_invalid_role": "The role has to be administrator or cashier.",
+	"api_account_not_found": "There is no account with that email address.",
+	"api_user_not_found": "We could not find that user.",
+	"api_user_not_yours": "You cannot view this user.",
+	"api_last_admin": "At least one administrator has to remain in the company.",
+
+	"api_settings_too_large": "The settings are too large.",
+	"api_unsupported_locale": "The POS is not translated into «{locale}».",
+	"api_tax_rate_not_a_number": "The tax rate is not a number.",
+	"api_tax_rate_out_of_range": "The tax rate is written between 0 and 1: 13 % is 0.13.",
+	"api_settings_save_failed": "The settings could not be saved.",
+
+	"$comentario_producto": "When the backend sends the product id but not its name —because the row is gone— the sentence says «#47» instead of leaving a hole. And if it sends neither, «(unidentified)». The parentheses are not decoration: this text goes where a product name goes, and «the product unidentified» reads as broken English while «the product (unidentified)» reads as a name that is missing. Spanish gets away with «sin identificar» because the adjective follows the noun.",
+	"api_product_by_id": "#{product_id}",
+	"api_product_unknown": "(unidentified)"
+
 }

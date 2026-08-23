@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { m } from '$lib/paraglide/messages.js';
 import { api, apiSafe, ApiError } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
 import { USE_MOCK } from '$lib/server/config';
@@ -9,7 +10,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	requireUser(locals, url.pathname);
 	const token = locals.token;
 	const id = Number(params.id);
-	if (!Number.isInteger(id) || id <= 0) error(404, { message: 'Factura no encontrada.' });
+	if (!Number.isInteger(id) || id <= 0) error(404, { message: m.invoice_not_found() });
 
 	let sale: SaleDetail;
 	try {
@@ -23,7 +24,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 			 */
 			const all = await apiSafe<Sale[]>('/sales/sales_list', [], { token });
 			const header = all.find((s) => s.id === id);
-			if (!header) error(404, { message: 'Factura no encontrada.' });
+			if (!header) error(404, { message: m.invoice_not_found() });
 
 			sale = {
 				...header,

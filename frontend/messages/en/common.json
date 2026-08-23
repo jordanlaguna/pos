@@ -1,12 +1,31 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
 	"common_cancel": "Cancel",
+	"common_close": "Close",
 	"common_subtotal": "Subtotal",
 	"common_total": "Total",
-	"common_registering": "Saving…",
+	"common_registering": "Recording…",
+	"common_notifications": "Notifications",
+	"common_close_notice": "Dismiss notice",
+	"common_action_failed": "Could not be completed",
+	"common_save": "Save",
+	"common_saving": "Saving…",
+	"common_save_changes": "Save changes",
+	"common_create": "Create",
+	"common_delete": "Delete",
+	"common_search": "Search",
+	"common_all_f": "All",
+	"common_actions": "Actions",
+	"common_required_fields": "Marked fields are required.",
+	"common_cannot_be_undone": "This action cannot be undone.",
+	"common_session_required": "A session is required.",
+	"language_es": "Spanish",
+	"language_en": "English",
+	"language_pt": "Portuguese",
 
 	"payment_cash": "Cash",
 	"payment_credit_card": "Credit card",
 	"payment_bank_transfer": "Bank transfer",
 	"payment_mobile": "Mobile payment"
+
 }

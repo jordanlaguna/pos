@@ -11,7 +11,7 @@ import type { RequestHandler } from './$types';
  * en la cabecera, no en la URL.
  */
 export const GET: RequestHandler = async ({ params, locals, fetch }) => {
-	if (!locals.user) error(401, { message: m.invoice_session_required() });
+	if (!locals.user) error(401, { message: m.common_session_required() });
 	if (USE_MOCK) {
 		error(404, { message: m.invoice_mock_no_pdf() });
 	}

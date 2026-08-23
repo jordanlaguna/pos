@@ -44,6 +44,7 @@
 	"invoices_page_of": "Página {page} de {total}",
 
 	"invoice_tab_title": "Factura {number}",
+	"invoice_not_found": "Factura no encontrada.",
 	"invoice_registered": "Venta registrada correctamente.",
 	"invoice_print": "Imprimir",
 	"invoice_back": "Volver a facturas",
@@ -53,7 +54,7 @@
 	"invoice_partially_returned": "Venta con devoluciones parciales",
 	"invoice_return_line": "{date} — {total} · {reason}",
 
-	"invoice_session_required": "Sesión requerida.",
 	"invoice_mock_no_pdf": "El modo demostración no genera PDF. Use «Imprimir» para guardarlo desde el navegador.",
 	"invoice_pdf_failed": "El backend no pudo generar el PDF de esta factura."
+
 }

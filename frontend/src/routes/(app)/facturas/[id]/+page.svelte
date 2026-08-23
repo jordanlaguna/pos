@@ -97,6 +97,10 @@
 	El documento sale de la plantilla configurada en /configuracion: tiquete
 	térmico para el mostrador, factura de página completa para mandar por correo.
 -->
+<!--
+	`docLocale` es el idioma de la **compañía**, no el de la pantalla (RN-29): esta
+	factura es la que se le da al cliente y la que va a Hacienda.
+-->
 <DocumentSheet
 	{sale}
 	client={data.client}
@@ -104,4 +108,5 @@
 	settings={data.settings}
 	{logoUrl}
 	barcodes={data.barcodes}
+	docLocale={data.user?.document_locale ?? 'es'}
 />

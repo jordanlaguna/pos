@@ -1,3 +1,47 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"inventory_title": "Estoque",
+	"inventory_description": "Produtos, estoque e categorias.",
+	"inventory_entries": "Entradas",
+	"inventory_new_category": "Nova categoria",
+	"inventory_new_product": "Novo produto",
+	"inventory_category_first": "Crie uma categoria primeiro",
+
+	"inventory_products": "Produtos",
+	"inventory_value": "Valor do estoque",
+	"inventory_low_stock": "Estoque baixo",
+	"inventory_search_placeholder": "Nome, código ou descrição…",
+	"inventory_category": "Categoria",
+	"inventory_only_low_stock": "Só estoque baixo",
+
+	"inventory_col_product": "Produto",
+	"inventory_col_barcode": "Código",
+	"inventory_col_category": "Categoria",
+	"inventory_col_price": "Preço",
+	"inventory_col_stock": "Estoque",
+	"inventory_edit_product": "Editar {product}",
+	"inventory_delete_product": "Excluir {product}",
+	"inventory_no_products": "Sem produtos",
+	"inventory_no_match": "Nenhum produto corresponde aos filtros.",
+	"inventory_add_first": "Adicione o seu primeiro produto para começar a vender.",
+
+	"inventory_edit_title": "Editar produto",
+	"inventory_label_name": "Nome",
+	"inventory_label_description": "Descrição",
+	"inventory_label_price": "Preço",
+	"inventory_label_stock": "Estoque",
+	"inventory_label_barcode": "Código de barras",
+	"inventory_barcode_hint": "Leia o código real ou gere um interno.",
+	"inventory_generate_barcode": "Gerar código interno",
+	"inventory_generate_barcode_label": "Gerar código de barras interno",
+	"inventory_barcode_failed": "Não foi possível gerar um código livre. Digite-o à mão.",
+	"inventory_label_category_required": "Categoria *",
+	"inventory_add_product": "Adicionar produto",
+
+	"inventory_category_placeholder": "Ex.: Congelados",
+
+	"inventory_delete_title": "Excluir produto",
+	"inventory_delete_confirm": "Tem certeza de que quer excluir",
+	"inventory_delete_history_note": "Se o produto já tem vendas registradas, o backend não vai permitir excluí-lo, para não quebrar o histórico de faturas."
 }

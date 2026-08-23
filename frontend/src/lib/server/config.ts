@@ -22,5 +22,18 @@ export const API_TIMEOUT_MS = Number(env.API_TIMEOUT_MS ?? 8000);
 /** Nombre de la cookie donde vive el JWT. */
 export const SESSION_COOKIE = 'ventasys_session';
 
+/**
+ * Dónde se guarda el token de soporte mientras dura un *entrar como* (RF-8).
+ *
+ * La cookie de sesión pasa a llevar el token de suplantación —es el que abre las
+ * pantallas de la compañía— y el de soporte tiene que quedar en algún lado para
+ * poder volver al panel. Sin esto, entrar a diagnosticar significaría perder la
+ * sesión de soporte y volver a escribir la contraseña al salir.
+ *
+ * `httpOnly` igual que la de sesión: es un token completo y ningún script del
+ * navegador tiene nada que hacer con él.
+ */
+export const SUPPORT_COOKIE = 'ventasys_support';
+
 /** Umbral de stock bajo para las alertas del dashboard. */
 export const LOW_STOCK_THRESHOLD = Number(env.LOW_STOCK_THRESHOLD ?? 10);

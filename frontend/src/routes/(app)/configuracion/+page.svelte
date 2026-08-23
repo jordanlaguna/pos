@@ -73,6 +73,17 @@
 	let colorAcento = $state(inicial.appearance.accentColor);
 	let eInvoicing = $state({ ...inicial.eInvoicing });
 
+	/*
+	 * Los dos idiomas de la compañía (T-810, T-811).
+	 *
+	 * No salen de `data.configuracion` como el resto: viven en columnas de
+	 * `companies` y llegan con la sesión. La vista previa usa el del borrador, así
+	 * que el documento se ve en el idioma elegido **antes** de guardar.
+	 */
+	// `untrack` por lo mismo que `inicial`: es el punto de partida del borrador.
+	let locale = $state(untrack(() => data.user?.company_locale) ?? 'es');
+	let documentLocale = $state(untrack(() => data.user?.document_locale) ?? 'es');
+
 	let quitarLogo = $state(false);
 	/** Vista previa del archivo recién elegido, antes de subirlo. */
 	let logoElegido = $state<string | null>(null);
@@ -327,6 +338,21 @@
 						error={form?.errors?.negocio_direccion}
 						class="sm:col-span-2"
 					/>
+
+					<!--
+						El idioma de la compañía (T-810, RN-28). Es el que recibe quien no
+						eligió otro para su sesión; cada persona cambia el suyo desde el
+						menú, sin tocar esto.
+					-->
+					<div>
+						<label class="label" for="idioma-interfaz">{m.settings_locale()}</label>
+						<select id="idioma-interfaz" name="idioma_interfaz" class="input" bind:value={locale}>
+							<option value="es">{m.language_es()}</option>
+							<option value="en">{m.language_en()}</option>
+							<option value="pt">{m.language_pt()}</option>
+						</select>
+						<p class="hint">{m.settings_locale_hint()}</p>
+					</div>
 				</div>
 			</div>
 
@@ -682,6 +708,28 @@
 					</div>
 
 					<div class="mt-4 space-y-4">
+						<!--
+							El idioma del documento, que **no** es el de la pantalla (RN-29,
+							T-811). La factura es para el cliente y para Hacienda: una
+							compañía costarricense la emite en español aunque su cajero use
+							el POS en portugués. Va acá, en la pestaña del documento, porque
+							es del documento.
+						-->
+						<div>
+							<label class="label" for="idioma-documento">{m.settings_document_locale()}</label>
+							<select
+								id="idioma-documento"
+								name="idioma_documento"
+								class="input"
+								bind:value={documentLocale}
+							>
+								<option value="es">{m.language_es()}</option>
+								<option value="en">{m.language_en()}</option>
+								<option value="pt">{m.language_pt()}</option>
+							</select>
+							<p class="hint">{m.settings_document_locale_hint()}</p>
+						</div>
+
 						<Field
 							label={m.settings_thanks_message()}
 							name="documento_mensaje"
@@ -729,6 +777,7 @@
 							settings={borrador}
 							{logoUrl}
 							barcodes={codigosEjemplo}
+							docLocale={documentLocale}
 						/>
 					</div>
 				</div>

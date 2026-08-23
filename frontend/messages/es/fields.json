@@ -59,10 +59,21 @@
 	"field_document_legend": "La leyenda",
 	"field_document_farewell": "El mensaje de despedida",
 	"field_document_notes": "Las notas",
+	"field_locale": "El idioma",
+	"field_document_locale": "El idioma del documento",
 
 	"field_einvoicing_environment": "El ambiente",
 	"field_einvoicing_activity": "La actividad económica",
 	"field_einvoicing_branch": "La sucursal",
 	"field_einvoicing_terminal": "La terminal",
-	"field_einvoicing_atv_user": "El usuario de ATV"
+	"field_einvoicing_atv_user": "El usuario de ATV",
+
+	"$comentario_soporte": "Los del panel de soporte (F3). «El afiliado» y «la compañía» son los dos números que forman la identidad de un cliente, así que el rótulo dice el número y no el negocio.",
+
+	"field_company_name": "El nombre del negocio",
+	"field_affiliate": "El número de afiliado",
+	"field_company_number": "El número de compañía",
+	"field_plan": "El plan",
+	"field_company_state": "El estado de la suscripción",
+	"field_expires_on": "La fecha de vencimiento"
 }

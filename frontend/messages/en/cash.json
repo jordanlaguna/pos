@@ -1,3 +1,88 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"cash_title": "Cash register",
+	"cash_description": "Opening, cash movements and end of shift.",
+	"cash_movement_in": "Cash in",
+	"cash_movement_out": "Cash out",
+	"cash_close_register": "Close register",
+	"cash_open_register": "Open register",
+
+	"cash_closed": "The register is closed",
+	"cash_closed_hint": "Open the register with its starting cash to begin the shift. Sales belong to the open shift.",
+
+	"cash_opening": "Opening",
+	"cash_shift_sales": "Sales this shift",
+	"cash_sales_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{count} sale",
+				"countPlural=other": "{count} sales"
+			}
+		}
+	],
+	"cash_cash_sales": "Cash from sales",
+	"cash_only_cash_hint": "Only cash goes through the drawer",
+	"cash_expected_in_register": "Should be in the register",
+	"cash_expected_formula": "Opening + cash ± movements",
+
+	"cash_breakdown": "Shift breakdown",
+	"cash_opening_amount": "Opening amount",
+	"cash_sales_in_cash": "Cash sales",
+	"cash_movements_in": "Cash in",
+	"cash_movements_out": "Cash out",
+	"cash_returns": "Returns",
+	"cash_expected_in_drawer": "Expected in drawer",
+	"cash_by_payment_method": "By payment method",
+	"cash_col_method": "Method",
+	"cash_col_sales": "Sales",
+
+	"cash_movements": "Cash movements",
+	"cash_no_movements": "No movements",
+	"cash_no_movements_hint": "Record cash going in or out that is not a sale.",
+
+	"cash_previous_shifts": "Previous shifts",
+	"cash_col_opened": "Opened",
+	"cash_col_closed": "Closed",
+	"cash_col_cashier": "Cashier",
+	"cash_col_initial": "Opening",
+	"cash_col_expected": "Expected",
+	"cash_col_counted": "Counted",
+	"cash_col_difference": "Difference",
+	"cash_balanced": "Balanced",
+	"cash_over": "Over",
+	"cash_short": "Short",
+	"cash_no_closed_shifts": "No closed shifts",
+	"cash_no_closed_shifts_hint": "The history appears once you close the register.",
+
+	"cash_open_hint": "Count the cash you are starting the shift with.",
+	"cash_opening_amount_in": "Opening amount ({currency})",
+	"cash_opening_amount_hint": "Cash the drawer starts with, in {currency}.",
+	"cash_notes_optional": "Notes (optional)",
+	"cash_notes_placeholder": "E.g., morning shift",
+	"cash_opening_now": "Opening…",
+	"cash_opened": "Register open. You can now record sales for this shift.",
+
+	"cash_movement_in_title": "Cash in",
+	"cash_movement_out_title": "Cash out",
+	"cash_movement_in_hint": "Money going into the drawer that is not a sale.",
+	"cash_movement_out_hint": "Money leaving the drawer: payments, withdrawals, change.",
+	"cash_amount_in": "Amount ({currency})",
+	"cash_reason": "Reason",
+	"cash_reason_in_placeholder": "E.g., change from the bank",
+	"cash_reason_out_placeholder": "E.g., payment to a supplier",
+	"cash_register_movement": "Record",
+
+	"cash_close_hint": "Count the actual cash in the drawer before confirming.",
+	"cash_must_be_in_drawer": "Should be in the drawer",
+	"cash_counted_in": "Cash counted ({currency})",
+	"cash_difference": "Difference",
+	"cash_over_hint": "There is more cash than expected. Note the reason before closing.",
+	"cash_short_hint": "There is less cash than expected. Note the reason before closing.",
+	"cash_close_notes": "Closing notes (optional)",
+	"cash_close_notes_placeholder": "E.g., short from change given wrong",
+	"cash_closing_now": "Closing…",
+	"cash_closed_done": "Register closed."
 }

@@ -1,3 +1,79 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "Field labels as they appear INSIDE a validation message, so they carry the article: «The amount is required.» The label drawn above the input is a different key, in its own screen catalog, because there it has no article and is capitalized.",
+
+	"field_amount": "The amount",
+	"field_cash_received": "The amount received",
+	"field_closing_amount": "The counted amount",
+	"field_opening_amount": "The opening amount",
+	"field_price": "The price",
+	"field_stock": "The stock",
+	"field_tax_rate": "The tax rate",
+	"field_tax_name": "The tax name",
+	"field_decimals": "The number of decimals",
+
+	"field_name": "The name",
+	"field_category_name": "The category name",
+	"field_description": "The description",
+	"field_barcode": "The barcode",
+	"field_category": "The category",
+	"field_notes": "The notes",
+	"field_reason": "The reason",
+
+	"field_first_last_name": "The first surname",
+	"field_second_last_name": "The second surname",
+	"field_identification": "The ID number",
+	"field_telephone": "The phone number",
+	"field_address": "The address",
+	"field_email": "The email address",
+	"field_password": "The password",
+	"field_role": "The role",
+	"field_birth_date": "The date of birth",
+	"field_register_date": "The registration date",
+
+	"field_client": "The customer",
+	"field_person": "The person",
+	"field_product": "The product",
+	"field_user": "The user",
+	"field_sale": "The sale",
+	"field_entry": "The entry",
+
+	"field_payment_method": "The payment method",
+	"field_movement_type": "The movement type",
+
+	"field_business_name": "The business name",
+	"field_business_legal_name": "The legal name",
+	"field_business_identification": "The ID number",
+	"field_business_id_type": "The ID type",
+	"field_business_address": "The address",
+	"field_business_telephone": "The phone number",
+	"field_business_email": "The email address",
+	"field_business_website": "The website",
+
+	"field_currency_code": "The currency code",
+	"field_currency_symbol": "The currency symbol",
+
+	"field_document_template": "The template",
+	"field_document_width": "The receipt width",
+	"field_document_legend": "The legal notice",
+	"field_document_farewell": "The farewell message",
+	"field_document_notes": "The notes",
+	"field_locale": "The language",
+	"field_document_locale": "The document language",
+
+	"field_einvoicing_environment": "The environment",
+	"field_einvoicing_activity": "The economic activity",
+	"field_einvoicing_branch": "The branch",
+	"field_einvoicing_terminal": "The terminal",
+	"field_einvoicing_atv_user": "The ATV user",
+
+	"$comentario_soporte": "The support panel's (F3). «The affiliate» and «the company» are the two numbers that form a customer's identity, so the label names the number and not the business.",
+
+	"field_company_name": "The business name",
+	"field_affiliate": "The affiliate number",
+	"field_company_number": "The company number",
+	"field_plan": "The plan",
+	"field_company_state": "The subscription status",
+	"field_expires_on": "The expiry date"
 }

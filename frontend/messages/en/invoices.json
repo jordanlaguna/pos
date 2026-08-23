@@ -1,3 +1,60 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "Invoices: the history and the open invoice. The printed template's text does NOT go here —it goes in documents.json— because the document's language is not the screen's language (RN-29, T-811).",
+
+	"invoices_title": "Invoices",
+	"invoices_description": "History of the sales recorded in the system.",
+	"invoices_new_sale": "New sale",
+
+	"invoices_search_placeholder": "Invoice number or amount…",
+	"invoices_payment_method": "Payment method",
+	"invoices_all_methods": "All",
+	"invoices_from": "From",
+	"invoices_to": "To",
+	"invoices_today": "Today",
+	"invoices_clear": "Clear",
+
+	"invoices_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "{count} invoice",
+				"countPlural=other": "{count} invoices"
+			}
+		}
+	],
+	"invoices_sum": "Total: {total}",
+
+	"invoices_col_invoice": "Invoice",
+	"invoices_col_date": "Date",
+	"invoices_col_subtotal": "Subtotal",
+	"invoices_col_tax": "Tax",
+	"invoices_col_total": "Total",
+	"invoices_view": "View",
+
+	"invoices_no_results": "No results",
+	"invoices_no_results_hint": "Try other filters, or clear them to see everything.",
+	"invoices_none": "No invoices yet",
+	"invoices_none_hint": "The sales you charge will show up here.",
+
+	"invoices_previous": "Previous",
+	"invoices_next": "Next",
+	"invoices_page_of": "Page {page} of {total}",
+
+	"invoice_tab_title": "Invoice {number}",
+	"invoice_not_found": "Invoice not found.",
+	"invoice_registered": "Sale recorded successfully.",
+	"invoice_print": "Print",
+	"invoice_back": "Back to invoices",
+	"invoice_return": "Return",
+	"invoice_backend_pdf": "Backend PDF",
+	"invoice_fully_returned": "Sale returned in full",
+	"invoice_partially_returned": "Sale with partial returns",
+	"invoice_return_line": "{date} — {total} · {reason}",
+
+	"invoice_mock_no_pdf": "Demo mode does not generate a PDF. Use «Print» to save it from the browser.",
+	"invoice_pdf_failed": "The backend could not generate the PDF for this invoice."
+
 }

@@ -8,10 +8,13 @@ import {
 	nextId,
 	persist,
 	resetDb,
+	type MockPlan,
 	type MockSale,
-	type MockSettings
+	type MockSettings,
+	type MockUser
 } from './db';
 import { DEFAULT_TAX_RATE, changeDue, computeTotals, round2 } from '$lib/domain/money';
+import { COMPANY_STATES } from '$lib/domain/types';
 import type {
 	CashMovement,
 	CashSession,
@@ -116,7 +119,10 @@ function companyOf(token: string | null | undefined): number {
  */
 function readToken(token: string | null | undefined): number | null {
 	const payload = tokenPayload(token);
-	if (!payload || payload.tipo === 'transito') return null;
+	// El de tránsito y el de soporte no abren ninguna ruta de negocio: el primero
+	// porque todavía no eligió compañía (RN-26) y el segundo porque no tiene
+	// ninguna (RN-4). El de suplantación sí: es soporte mirando desde adentro.
+	if (!payload || payload.tipo === 'transito' || payload.tipo === 'soporte') return null;
 	return typeof payload.id_user === 'number' ? payload.id_user : null;
 }
 
@@ -200,6 +206,25 @@ function rolEn(userId: number, companyId: number): string | null {
 	return m ? m.rol : null;
 }
 
+/** Los idiomas con catálogo. La misma lista que `app/domain/locale.py`. */
+const IDIOMAS = ['es', 'en', 'pt'];
+
+/**
+ * El idioma de la sesión, con la misma regla que el backend (T-809).
+ *
+ * Es la traducción a TypeScript de `app/domain/locale.py`: lo de la persona, si
+ * no lo de la compañía, si no español. Está duplicada a propósito —el simulado
+ * es una reimplementación del backend, no una capa que lo llame— y por eso el
+ * contrato tiene que decir lo mismo: si acá el token no trajera `loc`, el modo
+ * simulado probaría una aplicación distinta de la que se despliega.
+ */
+function idiomaDeSesion(userId: number, companyId: number): string {
+	const raiz = getRoot();
+	const user = raiz.users.find((u) => u.id_user === userId);
+	const company = raiz.companies.find((c) => c.id === companyId);
+	return user?.locale || company?.locale || 'es';
+}
+
 function tokenDeSesion(user: { id_user: number; email: string }, companyId: number, rol: string) {
 	return makeToken({
 		id_user: user.id_user,
@@ -208,8 +233,145 @@ function tokenDeSesion(user: { id_user: number; email: string }, companyId: numb
 		bid: 1,
 		tid: 1,
 		rol,
+		loc: idiomaDeSesion(user.id_user, companyId),
 		tipo: 'sesion'
 	});
+}
+
+/**
+ * El token del panel de soporte: **sin compañía** (RN-4).
+ *
+ * Es todo el diseño. Sin `cid`, ninguna ruta de negocio le responde, ni en el
+ * simulado ni contra el backend de verdad.
+ */
+function tokenDeSoporte(user: MockUser) {
+	return makeToken({
+		id_user: user.id_user,
+		email: user.email,
+		loc: user.locale || 'es',
+		tipo: 'soporte'
+	});
+}
+
+/** El token de una visita: la compañía destino, el motivo y media hora. */
+function tokenDeSuplantacion(user: MockUser, companyId: number, motivo: string) {
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	return makeToken({
+		id_user: user.id_user,
+		email: user.email,
+		cid: companyId,
+		bid: 1,
+		tid: 1,
+		loc: user.locale || empresa?.locale || 'es',
+		mot: motivo.slice(0, 120),
+		tipo: 'suplantacion',
+		// El simulado no vence tokens: no hay reloj que los invalide. La media hora
+		// viaja como dato para que la pantalla pueda decirla, que es lo único que
+		// se puede comprobar de este lado.
+		minutos: MINUTOS_DE_VISITA
+	});
+}
+
+const MINUTOS_DE_VISITA = 30;
+
+/**
+ * Los cinco estados, tomados del dominio y no escritos otra vez.
+ *
+ * `COMPANY_STATES` es una tupla de literales y acá se compara contra un `string`
+ * que llega del cuerpo de la peticion, así que se ensancha el tipo a proposito:
+ * lo que se quiere comprobar es «esto que llegó está en la lista», no «esto es
+ * uno de estos cinco», que es justo lo que todavía no se sabe.
+ */
+const ESTADOS_DE_SUSCRIPCION: readonly string[] = COMPANY_STATES;
+
+/** Anota en la bitácora. Igual que `crud_membership.registrar` (RF-9). */
+function registrar(
+	userId: number,
+	companyId: number | null,
+	accion: string,
+	detalle: string | null
+): void {
+	const raiz = getRoot();
+	raiz.audit.push({
+		id: nextId('audit'),
+		creado_el: nowIso(),
+		user_id: userId,
+		company_id: companyId,
+		accion,
+		detalle,
+		// El simulado no ve la IP: el POS habla con él dentro del mismo proceso.
+		ip: null
+	});
+	persist();
+}
+
+/**
+ * El estado de la suscripción, con la misma regla que el backend (T-308).
+ *
+ * Es la traducción a TypeScript de `app/domain/subscription.py`, y está duplicada
+ * a propósito por lo mismo que `idiomaDeSesion`: el simulado es una
+ * reimplementación del backend, no una capa que lo llame. Si acá la gracia
+ * durara ocho días, el modo simulado probaría una aplicación distinta de la que
+ * se despliega.
+ */
+const DIAS_DE_GRACIA = 7;
+const DIAS_DE_AVISO = 7;
+
+function evaluarSuscripcion(companyId: number, rol = 'admin') {
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	if (!empresa) return null;
+
+	const guardado = empresa.estado;
+	const vence = empresa.vence_el ?? null;
+	const dias = vence === null ? null : diasHasta(vence);
+
+	const estado =
+		(guardado === 'prueba' || guardado === 'activa') && dias !== null && dias < 0
+			? 'vencida'
+			: guardado;
+
+	const gracia =
+		estado === 'vencida' && dias !== null
+			? Math.max(0, Math.min(DIAS_DE_GRACIA, DIAS_DE_GRACIA + dias + 1))
+			: 0;
+
+	const puedeEntrar =
+		estado === 'suspendida' ? rol === 'admin' : ['prueba', 'activa', 'vencida'].includes(estado);
+	const puedeVender =
+		estado === 'prueba' || estado === 'activa' || (estado === 'vencida' && gracia > 0);
+
+	return {
+		estado,
+		guardado,
+		vence_el: vence,
+		dias,
+		gracia,
+		puede_entrar: puedeEntrar,
+		puede_vender: puedeVender,
+		aviso: avisoDe(estado, guardado, dias, gracia)
+	};
+}
+
+function diasHasta(fecha: string): number {
+	// A medianoche los dos, para que la cuenta sea de días y no de horas.
+	const hoy = new Date();
+	hoy.setHours(0, 0, 0, 0);
+	const objetivo = new Date(`${fecha}T00:00:00`);
+	return Math.round((objetivo.getTime() - hoy.getTime()) / 86_400_000);
+}
+
+function avisoDe(
+	estado: string,
+	guardado: string,
+	dias: number | null,
+	gracia: number
+): string | null {
+	if (estado === 'cancelada') return 'cancelada';
+	if (estado === 'suspendida') return 'suspendida';
+	if (estado === 'vencida') return gracia > 0 ? 'en_gracia' : 'solo_lectura';
+	if (dias !== null && dias <= DIAS_DE_AVISO) return 'vence_pronto';
+	if (guardado === 'prueba') return 'en_prueba';
+	return null;
 }
 
 route('POST', '/auth/login', ({ body }) => {
@@ -220,12 +382,31 @@ route('POST', '/auth/login', ({ body }) => {
 	const user = getRoot().users.find((u) => u.email.toLowerCase() === email);
 	if (!user || user.password !== password) fail(401, 'invalid_credentials');
 
+	/*
+	 * Soporte no elige compañía porque no tiene ninguna (RN-4).
+	 *
+	 * Se decide antes de mirar las membresías y no después: su lista está vacía,
+	 * así que el camino normal le diría «no tiene ninguna compañía disponible», que
+	 * es cierto y no es lo que hay que hacer con él.
+	 */
+	if (user.is_support) {
+		registrar(user.id_user, null, 'login_soporte', null);
+		return {
+			access_token: tokenDeSoporte(user),
+			token_type: 'bearer',
+			tipo: 'soporte',
+			user_id: user.id_user,
+			companies: []
+		};
+	}
+
 	const opciones = opcionesDe(user.id_user);
 	const disponibles = opciones.filter((o) => o.puede_entrar);
 
 	// Una sola disponible: se entra sin pantalla intermedia (RN-25). Es el caso
 	// de los cajeros del demo, que pertenecen solo a la primera compañía.
 	if (disponibles.length === 1) {
+		registrar(user.id_user, disponibles[0].id, 'login', 'compañía única');
 		return {
 			access_token: tokenDeSesion(user, disponibles[0].id, disponibles[0].rol),
 			token_type: 'bearer',
@@ -236,6 +417,12 @@ route('POST', '/auth/login', ({ body }) => {
 		};
 	}
 
+	registrar(
+		user.id_user,
+		null,
+		'login',
+		`tránsito, ${disponibles.length} disponibles de ${opciones.length}`
+	);
 	return {
 		access_token: makeToken({ id_user: user.id_user, email: user.email, tipo: 'transito' }),
 		token_type: 'bearer',
@@ -271,6 +458,7 @@ route('POST', '/auth/company', ({ body, token }) => {
 	// 404 y no 403: un 403 confirmaría que esa compañía existe.
 	if (!user || !rol) fail(404, 'membership_not_found');
 
+	registrar(user.id_user, elegida, 'elegir_compania', `rol ${rol}`);
 	return {
 		access_token: tokenDeSesion(user, elegida, rol),
 		token_type: 'bearer',
@@ -281,12 +469,18 @@ route('POST', '/auth/company', ({ body, token }) => {
 	};
 });
 
-route('GET', '/users/me', ({ userId, companyId }) => {
+route('GET', '/users/me', ({ userId, companyId, token }) => {
 	if (userId == null) fail(401, 'unauthorized');
 	const root = getRoot();
 	const user = root.users.find((u) => u.id_user === userId);
 	if (!user) fail(404, 'user_not_found');
 	const empresa = root.companies.find((c) => c.id === companyId);
+
+	// Si esto es una visita de soporte, el POS necesita saberlo en **cada**
+	// petición: la franja permanente se pinta con esto (RF-8).
+	const payload = tokenPayload(token);
+	const suplantada = payload?.tipo === 'suplantacion';
+
 	return {
 		id_user: user.id_user,
 		email: user.email,
@@ -297,7 +491,16 @@ route('GET', '/users/me', ({ userId, companyId }) => {
 		company_name: empresa?.nombre ?? null,
 		branch_code: empresa?.branch_code ?? null,
 		terminal_code: empresa?.terminal_code ?? null,
-		companies_available: opcionesDe(user.id_user).filter((o) => o.puede_entrar).length
+		companies_available: suplantada
+			? 0
+			: opcionesDe(user.id_user).filter((o) => o.puede_entrar).length,
+		locale: user.locale || empresa?.locale || 'es',
+		user_locale: user.locale ?? null,
+		company_locale: empresa?.locale || 'es',
+		document_locale: empresa?.document_locale || 'es',
+		subscription: evaluarSuscripcion(companyId, rolEn(user.id_user, companyId) ?? 'admin'),
+		impersonated_by: suplantada ? user.email : null,
+		impersonation_reason: suplantada && typeof payload?.mot === 'string' ? payload.mot : null
 	};
 });
 
@@ -1277,6 +1480,63 @@ route('POST', '/mock/reset', ({ companyId }) => {
 
 // ------------------------------------------------------------------ despachador
 
+/**
+ * Las dos puertas y el freno, en un solo sitio (F3).
+ *
+ * Es la traducción de lo que hace `auth_dependency` en el backend, y va en el
+ * despachador por la misma razón que allá va en la dependencia: cuarenta rutas
+ * que hay que acordarse de tocar no son un control de acceso.
+ *
+ * 1. Un token de soporte no abre el POS y uno del POS no abre el panel (T-302).
+ * 2. Con la suscripción sin gracia, o de visita, no se escribe (T-308, RF-8).
+ */
+const METODOS_QUE_ESCRIBEN = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+/** Las dos que se pueden escribir igual. Ver `ESCRITURA_EN_SOLO_LECTURA` allá. */
+const ESCRITURA_EN_SOLO_LECTURA = ['/cash/close', '/auth/locale'];
+
+/** Las que no pasan por la sesión, así que el freno no aplica. Ver SIN_SESION. */
+const SIN_SESION = [
+	'/auth/login',
+	'/auth/company',
+	'/auth/companies',
+	'/auth/invitation',
+	'/persons/register'
+];
+
+function guardar(path: string, method: string, token: string | null | undefined): void {
+	const payload = tokenPayload(token);
+	const tipo = payload?.tipo;
+	const esPanel = path.startsWith('/support');
+
+	if (esPanel && tipo !== 'soporte') {
+		// 403 y no 401: el token vale, lo que no vale es para esto.
+		throw new ApiError(403, 'support_only', {});
+	}
+	if (tipo === 'soporte' && !esPanel && !path.startsWith('/auth') && path !== '/health') {
+		throw new ApiError(401, 'no_company_in_token', {});
+	}
+
+	if (
+		!METODOS_QUE_ESCRIBEN.includes(method) ||
+		esPanel ||
+		path.startsWith('/mock') ||
+		SIN_SESION.includes(path) ||
+		ESCRITURA_EN_SOLO_LECTURA.includes(path)
+	) {
+		return;
+	}
+
+	if (tipo === 'suplantacion') throw new ApiError(403, 'impersonation_read_only', {});
+
+	if (readToken(token) != null) {
+		const suscripcion = evaluarSuscripcion(companyOf(token));
+		if (suscripcion && !suscripcion.puede_vender) {
+			throw new ApiError(403, 'subscription_read_only', { state: suscripcion.estado });
+		}
+	}
+}
+
 export async function mockRequest<T>(request: MockRequest): Promise<T> {
 	const [rawPath, rawQuery = ''] = request.path.split('?');
 	// `/users/` y `/users` deben resolver igual.
@@ -1284,6 +1544,8 @@ export async function mockRequest<T>(request: MockRequest): Promise<T> {
 	const query = new URLSearchParams(rawQuery);
 	const userId = readToken(request.token);
 	const companyId = companyOf(request.token);
+
+	guardar(path, request.method, request.token);
 
 	for (const entry of routes) {
 		if (entry.method !== request.method) continue;
@@ -1310,3 +1572,385 @@ export async function mockRequest<T>(request: MockRequest): Promise<T> {
 		path
 	});
 }
+
+/**
+ * El idioma de la persona (T-810).
+ *
+ * Emite un token nuevo por la misma razón que el backend: el idioma vive en el
+ * token, así que sin re-emitirlo el cambio no se vería hasta el siguiente login.
+ */
+route('POST', '/auth/locale', ({ body, userId, companyId }) => {
+	if (userId == null) fail(401, 'unauthorized');
+	const raiz = getRoot();
+	const user = raiz.users.find((u) => u.id_user === userId);
+	if (!user) fail(404, 'user_not_found');
+	const empresa = raiz.companies.find((c) => c.id === companyId);
+	if (!empresa) fail(404, 'membership_not_found');
+
+	const pedido = body?.locale === null || body?.locale === undefined ? null : String(body.locale);
+	if (pedido !== null && !IDIOMAS.includes(pedido)) fail(400, 'unsupported_locale', { locale: pedido });
+
+	user.locale = pedido;
+	persist();
+
+	const rol = rolEn(user.id_user, companyId) ?? user.role;
+	return {
+		access_token: tokenDeSesion(user, companyId, rol),
+		token_type: 'bearer',
+		locale: pedido || empresa.locale || 'es',
+		user_locale: pedido,
+		document_locale: empresa.document_locale || 'es'
+	};
+});
+
+/** Los idiomas de la compañía: el de la pantalla y el del documento (T-810, T-811). */
+route('PUT', '/settings/locales', ({ body, userId, companyId }) => {
+	if (userId == null) fail(401, 'unauthorized');
+	const raiz = getRoot();
+	const user = raiz.users.find((u) => u.id_user === userId);
+	if (!user) fail(404, 'user_not_found');
+	if ((rolEn(user.id_user, companyId) ?? user.role) !== 'admin') fail(403, 'admin_only');
+	const empresa = raiz.companies.find((c) => c.id === companyId);
+	if (!empresa) fail(404, 'membership_not_found');
+
+	const pantalla = String(body?.locale ?? '');
+	const documento = String(body?.document_locale ?? '');
+	for (const pedido of [pantalla, documento]) {
+		if (!IDIOMAS.includes(pedido)) fail(400, 'unsupported_locale', { locale: pedido });
+	}
+
+	empresa.locale = pantalla;
+	empresa.document_locale = documento;
+	persist();
+
+	return {
+		access_token: tokenDeSesion(user, companyId, rolEn(user.id_user, companyId) ?? user.role),
+		token_type: 'bearer',
+		locale: user.locale || pantalla,
+		user_locale: user.locale ?? null,
+		document_locale: documento
+	};
+});
+
+// ------------------------------------------------- el panel de soporte (F3)
+//
+// Siete rutas, con el mismo contrato que `app/router/support_routes.py`. La
+// puerta —que solo un token de soporte entre acá, y que uno de soporte no abra
+// el POS— la cierra el despachador, en un solo sitio, igual que el backend.
+
+/** El usuario del token, sea de soporte o no. El despachador ya validó el tipo. */
+function usuarioDelToken(token: string | null | undefined): MockUser {
+	const payload = tokenPayload(token);
+	const id = typeof payload?.id_user === 'number' ? payload.id_user : null;
+	const user = getRoot().users.find((u) => u.id_user === id);
+	if (!user) fail(401, 'unauthorized');
+	return user;
+}
+
+function planDe(companyId: number): MockPlan | null {
+	const raiz = getRoot();
+	const empresa = raiz.companies.find((c) => c.id === companyId);
+	return raiz.plans.find((p) => p.id === empresa?.plan_id) ?? null;
+}
+
+/** El cupo que queda de un recurso. Nulo = el plan no limita (`domain/limits.py`). */
+function cupoDe(usados: number, maximo: number): number | null {
+	return maximo < 0 ? null : Math.max(0, maximo - usados);
+}
+
+/** El uso de una compañía: usuarios, cajas, productos y ventas del mes (RF-5). */
+function usoDe(companyId: number) {
+	const raiz = getRoot();
+	const empresa = getEmpresa(companyId);
+	const plan = planDe(companyId);
+
+	const usuarios = raiz.memberships.filter((x) => x.company_id === companyId && x.activa).length;
+	// El simulado le da una caja a cada compañía, como el alta de verdad.
+	const terminales = 1;
+
+	const inicioDelMes = new Date();
+	inicioDelMes.setDate(1);
+	inicioDelMes.setHours(0, 0, 0, 0);
+	const delMes = empresa.sales.filter((v) => new Date(v.created_at) >= inicioDelMes);
+
+	return {
+		usuarios,
+		terminales,
+		productos: empresa.products.length,
+		ventas_del_mes: delMes.length,
+		total_del_mes: round2(delMes.reduce((acc, v) => acc + v.total, 0)),
+		cupo_usuarios: plan ? cupoDe(usuarios, plan.max_usuarios) : null,
+		cupo_terminales: plan ? cupoDe(terminales, plan.max_terminales) : null
+	};
+}
+
+function companiaParaSoporte(companyId: number) {
+	const raiz = getRoot();
+	const empresa = raiz.companies.find((c) => c.id === companyId);
+	if (!empresa) fail(404, 'company_not_found');
+
+	const administradores = raiz.memberships
+		.filter((x) => x.company_id === companyId && x.activa && x.rol === 'admin')
+		.map((x) => raiz.users.find((u) => u.id_user === x.user_id)?.email)
+		.filter((correo): correo is string => Boolean(correo))
+		.sort();
+
+	return {
+		id: empresa.id,
+		afiliado: empresa.afiliado,
+		compania: empresa.compania,
+		nombre: empresa.nombre,
+		identificacion: empresa.identificacion ?? null,
+		creada_el: empresa.creada_el ?? null,
+		locale: empresa.locale,
+		document_locale: empresa.document_locale,
+		plan: planDe(companyId),
+		suscripcion: evaluarSuscripcion(companyId),
+		uso: usoDe(companyId),
+		administradores
+	};
+}
+
+route('GET', '/support/me', ({ token }) => {
+	const user = usuarioDelToken(token);
+	return {
+		id_user: user.id_user,
+		email: user.email,
+		name: personName(user.id_user) ?? user.email,
+		is_support: true,
+		locale: user.locale || 'es'
+	};
+});
+
+route('GET', '/support/plans', () => getRoot().plans);
+
+route('GET', '/support/companies', () =>
+	getRoot()
+		.companies.slice()
+		.sort((a, b) => a.afiliado - b.afiliado || a.compania - b.compania)
+		.map((c) => companiaParaSoporte(c.id))
+);
+
+route('GET', '/support/companies/:id', ({ params }) => companiaParaSoporte(Number(params[0])));
+
+/** Alta de compañía (RF-6). Las seis filas, igual que `crud_company.dar_de_alta`. */
+route('POST', '/support/companies', ({ body, token }) => {
+	const soporte = usuarioDelToken(token);
+	const raiz = getRoot();
+
+	const estado = String(body?.estado ?? 'prueba');
+	if (!ESTADOS_DE_SUSCRIPCION.includes(estado)) {
+		fail(400, 'invalid_company_state', { state: estado });
+	}
+
+	const locale = String(body?.locale ?? 'es');
+	const documentLocale = String(body?.document_locale ?? 'es');
+	for (const pedido of [locale, documentLocale]) {
+		if (!IDIOMAS.includes(pedido)) fail(400, 'unsupported_locale', { locale: pedido });
+	}
+
+	const planId = Number(body?.plan_id);
+	const plan = raiz.plans.find((p) => p.id === planId);
+	if (!plan) fail(404, 'plan_not_found', { plan_id: planId });
+
+	// El par se calcula acá cuando no viene, igual que en el backend: es el único
+	// que puede hacerlo sin que dos altas elijan el mismo número.
+	const afiliado =
+		Number(body?.afiliado) || Math.max(0, ...raiz.companies.map((c) => c.afiliado)) + 1;
+	const compania =
+		Number(body?.compania) ||
+		Math.max(0, ...raiz.companies.filter((c) => c.afiliado === afiliado).map((c) => c.compania)) +
+			1;
+
+	if (raiz.companies.some((c) => c.afiliado === afiliado && c.compania === compania)) {
+		fail(409, 'company_already_exists', { afiliado, compania });
+	}
+
+	const admin = (body?.admin ?? {}) as Record<string, string>;
+	const email = String(admin.email ?? '')
+		.trim()
+		.toLowerCase();
+	const existente = raiz.users.find((u) => u.email.toLowerCase() === email);
+	if (existente?.is_support) fail(400, 'support_cannot_be_member', { email });
+
+	const companyId = nextId('companies');
+	raiz.companies.push({
+		id: companyId,
+		afiliado,
+		compania,
+		nombre: String(body?.nombre ?? ''),
+		estado,
+		branch_code: '001',
+		terminal_code: '00001',
+		locale,
+		document_locale: documentLocale,
+		plan_id: plan.id,
+		vence_el: (body?.vence_el as string | null) ?? null,
+		identificacion: (body?.identificacion as string | null) ?? null,
+		creada_el: nowIso()
+	});
+
+	// La configuración con lo que mandó el POS: los textos del tiquete ya vienen
+	// en el idioma del documento (T-304, RN-30).
+	const empresa = getEmpresa(companyId);
+	empresa.settings = {
+		data: body?.settings ?? {},
+		logo: null,
+		updated_at: nowIso(),
+		updated_by: soporte.id_user
+	};
+
+	let usuarioNuevo = false;
+	let user = existente;
+	if (!user) {
+		usuarioNuevo = true;
+		const idPerson = nextId('persons');
+		const idUser = nextId('users');
+		raiz.persons.push({
+			id_person: idPerson,
+			birth_date: String(admin.birth_date ?? '1990-01-01'),
+			identification: String(admin.identification || email),
+			name: String(admin.name ?? 'Administrador'),
+			lastName: String(admin.lastName ?? ''),
+			secondName: String(admin.secondName ?? ''),
+			telephone: String(admin.telephone ?? ''),
+			id_user: idUser,
+			email
+		});
+		user = {
+			id_user: idUser,
+			email,
+			password: String(admin.password ?? ''),
+			role: 'admin',
+			id_person: idPerson
+		};
+		raiz.users.push(user);
+	}
+
+	// Una identidad que ya existía nace **pendiente**: nadie le puede dar acceso a
+	// nombre de otro (T-229). La que se acaba de crear, aceptada.
+	raiz.memberships.push({
+		user_id: user.id_user,
+		company_id: companyId,
+		rol: 'admin',
+		activa: true,
+		aceptada_el: usuarioNuevo ? nowIso() : null
+	});
+
+	registrar(
+		soporte.id_user,
+		companyId,
+		'alta_compania',
+		`afiliado ${afiliado} · compañía ${compania} — ${body?.nombre}, plan ${plan.nombre}, ` +
+			`estado ${estado}, administrador ${email}${usuarioNuevo ? '' : ' (membresía pendiente)'}`
+	);
+	persist();
+
+	return {
+		company_id: companyId,
+		afiliado,
+		compania,
+		nombre: String(body?.nombre ?? ''),
+		plan_id: plan.id,
+		plan_nombre: plan.nombre,
+		estado,
+		branch_codigo: '001',
+		terminal_codigo: '00001',
+		user_id: user.id_user,
+		email: user.email,
+		usuario_nuevo: usuarioNuevo,
+		membresia_pendiente: !usuarioNuevo
+	};
+});
+
+/** Estado, fecha y plan (RF-7). */
+route('PUT', '/support/companies/:id/subscription', ({ params, body, token }) => {
+	const soporte = usuarioDelToken(token);
+	const companyId = Number(params[0]);
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	if (!empresa) fail(404, 'company_not_found');
+
+	const estado = String(body?.estado ?? '');
+	if (!ESTADOS_DE_SUSCRIPCION.includes(estado)) {
+		fail(400, 'invalid_company_state', { state: estado });
+	}
+
+	const vence = (body?.vence_el as string | null) ?? null;
+	const planId = body?.plan_id == null ? null : Number(body.plan_id);
+	const plan = planId === null ? null : (getRoot().plans.find((p) => p.id === planId) ?? null);
+	if (planId !== null && !plan) fail(404, 'plan_not_found', { plan_id: planId });
+
+	// El detalle se arma con el antes y el después: es lo único que hace útil una
+	// bitácora dentro de seis meses.
+	const partes: string[] = [];
+	if (empresa.estado !== estado) partes.push(`estado ${empresa.estado} → ${estado}`);
+	if ((empresa.vence_el ?? null) !== vence) {
+		partes.push(`vence ${empresa.vence_el ?? 'sin fecha'} → ${vence ?? 'sin fecha'}`);
+	}
+	if (plan && empresa.plan_id !== plan.id) {
+		partes.push(`plan ${empresa.plan_id} → ${plan.id} (${plan.nombre})`);
+	}
+
+	empresa.estado = estado;
+	empresa.vence_el = vence;
+	if (plan) empresa.plan_id = plan.id;
+
+	registrar(soporte.id_user, companyId, 'suscripcion', partes.join(', ') || 'sin cambios');
+	persist();
+
+	return companiaParaSoporte(companyId);
+});
+
+/** *Entrar como* (RF-8, RN-4). Motivo obligatorio y solo lectura. */
+route('POST', '/support/companies/:id/enter', ({ params, body, token }) => {
+	const soporte = usuarioDelToken(token);
+	const companyId = Number(params[0]);
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	if (!empresa) fail(404, 'company_not_found');
+
+	const motivo = String(body?.motivo ?? '').trim();
+	// El backend lo valida con pydantic y responde 422; el POS ya lo valida antes,
+	// así que acá alcanza con no dejar pasar el vacío.
+	if (motivo.length < 5) fail(422, 'invalid_request', { field: 'motivo' });
+
+	registrar(soporte.id_user, companyId, 'entrar_como', motivo);
+
+	return {
+		access_token: tokenDeSuplantacion(soporte, companyId, motivo),
+		token_type: 'bearer',
+		tipo: 'suplantacion',
+		company_id: companyId,
+		company_nombre: empresa.nombre,
+		minutos: MINUTOS_DE_VISITA
+	};
+});
+
+/** La bitácora, filtrable (RF-9). */
+route('GET', '/support/audit', ({ query }) => {
+	const raiz = getRoot();
+	const companyId = query.get('company_id');
+	const accion = query.get('accion');
+	const limite = Math.min(Number(query.get('limite')) || 50, 500);
+
+	const lineas = raiz.audit
+		.filter((l) => !companyId || l.company_id === Number(companyId))
+		.filter((l) => !accion || l.accion === accion)
+		.slice()
+		.sort((a, b) => b.creado_el.localeCompare(a.creado_el) || b.id - a.id)
+		.slice(0, limite)
+		.map((l) => {
+			const user = raiz.users.find((u) => u.id_user === l.user_id);
+			const empresa = raiz.companies.find((c) => c.id === l.company_id);
+			return {
+				...l,
+				email: user?.email ?? null,
+				nombre: personName(l.user_id),
+				company_nombre: empresa?.nombre ?? null
+			};
+		});
+
+	return {
+		lineas,
+		acciones: [...new Set(raiz.audit.map((l) => l.accion))].sort()
+	};
+});

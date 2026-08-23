@@ -1,3 +1,182 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "Stock entries: the history and the loading screen. They live together because they share half the labels —product, quantity, cost, subtotal— and splitting them would duplicate those.",
+
+	"entries_title": "Stock entries",
+	"entries_description": "History of goods received. Every load records who, when and where from.",
+	"entries_catalog": "Catalog",
+	"entries_new": "New entry",
+	"entries_created_toast": "Entry recorded",
+	"entries_created_detail": "The stock is already updated.",
+
+	"$comentario_modulo": "The «module missing» notice is read by whoever installs the system, not by the cashier. It is translated all the same: whoever installs it may also have the POS in another language.",
+	"entries_module_missing": "The entries module is not available.",
+	"entries_module_missing_hint": "The backend does not expose {endpoint}. Update the FastAPI in {folder} and run the migration.",
+
+	"entries_col_date": "Date",
+	"entries_col_supplier": "Supplier",
+	"entries_col_document": "Document",
+	"entries_col_source": "Source",
+	"entries_col_loaded_by": "Loaded by",
+	"entries_col_units": "Units",
+	"entries_col_cost": "Cost",
+	"entries_col_status": "Status",
+
+	"$comentario_origen": "'manual', 'excel' and 'xml' are the values stored in `stock_entries.source` and validated by the backend. The value is not translated; how it is shown is.",
+	"entries_source_manual": "Manual",
+	"entries_source_excel": "Excel",
+	"entries_source_xml": "Tax authority XML",
+
+	"entries_status_cancelled": "Voided",
+	"entries_status_applied": "Applied",
+	"entries_view_detail": "View the detail of entry {entry}",
+	"entries_cancel_entry": "Void entry {entry}",
+
+	"entries_none": "No entries yet",
+	"entries_none_hint": "Load the first supplier invoice to start keeping the history.",
+
+	"entries_detail_title": "Entry #{entry}",
+	"entries_detail_subtitle": "{supplier} · {date}",
+	"entries_no_supplier": "No supplier",
+	"entries_line_product": "Product",
+	"entries_line_quantity": "Quantity",
+	"entries_line_unit_cost": "Unit cost",
+	"entries_line_subtotal": "Subtotal",
+	"entries_total": "Total",
+
+	"entries_cancel_title": "Void entry",
+	"entries_cancel_units": "{units} units will be taken out of inventory, leaving it as it was before this load.",
+	"entries_cancel_sold_note": "If part of those goods has already been sold, the backend will not allow the void: the stock would go negative. In that case it has to be adjusted by hand.",
+	"entries_cancel_confirm": "Void entry",
+	"entries_cancel_failed": "Could not be voided",
+	"entries_cancelled_ok": "Entry voided; the stock went back.",
+
+	"$comentario_nueva": "The loading screen.",
+
+	"entry_new_title": "Goods received",
+	"entry_new_description": "Add stock from a supplier invoice or by hand. Nothing goes in until you confirm it.",
+	"entry_new_see_entries": "View entries",
+
+	"entry_method_manual": "Manual",
+	"entry_method_file": "From a file",
+	"entry_search_placeholder": "Search for the product by name or barcode…",
+	"entry_search_label": "Search for a product to add to the entry",
+	"entry_search_stock": "stock {stock}",
+	"entry_search_hint": "Search and tap every product that arrived. Then adjust quantity and cost in the table.",
+
+	"entry_file_label": "Supplier invoice",
+	"entry_file_reading": "Reading…",
+	"entry_file_analyze": "Analyze",
+	"entry_file_read_failed": "The file could not be read",
+	"entry_file_xml": "XML",
+	"entry_file_xml_hint": "the tax authority's electronic invoice (v4.3 or 4.4), the one that arrives by email. Supplier, sequence number and lines are read from it.",
+	"entry_file_sheet": "Excel or CSV",
+	"entry_file_sheet_hint": "with columns {code}, {description}, {quantity} and {cost}. The order does not matter.",
+
+	"$comentario_columnas": "The headers the spreadsheet reader looks for (`server/import/spreadsheet.ts`). They are separate from the field labels because they are column names in someone else's file, not form labels: here they carry no article. Translating them does NOT change what the reader accepts —its synonym list is in Spanish and English— so the day the interface is in Portuguese, the Portuguese synonyms will have to be added there.",
+	"entry_column_code": "Code",
+	"entry_column_description": "Description",
+	"entry_column_quantity": "Quantity",
+	"entry_column_cost": "Cost",
+	"entry_file_template": "Download template",
+
+	"entry_preview_none": "No lines yet",
+	"entry_preview_none_manual": "Search for products above to build the entry.",
+	"entry_preview_none_file": "Upload the supplier invoice and review what is going in.",
+
+	"entry_stat_lines": "Lines to add",
+	"entry_stat_units": "Units",
+	"entry_stat_cost": "Total cost",
+	"entry_stat_unmatched": "No match",
+
+	"entry_orphans": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 line is marked to go in but does not exist in the catalog.",
+				"countPlural=other": "{count} lines are marked to go in but do not exist in the catalog."
+			}
+		}
+	],
+	"entry_orphans_hint": "Check {create} to add them, or uncheck them to leave them out.",
+	"entry_create_word": "Create",
+
+	"entry_col_include": "Include",
+	"entry_col_status": "Status",
+	"entry_col_stock": "Stock",
+	"entry_col_remove": "Remove",
+	"entry_include_line": "Include {product}",
+	"entry_quantity_of": "Quantity of {product}",
+	"entry_unit_cost_of": "Unit cost of {product}",
+	"entry_remove_line": "Remove {product}",
+	"entry_no_code": "no code",
+	"entry_matched_barcode": "By barcode",
+	"entry_matched_name": "By name",
+	"entry_create_product": "Create product",
+
+	"entry_label_barcode": "Barcode",
+	"entry_label_sale_price": "Sale price",
+	"entry_price_hint": "Suggested: cost + 30 %",
+	"entry_label_category": "Category",
+	"entry_required_short": "Required",
+
+	"entry_document_data": "Document details",
+	"entry_label_supplier": "Supplier",
+	"entry_supplier_placeholder": "E.g., La Central Distributors",
+	"entry_label_document_number": "Invoice no.",
+	"entry_document_hint": "Prevents loading the same invoice twice.",
+	"entry_label_notes": "Notes",
+	"entry_notes_placeholder": "Optional",
+
+	"entry_summary_units": "{units} units will go in",
+	"entry_summary_creating": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "and 1 product will be created",
+				"countPlural=other": "and {count} products will be created"
+			}
+		}
+	],
+	"entry_summary_cost": "· cost {cost}",
+	"entry_discard": "Discard",
+	"entry_saving": "Adding…",
+	"entry_submit": "Add to inventory",
+	"entry_submit_failed": "The entry could not be recorded",
+
+	"$comentario_lectura": "What the file readers say (`server/import/*`). They return a code and the sentence is built in the interface, same as with the backend: an adapter does not know what language the screen is in.",
+	"import_csv_unreadable": "The CSV could not be read. Check that it is plain text separated by commas or semicolons.",
+	"import_xlsx_unreadable": "The Excel file could not be read. Save it as .xlsx (not .xls) and try again.",
+	"import_sheet_empty": "The file is empty or has only the header row.",
+	"import_no_quantity_column": "The quantity column was not found. It has to be called «Quantity» (or Qty, Units).",
+	"import_no_identifier_column": "No way to identify the product was found. Add a «Code» or «Description» column.",
+	"import_no_data_rows": "No row with data was found.",
+	"import_not_an_invoice": "The file does not look like an electronic invoice: the expected root node was not found.",
+	"import_xml_unreadable": "The XML could not be read. Is it complete and unmodified?",
+	"import_invoice_without_lines": "The invoice has no detail lines.",
+	"import_no_cost_column": "No cost column was found; the lines go in with zero cost.",
+	"import_bad_quantity": "The line does not carry a valid quantity.",
+	"import_bad_quantity_in_row": "Invalid quantity in row {row}.",
+	"import_fractional_quantity": "Fractional quantity ({quantity}); inventory is kept in whole units.",
+	"import_fractional_quantity_in_row": "Fractional quantity ({quantity}) in row {row}.",
+	"import_lines_need_review": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 line needs manual review.",
+				"countPlural=other": "{count} lines need manual review."
+			}
+		}
+	],
+
+	"entry_pick_file_first": "Choose a file first.",
+	"entry_file_too_big": "The file is {size} MB; the maximum is {max} MB.",
+	"entry_format_unsupported": "Format not supported. Use .xml, .xlsx or .csv.",
+	"entry_read_failed": "The file could not be read.",
+	"entry_detail_unreadable": "The entry detail could not be read.",
+	"entry_mark_one_line": "Mark at least one line to add."
 }

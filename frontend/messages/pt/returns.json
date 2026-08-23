@@ -1,3 +1,51 @@
 {
-	"$schema": "https://inlang.com/schema/inlang-message-format"
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"returns_title": "Devoluções",
+	"returns_description": "Devolva produtos de uma venda e reponha o estoque automaticamente.",
+	"returns_registered": "Devolução registrada",
+	"returns_stock_back": "O estoque voltou para o inventário.",
+
+	"returns_pick_sale": "Escolha a venda a devolver",
+	"returns_search_placeholder": "Número da fatura…",
+	"returns_search_label": "Buscar venda por número da fatura",
+	"returns_no_sales": "Sem vendas disponíveis",
+	"returns_no_match": "Nenhuma fatura corresponde à busca.",
+	"returns_all_returned": "As vendas já devolvidas por completo não aparecem aqui.",
+
+	"returns_invoice": "Fatura {number}",
+	"returns_return_all": "Devolver tudo",
+	"returns_change_sale": "Trocar de venda",
+	"returns_no_detail": "Sem detalhe de produtos",
+	"returns_no_detail_hint": "O backend não devolveu as linhas desta venda, então não é possível devolver por produto.",
+	"returns_could_not_register": "Não foi possível registrar",
+
+	"returns_col_product": "Produto",
+	"returns_col_price": "Preço",
+	"returns_col_sold": "Vendido",
+	"returns_col_returned": "Devolvido",
+	"returns_col_available": "Disponível",
+	"returns_col_return": "Devolver",
+	"returns_units_of": "Unidades de {product} a devolver",
+	"returns_reason_label": "Motivo da devolução *",
+	"returns_reason_placeholder": "Ex.: produto vencido, o cliente desistiu, erro de cobrança",
+
+	"returns_history": "Devoluções registradas",
+	"returns_col_date": "Data",
+	"returns_col_invoice": "Fatura",
+	"returns_col_reason": "Motivo",
+	"returns_col_type": "Tipo",
+	"returns_col_amount": "Valor",
+	"returns_full": "Total",
+	"returns_partial": "Parcial",
+	"returns_none": "Sem devoluções",
+	"returns_none_hint": "As devoluções que você registrar vão aparecer aqui.",
+
+	"returns_summary": "Resumo da devolução",
+	"returns_indicate_units": "Informe quantas unidades devolver de cada produto.",
+	"returns_tax_with_rate": "{tax} ({rate} %)",
+	"returns_to_refund": "A reembolsar",
+	"returns_stock_note": "As unidades devolvidas voltam ao estoque e são descontadas do fechamento de caixa.",
+	"returns_register": "Registrar devolução",
+	"returns_at_least_one": "Informe pelo menos um produto com quantidade maior que zero."
 }

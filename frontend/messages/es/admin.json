@@ -1,0 +1,217 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "El panel de soporte (F3) y los avisos de suscripción. Está traducido como el resto del POS aunque hoy lo use una sola persona: es la misma aplicación, la misma prueba de texto suelto lo vigila, y el día que haya soporte en otro país el trabajo ya está hecho. Los estados de la suscripción reutilizan las claves `company_status_*` de auth.json: son las mismas cinco palabras y tenerlas dos veces es tenerlas distintas.",
+
+	"admin_title": "Panel de soporte",
+	"admin_tagline": "Plataforma",
+	"admin_role": "Soporte",
+	"admin_nav": "Menú del panel",
+	"admin_nav_companies": "Compañías",
+	"admin_nav_audit": "Bitácora",
+	"admin_logout": "Cerrar sesión",
+	"admin_back": "Volver",
+
+	"$comentario_listado": "RF-5. La identidad de un cliente es el par (afiliado, compañía), así que la tabla lo muestra tal cual: «1·2» se lee como número de cliente y es lo que se dicta por teléfono.",
+
+	"admin_companies_title": "Compañías",
+	"admin_companies_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Un cliente en esta instalación",
+				"countPlural=other": "{count} clientes en esta instalación"
+			}
+		}
+	],
+	"admin_companies_empty": "Todavía no hay ninguna compañía. Dé de alta la primera.",
+	"admin_new_company": "Nueva compañía",
+	"admin_pair": "{afiliado}·{compania}",
+	"admin_col_client": "Cliente",
+	"admin_col_company": "Negocio",
+	"admin_col_plan": "Plan",
+	"admin_col_state": "Estado",
+	"admin_col_expires": "Vence",
+	"admin_col_usage": "Uso",
+	"admin_col_month": "Este mes",
+	"admin_col_actions": "Acciones",
+	"admin_open": "Abrir",
+	"admin_no_expiry": "Sin fecha",
+	"admin_no_plan": "Sin plan",
+
+	"$comentario_uso": "Cuántos de los que permite el plan lleva usados. Con el plan sin techo no se dice «0 de -1»: se dice cuántos hay y nada más.",
+
+	"admin_usage_users": "{used} de {max} usuarios",
+	"admin_usage_users_unlimited": [
+		{
+			"declarations": ["input used", "local usedPlural = used: plural"],
+			"selectors": ["usedPlural"],
+			"match": {
+				"usedPlural=one": "1 usuario",
+				"usedPlural=other": "{used} usuarios"
+			}
+		}
+	],
+	"admin_usage_terminals": "{used} de {max} cajas",
+	"admin_usage_terminals_unlimited": [
+		{
+			"declarations": ["input used", "local usedPlural = used: plural"],
+			"selectors": ["usedPlural"],
+			"match": {
+				"usedPlural=one": "1 caja",
+				"usedPlural=other": "{used} cajas"
+			}
+		}
+	],
+	"admin_usage_products": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 producto",
+				"countPlural=other": "{count} productos"
+			}
+		}
+	],
+	"admin_usage_sales": [
+		{
+			"declarations": ["input count", "input total", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "1 venta · {total}",
+				"countPlural=other": "{count} ventas · {total}"
+			}
+		}
+	],
+	"admin_usage_no_sales": "Sin ventas este mes",
+
+	"$comentario_alta": "RF-6. El afiliado y la compañía se pueden dejar en blanco: el backend toma el siguiente libre, y calcularlo allá evita que dos altas a la vez elijan el mismo par.",
+
+	"admin_new_title": "Nueva compañía",
+	"admin_new_intro": "Queda creada con su sucursal 001, su caja 00001, su configuración y el primer administrador.",
+	"admin_section_business": "El negocio",
+	"admin_section_subscription": "La suscripción",
+	"admin_section_admin": "El primer administrador",
+	"admin_label_company_name": "Nombre del negocio",
+	"admin_label_identification": "Cédula jurídica",
+	"admin_label_affiliate": "Afiliado",
+	"admin_label_company_number": "Compañía",
+	"admin_label_pair_hint": "En blanco: se toma el siguiente libre. Repita el afiliado para abrir otra compañía del mismo cliente.",
+	"admin_label_plan": "Plan",
+	"admin_label_state": "Estado",
+	"admin_label_expires": "Vence el",
+	"admin_label_expires_hint": "Con la fecha en blanco, la suscripción no vence y nadie recibe aviso.",
+	"admin_label_locale": "Idioma de la pantalla",
+	"admin_label_document_locale": "Idioma de la factura",
+	"admin_label_document_locale_hint": "La factura es para el cliente y para Hacienda: puede no ser el idioma de quien cobra.",
+	"admin_label_email": "Correo",
+	"admin_label_password": "Contraseña",
+	"admin_label_name": "Nombre",
+	"admin_label_last_name": "Primer apellido",
+	"admin_label_second_last_name": "Segundo apellido",
+	"admin_label_person_identification": "Cédula",
+	"admin_label_telephone": "Teléfono",
+	"admin_create": "Dar de alta",
+	"admin_cancel": "Cancelar",
+	"admin_created": "{nombre} quedó dada de alta. Sucursal {sucursal}, caja {caja}.",
+	"admin_created_pending": "Ese correo ya tenía cuenta en el sistema, así que la membresía queda pendiente de que la persona la acepte al entrar.",
+	"admin_texts_seeded": "Los textos del tiquete quedaron sembrados en {idioma}.",
+
+	"$comentario_ficha": "La ficha de una compañía: lo que hay que ver para atender una llamada, y las dos cosas que se pueden hacer —cambiar la suscripción y entrar a mirar—.",
+
+	"admin_company_since": "Dada de alta el {fecha}",
+	"admin_company_id": "Cédula {identificacion}",
+	"admin_company_no_id": "Sin cédula registrada",
+	"admin_admins": "Administradores",
+	"admin_no_admins": "Esta compañía no tiene ningún administrador activo.",
+	"admin_usage_title": "Uso",
+	"admin_usage_month": "Ventas del mes",
+	"admin_subscription_title": "Suscripción",
+	"admin_subscription_stored": "Guardado",
+	"admin_subscription_effective": "Efectivo hoy",
+	"admin_subscription_derived": "El estado guardado dice «{guardado}» y la fecha ya pasó, así que hoy se comporta como «{efectivo}».",
+	"admin_subscription_save": "Guardar la suscripción",
+	"admin_subscription_saved": "Suscripción actualizada.",
+	"admin_languages_title": "Idiomas",
+	"admin_company_not_found": "No encontramos esa compañía.",
+
+	"$comentario_entrar": "RF-8 y RN-4. El motivo es obligatorio, la visita dura media hora y es de solo lectura. Las tres cosas se dicen en pantalla: quien entra tiene que saber qué puede hacer, y quien audite tiene que poder leer por qué se entró.",
+
+	"admin_enter_title": "Entrar como esta compañía",
+	"admin_enter_intro": "Para diagnosticar. Verá los datos del cliente en modo lectura, la visita dura {minutos} minutos y queda registrada con su motivo.",
+	"admin_enter_reason": "Motivo",
+	"admin_enter_reason_hint": "Lo lee quien audite dentro de seis meses: «revisar por qué no cierra la caja» sirve, «revisión» no.",
+	"admin_enter": "Entrar a mirar",
+
+	"$comentario_bitacora": "RF-9. Guarda también los login de los clientes, y es a propósito: la pregunta que se hace de verdad no es «qué hizo soporte» sino «por qué este cajero no puede entrar».",
+
+	"admin_audit_title": "Bitácora",
+	"admin_audit_intro": "Quién hizo qué, cuándo y sobre qué compañía.",
+	"admin_audit_company": "Compañía",
+	"admin_audit_action": "Acción",
+	"admin_audit_all": "Todas",
+	"admin_audit_apply": "Filtrar",
+	"admin_audit_empty": "No hay actividad registrada con ese filtro.",
+	"admin_audit_recent": "Actividad reciente",
+	"admin_audit_see_all": "Ver la bitácora completa",
+	"admin_col_when": "Cuándo",
+	"admin_col_who": "Quién",
+	"admin_col_what": "Qué",
+	"admin_col_detail": "Detalle",
+	"admin_col_where": "Dónde",
+	"admin_col_ip": "IP",
+	"admin_audit_no_company": "La plataforma",
+	"admin_audit_unknown_user": "Cuenta borrada (#{id})",
+
+	"$comentario_acciones": "Los nombres de las acciones de la bitácora. La clave repite el valor que escribe el backend, así que una acción nueva se agrega acá con el mismo nombre; mientras no esté, la pantalla muestra el código crudo en vez de un hueco.",
+
+	"admin_action_login": "Entró al sistema",
+	"admin_action_login_soporte": "Entró al panel de soporte",
+	"admin_action_elegir_compania": "Eligió compañía",
+	"admin_action_invitacion_aceptar": "Aceptó la invitación",
+	"admin_action_invitacion_rechazar": "Rechazó la invitación",
+	"admin_action_idioma_usuario": "Cambió su idioma",
+	"admin_action_idioma_compania": "Cambió el idioma de la compañía",
+	"admin_action_alta_compania": "Dio de alta la compañía",
+	"admin_action_suscripcion": "Cambió la suscripción",
+	"admin_action_entrar_como": "Entró como la compañía",
+
+	"$comentario_avisos": "Los avisos de suscripción que ve el cliente en el POS (RF-11). El de la gracia y el de solo lectura son los que cuestan plata, así que dicen qué se puede hacer todavía y no solo qué pasó.",
+
+	"subscription_trial": "Está en período de prueba.",
+	"subscription_trial_until": "Está en período de prueba hasta el {fecha}.",
+	"subscription_due_today": "La suscripción vence hoy.",
+	"subscription_due_in": [
+		{
+			"declarations": ["input dias", "local diasPlural = dias: plural"],
+			"selectors": ["diasPlural"],
+			"match": {
+				"diasPlural=one": "La suscripción vence mañana.",
+				"diasPlural=other": "La suscripción vence en {dias} días."
+			}
+		}
+	],
+	"subscription_grace": [
+		{
+			"declarations": ["input dias", "local diasPlural = dias: plural"],
+			"selectors": ["diasPlural"],
+			"match": {
+				"diasPlural=one": "El pago está vencido. Hoy es el último día en que puede vender.",
+				"diasPlural=other": "El pago está vencido. Puede seguir vendiendo {dias} días más."
+			}
+		}
+	],
+	"subscription_read_only": "El pago está vencido y se agotó el plazo. Puede consultar sus datos y cerrar la caja, pero no vender.",
+	"subscription_suspended": "La suscripción está suspendida. Comuníquese con soporte para reactivarla.",
+	"subscription_cancelled": "La suscripción está cancelada.",
+	"subscription_contact": "Comuníquese con soporte para ponerse al día.",
+	"subscription_blocked_title": "No se puede vender",
+
+	"$comentario_franja": "La franja de la suplantación (RF-8). Es permanente y va arriba de todo a propósito: lo peor que puede pasar en una visita de soporte es olvidar que uno está viendo la compañía de otro.",
+
+	"impersonation_banner": "Está viendo {compania} como soporte.",
+	"impersonation_read_only": "Solo lectura",
+	"impersonation_reason": "Motivo: {motivo}",
+	"impersonation_leave": "Volver al panel"
+}

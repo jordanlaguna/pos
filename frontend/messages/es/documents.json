@@ -42,5 +42,10 @@
 	"doc_returns_applied": "Devoluciones aplicadas",
 
 	"doc_notes": "Notas",
-	"doc_notes_and_terms": "Notas y condiciones"
+	"doc_notes_and_terms": "Notas y condiciones",
+
+	"$comentario_semilla": "Los dos textos con los que nace una compañía (T-304, RF-6). No son valores por omisión del dominio —ahí nacen vacíos a propósito, porque el dominio no lee el catálogo (RN-30)—: se siembran al dar de alta, que es cuando se conoce el idioma del documento. Después son del dueño: si los borra, se quedan borrados.",
+
+	"doc_default_thanks": "¡Gracias por su compra!",
+	"doc_default_legal": "Este documento no tiene validez tributaria."
 }

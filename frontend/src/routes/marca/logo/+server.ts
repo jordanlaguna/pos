@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import { m } from '$lib/paraglide/messages.js';
 import { loadSettings } from '$lib/server/settings';
 import type { RequestHandler } from './$types';
 
@@ -15,13 +16,13 @@ import type { RequestHandler } from './$types';
  */
 export const GET: RequestHandler = async ({ locals, setHeaders }) => {
 	const stored = await loadSettings(locals.token, locals.user?.company_id);
-	if (!stored.logo) error(404, { message: 'El negocio no tiene logo configurado.' });
+	if (!stored.logo) error(404, { message: m.settings_logo_missing() });
 
 	let bytes: Buffer;
 	try {
 		bytes = Buffer.from(stored.logo.data, 'base64');
 	} catch {
-		error(500, { message: 'El logo guardado no se pudo decodificar.' });
+		error(500, { message: m.settings_logo_undecodable() });
 	}
 
 	setHeaders({

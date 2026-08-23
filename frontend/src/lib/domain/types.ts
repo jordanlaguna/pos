@@ -10,8 +10,21 @@
 
 export type Role = 'admin' | 'cajero';
 
-/** Estado de la suscripción de una compañía (spec §2). */
-export type CompanyState = 'prueba' | 'activa' | 'vencida' | 'suspendida' | 'cancelada';
+/**
+ * Los cinco estados de la suscripción (spec §2).
+ *
+ * Es un arreglo y no solo un tipo porque hace falta en ejecución: es el conjunto
+ * cerrado contra el que `Validator.oneOf` decide si el estado que manda el panel
+ * de soporte es válido, y el que llena el `<select>` de la ficha. Los valores son
+ * los que guarda `companies.estado` en la base y **no se traducen**: la palabra
+ * que se muestra la resuelve `companyStateLabel` en `$lib/ui/messages.ts`.
+ *
+ * El orden es el del ciclo de vida, que es también el que tiene sentido en un
+ * desplegable: se prueba, se activa, vence, se suspende, se cancela.
+ */
+export const COMPANY_STATES = ['prueba', 'activa', 'vencida', 'suspendida', 'cancelada'] as const;
+
+export type CompanyState = (typeof COMPANY_STATES)[number];
 
 /**
  * Una compañía a la que la persona podría entrar.
@@ -40,16 +53,43 @@ export interface CompanyOption {
  * Respuesta de `POST /auth/login`.
  *
  * `tipo` decide qué pasa después: con `sesion` se entra directo —una sola
- * compañía disponible, RN-25— y con `transito` hay que elegir (RF-27). El token
- * de tránsito no abre ninguna puerta de negocio.
+ * compañía disponible, RN-25—, con `transito` hay que elegir (RF-27) y con
+ * `soporte` no hay compañía que elegir porque no tiene ninguna (RN-4): esa
+ * sesión va al panel `/admin`. El token de tránsito no abre ninguna puerta de
+ * negocio.
  */
 export interface LoginResponse {
 	access_token: string;
 	token_type: string;
-	tipo: 'sesion' | 'transito';
+	tipo: 'sesion' | 'transito' | 'soporte';
 	user_id: number;
 	company_id?: number | null;
 	companies?: CompanyOption[];
+}
+
+/**
+ * El estado de la suscripción, ya evaluado por el servidor (T-308, RF-10).
+ *
+ * Lo calcula el backend y no el POS, y es a propósito: depende del día de hoy, y
+ * la hora la pone el servidor —dos relojes no se pueden comparar—. Acá solo se
+ * pinta.
+ *
+ * `aviso` es un **código** y no una frase (RN-30). La oración la arma
+ * `subscriptionNotice()` en `$lib/ui/messages.ts` con estos mismos datos.
+ */
+export interface Subscription {
+	/** El efectivo: `activa` con la fecha pasada llega como `vencida`. */
+	estado: CompanyState;
+	/** El que está guardado. El panel muestra los dos; el POS usa el efectivo. */
+	guardado: CompanyState;
+	vence_el: string | null;
+	/** Días hasta el vencimiento. Negativo si pasó, nulo si no hay fecha. */
+	dias: number | null;
+	/** Días de gracia que quedan, contando hoy. 0 = ya no se vende. */
+	gracia: number;
+	puede_entrar: boolean;
+	puede_vender: boolean;
+	aviso: 'en_prueba' | 'vence_pronto' | 'en_gracia' | 'solo_lectura' | 'suspendida' | 'cancelada' | null;
 }
 
 export interface ChooseCompanyResponse {
@@ -75,6 +115,120 @@ export interface SessionUser {
 	terminal_code: string | null;
 	/** Cuántas compañías tiene disponibles; con una sola no se ofrece cambiar. */
 	companies_available: number;
+	/**
+	 * Los dos idiomas, que no son el mismo (RN-28, RN-29).
+	 *
+	 * `locale` es el de la pantalla —el efectivo, ya resuelto— y está acá para que
+	 * el selector pueda marcar cuál está activo; quien traduce no lo lee de aquí,
+	 * lo toma del contexto de la petición. `user_locale` es lo que eligió la
+	 * persona, en nulo si hereda: la diferencia importa porque «como esté la
+	 * compañía» no es lo mismo que «español». `document_locale` es el de la
+	 * factura, que se emite en el idioma de la compañía.
+	 */
+	locale: string;
+	user_locale: string | null;
+	company_locale: string;
+	document_locale: string;
+	/**
+	 * El estado de la suscripción (T-308). Nulo solo si el backend es viejo y no
+	 * lo manda; el POS trata eso como «se puede todo», que es lo que hacía antes.
+	 */
+	subscription?: Subscription | null;
+	/**
+	 * Correo de quien está suplantando, si esta sesión es un *entrar como*
+	 * (RF-8). Es lo que enciende la franja permanente, y por eso viaja en cada
+	 * `/users/me` y no una sola vez al entrar: una franja que se puede perder al
+	 * navegar no es permanente.
+	 */
+	impersonated_by?: string | null;
+	impersonation_reason?: string | null;
+}
+
+// ------------------------------------------------------------------- soporte
+
+/**
+ * Quién es el de soporte. **Sin compañía**, porque no tiene (RN-4).
+ *
+ * Es un tipo aparte de `SessionUser` y no un `SessionUser` con la compañía en
+ * nulo: la mitad del POS lee `user.company_id` sin preguntar, y hacerlo
+ * anulable convertiría cada una de esas lecturas en un caso que nadie probó.
+ * Soporte no entra al POS, entra al panel.
+ */
+export interface SupportUser {
+	id_user: number;
+	email: string;
+	name: string;
+	locale: string;
+}
+
+/** Un plan: lo que el sistema deja hacer, no una lista de precios. */
+export interface Plan {
+	id: number;
+	nombre: string;
+	precio_mensual: number;
+	max_sucursales: number;
+	max_terminales: number;
+	max_usuarios: number;
+	factura_electronica: boolean;
+}
+
+/** Cuánto de su plan usa una compañía (RF-5). */
+export interface CompanyUsage {
+	usuarios: number;
+	terminales: number;
+	productos: number;
+	ventas_del_mes: number;
+	total_del_mes: number;
+	/** Cuántos más caben. Nulo es «el plan no limita». */
+	cupo_usuarios: number | null;
+	cupo_terminales: number | null;
+}
+
+/** Una compañía como la ve el panel de soporte. */
+export interface SupportCompany {
+	id: number;
+	afiliado: number;
+	compania: number;
+	nombre: string;
+	identificacion: string | null;
+	creada_el: string | null;
+	locale: string;
+	document_locale: string;
+	plan: Plan | null;
+	suscripcion: Subscription;
+	uso: CompanyUsage;
+	administradores: string[];
+}
+
+/** Una línea de la bitácora, con los nombres ya resueltos (RF-9). */
+export interface AuditLine {
+	id: number;
+	creado_el: string;
+	user_id: number;
+	email: string | null;
+	nombre: string | null;
+	company_id: number | null;
+	company_nombre: string | null;
+	accion: string;
+	detalle: string | null;
+	ip: string | null;
+}
+
+/** Lo que devuelve el alta de una compañía (RF-6). */
+export interface NewCompanyResult {
+	company_id: number;
+	afiliado: number;
+	compania: number;
+	nombre: string;
+	plan_id: number;
+	plan_nombre: string;
+	estado: CompanyState;
+	branch_codigo: string;
+	terminal_codigo: string;
+	user_id: number;
+	email: string;
+	usuario_nuevo: boolean;
+	membresia_pendiente: boolean;
 }
 
 /**

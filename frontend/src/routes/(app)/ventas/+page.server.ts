@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { api, apiSafe } from '$lib/server/api';
-import { requireUser } from '$lib/server/auth';
+import { requireUser, requireWrite } from '$lib/server/auth';
 import { loadSettings } from '$lib/server/settings';
 import { prepareSale } from '$lib/application/checkout';
 import { Validator } from '$lib/application/validation';
@@ -17,7 +17,20 @@ import { F } from '$lib/ui/fields';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	const user = requireUser(locals, url.pathname);
+	/*
+	 * El estado de la suscripción se evalúa **al abrir la pantalla** (RN-2, T-308).
+	 *
+	 * Es la única pantalla donde el bloqueo es una puerta cerrada y no un aviso, y
+	 * la razón es la regla: el bloqueo por vencimiento nunca ocurre a mitad de una
+	 * venta. Enterarse con el cliente enfrente y el carrito lleno es la peor
+	 * manera posible de enterarse, así que se dice antes de empezar.
+	 *
+	 * El backend también lo impide —`get_current_user` corta toda escritura— y no
+	 * es una duplicación inútil: allá se impide que ocurra, acá se impide que se
+	 * ofrezca. Las demás pantallas se quedan con el aviso del layout, porque en
+	 * ellas lo que se pierde al chocar contra el «no» es un clic, no una venta.
+	 */
+	const user = requireWrite(requireUser(locals, url.pathname));
 	const token = locals.token;
 
 	// El catálogo entero viaja una vez y la búsqueda se resuelve en el navegador:

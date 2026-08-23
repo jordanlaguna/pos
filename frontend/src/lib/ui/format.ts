@@ -1,6 +1,44 @@
-/** Formateo de fechas y textos para la interfaz. Todo en es-CR. */
+/**
+ * Formateo de fechas y textos para la interfaz.
+ *
+ * **La fecha depende del idioma** (T-806): en español `15/08/2026`, en inglés
+ * `08/15/2026`, y los meses cortos del eje del gráfico cambian de nombre. Sale
+ * del idioma de la petición, el mismo que los mensajes, así que una pantalla no
+ * puede quedar con los rótulos en un idioma y las fechas en otro.
+ *
+ * Cada función acepta un `locale` explícito, y eso no es un adorno: el documento
+ * impreso se emite en el idioma de la compañía y no en el de la pantalla (RN-29,
+ * T-811), así que las tres plantillas pasan el suyo.
+ *
+ * **La hora no depende del idioma, a propósito.** Se fuerza el reloj de 24 horas
+ * en los tres: las horas de esta aplicación son de turnos de caja y movimientos
+ * de efectivo, se leen en columna, y `2:05 PM` junto a `14:05` es una columna que
+ * no se puede comparar de un vistazo. T-806 pide que dependan del locale «los
+ * meses y el orden», que es lo que sí cambia.
+ */
 
+import { getLocale } from '$lib/paraglide/runtime.js';
 import { formatNumber } from '$lib/domain/money';
+
+/**
+ * De idioma a etiqueta de Intl.
+ *
+ * Hace falta la región porque el idioma solo no dice el orden: `en` a secas se
+ * resuelve como `en-US` en Node y como lo que sea en un navegador cualquiera, y
+ * el orden de la fecha es justo lo que cambia entre `en-US` y `en-GB`. Fijarla
+ * acá es lo que hace que la pantalla se vea igual en la caja y en el servidor.
+ */
+const INTL: Record<string, string> = {
+	es: 'es-CR',
+	en: 'en-US',
+	pt: 'pt-BR'
+};
+
+/** La etiqueta de Intl del idioma pedido, o la del idioma de esta petición. */
+function tag(locale?: string): string {
+	const pedido = locale ?? getLocale();
+	return INTL[pedido] ?? INTL.es;
+}
 
 function toDate(value: string | Date | null | undefined): Date | null {
 	if (!value) return null;
@@ -8,22 +46,22 @@ function toDate(value: string | Date | null | undefined): Date | null {
 	return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** `15/08/2026` */
-export function formatDate(value: string | Date | null | undefined): string {
+/** `15/08/2026` en español, `08/15/2026` en inglés. */
+export function formatDate(value: string | Date | null | undefined, locale?: string): string {
 	const d = toDate(value);
 	if (!d) return '—';
-	return new Intl.DateTimeFormat('es-CR', {
+	return new Intl.DateTimeFormat(tag(locale), {
 		day: '2-digit',
 		month: '2-digit',
 		year: 'numeric'
 	}).format(d);
 }
 
-/** `15/08/2026 14:32` */
-export function formatDateTime(value: string | Date | null | undefined): string {
+/** `15/08/2026 14:32`. La hora va en 24 h en los tres idiomas. */
+export function formatDateTime(value: string | Date | null | undefined, locale?: string): string {
 	const d = toDate(value);
 	if (!d) return '—';
-	return new Intl.DateTimeFormat('es-CR', {
+	return new Intl.DateTimeFormat(tag(locale), {
 		day: '2-digit',
 		month: '2-digit',
 		year: 'numeric',
@@ -33,11 +71,11 @@ export function formatDateTime(value: string | Date | null | undefined): string 
 	}).format(d);
 }
 
-/** `14:32:05` */
-export function formatTime(value: string | Date | null | undefined): string {
+/** `14:32:05`. Igual en los tres: es una hora de turno, no de agenda. */
+export function formatTime(value: string | Date | null | undefined, locale?: string): string {
 	const d = toDate(value);
 	if (!d) return '—';
-	return new Intl.DateTimeFormat('es-CR', {
+	return new Intl.DateTimeFormat(tag(locale), {
 		hour: '2-digit',
 		minute: '2-digit',
 		second: '2-digit',
@@ -45,11 +83,11 @@ export function formatTime(value: string | Date | null | undefined): string {
 	}).format(d);
 }
 
-/** `lun 15 ago` — etiquetas cortas para el eje del gráfico de ventas. */
-export function formatDayLabel(value: string | Date | null | undefined): string {
+/** `lun 15 ago` / `Mon, Aug 15` — etiquetas cortas para el eje del gráfico. */
+export function formatDayLabel(value: string | Date | null | undefined, locale?: string): string {
 	const d = toDate(value);
 	if (!d) return '—';
-	return new Intl.DateTimeFormat('es-CR', {
+	return new Intl.DateTimeFormat(tag(locale), {
 		weekday: 'short',
 		day: 'numeric',
 		month: 'short'
@@ -57,12 +95,12 @@ export function formatDayLabel(value: string | Date | null | undefined): string 
 }
 
 /** `hace 5 min`, `hace 2 h`. Para el listado de movimientos de caja. */
-export function formatRelative(value: string | Date | null | undefined): string {
+export function formatRelative(value: string | Date | null | undefined, locale?: string): string {
 	const d = toDate(value);
 	if (!d) return '—';
 	const diffSeconds = Math.round((d.getTime() - Date.now()) / 1000);
 	const abs = Math.abs(diffSeconds);
-	const rtf = new Intl.RelativeTimeFormat('es-CR', { numeric: 'auto' });
+	const rtf = new Intl.RelativeTimeFormat(tag(locale), { numeric: 'auto' });
 
 	if (abs < 60) return rtf.format(Math.round(diffSeconds), 'second');
 	if (abs < 3600) return rtf.format(Math.round(diffSeconds / 60), 'minute');

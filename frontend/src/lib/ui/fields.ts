@@ -82,10 +82,20 @@ export const F = {
 	documentLegend: () => femenino(m.field_document_legend()),
 	documentFarewell: () => masculino(m.field_document_farewell()),
 	documentNotes: () => femeninoPlural(m.field_document_notes()),
+	locale: () => masculino(m.field_locale()),
+	documentLocale: () => masculino(m.field_document_locale()),
 
 	einvoicingEnvironment: () => masculino(m.field_einvoicing_environment()),
 	einvoicingActivity: () => femenino(m.field_einvoicing_activity()),
 	einvoicingBranch: () => femenino(m.field_einvoicing_branch()),
 	einvoicingTerminal: () => femenino(m.field_einvoicing_terminal()),
-	einvoicingAtvUser: () => masculino(m.field_einvoicing_atv_user())
+	einvoicingAtvUser: () => masculino(m.field_einvoicing_atv_user()),
+
+	// ---------------------------------------------- panel de soporte (F3)
+	companyName: () => masculino(m.field_company_name()),
+	affiliate: () => masculino(m.field_affiliate()),
+	companyNumber: () => masculino(m.field_company_number()),
+	plan: () => masculino(m.field_plan()),
+	companyState: () => masculino(m.field_company_state()),
+	expiresOn: () => femenino(m.field_expires_on())
 };
