@@ -65,6 +65,22 @@ efectivo contado sin poder cuadrarlo es peor que perder una venta.
 **RN-2.** El bloqueo por vencimiento nunca ocurre a mitad de una venta en curso:
 se evalúa al abrir la pantalla de ventas, no al cobrar.
 
+**RN-31.** El vencimiento lo pone **el calendario, no una tarea manual**. Una
+compañía `activa` cuya fecha ya pasó está vencida, y el sistema la trata como
+tal aunque nadie haya tocado la columna. El estado guardado sigue siendo el que
+puso soporte —el panel muestra los dos—, pero el que manda es el efectivo. La
+alternativa es que el producto deje de cobrar el día que nadie mire.
+
+Sin fecha de vencimiento no hay gracia que calcular, y entonces no hay gracia:
+falla cerrado. Que una compañía marcada `vencida` sin fecha quede en solo
+lectura es lo peor que le puede pasar a quien olvidó escribir un dato; vender
+gratis para siempre es lo peor que le puede pasar al negocio.
+
+**RN-32.** *Entrar como* es de **solo lectura**. Soporte entra a diagnosticar
+(§3), así que su visita ve todo y no escribe nada. Si hay que cambiarle algo a
+un cliente se le pide a su administrador, o se le crea una membresía de verdad
+—que se ve en la lista de usuarios y no depende de que nadie se acuerde—.
+
 ---
 
 ## 3. Actores
@@ -284,11 +300,24 @@ factura es para el cliente y para Hacienda, no para el cajero: una compañía
 costarricense emite en español aunque su cajero use el POS en portugués. Son dos
 ajustes distintos y el del documento vive en Configuración.
 
-**RN-30.** El **backend no escribe texto para una persona**. Devuelve un código
-y los datos —`{"code": "insufficient_stock", "product": "Arroz", "available": 2}`—
-y el POS arma la frase. Hoy produce 68 mensajes en español que el POS muestra
-tal cual, y con eso un cajero brasileño vería media aplicación en su idioma y
-los errores en español, que es justo cuando más necesita entender.
+**RN-30.** **Ninguna capa que no sea la interfaz escribe texto para una
+persona.** El backend, el dominio de las dos aplicaciones y los adaptadores
+devuelven un código y los datos —`{"code": "insufficient_stock", "product":
+"Arroz", "available": 2}`— y la interfaz arma la frase.
+
+El caso que la motivó es el backend: producía en español todos sus «no», y el
+POS los mostraba tal cual, así que un cajero brasileño vería media aplicación en
+su idioma y los errores en español, que es justo cuando más necesita entender.
+Pero la regla no cierra si se detiene en el borde HTTP —el dominio le entregaba
+la frase al adaptador y el adaptador la reenviaba— ni si se detiene en el
+backend: el dominio del POS devolvía frases, los lectores de archivos escribían
+las suyas y la capa de servidor las propias. Una capa que arma la oración tiene
+que saber el idioma de la pantalla, y entonces no es dominio.
+
+Vale también para los **valores por omisión** que acaban impresos —el mensaje de
+agradecimiento del tiquete, la leyenda legal—: un texto que se manda de fábrica
+en español sale en español en la factura de una compañía brasileña. Se siembran
+al dar de alta la compañía, que es cuando se conoce su idioma (RF-6).
 
 ## 6. Requisitos funcionales
 

@@ -86,14 +86,22 @@ docker compose exec fastapi python bootstrap.py \
     --nombre "Mi negocio" --email admin@ventasys.cr --password admin123
 python seed.py --ventas 35                    # datos de prueba
 
+# Y la cuenta de soporte, que administra la plataforma (F3). Sin compañía.
+docker compose exec fastapi python bootstrap.py --soporte \
+    --email soporte@ventasys.cr --password soporte123
+
 cd frontend && npm run dev                    # POS en :5173
 ```
 
 `bootstrap.py` da de alta una compañía con su sucursal, su terminal y su primer
 administrador. Es el único guion que habla con la base directamente, y tiene que
 serlo: no hay sesión sin membresía ni membresía sin compañía, así que la primera
-no se puede crear por la API. `seed.py` sí va por HTTP y necesita que la compañía
-ya exista.
+no se puede crear por la API. Lo mismo con `--soporte`: no hay API que otorgue un
+permiso que todavía nadie tiene. `seed.py` sí va por HTTP y necesita que la
+compañía ya exista.
+
+Desde F3 las compañías también se dan de alta **desde el panel** (`/admin`), con
+el mismo código: `app/services/crud_company.py`.
 
 Para desarrollar sin backend: `POS_MOCK=1` en `frontend/.env`. El modo simulado
 tiene **dos** compañías: la primera con catálogo y ventas, la segunda vacía como
@@ -105,6 +113,14 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
 - **El dinero se calcula en el servidor**, releyendo los precios del backend.
   Toda aritmética monetaria pasa por `$lib/money.ts`, que redondea a 2 decimales
   en cada paso.
+- **El idioma sale del token**, no del navegador. Lo resuelve el backend al emitir
+  la sesión —lo de la persona, si no lo de la compañía, si no `es`— y viaja como
+  `loc`. En el POS lo lee la estrategia `custom-session` de
+  `hooks.server.ts`, y `paraglideMiddleware` lo guarda por petición
+  (AsyncLocalStorage). La cookie `PARAGLIDE_LOCALE` es **el espejo para el
+  navegador**, nunca la fuente: después de hidratar no hay token que leer porque
+  la cookie de sesión es httpOnly. Cambiar de idioma significa emitir un token
+  nuevo.
 - **La moneda y el impuesto se configuran**, no se escriben en el código. Salen
   de `/configuracion` (tabla `settings`) vía `$lib/settings.ts`. En un `load` o
   una acción hay que leerlos con `loadSettings()` y pasar la tasa explícita a
@@ -115,8 +131,23 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   lo que se cobró.
 - **La hora de las ventas la pone el backend**, nunca el cliente. El arqueo de
   caja depende de comparar marcas del mismo reloj.
-- **Los permisos se aplican en el servidor** (`requireUser`, `requireAdmin` en
-  cada `load` y cada `action`). Esconder un botón no es control de acceso.
+- **Los permisos se aplican en el servidor** (`requireUser`, `requireAdmin`,
+  `requireSoporte` en cada `load` y cada `action`). Esconder un botón no es
+  control de acceso.
+- **Soporte y el POS son dos aplicaciones en el mismo despliegue.** El panel vive
+  en `/admin` (API: `/support`) y su sesión **no tiene compañía** (RN-4): su
+  token no lleva `cid`, así que el filtro de `tenancy.py` le hace fallar cerrado
+  cualquier consulta de negocio. Para ver los datos de un cliente tiene que
+  *entrar como* esa compañía, y eso es **solo lectura** y queda en bitácora
+  (RN-32). Las dos puertas se cierran en los dos sentidos y responden **403, no
+  un redirect**: el token vale, lo que no vale es para esto.
+- **Quien no paga deja de vender, no deja de entrar.** El estado de la
+  suscripción se evalúa en **cada petición** —`domain/subscription.py`, contra la
+  fecha de hoy (RN-31)— y el bloqueo de escritura vive en un solo sitio,
+  `get_current_user`, con sus dos excepciones escritas y vigiladas
+  (`tests/test_suscripcion.py`). No va en el token a propósito: ahí quedaría
+  congelado hasta el siguiente login y desbloquearía tarde, justo cuando el
+  cliente acaba de pagar.
 - **El modo mock se mantiene sincronizado.** Un endpoint nuevo en FastAPI va
   también a `frontend/src/lib/server/mock/handler.ts`, con contrato idéntico.
 - **Los colores salen de los tokens de `app.css`.** Hay tema claro y oscuro. El
@@ -202,9 +233,47 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   código esté bien —`npm run check` y las pruebas de punta a punta pasan, porque
   esas levantan su propio servidor—. Se arregla reiniciando `npm run dev`; el
   síntoma engaña porque parece que se rompió lo último que se tocó.
+- **Un `vite dev` olvidado también reescribe la carpeta de Paraglide**, y el
+  síntoma es peor. Cada servidor de desarrollo vigila `messages/` y recompila
+  `src/lib/paraglide/` cuando un catálogo cambia; si además corre `npm run
+  check`, los dos escriben la misma carpeta y `svelte-check` la lee a medio
+  escribir. Salen **cientos de errores** —hasta 900, uno por mensaje— diciendo
+  `Cannot find module './es.js'` o `File 'pt.js' is not a module`: ninguno tiene
+  que ver con lo que se acaba de tocar. La pista es que **el segundo `npm run
+  check` seguido da 0**. Antes de creerle a un muro de errores así, `Get-Process
+  node` y contar cuántos hay: en agosto de 2026 había seis de este proyecto, del
+  16 y el 22, y hacían que el primer `check` después de editar un catálogo
+  mintiera siempre.
+- **Las pruebas de integración del backend hablan con el contenedor, y la imagen
+  hornea el código.** `docker-compose.test.yml` no monta `app/` como volumen, así
+  que después de cambiar el backend hay que
+  `docker compose -f docker-compose.test.yml up -d --build` o `pytest` seguirá
+  probando el código de la última construcción. El síntoma engaña: la prueba
+  nueva falla señalando lo que uno acaba de escribir.
+- **El estado del modo simulado se guarda en `.data/mock-db.json`.** Un archivo
+  de una versión anterior del seed sobrevive al cambio, así que al tocar el seed
+  hay que subir `SEED_VERSION` en `mock/db.ts`; si no, la prueba de punta a punta
+  falla señalando la pantalla, que es el único sitio donde no está el problema.
+- **Un catálogo nuevo hay que declararlo en `project.inlang/settings.json`.** El
+  `pathPattern` lista los archivos **uno por uno**. Uno que no esté ahí existe,
+  se traduce a los tres idiomas, pasa las pruebas de paridad de `catalogs.test.ts`
+  —tiene las mismas claves y los mismos parámetros— y **Paraglide no lo
+  compila**: `m.mi_clave()` no existe. El síntoma son cientos de «Property
+  'admin_x' does not exist» señalando las pantallas, que es el único sitio donde
+  no está el problema. Hay una prueba que lo caza desde F3, en los dos sentidos
+  (catálogo sin declarar y patrón sin archivo).
+- **Una prueba de punta a punta que cambia el estado del demo se lo cambia a
+  todas.** El simulado guarda su estado en `.data/mock-db.json` y una prueba que
+  falla a mitad no restaura nada: suspenderle la suscripción a la compañía 1
+  tumbó trece pruebas de otros archivos, todas señalando la pantalla de ventas.
+  La salida no es restaurar mejor sino **no tocar lo que otros usan**: la prueba
+  da de alta su propia compañía y juega con esa.
 - El modelo y la migración tienen que decir lo **mismo**. Una instalación nueva
   crea el esquema con `create_all` y una vieja lo trae de la migración: si
-  difieren, el mismo código se comporta distinto en cada una.
+  difieren, el mismo código se comporta distinto en cada una. En F3 apareció el
+  caso al revés: `audit_log` tenía sus índices solo en la migración, así que la
+  base de pruebas —hecha con `create_all`— no los tenía. Ahora los declara el
+  modelo también.
 
 ## Agentes del proyecto
 

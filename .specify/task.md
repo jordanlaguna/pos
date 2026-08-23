@@ -8,7 +8,7 @@
 > importe para quien retome va a `progress.json`; este archivo es la lista de
 > trabajo, no el registro histórico.
 >
-> Actualizado: 2026-08-22
+> Actualizado: 2026-08-23
 
 ---
 
@@ -408,27 +408,208 @@ el login de dos pasos.
 
 ---
 
-## F3 · Soporte y suscripción
+## F3 · Soporte y suscripción — ✅ terminada 2026-08-23
 
-- [ ] **T-301** Rol `soporte` (usuario sin compañía) y `requireSoporte` en el
+> Las diez tareas, de T-301 a T-310. VentaSys pasó de ser un POS multiempresa a
+> un producto que se administra: se dan de alta clientes, se les cambia la
+> suscripción, se entra a diagnosticar y todo queda en bitácora. El diseño está
+> en [plan.md §4](plan.md); acá queda lo que se aprendió haciéndolo.
+>
+> **Migración 004** (`users.is_support` y el índice de la bitácora por fecha).
+
+- [x] **T-301** Rol `soporte` (usuario sin compañía) y `requireSoporte` en el
       servidor.
-- [ ] **T-302** Grupo de rutas `/admin`, separado de `(app)`. Un usuario de
+
+      **Hecho el 2026-08-23.** La marca es una columna, `users.is_support`, y no
+      la ausencia de membresías como decía el plan: quien rechaza la única
+      invitación que tenía también se queda sin ninguna, y quedaría
+      administrando el producto por descarte. **La ausencia de algo no puede ser
+      un permiso.**
+
+      Su token no lleva `cid`, y eso es todo el diseño: el filtro de
+      `tenancy.py` le hace fallar cerrado cualquier consulta a una tabla de
+      negocio, así que para ver los datos de un cliente **tiene que** entrar
+      como esa compañía —que es lo que pide RN-4 y lo que deja rastro—.
+
+      `require_soporte` relee `is_support` de la base en cada petición, igual que
+      el rol (T-221): quitarle el permiso a alguien surte efecto en su siguiente
+      clic. La primera cuenta se crea con `bootstrap.py --soporte`, por lo mismo
+      que la primera compañía.
+
+- [x] **T-302** Grupo de rutas `/admin`, separado de `(app)`. Un usuario de
       compañía recibe 403; soporte recibe 403 en las pantallas del POS.
-- [ ] **T-303** Listado de compañías con afiliado, estado, plan, vencimiento y
+
+      **Hecho el 2026-08-23**, y las dos puertas se cierran en los dos sentidos:
+      `requireSoporte` en `/admin/+layout.server.ts` y `requireUser` rechazando
+      a soporte en `(app)`. **403 y no un redirect**, en los dos casos: el token
+      vale, lo que no vale es para esto, y mandarlo al login lo dejaría en un
+      círculo sin decirle nunca qué pasó.
+
+      El API va bajo `/support` y las pantallas bajo `/admin`: `admin` ya es el
+      rol del administrador de una compañía y dos cosas distintas con el mismo
+      nombre en el mismo API se confunden; en la barra de direcciones, en
+      cambio, `/admin` es lo que se lee bien.
+
+      El armazón del panel **no reusa el layout del POS**. No hay moneda que
+      configurar, ni marca del negocio, ni compañía en el menú: reusarlo habría
+      significado llenarlo de condicionales para apagar la mitad, y esa mitad es
+      justo la que RN-4 dice que no existe.
+
+- [x] **T-303** Listado de compañías con afiliado, estado, plan, vencimiento y
       uso. RF-5.
-- [ ] **T-304** Alta de compañía: datos, plan, administrador inicial. Deja
+
+      **Hecho el 2026-08-23.** El uso se cuenta con **cuatro consultas
+      agrupadas** por `company_id` y no una por compañía y métrica: con veinte
+      clientes serían ochenta viajes a la base para pintar una tabla.
+
+      El monto del mes se muestra **sin símbolo de moneda**, y no es un olvido:
+      cada compañía tiene la suya configurada y el panel no lee la configuración
+      de veinte negocios para una tabla. Un símbolo por omisión diría «₡» sobre
+      las ventas de un cliente que cobra en dólares, que es peor que no decir
+      nada.
+
+- [x] **T-304** Alta de compañía: datos, plan, administrador inicial. Deja
       creadas su sucursal, su terminal y su configuración por omisión. RF-6.
-- [ ] **T-305** Cambiar estado y fecha de vencimiento. RF-7.
-- [ ] **T-306** *Entrar como*: token de la compañía destino, vencimiento corto,
+
+      **Hecho el 2026-08-23.** Las seis filas —compañía, sucursal, terminal,
+      configuración, identidad y membresía— las crea `crud_company.dar_de_alta`,
+      que es **la misma función que usa `bootstrap.py`**. Antes la lista vivía en
+      el guion; copiarla al panel habría dejado dos altas que se parecen y que
+      dejarán de parecerse el día que haya una séptima fila.
+
+      **Los textos del documento los manda el POS**, como estaba previsto: nacen
+      vacíos (T-816), el backend no tiene catálogo ni sabe en qué idioma, y el
+      formulario los resuelve con `initialDocumentTexts(document_locale)` —el
+      idioma **de la factura**, no el de la pantalla de quien da de alta—.
+
+      Dos cosas que no estaban en la tarea y hubo que decidir:
+
+      - **El par (afiliado, compañía) se puede dejar en blanco** y lo calcula el
+        backend. Es el único que puede hacerlo sin que dos altas simultáneas
+        elijan el mismo número.
+      - **Un correo que ya existe no crea otra cuenta**: se le agrega la
+        membresía y **nace pendiente** (T-229). Soporte puede sumar a alguien
+        que ya trabaja en otra compañía, pero no puede darle acceso a su nombre.
+        `bootstrap.py` sigue naciendo aceptada, y por eso `DatosDeAlta` lleva
+        `aceptar_membresia`: quien corre el guion es el operador del sistema y no
+        hay a quién preguntarle.
+
+- [x] **T-305** Cambiar estado y fecha de vencimiento. RF-7.
+
+      **Hecho el 2026-08-23**, y **con el plan además del estado y la fecha**.
+      RF-7 nombra dos y son tres: una suscripción *es* en qué plan está, en qué
+      estado y hasta cuándo. Sin el plan, el panel no puede subirle el plan a un
+      cliente que creció, que es la mitad de las llamadas que va a recibir.
+
+      El efecto es inmediato porque el estado se evalúa en cada petición (T-308):
+      marcar `suspendida` deja al cajero afuera en su siguiente clic, y volver a
+      `activa` lo devuelve igual de rápido.
+
+      El detalle de la bitácora se arma con el antes y el después —`estado activa
+      → suspendida, vence 2026-09-30`— porque «cambió el estado» no sirve para
+      nada dentro de seis meses.
+
+- [x] **T-306** *Entrar como*: token de la compañía destino, vencimiento corto,
       motivo obligatorio, franja permanente en pantalla. RF-8, RN-4.
-- [ ] **T-307** Bitácora: se escribe en toda acción de soporte y se consulta
+
+      **Hecho el 2026-08-23, y es de solo lectura** (RN-32, que se agregó al
+      spec por esto). RF-8 dice que soporte entra a **diagnosticar**, así que la
+      visita ve todo y no escribe nada. Es la decisión más discutible de la fase
+      y la más fácil de aflojar después, así que quedó escrita: si un día hay que
+      dejar que soporte arregle algo, se abre a propósito y con su bitácora, no
+      por descuido.
+
+      Tres cosas más, todas visibles en pantalla porque quien entra tiene que
+      saber qué puede hacer: **motivo obligatorio** (mínimo 5 caracteres, va a la
+      bitácora completo y recortado al token para la franja), **media hora** de
+      vigencia, y la **franja permanente** arriba de todo —viaja en `/users/me`,
+      no una sola vez al entrar: una franja que se pierde al navegar no es
+      permanente—.
+
+      La sesión de soporte se guarda en una cookie aparte
+      (`ventasys_support`) mientras dura la visita, así que «volver al panel» no
+      pide la contraseña otra vez. Y si la media hora se acaba,
+      `hooks.server.ts` la restaura en vez de mandar a soporte al login.
+
+- [x] **T-307** Bitácora: se escribe en toda acción de soporte y se consulta
       desde el panel. RF-9.
-- [ ] **T-308** Aplicar el estado de suscripción en cada carga de pantalla, con
+
+      **Hecho el 2026-08-23**, con guardián: `test_soporte.py` lee el árbol de
+      sintaxis del router y tumba `pytest` si un endpoint que escribe no llama a
+      `registrar`. Las tres acciones de hoy están probadas una por una; el
+      guardián es para la cuarta.
+
+      Guarda también **los login de los clientes**, y es a propósito: la pregunta
+      que se hace de verdad no es «qué hizo soporte» sino «por qué este cajero no
+      puede entrar». Se puede filtrar por compañía y por acción, y el filtro es
+      un GET: produce una URL que se pega en un correo y se abre mañana.
+
+      La consulta usa `outerjoin` en las tres tablas: la bitácora tiene que
+      sobrevivir a lo que narra. Un `join` normal haría desaparecer las líneas de
+      un cliente dado de baja justo cuando más importan.
+
+- [x] **T-308** Aplicar el estado de suscripción en cada carga de pantalla, con
       la gracia de 7 días y el aviso previo. RF-10, RF-11, RN-1, RN-2.
-- [ ] **T-309** Validar los límites del plan al crear terminales, sucursales y
+
+      **Hecho el 2026-08-23.** `domain/subscription.py` es aritmética pura
+      —estado guardado + fecha + hoy— con 30 pruebas, y de ahí salió **RN-31**:
+      el vencimiento lo pone el calendario y no una tarea manual, porque la
+      alternativa es que el producto deje de cobrar el día que nadie mire.
+
+      **El bloqueo va en un solo sitio**: `get_current_user` corta toda petición
+      con método que escribe. Es la misma decisión que el filtro de compañía en
+      un escuchador de SQLAlchemy —cuarenta endpoints que hay que acordarse de
+      tocar no son un control de acceso— y tiene su guardián: `test_suscripcion.py`
+      comprueba que toda ruta que escriba pase por ahí, que las dos excepciones
+      (`/cash/close` por RN-1 y `/auth/locale`) sigan siendo rutas que existen, y
+      que ninguna sobre.
+
+      El estado **no va en el token**: se relee en cada petición. En el token
+      quedaría congelado hasta el próximo login, que es lo peor de los dos
+      mundos —bloquea tarde y desbloquea tarde—. Así un pago que entra hoy le
+      devuelve el POS al cliente en el siguiente clic.
+
+      En el POS, el aviso va en **todas** las pantallas (RF-11) y el bloqueo solo
+      en **ventas** (RN-2): es la única donde la sorpresa cuesta plata. En las
+      demás, lo que se pierde al chocar con el «no» del backend es un clic.
+
+- [x] **T-309** Validar los límites del plan al crear terminales, sucursales y
       usuarios. RF-12.
-- [ ] **T-310** Comprobar de punta a punta: alta de compañía nueva, login de su
+
+      **Hecho el 2026-08-23.** `domain/limits.py` decide, y decide dos cosas que
+      había que elegir a mano: **un máximo en 0 bloquea** —es lo que queda cuando
+      alguien inserta un plan a medio llenar, y molestar es mejor que regalar el
+      producto— y **−1 no limita**, que no se teclea por accidente.
+
+      **Rompió la batería existente, y eso fue el hallazgo.** El fixture `cajero`
+      crea un usuario por prueba —el arqueo se delimita por `user_id`, así que
+      compartirlo haría que una prueba viera el turno de otra— y son casi veinte
+      pruebas. Con el plan «Comercio» en 10 usuarios, a partir de la novena la
+      batería empezaba a fallar señalando el alta de usuarios, que es lo único
+      que no estaba mal. Las compañías de prueba pasaron a un plan sin límite
+      (`PLAN_DE_PRUEBAS` en `conftest.py`, con el porqué escrito) y el límite se
+      prueba aparte con un plan de dos.
+
+      Los puntos donde hoy se aplica son los dos que suman gente a una compañía
+      y el alta —que verifica que el plan admita la sucursal y la caja con las
+      que nace—. Sucursales y terminales no tienen CRUD todavía (RF-26, F6);
+      cuando lo tengan, la función ya está y con prueba.
+
+- [x] **T-310** Comprobar de punta a punta: alta de compañía nueva, login de su
       administrador, venta, y que no ve nada de la otra compañía.
+
+      **Hecho el 2026-08-23** en `tests/e2e/soporte.spec.ts`: 8 pruebas. El alta
+      completa desde el formulario, el login de su administrador, y que su
+      catálogo esté **vacío** —que es lo que prueba el aislamiento desde la
+      interfaz—. Más las dos puertas de T-302, el aviso de vencimiento, la
+      suspensión, la visita con su franja y la bitácora con su filtro.
+
+      **Una prueba que suspendía la compañía del demo tumbó trece pruebas de
+      otros archivos.** Restauraba el estado al final, pero falló a mitad y dejó
+      el demo suspendido en `.data/mock-db.json`; las pruebas que venden ahí
+      empezaron a fallar señalando la pantalla de ventas. Ahora la prueba **da de
+      alta su propia compañía** y suspende esa: la salida no es restaurar mejor
+      sino no tocar lo que otros usan.
 
 ---
 
@@ -532,7 +713,7 @@ deducir el formato.
 
 ---
 
-## F8 · Multi-idioma
+## F8 · Multi-idioma — ✅ terminada 2026-08-23
 
 Español, inglés y portugués. El español en **usted**, no en voseo (RN-22).
 
@@ -543,33 +724,39 @@ con la cadena adentro es una pantalla que hay que volver a abrir. Escribirla con
 `t('ventas.cobrar')` desde el primer día cuesta lo mismo.
 
 > **El mecanismo ya existe, y F3 puede empezar** (2026-08-22). Están hechas
-> T-801 a T-805, T-812 y T-815: la biblioteca elegida y montada, los códigos del
-> backend, las 18 pantallas y las tres plantillas en catálogo, el usted, y la
-> prueba que tumba la build si alguien escribe una cadena dentro de un
-> componente o dentro de una acción.
+> T-801 a T-805, T-812, T-815 y T-816: la biblioteca elegida y montada, los
+> códigos del backend, las 18 pantallas y las tres plantillas en catálogo, el
+> usted, y la prueba que tumba la build si alguien escribe una cadena dentro de
+> un componente, dentro de una acción o dentro del dominio.
 >
-> **Lo que queda de F8 no bloquea F3**, porque es poder cambiar de idioma y no
-> poder escribir pantallas bien: los catálogos de inglés y portugués (T-807,
-> T-808) con su red (T-813), las fechas por locale (T-806), de dónde sale el
-> idioma (T-809, T-810, T-811) y el flujo de punta a punta en tres idiomas
-> (T-814). El orden razonable es **T-813 antes de T-807 y T-808**: hoy una clave
-> que falte en `en` o `pt` cae al español sin avisar, así que sin esa prueba los
-> catálogos nuevos se llenarían a ciegas.
+> **F8 está terminada** (2026-08-23). Las 17 tareas, de T-801 a T-817.
+>
+> El POS habla **español, inglés y portugués**: 915 claves por idioma, con una
+> prueba que las compara —claves, parámetros y nada huérfano—, el idioma saliendo
+> del token, selector para la persona y para la compañía, fechas por locale, y el
+> documento impreso en el idioma de la compañía y no en el de la pantalla
+> (RN-29). El flujo completo se prueba en los tres idiomas (T-814).
+>
+> El orden importó: primero la red (T-813), después los catálogos. Con Paraglide,
+> una clave que falta cae al idioma base **en silencio** y un parámetro que falta
+> también, así que llenar los catálogos antes de la prueba habría sido llenarlos
+> a ciegas.
 
-### Una decisión pendiente, del dueño del spec
+### La decisión que faltaba — tomada el 2026-08-23
 
-**RN-30 dice «el backend no escribe texto para una persona». Lo implementado es
-más amplio: ninguna capa que no sea la interfaz lo escribe.** Salió así porque la
-regla, aplicada solo al borde HTTP, no cerraba —el dominio del backend mandaba
-«el monto debe ser mayor que cero» y el adaptador lo reenviaba; el dominio del
-POS devolvía frases; `$lib/server/api.ts` escribía las suyas—. Hoy los cuatro
-sitios devuelven código y datos, y la frase se arma en un solo lugar por lado:
-`ui/messages.ts` en el POS, y nada en el backend.
+**RN-30 se reescribió.** Decía «el backend no escribe texto para una persona» y
+ahora dice **«ninguna capa que no sea la interfaz escribe texto para una
+persona»**, que es lo que se venía aplicando: la regla, puesta solo en el borde
+HTTP, no cerraba —el dominio del backend mandaba «el monto debe ser mayor que
+cero» y el adaptador lo reenviaba; el dominio del POS devolvía frases;
+`$lib/server/api.ts` escribía las suyas—. Los cuatro sitios devuelven código y
+datos y la frase se arma en un solo lugar por lado: `ui/messages.ts` en el POS y
+nada en el backend.
 
-Falta decidir si **RN-30 se reescribe** para decir eso, o si se deja como está y
-lo demás queda como criterio de implementación. No se toca `spec.md` sin esa
-respuesta: es el documento del QUÉ, y ampliar un requisito por iniciativa propia
-es inventarse el alcance.
+El requisito **también cubre los valores por omisión que acaban impresos**, que
+es lo que apareció al escribir el guardián de T-816. Un `spec.md` ampliado sin
+que la decisión estuviera tomada habría sido inventarse el alcance; con la
+decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ### El backend deja de escribir texto
 
@@ -814,31 +1001,193 @@ es inventarse el alcance.
       obligatorio»—. Y la prueba de `integer` lo **afirmaba**. Ahora la
       concordancia viaja con el rótulo (`m`/`f`/`mp`/`fp`) y la elige una
       variante de Paraglide. Verificado contra el backend real.
-- [ ] **T-806** `ui/format.ts` deja de formatear fechas fijo en es-CR: los meses
+- [x] **T-806** `ui/format.ts` deja de formatear fechas fijo en es-CR: los meses
       y el orden dependen del locale.
-- [ ] **T-807** Catálogo de inglés. Con T-804 terminada son **893 claves en 18
-      archivos**; los de `en` y `pt` están creados y vacíos, así que hoy todo cae
-      al español en silencio (por eso T-813 es lo que hay que hacer antes, no
-      después).
-- [ ] **T-808** Catálogo de portugués (Brasil). **Solo la interfaz**: la factura
+
+      **Hecho el 2026-08-23.** `15/08/2026` en español y portugués, `08/15/2026`
+      en inglés, y los meses cortos del eje del gráfico cambian de nombre. La
+      etiqueta de Intl lleva región (`es-CR`, `en-US`, `pt-BR`) porque el idioma
+      solo no dice el orden: `en` a secas se resuelve distinto según dónde corra,
+      y el orden de la fecha es justo lo que cambia entre `en-US` y `en-GB`.
+
+      Cada función acepta un `locale` explícito, y no es adorno: las tres
+      plantillas de documento pasan el suyo (T-811). La fecha de prueba es el
+      **15** de agosto a propósito: con un día menor que 12, un orden equivocado
+      pasa inadvertido.
+
+      **La hora no depende del idioma, a propósito**: 24 h en los tres. Son horas
+      de turnos de caja, se leen en columna, y `2:05 PM` junto a `14:05` es una
+      columna que no se puede comparar de un vistazo. La tarea pedía «los meses y
+      el orden», que es lo que sí cambia. 7 pruebas en `format.test.ts`.
+- [x] **T-807** Catálogo de inglés. Medidas el 2026-08-23 son **898 claves en 18
+      archivos** (893 al cerrar T-804; las cinco de diferencia son de las dos
+      jornadas siguientes).
+
+      **Terminado el 2026-08-23: 898 de 898**, los 18 catálogos. `en` ya no
+      aparece en `SIN_TRADUCIR`, así que la prueba de T-813 lo exige completo
+      —claves, parámetros y nada huérfano— y no puede volver a quedarse atrás sin
+      que la build lo diga.
+
+      **El inglés no tiene género pero sí concordancia de número.** El sitio que
+      llama sigue pasando `concord` (T-815), así que la traducción tiene que
+      declararlo o el parámetro se pierde; y los cuatro casos del español se
+      doblan en dos, no en uno: `mp` y `fp` van a «are required» y el resto a «is
+      required». Hoy solo dos campos son plurales (`notes` y `documentNotes`) y
+      en inglés también lo son. Comprobado armando las frases: «The notes are
+      required.», «The amount is required.»
+
+      **Glosario, para que los 12 que faltan y el portugués no se contradigan:**
+
+      | Español | Inglés | Por qué no la obvia |
+      |---|---|---|
+      | Caja (la sección) | Cash register | «Cash» se confunde con el método de pago |
+      | Caja (la terminal) | Register | En `nav_branch_terminal`, junto a Branch |
+      | Clientes | Customers | «Clients» es de despacho de abogados |
+      | Cédula | ID number | No es un número de seguro social ni un pasaporte |
+      | Razón social | Legal name | |
+      | Leyenda | Legal notice | |
+      | Tiquete | Receipt | |
+      | Anular | Void | «Cancel» ya es el botón de cerrar un diálogo |
+      | Entrada de mercadería | Entry | El contexto lo da la pantalla |
+      | Sin identificar | (unidentified) | Va donde va un nombre de producto: «the product unidentified» es inglés roto y «the product (unidentified)» se lee como el nombre que falta |
+
+      Lo que **no** se traduce, y ya está decidido: los valores de
+      `PAYMENT_METHODS` (son dato de `sales.payment_method`), los rótulos de
+      `ID_TYPES` (nombre legal costarricense) y la marca.
+
+      **Todavía no se puede ver en pantalla**: con `strategy: ['baseLocale']`
+      todo se sirve en español hasta que T-809 ponga el idioma en el token. Lo
+      traducido se comprueba llamando a los mensajes con `{ locale: 'en' }`, que
+      es lo que hay hasta entonces. **T-814 —el flujo en tres idiomas— es lo que
+      de verdad cierra esta tarea**, y depende de T-809.
+
+      Dos rótulos quedaron con una decisión adentro, no con una traducción
+      literal: `invoices_col_tax` dice «IVA» en español y **«Tax» en inglés**,
+      porque el nombre del impuesto se configura y el encabezado no puede
+      afirmar cuál es; y `entries_source_xml` pasa de «XML Hacienda» a «Tax
+      authority XML», por lo mismo que en el resto del catálogo se habla de «the
+      tax authority» y no de Hacienda: quien lee la interfaz en inglés puede no
+      saber qué es Hacienda.
+- [x] **T-808** Catálogo de portugués (Brasil). **Solo la interfaz**: la factura
       electrónica sigue siendo la de Hacienda Costa Rica. Vender en Brasil
       implica NF-e —otro esquema, otra autoridad, otro certificado— y sería una
       fase aparte.
 
+      **Terminado el 2026-08-23: los 18 catálogos, 915 claves.** Los tres idiomas
+      tienen ahora las mismas 915, así que `SIN_TRADUCIR` quedó vacía y se borró
+      junto con la prueba que la vigilaba: una lista de excepciones vacía es una
+      prueba que no puede fallar y aun así tranquiliza.
+
+      **La concordancia de género no se pudo copiar del español, y eso cambió la
+      redacción.** La concordancia la declara el campo una sola vez en
+      `$lib/ui/fields.ts`, y se escribió desde el español: «la cédula» es
+      femenino y «o documento» es masculino, y el mismo campo no puede ser los
+      dos. Así que los dos mensajes que concuerdan en género —obligatorio, no
+      válido— se redactaron en portugués de una forma que no depende del género:
+      «{field}: campo obrigatório». La alternativa era elegir palabras
+      portuguesas por el género del español, que es escribir mal para no
+      contradecir una constante.
+
+      Glosario propio del portugués, sobre el del inglés: Estoque (no
+      «inventário»), Caixa, Fatura, Devoluções, Relatórios, Usuários, Filial,
+      Fornecedor, Estornar (no «cancelar», que es el botón de cerrar), Troco,
+      Dinheiro, Operador de caixa, «autoridade fiscal» por Hacienda.
+
 ### Dónde vive
 
-- [ ] **T-809** El `locale` efectivo entra en el JWT junto con la compañía y el
+- [x] **T-809** El `locale` efectivo entra en el JWT junto con la compañía y el
       rol; el `load` del layout lo lee de ahí. Orden: lo de la persona, si no lo
       de la compañía, si no `es`. Plan §8.4.
-- [ ] **T-810** Selector de idioma: en Configuración el de la compañía, en el
+
+      **Hecho el 2026-08-23.** La regla vive en `app/domain/locale.py` —pura, con
+      11 pruebas— y no en el router: descarta además lo que no se puede usar, así
+      que un `fr` guardado a mano no se propaga y un `es-CR` cae a `es`. El token
+      lo emite `_token_de_sesion`, que ahora recibe la compañía y no su id.
+
+      **En el POS entra por una estrategia de Paraglide y no por un `load`.** La
+      pantalla pide los mensajes *durante* el render, así que el idioma tiene que
+      estar puesto antes: `hooks.server.ts` registra `custom-session`, que saca el
+      `loc` del token, y `paraglideMiddleware` lo guarda por petición en
+      AsyncLocalStorage. `strategy` quedó en
+      `['custom-session', 'cookie', 'baseLocale']`, y **la misma lista está en el
+      guion `i18n`**: `svelte-check` no pasa por Vite, y cuando divergían la
+      comprobación de tipos miraba un runtime con otras estrategias.
+
+      **La cookie `PARAGLIDE_LOCALE` es un espejo, no una fuente.** Después de
+      hidratar no hay token que leer del lado del cliente —la cookie de sesión es
+      httpOnly—, así que sin ella la primera navegación sin recargar volvería al
+      español. En el servidor manda siempre el token; quien edite la cookie solo
+      se cambia el idioma a sí mismo hasta el siguiente render.
+
+      También `<html lang>` dice la verdad ahora (`%paraglide.lang%` +
+      `transformPageChunk`): de ahí salen la pronunciación de un lector de
+      pantalla y el guionado del navegador.
+
+      **En el demo, Carlos tiene el POS en inglés** y es el único. Sin eso lo
+      único comprobable sería que el reclamo viaja, no que la pantalla lo obedece:
+      `tests/e2e/idioma.spec.ts` entra como él y comprueba el menú en inglés, el
+      `lang`, que sobrevive a navegar del lado del cliente, y que a los otros dos
+      no les cambia nada. 4 pruebas, y las 24 de punta a punta en verde.
+
+      **Lo que queda atado a T-810**: el idioma cambia cuando se emite un token
+      nuevo. Hoy eso pasa al entrar y al cambiar de compañía; el selector tendrá
+      que re-emitir igual que hace «cambiar de compañía» (RF-28), o el cambio no
+      se vería hasta el siguiente login.
+- [x] **T-810** Selector de idioma: en Configuración el de la compañía, en el
       menú del usuario el suyo. RN-28.
-- [ ] **T-811** Idioma del **documento**, separado del de la pantalla. La
+
+      **Hecho el 2026-08-23.** Dos endpoints, porque son dos cosas distintas y
+      con permisos distintos:
+
+      - `POST /auth/locale` — el de la persona, cualquiera el suyo. `locale` en
+        nulo **borra la preferencia** en vez de guardar «español»: volver a
+        heredar el de la compañía no es lo mismo que elegir español, y la
+        diferencia se nota el día que el dueño cambia el idioma del negocio.
+      - `PUT /settings/locales` — los dos de la compañía (pantalla y documento),
+        solo administrador.
+
+      **Los dos devuelven un token nuevo**, y eso no es un detalle: el idioma
+      vive en el token (T-809), así que cambiarlo es emitir sesión otra vez,
+      igual que cambiar de compañía (RF-28). Sin renovar la cookie, el cambio no
+      se vería hasta el siguiente login.
+
+      En el menú va un formulario de verdad con su botón, no un `onchange`: así
+      funciona sin JavaScript como el resto del POS. **Defecto 27, encontrado
+      acá:** el `<select>` con `value={…}` se reinicia al hidratar, y eso se come
+      la elección de quien alcanzó a tocarlo antes —en una caja lenta, lo
+      normal—. Quedó sin controlar, con `selected` en cada opción. Lo encontró la
+      prueba de punta a punta: elegía «el de la compañía», el valor volvía solo a
+      «inglés», y el formulario mandaba el idioma que ya estaba puesto.
+
+      10 pruebas de integración en `backend/tests/test_idioma.py` —incluidas «lo
+      que eligió la persona le gana a la compañía» y «un cajero no puede cambiar
+      el de la compañía»— y una de punta a punta que cambia el idioma por el menú
+      y lo devuelve.
+- [x] **T-811** Idioma del **documento**, separado del de la pantalla. La
       factura es para el cliente y para Hacienda: una compañía costarricense
       emite en español aunque su cajero use el POS en portugués. RN-29.
-      **Salió más barata con T-804**: ya no toca las tres plantillas. Su texto
-      está en `messages/{locale}/documents.json` y quien lo lee es
-      `$lib/ui/documents.ts`. Lo que falta es que ese módulo lea el catálogo de
-      `document_locale` en vez del de la sesión, y el ajuste en Configuración.
+
+      **Hecho el 2026-08-23, y salió más caro de lo previsto.** La nota anterior
+      decía que «ya no toca las tres plantillas»: no era cierto. Las plantillas
+      llamaban a `m.doc_*()` directamente, que resuelve con el idioma de la
+      **sesión**; pasarles el del documento habría sido agregar un segundo
+      argumento a 84 llamadas y confiar en que nadie olvide el siguiente.
+
+      Se hizo al revés: `documentLabels(locale)` devuelve **todo el texto del
+      documento ya resuelto** y las plantillas reciben ese diccionario. Ahora no
+      tienen forma de equivocarse, porque no importan el catálogo —y eso lo
+      vigila una prueba: ninguna de las tres importa `$lib/paraglide`—. Las
+      fechas del documento también van en su idioma, por el `locale` explícito de
+      T-806.
+
+      `document_locale` viaja por `/users/me` y **no** por el token, a propósito:
+      `/users/me` se relee en cada petición, así que cambiarlo en Configuración
+      surte efecto en el siguiente clic y no en el siguiente login. No es un
+      valor de autorización, así que no necesita estar firmado.
+
+      Verificado de punta a punta con el caso exacto de RN-29: pantalla en
+      portugués, factura en español —«Cant.» y no «Qtd.»—; y la vista previa de
+      Configuración cambia de idioma sin mover la pantalla.
 
 ### Verificación — sin esto la fase no está terminada
 
@@ -881,16 +1230,138 @@ es inventarse el alcance.
       seis `<title>`— y las razones escritas. No están los nombres de tecla
       porque no hacen falta: viven en expresiones. Una excepción que no se usa es
       la que después justifica la siguiente.
-- [ ] **T-813** Prueba de que los tres catálogos tienen las mismas claves. Una
+- [x] **T-817** El guardián también vigila el texto que va **dentro de un
+      objeto**. Apareció leyendo `$lib/server/auth.ts` para T-809: había **seis
+      `error(status, { message: 'frase en español' })`** que ninguna de las dos
+      mitades de T-812 veía —el marcado no los toca y no son una llamada a
+      `formError`—. Hecho el 2026-08-23.
+
+      La lección es de la forma de la prueba: **un sumidero se declara por dónde
+      entra el texto, no por cómo se llama la función.** La primera versión
+      buscaba literales en posiciones de argumento, y acá el literal está una
+      capa más adentro.
+
+      Las cinco de `routes/**` pasaron al catálogo —son interfaz y pueden resolver
+      la frase—; la de `$lib/server/auth.ts` no, porque es un adaptador: lanza
+      `{ code: 'admin_only' }` y la frase la arma `+error.svelte`. `App.Error`
+      quedó con `message` opcional por eso. Claves nuevas:
+      `common_session_required`, `error_admin_only`, `invoice_not_found`,
+      `settings_logo_missing` y `settings_logo_undecodable`.
+- [x] **T-816** El guardián de RN-30 llega a `lib/domain` y `lib/application`
+      del POS. Apareció al tomar la decisión de arriba: la regla ahí la sostenía
+      una decisión y ninguna prueba. `layers.test.ts` no la habría visto —una
+      frase suelta no importa nada, y `$lib/paraglide` no estaba en su lista de
+      prohibidos—. Hecho el 2026-08-23.
+
+      **No se vigilan llamadas, se vigilan literales.** `formError` y `toasts`
+      viven en `ui/`, que el dominio no puede importar, así que la mitad de
+      T-812 que mira sumideros no encontraría nada nunca ahí: una prueba que no
+      puede fallar tranquiliza igual que una que funciona, y es peor. Lo que se
+      busca es la frase devuelta como valor, que es la forma en que esto se
+      colaba (`documentTitle()` devolvía «Factura electrónica»,
+      `CURRENCIES[].label` decía «Colón costarricense»).
+
+      **Dos disparadores.** Una frase es tres letras y un espacio —eso deja
+      fuera los códigos y las claves, que es casi todo lo legítimo de esas dos
+      carpetas— más la tilde y los signos de apertura, que un identificador no
+      lleva y que atrapan la palabra sola («Cédula», «Anulación»). Queda un
+      **hueco conocido y escrito**: una palabra sola sin tilde («Pendiente»)
+      pasa. No se cierra con esta forma de prueba.
+
+      Y `$lib/paraglide` entró a la lista de prohibidos del dominio, con su
+      razón aparte en el mensaje de fallo: no es un asunto de pureza —el
+      catálogo no arrastra Svelte— sino de RN-30, porque una capa que puede leer
+      el catálogo puede armar la oración, y para armarla hay que saber el idioma
+      de la petición. La aplicación ya lo rechazaba por la regla que solo le deja
+      importar el dominio; comprobado.
+
+      **Encontró dos**, y los dos eran de verdad: `thanksMessage`
+      («¡Gracias por su compra!») y `legalNotice` («Este documento no tiene
+      validez tributaria.») venían de fábrica en español dentro de
+      `domain/settings.ts` **y se imprimen**. La factura de una compañía
+      brasileña habría salido con la despedida en español hasta que alguien
+      abriera Configuración. Se vaciaron: el dominio no puede traducirlos y la
+      interfaz no puede ponerlos como respaldo del vacío, porque `optional()`
+      distingue «nunca se configuró» de «se borró a propósito» y ese respaldo
+      borraría la diferencia —quien quite la despedida la vería volver—. Los
+      siembra el alta de compañía (T-304).
+
+      Los otros cinco hallazgos son dato y quedaron como excepciones con su
+      razón: los tres métodos de pago con espacio (valor de
+      `sales.payment_method`, que se compara en reportes y plantillas) y los dos
+      rótulos de `ID_TYPES` (nombre legal del documento en Costa Rica: no se
+      traduce, se cambia por la lista de otro país).
+
+      Comprobado tumbándolo tres veces: una frase y una palabra con tilde
+      inyectadas en `domain/cart.ts`, y un `import` de `$lib/paraglide` en
+      `domain/documents.ts` y en `application/checkout.ts`. Las tres fallan
+      nombrando archivo y línea.
+- [x] **T-813** Prueba de que los tres catálogos tienen las mismas claves. Una
       clave que falta en portugués no puede aparecer como `undefined` en la
       pantalla del cajero.
       **Sube de prioridad con la decisión de T-801**: Paraglide no avisa de esto
       —una clave que falta en `en` o `pt` cae al español en silencio, comprobado—
       así que esta prueba es la única red. No es un extra de la fase: es la mitad
       del criterio 2 del plan §8.5, y se paga acá.
-- [ ] **T-814** Flujo de punta a punta en los tres idiomas: entrar, cobrar y ver
+
+      **Hecha el 2026-08-23** en `frontend/src/lib/ui/catalogs.test.ts`: 11
+      pruebas. Y **hay un tercer silencio que el plan no preveía**, medido acá:
+
+      | Lo que se rompe | Qué dice `npm run check` | Qué se ve en pantalla |
+      |---|---|---|
+      | Una clave falta en `en` | nada | la frase sale en español |
+      | **Un parámetro falta en la traducción** | **nada** | **el dato desaparece de la frase** |
+      | Una clave existe en `en` y no en `es` | nada | una función que nadie llama |
+
+      El del medio es el peor y es el que justifica que la prueba mire los
+      parámetros y no solo las claves: si `es` dice «Solo quedan {free} de
+      {product}: hay {reserved} apartadas en otra venta» y el inglés dice «Only
+      {free} left of {product}», no se ve una frase sin traducir —eso se nota—
+      sino una frase completa a la que le falta un dato. El cajero inglés no se
+      entera de que hay unidades apartadas.
+
+      **La lista de pendientes solo puede encoger.** Como faltan 1.764 claves
+      entre los dos idiomas, la prueba lleva `SIN_TRADUCIR` por archivo: un
+      catálogo se quita de ahí cuando se traduce, y desde ese momento se exige
+      completo. Va por archivo y no por clave porque una lista de 1.764 líneas no
+      se lee ni se mantiene. **Y no se puede quedar vieja**: si un catálogo
+      declarado pendiente ya está completo, la prueba falla pidiendo que lo
+      saquen —una lista de pendientes desactualizada es una prueba apagada—.
+
+      Comprobada tumbándola **cuatro veces**, una por red: un catálogo sacado de
+      la lista sin traducir (14 claves nombradas), una clave huérfana en `en`, un
+      parámetro de menos, y un catálogo completo que seguía declarado pendiente.
+
+      Las excepciones son solo para las claves que faltan: **los parámetros y las
+      claves huérfanas no admiten ninguna**, ni en un catálogo a medio traducir.
+- [x] **T-814** Flujo de punta a punta en los tres idiomas: entrar, cobrar y ver
       la factura. Con el documento en español aunque la pantalla esté en
       portugués.
+
+      **Hecha el 2026-08-23** en `tests/e2e/tres-idiomas.spec.ts`: 5 pruebas. Tres
+      cobran una venta completa —una por idioma— y dos son las de RN-29: pantalla
+      en portugués con factura en español, y la vista previa de Configuración
+      cambiando de idioma sin mover la pantalla.
+
+      **Los selectores no dependen del idioma**, y es la mitad del trabajo:
+      `input[name=…]`, el `form` del modal y la tecla F1. Una prueba multi-idioma
+      que busca botones por su texto solo prueba el idioma en que se escribió.
+
+      Dos cosas que costaron y quedan escritas porque van a volver:
+
+      - **Sin caja abierta, el botón de cobrar abre otro modal.** La primera
+        versión fallaba señalando el campo de efectivo, que no existía porque el
+        modal era el de apertura. Ahora la abre si hace falta.
+      - **Las pestañas de Configuración son client-only**, así que el primer clic
+        —si cae antes de que Svelte hidrate— marca el botón como activo y no
+        cambia de sección. Se reintenta, igual que `clicHasta` en `login.spec.ts`.
+
+      También quedó anotada la fragilidad de las pruebas que cambian el idioma de
+      alguien: el estado del simulado se guarda en disco y sobrevive a la corrida,
+      así que cada una lo deja como lo encontró y `idioma.spec.ts` **no da por
+      hecho el seed** —lo pone como lo necesita—. Una corrida que falló a mitad
+      dejó a Carlos en español y las tres pruebas siguientes empezaron a fallar
+      señalando la pantalla.
 
 ---
 

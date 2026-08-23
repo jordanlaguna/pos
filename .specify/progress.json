@@ -12,7 +12,7 @@
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-08-22",
+  "actualizado": "2026-08-23",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -90,6 +90,16 @@
       "estado": "listo",
       "detalle": "Aplicación FastAPI completa y autónoma en backend/ (57 módulos), con su docker-compose. Deja de ser un patch: ya no hay nada que ensamblar.",
       "endpoints": 42
+    },
+    "multiidioma": {
+      "estado": "listo",
+      "detalle": "Español, inglés y portugués: 915 claves por idioma, iguales en claves y en parámetros. El idioma sale del token (persona → compañía → es), se cambia desde el menú y desde Configuración, las fechas siguen al locale, y el documento impreso usa el idioma de la compañía y no el de la pantalla (RN-29).",
+      "redes": "Tres pruebas lo sostienen: texto suelto fuera del catálogo, catálogos con las mismas claves y parámetros, y códigos de error iguales en el backend y en el POS. Las tres tumban la build.",
+      "fase": "F8, terminada el 2026-08-23 (T-801 a T-817)."
+    },
+    "soporte": {
+      "estado": "listo",
+      "detalle": "Panel /admin con listado de clientes y su uso, alta de compañía, cambio de suscripción (estado, fecha y plan), entrar como para diagnosticar y bitácora consultable. Rol soporte sin compañía (users.is_support), bloqueo por vencimiento con gracia de 7 días y límites de plan al crear usuarios."
     }
   },
   "defectos_corregidos": [
@@ -261,6 +271,30 @@
       "donde": "frontend: doce textos en siete archivos",
       "que": "Al estrenar la prueba de T-812 aparecieron doce textos escritos a mano que **dos pasadas de T-804 y el rastreador por líneas no habían visto**: `aria-label=\"Editar …\"` en `/clientes`, cuatro en `/registro` («Volver al inicio de sesión», «Se registra la persona…», «Creando…», «Crear cuenta»), dos en `/compania` («No hay ninguna compañía…», «Salir»), «vs. periodo anterior» en `StatCard`, y cuatro rótulos en línea de `FacturaModerna` («Cédula», «Tel.», «Devuelto») que en la clásica sí se habían convertido.",
       "impacto": "Cosmético hoy —todo está en español— y la mitad del valor de la fase mañana: con el POS en portugués, esas doce frases habrían salido en español, y tres de ellas en la factura que ve el cliente. Corregido el mismo día. Lo que importa del defecto no es el arreglo sino la medida: es lo que justifica que la verificación de una fase de traducción no pueda ser una búsqueda a ojo."
+    },
+    {
+      "id": 27,
+      "donde": "frontend: el selector de idioma del menú",
+      "que": "Un `<select>` con `value={…}` en Svelte 5 se **reinicia al hidratar**. Quien alcanzaba a elegir un idioma antes de que el JavaScript enganchara —en una caja lenta, lo normal— veía el valor volver solo al anterior, y el formulario mandaba el idioma que ya estaba puesto: el cambio no pasaba y nada avisaba.",
+      "impacto": "La función más visible de T-810 fallaba en silencio justo en las máquinas lentas, que son las del mostrador.",
+      "arreglo": "El select quedó **sin controlar**: sin `value` ni `bind:`, con `selected` en cada opción. El navegador conserva la elección y el formulario manda lo que la persona eligió.",
+      "como_se_encontro": "La prueba de punta a punta de T-810, que elegía «el de la compañía» y esperaba español. Sin ella el defecto habría llegado a producción: a mano, con el navegador rápido y la página ya cargada, no se reproduce."
+    },
+    {
+      "id": 28,
+      "donde": "frontend: los mensajes de validación en español",
+      "que": "Once de los trece mensajes de validación no concordaban en número con el rótulo del campo: «Las notas no puede superar 600 caracteres», «Las notas debe tener entre 1 y 3 dígitos». T-815 había arreglado la concordancia de los dos que la tenían a la vista —obligatorio y no válido— y los otros once se quedaron con el verbo en singular.",
+      "impacto": "Alcanzable hoy: el campo de notas tiene `max` en Configuración y en la pantalla de entradas, así que el mensaje salía mal escrito en la cara del usuario.",
+      "arreglo": "Los once pasaron a variante con caso plural, en los tres idiomas. El sitio que llama (`validationMessage`) ahora pasa `concord` en todos, no solo en dos.",
+      "como_se_encontro": "Escribiendo el portugués (T-808): al mirar cómo iba a concordar cada mensaje se vio que el español ya no concordaba. Es el hallazgo típico de traducir —el segundo idioma es una revisión del primero— y es el argumento a favor de no dejar la traducción para después."
+    },
+    {
+      "id": 29,
+      "donde": "frontend: cerrar sesión durante un «entrar como»",
+      "que": "`/logout` borraba la cookie de sesión y **no** la de soporte. Como `hooks.server.ts` restaura la sesión de soporte cuando la de la visita ya no sirve —que es lo que hace usable el vencimiento de media hora—, cerrar sesión desde dentro de una visita devolvía al panel en vez de al login.",
+      "impacto": "Quien se levanta de una máquina prestada y le da a «cerrar sesión» dejaba la sesión de soporte abierta, con acceso a todos los clientes del sistema. Nunca llegó a producción: se encontró el mismo día.",
+      "arreglo": "`/logout` borra las dos cookies. Cerrar sesión cierra las dos sesiones.",
+      "como_se_encontro": "Escribiendo la prueba de punta a punta. La prueba usaba `page.goto('/logout')`, que responde 405 porque la ruta es POST a propósito; al arreglar eso hubo que mirar qué hace `/logout` de verdad, y ahí estaba. El defecto no lo encontró la prueba: lo encontró tener que leer el código para escribirla."
     }
   ],
   "decisiones": [
@@ -550,7 +584,7 @@
       "tema": "Dentro del POS también rige RN-30: el dominio devuelve código y datos",
       "decision": "`domain/cart.ts` y `application/checkout.ts` dejan de devolver frases. Devuelven `{ code: 'cart_out_of_stock', product: 'Arroz' }` y la frase la arma `$lib/ui/messages.ts`, con `switch` exhaustivos cuyo `never` final rompe `npm run check` si aparece un código sin mensaje.",
       "porque": "RN-30 está escrita para FastAPI, pero el problema es idéntico un nivel más adentro: si el dominio arma la oración, tiene que saber el idioma de la pantalla, y entonces no es dominio. La prueba de capas ni lo habría notado —`$lib/paraglide` no está en su lista de prohibidos—, así que la regla acá la sostiene la decisión, no el guardián. De paso las pruebas del carrito dejaron de comparar cadenas: ahora afirman qué código sale de qué situación, y un cambio de redacción ya no rompe una prueba de lógica.",
-      "pendiente_de_spec": "RN-30 dice «el backend no escribe texto para una persona». Convendría ampliarla a «ninguna capa que no sea la interfaz», porque es lo que se está aplicando. Sin eso, la decisión queda sin requisito que la respalde."
+      "resuelto_en_spec": "Resuelto el 2026-08-23: RN-30 se reescribió y ahora dice «ninguna capa que no sea la interfaz escribe texto para una persona». La decisión de esta entrada ya tiene requisito que la respalde, y desde T-816 también tiene guardián."
     },
     {
       "tema": "El método de pago se traduce en la etiqueta, no en el valor",
@@ -631,6 +665,113 @@
       "tema": "La prueba vigila también los sumideros de texto de los `.ts`",
       "decision": "Además del marcado, se revisan las llamadas que terminan en los ojos de alguien: `formError()`, `v.add()`, `toasts.*()`. Solo esas, y solo en las posiciones donde va texto.",
       "porque": "Va un poco más allá de la letra de T-812 —que habla de las plantillas— y es donde está la mitad del riesgo: una acción de formulario produce tantos mensajes como la pantalla. Perseguir todos los literales de un `.ts` en cambio sería ruido: cualquiera puede ser una clave, una clase o una ruta."
+    },
+    {
+      "tema": "RN-30 se reescribe: la regla es de todas las capas, no solo del backend",
+      "decision": "RN-30 pasa de «el backend no escribe texto para una persona» a «ninguna capa que no sea la interfaz escribe texto para una persona», con el backend como el caso que la motivó. Se reescribe el requisito en vez de agregar uno nuevo: son la misma regla, y partirla en dos obligaría a leer las dos para saber qué aplica.",
+      "porque": "Es lo que se venía aplicando desde T-802 sin requisito que lo respaldara. La regla puesta solo en el borde HTTP no cierra: el dominio le entregaba la frase al adaptador y el adaptador la reenviaba cuando no la reconocía. Y puesta solo en el backend tampoco: el dominio del POS devolvía frases, los lectores de archivos escribían las suyas y `$lib/server/api.ts` las propias. Lo que no tiene requisito se afloja el día que alguien con prisa pregunte por qué no puede escribir una frase en el dominio.",
+      "alcance_que_agrega": "Los valores por omisión que acaban impresos. No estaban contemplados en ninguna de las dos lecturas de la regla y son texto para una persona igual: un agradecimiento de fábrica en español sale en español en la factura de una compañía brasileña. Se siembran al dar de alta la compañía, que es cuando se conoce su idioma (RF-6)."
+    },
+    {
+      "tema": "El guardián del dominio busca literales, no llamadas",
+      "decision": "La mitad nueva de `loose-text.test.ts` recorre `lib/domain` y `lib/application` buscando literales con forma de frase en español, y no llamadas a sumideros como hace la mitad de las acciones. Dos disparadores: tres letras y un espacio, o una tilde o un signo de apertura.",
+      "porque": "Los sumideros (`formError`, `toasts`, `v.add`) viven en `ui/`, que el dominio no puede importar: una prueba de llamadas ahí no encontraría nada nunca, y una prueba que no puede fallar tranquiliza igual que una que funciona. Lo que sí se cuela es la frase devuelta como valor —`documentTitle()` devolvía «Factura electrónica», `CURRENCIES[].label` decía «Colón costarricense»—. El segundo disparador es el que atrapa la palabra sola: «Cédula» no tiene espacio, y una tilde no aparece en un identificador ni en una clave.",
+      "hueco_conocido": "Una palabra sola y sin tilde («Pendiente») pasa. Está escrito en la cabecera de la prueba en vez de disimulado: exigir solo tres letras marcaría todos los códigos (`cart_out_of_stock`) y las claves, que es casi todo lo que hay legítimamente en esas dos carpetas, y una prueba que grita en falso se termina desactivando.",
+      "lo_que_encontro": "`thanksMessage` y `legalNotice` de `DEFAULT_SETTINGS`, en español dentro del dominio y saliendo impresos. Los otros cinco hallazgos son dato y quedaron como excepciones con su razón: los tres métodos de pago con espacio y los dos rótulos de `ID_TYPES`."
+    },
+    {
+      "tema": "Los textos de fábrica del documento se vacían en vez de traducirse",
+      "decision": "`DEFAULT_SETTINGS.document.thanksMessage` y `legalNotice` pasan de «¡Gracias por su compra!» y «Este documento no tiene validez tributaria.» a la cadena vacía. Las tres plantillas ya los omitían si venían vacíos, así que no hubo que tocarlas.",
+      "porque": "El dominio no puede traducirlos: no lee el catálogo, y si lo leyera congelaría el idioma de la primera petición del proceso (defecto 17). Y la interfaz no puede ponerlos como respaldo del vacío, porque `optional()` distingue «nunca se configuró» de «se borró a propósito» y ese respaldo borraría la diferencia: quien quite la despedida del tiquete la vería volver en la siguiente factura.",
+      "lo_que_cuesta": "Una instalación nueva imprime el pie sin despedida hasta que alguien escriba la suya en Configuración. Se paga en T-304, que es donde se conoce el idioma de la compañía y donde el POS —que sí tiene el catálogo— puede sembrarla. Sembrarla desde el backend sería RN-30 al revés."
+    },
+    {
+      "tema": "La prueba de los catálogos compara parámetros, no solo claves",
+      "decision": "`catalogs.test.ts` comprueba cuatro cosas y no una: que los tres idiomas tengan los mismos archivos, que ninguna traducción tenga claves que el español no tenga, que cada mensaje traducido reciba **los mismos parámetros**, y que no falte ninguna clave salvo en los catálogos declarados pendientes.",
+      "porque": "Se midió qué avisa Paraglide y no avisa nada de las tres. La que el plan no había previsto es la de los parámetros, y es la peor: si el español dice «Solo quedan {free} de {product}: hay {reserved} apartadas en otra venta» y el inglés dice «Only {free} left of {product}», no se ve una frase sin traducir —eso se nota— sino una frase completa a la que le falta un dato. El cajero inglés no se entera de que hay unidades apartadas. Una clave que falta al menos cae a una oración española completa.",
+      "consecuencia_para_traducir": "La comprobación de parámetros no admite excepciones, así que una traducción a un idioma sin género tiene que conservar la declaración del selector: en inglés los mensajes de validación van como variante con un solo caso `concord=*`. Se comprobó que compila en 0 errores."
+    },
+    {
+      "tema": "Lo que falta por traducir se declara por archivo y la lista solo puede encoger",
+      "decision": "La prueba lleva `SIN_TRADUCIR`, una lista de catálogos por idioma que no se exigen completos todavía. Un catálogo sale de la lista cuando se traduce y desde ese momento se exige entero. Si un catálogo declarado pendiente ya está completo, la prueba también falla.",
+      "porque": "Faltan 1.764 claves entre inglés y portugués: una prueba estricta desde hoy estaría roja durante toda la traducción, y una prueba roja por semanas se termina desactivando. Por archivo y no por clave porque una lista de 1.764 líneas no se lee ni se mantiene. Y con el guardián al revés porque una lista de pendientes que se queda vieja es exactamente una prueba apagada: el catálogo estaría traducido y sin vigilancia, y la clave nueva del español se le quedaría sin traducir en silencio.",
+      "lo_que_deja": "La lista es la lista de trabajo de T-807 y T-808: 17 catálogos por idioma. `en/cart.json` ya salió de ella."
+    },
+    {
+      "tema": "El inglés no tiene género, pero los mensajes de validación siguen siendo variantes",
+      "decision": "`validation_required` y `validation_not_allowed` se traducen al inglés como variante con el mismo selector `concord`, doblando los cuatro casos del español en dos: `mp` y `fp` a «are required», el resto a «is required».",
+      "porque": "Dos razones distintas y las dos obligan. La primera es que el sitio que llama pasa `concord` siempre (T-815): si la traducción no lo declara, el parámetro se pierde y la prueba de T-813 lo tumba. La segunda es que el inglés no tiene género pero sí concordancia de número, así que un solo caso `=*` diría «The notes is required». Hoy hay dos campos plurales —`notes` y `documentNotes`— y en inglés también son plurales.",
+      "glosario": "Quedó escrito en task.md (T-807) para que los 12 catálogos que faltan y el portugués no se contradigan: Caja como sección → «Cash register» y como terminal → «Register»; Clientes → «Customers»; Cédula → «ID number»; Anular → «Void»; y «sin identificar» → «(unidentified)» con paréntesis, porque va donde va un nombre de producto y «the product unidentified» es inglés roto."
+    },
+    {
+      "tema": "El idioma entra por una estrategia de Paraglide, no por un `load`",
+      "decision": "`hooks.server.ts` registra `defineCustomServerStrategy('custom-session')`, que saca el `loc` del token, y envuelve la petición en `paraglideMiddleware`. `strategy` quedó en `['custom-session', 'cookie', 'baseLocale']`.",
+      "porque": "La tarea decía «el `load` del layout lo lee de ahí», y eso no alcanza: la pantalla pide los mensajes **durante** el render, así que el idioma tiene que estar puesto antes de que corra cualquier `load`. El middleware lo guarda en AsyncLocalStorage, que es por petición; una variable de módulo sería el defecto 17 otra vez. El `load` del layout igual lo publica, pero para que el menú pueda mostrar cuál está activo (T-810), no para traducir.",
+      "la_cookie_es_un_espejo": "`PARAGLIDE_LOCALE` la escribe el servidor en cada respuesta y no es httpOnly a propósito: después de hidratar, el POS navega del lado del cliente y ahí no hay token que leer —la cookie de sesión sí es httpOnly—. Sin ella, la primera navegación sin recargar volvía al español; con ella, quien la edite a mano solo se cambia el idioma a sí mismo hasta el siguiente render, porque en el servidor manda siempre `custom-session`."
+    },
+    {
+      "tema": "Un sumidero de texto se declara por dónde entra el texto, no por la función",
+      "decision": "`loose-text.test.ts` ganó `SUMIDEROS_OBJETO`: llamadas que reciben el texto dentro de un objeto, como `error(404, { message: '…' })` de SvelteKit.",
+      "porque": "Había seis de esos, todos en español, y ninguna de las dos mitades del guardián los veía: el marcado no los toca y no son una llamada a `formError`. La primera versión buscaba literales en posiciones de argumento y el literal estaba una capa más adentro. Es el mismo error de forma que el de buscar llamadas en el dominio, donde no puede haberlas: una prueba que no puede fallar tranquiliza igual.",
+      "lo_que_obligo_a_decidir": "Cinco estaban en `routes/**`, que es interfaz y puede resolver la frase del catálogo. La sexta estaba en `$lib/server/auth.ts` —`requireAdmin`—, que es un adaptador: ahora lanza `{ code: 'admin_only' }` y la frase la arma `+error.svelte`. Por eso `App.Error.message` pasó a ser opcional."
+    },
+    {
+      "tema": "Las plantillas de documento reciben un diccionario, no el catálogo",
+      "decision": "`documentLabels(locale)` devuelve todo el texto del documento ya resuelto y las tres plantillas lo reciben como prop. Ninguna importa `$lib/paraglide`, y una prueba lo vigila.",
+      "porque": "El documento se emite en el idioma de la compañía y no en el de la pantalla (RN-29). La forma obvia —pasar `{ locale }` como segundo argumento a cada `m.doc_*()`— eran 84 llamadas y una invitación a que la siguiente se escriba sin él: compilaría, se vería bien en español, y saldría en el idioma del cajero el día que haya dos idiomas. Con el diccionario no hay forma de equivocarse, porque no hay catálogo que pedir.",
+      "lo_que_costo": "Reescribir las tres plantillas y un diccionario de 33 entradas. La nota que decía que T-811 «ya no toca las plantillas» era falsa: sí las tocaba, y lo que abarató T-804 fue tener las claves del documento en su propio catálogo, no evitar el cambio."
+    },
+    {
+      "tema": "El idioma de la persona se borra, no se pone en español",
+      "decision": "`POST /auth/locale` con `locale: null` deja `users.locale` en nulo. La columna admite nulo a propósito y el selector ofrece «el de la compañía» como una opción más.",
+      "porque": "Heredar no es lo mismo que elegir. Si alguien «elige español» y el dueño pasa el negocio a portugués, esa persona tiene que quedarse en español; quien no eligió nada tiene que seguir al negocio. Guardar «es» en los dos casos hace indistinguibles dos intenciones distintas, y no hay forma de volver atrás."
+    },
+    {
+      "tema": "El portugués no copia la concordancia de género del español",
+      "decision": "Los dos mensajes de validación que concuerdan en género se redactaron en portugués sin depender de él: «{field}: campo obrigatório». Los otros once sí concuerdan, pero solo en número, que es igual en los dos idiomas.",
+      "porque": "La concordancia la declara el campo una sola vez en `$lib/ui/fields.ts` y se escribió desde el español. «La cédula» es femenino y «o documento» es masculino: el mismo campo no puede ser los dos. Las salidas eran elegir palabras portuguesas por el género del español —escribir mal para no contradecir una constante— o mover la concordancia al catálogo, que es más código para una diferencia que solo aparece en dos mensajes. La redacción impersonal resuelve el caso y se lee bien."
+    },
+    {
+      "tema": "Soporte se marca con una columna, no con la ausencia de membresías",
+      "decision": "`users.is_support` (migración 004). El plan decía «soporte es una persona sin ninguna membresía»; ahora es una marca positiva y explícita.",
+      "porque": "Quien rechaza la única invitación que tenía también se queda sin ninguna, y con la definición vieja quedaría administrando el producto por descarte. La ausencia de algo no puede ser un permiso. Va en `users` y no en `user_companies` porque es una propiedad de la identidad, como el correo: soporte no pertenece a ninguna compañía (RN-4)."
+    },
+    {
+      "tema": "El token de soporte no lleva compañía, y de ahí sale todo lo demás",
+      "decision": "Cuatro tipos de token: tránsito, sesión, soporte (sin `cid`) y suplantación (con `cid`, 30 minutos). El de soporte no puede leer ninguna tabla de negocio.",
+      "porque": "Sin `cid`, el filtro de `tenancy.py` le hace fallar cerrado cualquier consulta de negocio. O sea que para ver los datos de un cliente **tiene que** entrar como esa compañía, que es exactamente lo que pide RN-4 y lo que deja rastro en la bitácora. No es una comprobación que alguien tenga que acordarse de escribir: es que el token no alcanza."
+    },
+    {
+      "tema": "Entrar como es de solo lectura (RN-32)",
+      "decision": "El token de suplantación no permite escribir nada. Se aplica en `auth_dependency`, junto al bloqueo por vencimiento, y el POS lo muestra en la franja permanente.",
+      "porque": "RF-8 y el §3 del spec dicen que soporte entra a **diagnosticar**. Diagnosticar es leer. Dejar escribir «por si acaso» convierte una visita auditada en una cuenta de administrador sobre la base de todos los clientes, y el día que algo salga mal en la compañía de alguien nadie podrá decir si fue el dueño o fue soporte. Si un día hay que arreglar algo desde ahí, se abre a propósito y con su bitácora; mientras tanto, la salida es crearle una membresía de verdad, que se ve en la lista de usuarios.",
+      "lo_que_costo": "Que soporte no pueda reproducir un problema que ocurre al guardar. Es el precio elegido, y está escrito para que quien lo cambie sepa qué está cambiando."
+    },
+    {
+      "tema": "El vencimiento lo pone el calendario, no una tarea manual (RN-31)",
+      "decision": "Una compañía `activa` cuya fecha ya pasó se comporta como `vencida`. El estado guardado no se toca —el panel muestra los dos— y lo que manda es el efectivo, que calcula `domain/subscription.py` contra el día de hoy.",
+      "porque": "La alternativa es que alguien cambie el estado a mano todos los días, o sea que el producto deje de cobrar el día que nadie mire. Y con la fecha guardada pero sin efecto, el aviso previo de RF-11 no tendría de dónde contar los días.",
+      "lo_que_costo": "Un caso que había que decidir: `vencida` sin fecha. Sin fecha no hay gracia que calcular, así que no hay gracia y queda en solo lectura. Falla cerrado, igual que el filtro de compañía: solo lectura es lo peor que le puede pasar a quien olvidó un dato, y vender gratis para siempre es lo peor que le puede pasar al negocio."
+    },
+    {
+      "tema": "El bloqueo por vencimiento va en la dependencia, no en cuarenta rutas",
+      "decision": "`get_current_user` corta toda petición con método que escribe cuando la sesión es de solo lectura. Las dos excepciones —`/cash/close` por RN-1 y `/auth/locale`— están en una lista con su motivo, y tres guardianes en `test_suscripcion.py` la vigilan.",
+      "porque": "Es la misma decisión que puso el filtro de compañía en un escuchador de SQLAlchemy: veintiún endpoints que escriben, y cada uno que alguien tenga que acordarse de tocar es un agujero. Centralizarlo cambia el problema por otro más fácil de vigilar: que ninguna ruta nueva esquive la dependencia. Eso sí se puede leer del árbol de sintaxis, y es lo que hace el guardián."
+    },
+    {
+      "tema": "El estado de la suscripción no viaja en el token",
+      "decision": "Va en `/users/me`, que se relee en cada petición, igual que `document_locale` (T-811).",
+      "porque": "En el token quedaría congelado hasta el próximo login: bloquearía tarde —el cliente sigue vendiendo horas después de vencer— y desbloquearía tarde —paga y tiene que cerrar sesión para que le sirva—. Lo segundo es peor, porque pasa justo cuando el cliente acaba de pagar y está mirando."
+    },
+    {
+      "tema": "Las compañías de prueba van en un plan sin límite de usuarios",
+      "decision": "`PLAN_DE_PRUEBAS` en `conftest.py` las da de alta con −1 en los tres límites, y el límite de RF-12 se prueba aparte con un plan de dos usuarios.",
+      "porque": "El fixture `cajero` crea una persona por prueba a propósito —el arqueo se delimita por `user_id`, así que compartir cajero haría que una prueba viera el turno de otra— y son casi veinte pruebas. Con el plan «Comercio» en 10 usuarios, T-309 hacía fallar la batería desde la novena, señalando el alta de usuarios: lo único que no estaba mal. Los usuarios de la batería son una herramienta de aislamiento y no personas de un negocio, y el plan tenía que decir eso."
+    },
+    {
+      "tema": "Los planes no se crean por el API",
+      "decision": "No hay `POST /support/plans`. El catálogo se escribe en la base; `bootstrap.py` puede crear uno con sus límites (`--plan-max-*`) cuando no existe, y el panel solo ofrece los que hay.",
+      "porque": "Un plan es una decisión comercial —qué se cobra y qué se deja hacer— y no un recurso más del CRUD. Un guion de arranque que invente precios es un guion que decide por el dueño. La base trae un solo plan («Comercio», migración 002) y los tres del modo simulado son de mentira, que es donde eso está bien."
     }
   ],
   "invariantes_verificados": {
@@ -1159,7 +1300,7 @@
         "Las dos redes se comprobaron tumbándolas a propósito: se agregó un código al backend (la prueba del contrato lo señaló) y se quitó un caso del `switch` (`svelte-check` lo rechazó)."
       ],
       "correccion_al_plan": "El plan y el spec hablaban de «68 mensajes». Son 81 `raise`, y con los éxitos y el simulado, 163 sitios. La diferencia no es de tamaño sino de reparto: el conteo viejo miraba solo los `detail` de los adaptadores y no los de los enrutadores, ni los mensajes de éxito, ni el español que el dominio metía dentro de sus propios errores.",
-      "pendiente_de_spec": "RN-30 dice «el backend no escribe texto para una persona» y lo implementado es más amplio: ninguna capa que no sea la interfaz lo escribe. Salió así porque la regla aplicada solo al borde HTTP no cerraba. Falta que el dueño del spec decida si RN-30 se reescribe o si queda como criterio de implementación; `spec.md` no se toca sin esa respuesta."
+      "pendiente_de_spec": "RN-30 dice «el backend no escribe texto para una persona» y lo implementado es más amplio: ninguna capa que no sea la interfaz lo escribe. Salió así porque la regla aplicada solo al borde HTTP no cerraba. Falta que el dueño del spec decida si RN-30 se reescribe o si queda como criterio de implementación; `spec.md` no se toca sin esa respuesta. — **Respondido el 2026-08-23**: se reescribió RN-30 (ver la sesión de ese día)."
     },
     {
       "fecha": "2026-08-22",
@@ -1172,7 +1313,7 @@
         "Verificado: `npm run check` 0/0 sobre 1751 archivos, 408 pruebas de unidad, 20 de 20 de punta a punta, y contra el backend real las once pantallas en 200 con el texto del catálogo —incluidas las plantillas y los nombres de moneda que antes vivían en el dominio—."
       ],
       "correccion_importante": "T-805 se había marcado terminada esa misma mañana con una búsqueda de voseo que estaba invertida: `grep -E` con `\\b` después de una vocal acentuada solo casa cuando después viene una letra, así que encontraba «dejá» dentro de «dejándolo» y se perdía «Actualizá el FastAPI». De ahí salieron dos afirmaciones falsas en task.md y en progress.json —que no quedaba voseo, y que el plan había contado de más—. Quedaban unos 30 en 12 archivos. Ver el defecto 25. Ahora sí es cero, y la búsqueda buena está en `scratchpad/buscar-voseo.py`.",
-      "pendiente_de_spec": "Sigue sin respuesta si RN-30 se reescribe. Lo implementado es «ninguna capa que no sea la interfaz escribe texto», y esta jornada lo extendió a dos lugares más: los lectores de archivos y `domain/settings.ts`. `spec.md` no se toca sin esa decisión."
+      "pendiente_de_spec": "Sigue sin respuesta si RN-30 se reescribe. Lo implementado es «ninguna capa que no sea la interfaz escribe texto», y esta jornada lo extendió a dos lugares más: los lectores de archivos y `domain/settings.ts`. `spec.md` no se toca sin esa decisión. — **Respondido el 2026-08-23**: se reescribió RN-30 (ver la sesión de ese día)."
     },
     {
       "fecha": "2026-08-22",
@@ -1185,6 +1326,114 @@
         "Verificado: `npm run check` 0/0 sobre 1760 archivos, 412 pruebas de unidad, 20 de 20 de punta a punta."
       ],
       "estado_de_la_fase": "El mecanismo de F8 está completo y **F3 puede empezar**: T-801 a T-805, T-812 y T-815 hechas. Lo que queda de F8 es poder cambiar de idioma, no poder escribir pantallas bien, así que no bloquea. Orden razonable de lo que sigue: T-813 antes de T-807 y T-808, porque hoy una clave que falte en `en` o `pt` cae al español sin avisar."
+    },
+    {
+      "fecha": "2026-08-23",
+      "titulo": "RN-30 cerrada: la regla se reescribió y ahora tiene guardián en las dos capas de adentro",
+      "hecho": [
+        "RN-30 reescrita en `spec.md`: de «el backend no escribe texto para una persona» a «ninguna capa que no sea la interfaz». Era la única decisión que quedaba pendiente del dueño del spec, anotada en `task.md` y en dos sesiones.",
+        "El requisito se amplió también a los valores por omisión que acaban impresos, que no estaban en ninguna de las dos lecturas anteriores.",
+        "T-816: `loose-text.test.ts` gana un tercer bloque que recorre `lib/domain` y `lib/application` buscando literales con forma de frase. Antes de esto la regla ahí la sostenía una decisión y ninguna prueba.",
+        "`$lib/paraglide` entró a la lista de prohibidos del dominio en `layers.test.ts`, con su razón aparte en el mensaje de fallo: no es pureza, es RN-30.",
+        "El guardián encontró dos textos de verdad —el agradecimiento del tiquete y la leyenda legal, de fábrica en español y saliendo impresos— y cinco que son dato y quedaron como excepciones con su razón.",
+        "Comprobado tumbándolo tres veces: una frase y una palabra con tilde en `domain/cart.ts`, y un `import` de paraglide en `domain/documents.ts` y en `application/checkout.ts`. Las tres fallan nombrando archivo y línea.",
+        "Verificado: `npm run check` 0 errores y 0 advertencias sobre 1760 archivos, 414 pruebas de unidad con 100 % de cobertura, 20 de 20 de punta a punta, y 479 de 479 en `pytest` con 100 % en dominio y aplicación."
+      ],
+      "lo_que_no_se_hizo": "El backend no tiene el guardián equivalente y hoy no le hace falta: sus frases en español están todas en el argumento de `Exception` —lo que sale en un traceback, no en una pantalla— y cada atributo que la interfaz reenvía ya es código o dato. Medido con el mismo criterio sobre `app/domain` y `app/application`: 46 literales, todos de esa forma. Si algún día se quiere la simetría, el guardián sería «una frase solo puede estar en un docstring o en `super().__init__()`».",
+      "estado_de_la_fase": "De F8 quedan los catálogos de inglés y portugués (T-807, T-808) con su red (T-813), las fechas por locale (T-806), de dónde sale el idioma (T-809 a T-811) y el flujo en tres idiomas (T-814). Nada de eso bloquea F3, que sigue pudiendo empezar. El orden razonable no cambió: T-813 antes de T-807 y T-808."
+    },
+    {
+      "fecha": "2026-08-23",
+      "titulo": "T-813: la red de los catálogos, y un tercer silencio que el plan no preveía",
+      "hecho": [
+        "`frontend/src/lib/ui/catalogs.test.ts`: 11 pruebas. Los tres idiomas con los mismos archivos, sin claves huérfanas, con los mismos parámetros, y sin claves faltantes salvo lo declarado.",
+        "Medido qué avisa Paraglide: **nada** de las tres. La que faltaba en el plan es la de los parámetros —un dato que desaparece de una frase por lo demás correcta—, y es la razón de que la prueba mire los parámetros y no solo las claves.",
+        "`SIN_TRADUCIR` por archivo, con guardián en los dos sentidos: si se saca un catálogo sin traducir falla, y si se traduce sin sacarlo también.",
+        "Comprobada tumbándola cuatro veces, una por red.",
+        "`en/cart.json` traducido entero (8 claves) al comprobar la lista, y ya fuera de ella. Es el primer pedazo de T-807.",
+        "Medido el patrón que necesita T-807: un mensaje con género se traduce al inglés como variante de un solo caso `concord=*`, que conserva la declaración del selector. 0 errores.",
+        "Verificado: `npm run check` 0 errores y 0 advertencias, 425 pruebas de unidad con 100 % de cobertura en dominio y aplicación."
+      ],
+      "trampa_encontrada": "Había **seis `vite dev` de este proyecto corriendo desde el 16 y el 22 de agosto**. Cada uno vigila `messages/` y recompila `src/lib/paraglide/`, así que al editar un catálogo escribían la misma carpeta que `npm run check` y `svelte-check` la leía a medio escribir: hasta 900 errores diciendo «Cannot find module './es.js'» o «File 'pt.js' is not a module», ninguno con relación a lo que se acababa de tocar, y el segundo `check` seguido en 0. Costó tres conclusiones falsas antes de mirar los procesos —incluida «el compilador rompe la build si un parámetro no coincide», que es al revés: no dice nada—. Cerrados los seis (el usuario lo autorizó), el primer `check` después de editar un catálogo vuelve a decir la verdad. Anotada en CLAUDE.md junto a la de `.svelte-kit`, que es la misma familia con otro síntoma.",
+      "leccion": "Un muro de cientos de errores que no menciona el archivo que se acaba de tocar es, con más frecuencia, el entorno y no el código. La pista más barata es correr la misma comprobación dos veces: si la segunda cambia de resultado sin tocar nada, no es el código.",
+      "estado_de_la_fase": "De F8 quedan T-806, T-807, T-808, T-809 a T-811 y T-814. La red de T-813 ya está puesta, así que los catálogos se pueden llenar sin ir a ciegas: su lista `SIN_TRADUCIR` es la lista de trabajo. Nada de eso bloquea F3."
+    },
+    {
+      "fecha": "2026-08-23",
+      "titulo": "T-807 empezada: 216 de 898 claves al inglés, las de todas las pantallas",
+      "hecho": [
+        "Traducidos seis catálogos: `cart` (8), `common` (22), `nav` (30), `errors` (89), `fields` (54) y `validation` (13). Son 216 claves y ya salieron de `SIN_TRADUCIR`, así que la prueba de T-813 los exige completos.",
+        "Quedan 682 claves en 12 catálogos, y la lista de la prueba es la lista de trabajo.",
+        "Comprobado armando las frases con `{ locale: 'en' }`: concordancia de número, las dos variantes, el plural de `api_excessive_return` y los parámetros que llegan desde otro mensaje (`api_field_tax` dentro de `api_totals_mismatch`).",
+        "Glosario anotado en task.md: Caja → Cash register / Register, Clientes → Customers, Cédula → ID number, Anular → Void, sin identificar → (unidentified).",
+        "Verificado: `npm run check` 0 errores y 0 advertencias, 425 pruebas de unidad, 100 % de cobertura en dominio y aplicación."
+      ],
+      "cuidado_que_se_tuvo": "La primera comprobación de las frases salió en español y parecía un error de los catálogos: era el generado, que es de la última compilación y `vitest` no lo rehace. Se ve en el código emitido —`const en_validation_required = es_validation_required`—, que es exactamente el mecanismo del silencio que T-813 vino a tapar: una clave que falta se compila como un alias al idioma base, no como un error. Después de `npm run i18n` las frases salieron en inglés.",
+      "lo_que_no_se_puede_ver_todavia": "Con `strategy: ['baseLocale']` el POS sirve todo en español hasta que T-809 ponga el idioma en el token, así que lo traducido no se ve en pantalla: se comprueba llamando a los mensajes con `{ locale: 'en' }`. Es lo que hay hasta T-809, y conviene no confundirlo con «no funciona».",
+      "estado_de_la_fase": "F8: T-813 hecha, T-807 al 24 % (216 de 898), T-808 sin empezar, y siguen pendientes T-806 y T-809 a T-811 más el flujo de T-814. Lo razonable es terminar el inglés antes de empezar el portugués: el glosario se fija una vez y el portugués lo copia."
+    },
+    {
+      "fecha": "2026-08-23",
+      "titulo": "T-807 terminada: el inglés completo, 898 de 898",
+      "hecho": [
+        "Traducidos los 12 catálogos que faltaban: `sales`, `cash`, `auth`, `checkout`, `documents`, `inventory`, `invoices`, `returns`, `people`, `reports`, `entries` y `settings`.",
+        "`en` salió de `SIN_TRADUCIR`, así que la prueba de T-813 lo exige completo: claves, parámetros y nada huérfano. No puede volver a quedarse atrás en silencio.",
+        "Muestreadas las frases con `{ locale: 'en' }`: los plurales de `cash_sales_count`, `entry_orphans`, `entry_summary_creating`, `invoices_count` e `import_lines_need_review`, y los mensajes que reciben un rótulo de otro mensaje.",
+        "Verificado: `npm run check` 0 errores y 0 advertencias, 425 pruebas de unidad, 100 % de cobertura en dominio y aplicación."
+      ],
+      "dos_decisiones_dentro_de_la_traduccion": "`invoices_col_tax` dice «IVA» en español y «Tax» en inglés: el nombre del impuesto se configura por compañía, así que un encabezado no puede afirmar cuál es. Y «Hacienda» se volvió «the tax authority» en todo el catálogo —incluido `entries_source_xml`, que pasa de «XML Hacienda» a «Tax authority XML»— porque quien lee la interfaz en inglés puede no saber qué es Hacienda; el nombre propio no ayuda a entender la pantalla.",
+      "lo_que_falta_para_darlo_por_bueno": "T-814. Con `strategy: ['baseLocale']` el POS sirve todo en español, así que las 898 claves inglesas están comprobadas por parámetros y por muestreo, pero **nadie ha visto una pantalla en inglés**. Eso llega con T-809 (el idioma en el token) y se verifica en T-814. Hasta entonces, que la prueba esté verde significa que los catálogos cuadran, no que la interfaz se vea bien.",
+      "estado_de_la_fase": "F8: hechas T-801 a T-805, T-807, T-812, T-813, T-815 y T-816. Quedan T-806 (fechas por locale), T-808 (portugués, con el inglés de molde y la lista de la prueba como lista de trabajo), T-809 a T-811 (de dónde sale el idioma) y T-814 (el flujo en tres idiomas). El orden razonable ahora es T-809 antes que T-808: sin poder cambiar de idioma, el portugués se traduciría igual de a ciegas que el inglés y no habría cómo verlo."
+    },
+    {
+      "fecha": "2026-08-23",
+      "titulo": "T-809: el idioma sale del token y llega hasta la pantalla",
+      "hecho": [
+        "`app/domain/locale.py`: la regla —lo de la persona, si no lo de la compañía, si no `es`— con 11 pruebas. Descarta lo que no se puede usar (`fr`) y normaliza la región (`es-CR` → `es`).",
+        "El token de sesión lleva `loc`. `_token_de_sesion` recibe la compañía y no su id, y se arma **antes** del commit para no releer `company.locale` con los objetos expirados.",
+        "`tests/test_idioma.py`: el reclamo viaja por los dos caminos que emiten sesión, y el token de tránsito no lo trae.",
+        "En el POS: estrategia `custom-session` en `hooks.server.ts`, `paraglideMiddleware` por petición, cookie espejo para el cliente, `<html lang>` de verdad y el idioma publicado en el layout.",
+        "La misma lista de estrategias en `vite.config.ts` y en el guion `i18n`, que estaban divergiendo: `svelte-check` compila con la de la línea de comandos.",
+        "El simulado lo replica: `MockUser.locale`, `MockCompany.locale` y la misma regla en `idiomaDeSesion`.",
+        "Carlos, el segundo cajero del demo, tiene el POS en inglés. `tests/e2e/idioma.spec.ts` lo comprueba de punta a punta: menú en inglés, `lang=\"en\"`, sobrevive a navegar del lado del cliente, y a los otros dos no les cambia nada.",
+        "T-817: el guardián de texto suelto ahora ve el texto dentro de un objeto (`error(404, { message })`). Seis frases en español salieron a la luz y se arreglaron.",
+        "Verificado: `npm run check` 0/0, 425 pruebas de unidad, **24 de punta a punta**, y 494 en `pytest` con 100 % de cobertura en dominio y aplicación."
+      ],
+      "dos_trampas_que_costaron_tiempo": "Las dos son de «el código que corre no es el que escribí». (1) Las pruebas de integración del backend hablan con el contenedor, y `docker-compose.test.yml` hornea el código en la imagen: `test_idioma.py` falló por falta de `loc` hasta reconstruir la pila. (2) El estado del modo simulado se guarda en `.data/mock-db.json`, y el archivo de antes no tenía el idioma de Carlos: el token seguía diciendo `es` y la prueba de punta a punta señalaba la pantalla, que era el único sitio donde no estaba el problema. Se arregló con `SEED_VERSION`, que descarta el archivo viejo cuando el seed cambia. Las dos quedaron en CLAUDE.md.",
+      "estado_de_la_fase": "F8: quedan T-806 (fechas por locale), T-808 (portugués), T-810 (selector de idioma), T-811 (idioma del documento) y T-814 (el flujo en tres idiomas). T-810 es la que cierra el círculo para una persona: hoy el idioma solo cambia al emitir un token, así que el selector tiene que re-emitirlo igual que hace «cambiar de compañía» (RF-28)."
+    },
+    {
+      "fecha": "2026-08-23",
+      "titulo": "F8 terminada: el POS habla tres idiomas, y el documento habla el de la compañía",
+      "hecho": [
+        "T-806: las fechas dependen del idioma (`15/08/2026` / `08/15/2026`), con la región fija en la etiqueta de Intl y un `locale` explícito para el documento. La hora se queda en 24 h en los tres, a propósito.",
+        "T-808: los 18 catálogos de portugués. Los tres idiomas quedaron con las mismas 915 claves y `SIN_TRADUCIR` se borró junto con la prueba que la vigilaba, que ya no podía fallar.",
+        "T-810: `POST /auth/locale` y `PUT /settings/locales`, los dos emitiendo token nuevo. Selector en el menú para la persona y en Configuración para la compañía.",
+        "T-811: `documentLabels(locale)` y las tres plantillas sin catálogo, con prueba de que no lo importan. `document_locale` viaja por `/users/me`, que se relee en cada petición.",
+        "T-814: 5 pruebas de punta a punta, tres cobrando una venta completa —una por idioma— y dos con el caso exacto de RN-29.",
+        "Dos defectos: el 27 (el select se reinicia al hidratar) y el 28 (once mensajes de validación sin concordancia de número en español).",
+        "Verificado: `npm run check` 0/0, 438 pruebas de unidad, **30 de punta a punta**, y **501 en pytest** con 100 % de cobertura en dominio y aplicación de los dos lados."
+      ],
+      "lo_que_ensena": "Traducir es revisar. El defecto 28 —«Las notas no puede superar 600 caracteres»— llevaba ahí desde T-815 y salió al preguntarse cómo iba a concordar el portugués. Y el defecto 27 solo se ve en una máquina lenta o en una prueba que hace clic antes de la hidratación. Ninguno de los dos aparece leyendo el código.",
+      "estado_de_la_fase": "F8 cerrada: T-801 a T-817. Lo siguiente es **F3 (soporte y suscripción)**, que era lo que esperaba el mecanismo de idiomas: cada pantalla nueva de `/admin` nace con sus textos en catálogo y con las tres redes puestas —texto suelto, catálogos iguales y códigos de error—."
+    },
+    {
+      "fecha": "2026-08-23",
+      "titulo": "F3 terminada: VentaSys se administra, y el que no paga deja de vender",
+      "hecho": [
+        "T-301/T-302: rol soporte con `users.is_support`, token sin compañía, y las dos puertas cerradas en los dos sentidos (403, no redirect).",
+        "T-303/T-304: listado con el uso de cada cliente en cuatro consultas agrupadas, y alta de compañía que reusa el mismo código que `bootstrap.py`.",
+        "T-305: cambio de suscripción con estado, fecha **y plan** —RF-7 nombra dos y son tres—, con el antes y el después en la bitácora.",
+        "T-306: entrar como, de solo lectura (RN-32), media hora, motivo obligatorio y franja permanente; la sesión de soporte se guarda aparte para volver sin contraseña.",
+        "T-307: bitácora consultable y filtrable, con guardián de árbol de sintaxis que exige la línea a todo endpoint que escriba.",
+        "T-308: `domain/subscription.py` (30 pruebas, 100 %), bloqueo centralizado en `get_current_user` y tres guardianes más. De acá salió RN-31.",
+        "T-309: `domain/limits.py` y el límite aplicado al sumar gente. Rompió la batería y por eso las compañías de prueba pasaron a un plan sin techo.",
+        "T-310: 8 pruebas de punta a punta del panel, sobre las 30 que ya había.",
+        "Migración 004 (`users.is_support` y el índice de la bitácora por fecha), aplicada y verificada.",
+        "Verificado: `npm run check` 0/0, 451 pruebas de unidad con 100 % de cobertura, 38 de punta a punta, y 605 en `pytest` con 100 % en dominio y aplicación."
+      ],
+      "lo_que_ensena": "Los guardianes de F8 dejaron un hueco y costó 144 errores encontrarlo: `project.inlang/settings.json` lista los catálogos uno por uno, y `admin.json` existía, estaba traducido a los tres idiomas, pasaba las nueve pruebas de paridad… y Paraglide no lo compilaba. El síntoma fue un muro de «Property does not exist» señalando las pantallas, que es el único sitio donde no estaba el problema. Ahora hay una décima prueba que compara la carpeta con esa lista, en los dos sentidos.\n\nY el defecto 29 no lo encontró una prueba: lo encontró tener que leer `/logout` para escribirla. La prueba fallaba por un 405 —la ruta es POST a propósito— y el defecto de verdad estaba al lado.",
+      "estado_de_la_fase": "F3 cerrada: T-301 a T-310. Quedan F4 (categorías de dos niveles), F5 (impuesto por producto y CABYS), F6 (preparación de factura electrónica) y F7 (emisión). Lo siguiente en orden es **F4**, que es la que desbloquea la grilla de ventas por dos niveles y el filtro del inventario."
     }
   ],
   "$reparto": {

@@ -627,7 +627,7 @@ no una vez no es haber dicho que sí.
 
 ---
 
-## 4. Panel de soporte (F3)
+## 4. Panel de soporte (F3) — hecho el 2026-08-23
 
 Grupo de rutas `/admin` en el mismo despliegue, no una aplicación aparte:
 duplicar autenticación y despliegue para cinco pantallas no se paga.
@@ -638,6 +638,85 @@ duplicar autenticación y despliegue para cinco pantallas no se paga.
   vencimiento corto y motivo obligatorio, y escribe en `audit_log`. La interfaz
   muestra una franja permanente mientras dure.
 - Toda acción de soporte se registra: alta, cambio de estado, entrada.
+
+### 4.1 Quién es soporte
+
+**Una columna: `users.is_support`** (migración 004). El plan decía «soporte es
+una persona sin ninguna membresía» y como definición no servía: quien rechaza la
+única invitación que tenía también se queda sin ninguna, y quedaría
+administrando el producto por descarte. La ausencia de algo no puede ser un
+permiso.
+
+La marca vive en `users` y no en `user_companies` porque es una propiedad de la
+identidad, como el correo. La primera cuenta se crea con
+`bootstrap.py --soporte`, por lo mismo que la primera compañía: no hay API que
+pueda otorgar un permiso que todavía nadie tiene.
+
+### 4.2 Cuatro tipos de token
+
+| `tipo` | Lleva `cid` | Dura | Para qué |
+|---|---|---|---|
+| `transito` | no | 10 min | elegir compañía (RN-26) |
+| `sesion` | sí | 8 h | el POS |
+| `soporte` | **no** | 8 h | el panel |
+| `suplantacion` | sí | **30 min** | *entrar como* (RF-8) |
+
+Que el de soporte no lleve compañía es todo el diseño: el filtro de
+`tenancy.py` le hace fallar cerrado cualquier consulta a una tabla de negocio,
+así que para ver los datos de un cliente **tiene que** entrar como esa compañía
+—que es lo que pide RN-4 y lo que deja rastro—. Las consultas del panel, que
+cruzan compañías a propósito, van todas por `crud_support.py` con `sin_filtro`.
+
+El de suplantación no lleva rol: lo pone `auth_dependency` en `admin`. Escribir
+el rol en dos sitios es la forma de que un día digan cosas distintas.
+
+### 4.3 El bloqueo por vencimiento va en un solo sitio
+
+`get_current_user` corta toda petición con método que escribe cuando la sesión
+es de solo lectura. **Acá y no en cada ruta**, por la misma razón que el filtro
+de compañía vive en un escuchador de SQLAlchemy: cuarenta endpoints que hay que
+acordarse de tocar no son un control de acceso.
+
+Las dos excepciones están en `ESCRITURA_EN_SOLO_LECTURA` con su motivo escrito
+—`/cash/close` por RN-1 y `/auth/locale` porque el aviso de pago hay que poder
+leerlo en su idioma—, y `tests/test_suscripcion.py` obliga a que sigan siendo
+rutas que existen. El mismo archivo tiene el guardián que importa a futuro: toda
+ruta que escriba pasa por `get_current_user` o está declarada con su porqué.
+
+En el POS el bloqueo se adelanta a **una** pantalla, ventas, porque es la única
+donde la sorpresa cuesta plata (RN-2). Las demás se quedan con el aviso del
+layout: allá lo que se pierde al chocar con el «no» es un clic.
+
+### 4.4 El estado se evalúa en cada petición, no se guarda
+
+`domain/subscription.py` es aritmética pura: estado guardado + fecha + hoy →
+qué se puede hacer. Se llama en cada `get_current_user` y viaja al POS por
+`/users/me`, **no en el token**. Meterlo en el token lo congelaría hasta el
+próximo login, que es lo peor de los dos mundos: bloquea tarde y desbloquea
+tarde. Así, un pago que entra hoy le devuelve el POS al cliente en el siguiente
+clic.
+
+### 4.5 El alta es una sola función, usada por dos caminos
+
+`crud_company.dar_de_alta` crea las seis filas —compañía, sucursal, terminal,
+configuración, identidad y membresía— y la llaman `bootstrap.py` y
+`POST /support/companies`. Antes la lista vivía en el guion; copiarla al panel
+habría dejado dos altas que se parecen y que dejarán de parecerse el día que
+haya una séptima fila.
+
+**Los textos del documento los manda el POS** (T-304). Nacen vacíos en el
+dominio (T-816) y el backend no puede escribirlos —no tiene catálogo y no sabe
+en qué idioma—, así que el formulario del panel los resuelve con
+`initialDocumentTexts(document_locale)` y los envía en `settings`. Es el único
+momento en que se conocen las dos cosas a la vez: el idioma del documento y las
+palabras.
+
+### 4.6 El API va bajo `/support` y las pantallas bajo `/admin`
+
+Dos nombres para lo mismo, a propósito: `admin` ya es el rol del administrador
+de una compañía, y dos cosas distintas con el mismo nombre en el mismo API se
+confunden. En la barra de direcciones, en cambio, `/admin` es lo que se lee
+bien.
 
 ---
 
