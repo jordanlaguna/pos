@@ -811,6 +811,12 @@ el login de dos pasos.
 
 ## F5 · Impuesto por producto y CABYS
 
+> **Antes de empezar esta fase van T-913, T-914 y T-915** (Transversal, al final
+> de este archivo). Así se decidió el 23 de agosto, al cerrar F4: los tres
+> salieron de hacer F4, ninguno se empezó, y los tres tocan sitios que F5 va a
+> volver a abrir —el esquema, los mensajes de la interfaz y el guardián que los
+> vigila—. Hacerlos después sería hacerlos dos veces.
+
 ### Catálogo
 
 - [ ] **T-501** Tabla `cabys_cache` (global, no por compañía).
@@ -1583,22 +1589,38 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       stack vivo es `backend/` sobre `ventasys_db_data`.
 - [ ] **T-912** Borrar `deploy/` y su volumen `deploy_db_data`. Se dejaron
       intactos como respaldo de la migración de T-911; hay además un volcado en
-- [ ] **T-913** Las columnas de `companies`, `plans` y `user_companies` están en
-      **español** (`afiliado`, `estado`, `vence_el`, `max_usuarios`, `rol`),
-      contra la regla de código en inglés. Vienen de la migración 002 y hoy son
-      la única excepción; renombrarlas toca el modelo, los servicios, el panel de
-      soporte y una migración con datos. Decidir si se corrige o se acepta por
-      escrito.
-- [ ] **T-914** Un mensaje de éxito en español dentro de una acción: el
-      `Movimiento de ${type} registrado` de `/caja`. Lleva interpolación, así que
-      necesita una clave con el tipo de movimiento traducido, no un `m.*` pelado.
-      Y **el guardián de T-812 no ve esa forma**: conviene agregar `success` a los
-      sumideros de objeto, que es lo que encontró los cuatro de T-411.
-- [ ] **T-915** `create_all` crea `ix_<tabla>_company_id` en las catorce tablas
-      de negocio y la base migrada **no lo tiene**: en la base viva el índice que
-      usa el filtro es el UNIQUE compuesto que empieza por `company_id`. No
-      degrada nada hoy —la columna sigue siendo la primera de un índice— pero es
-      el mismo código con dos esquemas, que es justo lo que la regla prohíbe.
-      Apareció al comparar `information_schema` en T-401.
       SQL fuera del repositorio. Borrarlos cuando haya confianza de que el stack
       nuevo va bien.
+
+**Antes de empezar F5** — los tres salieron de hacer F4 y ninguno se empezó.
+Tocan sitios que F5 va a volver a abrir: el esquema, los mensajes de la interfaz
+y el guardián que los vigila.
+
+- [ ] **T-913** *(antes de F5)* Las columnas de `companies`, `plans` y
+      `user_companies` están en **español** —`afiliado`, `compania`, `nombre`,
+      `estado`, `vence_el`, `creada_el`, `precio_mensual`, `max_usuarios`, `rol`,
+      `activa`—, contra la regla de código en inglés. Vienen de la migración 002
+      y hoy son la única excepción: F4 no las siguió y usó `sort_order` e
+      `is_active`.
+      **Decidir si se corrige o se acepta por escrito.** Corregir no es solo un
+      `RENAME COLUMN`: esos nombres viajan al POS como campos JSON, así que toca
+      el modelo, los `crud_*`, los schemas, el panel de soporte, el simulado, las
+      pruebas y `company_dump.py` —que exporta por nombre de columna, y un volcado
+      hecho antes dejaría de restaurar—.
+- [ ] **T-914** *(antes de F5)* Un mensaje de éxito en español dentro de una
+      acción: el `Movimiento de ${type} registrado` de `/caja`. Lleva
+      interpolación, así que necesita una clave con el tipo de movimiento
+      traducido, no un `m.*` pelado.
+      Y lo que importa más que el mensaje: **el guardián de T-812 no ve esa
+      forma**. Conviene agregar `success` a los sumideros de objeto —es lo que
+      encontró los cuatro de T-411— y de paso barrer las demás formas que se le
+      escapan, que un sumidero se declara por dónde entra el texto y no por cómo
+      se llama la función (T-817).
+- [ ] **T-915** *(antes de F5)* `create_all` crea `ix_<tabla>_company_id` en las
+      catorce tablas de negocio y la base migrada **no lo tiene**: en la base
+      viva el índice que usa el filtro es el UNIQUE compuesto que empieza por
+      `company_id`. No degrada nada hoy —la columna sigue siendo la primera de un
+      índice— pero es el mismo código con dos esquemas, que es justo lo que la
+      regla prohíbe. Hay que decidir hacia qué lado se iguala: agregar el índice
+      en una migración o quitarle `index=True` al mixin. Apareció al comparar
+      `information_schema` en T-401.
