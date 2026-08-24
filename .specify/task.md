@@ -613,21 +613,199 @@ el login de dos pasos.
 
 ---
 
-## F4 · Categorías de dos niveles
+## F4 · Categorías de dos niveles — ✅ terminada 2026-08-23
 
-- [ ] **T-401** Migración: `parent_id`, `orden`, `activa` en `categories`;
-      UNIQUE (company_id, parent_id, nombre).
-- [ ] **T-402** Validación de profundidad en el servicio: una categoría con
+> Las nueve tareas, de T-401 a T-409. El catálogo pasa de una lista plana a un
+> árbol de dos niveles: «Bebidas → Cervezas», «Yamaha → Llantas». El diseño está
+> en [plan.md §5](plan.md); acá queda lo que se aprendió haciéndolo.
+>
+> **Migración 005** (`parent_id`, `sort_order`, `is_active`, `parent_key` y el
+> UNIQUE compuesto), aplicada a la base viva y verificada.
+
+- [x] **T-401** Migración: `parent_id`, `sort_order`, `is_active` en
+      `categories`; UNIQUE (company_id, parent_id, name).
+
+      **Hecha el 2026-08-23**, y las columnas van **en inglés** —`sort_order`,
+      `is_active`— no como las nombraba la tarea: es la regla del proyecto y lo
+      que ya hace `products`. Las de `companies` y `plans` están en español desde
+      F2 y quedan como la excepción que son, anotada en T-913.
+
+      **El UNIQUE que pedía la tarea no protege el caso más común.** Escrito
+      `(company_id, parent_id, name)`, MySQL no considera iguales dos nulos, así
+      que **dos raíces «Bebidas» entran las dos** sin que el índice diga nada.
+      Es el mismo hueco que en `products.barcode` —donde es una ventaja: los
+      productos sin código de barras conviven— y acá es un defecto. Se cierra con
+      una columna generada: `parent_key` es el padre o 0, y el UNIQUE va sobre
+      ella. STORED y no VIRTUAL, porque un índice único sobre una virtual la
+      recalcula en cada lectura.
+
+      **La foránea lleva la compañía adentro**: (parent_id, company_id) contra
+      (id, company_id). Sin eso el esquema aceptaría una subcategoría de A
+      colgada de una raíz de B; hoy no puede pasar porque el filtro de
+      `tenancy.py` no deja ni ver esa raíz, pero eso es el cinturón y no el muro.
+      InnoDB no comprueba una foránea compuesta cuando alguna columna es nula,
+      así que las raíces pasan sin más.
+
+      **Comprobada la paridad con `create_all`**: 7 columnas y 6 índices
+      idénticos entre la base migrada y una creada desde el modelo, comparando
+      `information_schema` (tipo, nulabilidad, valor por omisión, `EXTRA` y
+      expresión de la columna generada). Es lo que pide la regla de que el modelo
+      y la migración digan lo mismo.
+
+      Y una trampa de sintaxis que costó un 1064: en una columna generada,
+      `NOT NULL` va **después** de la expresión y del `STORED`. Escrito
+      `INT NOT NULL AS (…) STORED`, MySQL señala la expresión, que es donde no
+      está el problema.
+
+- [x] **T-402** Validación de profundidad en el servicio: una categoría con
       padre no puede ser madre. RN-5.
-- [ ] **T-403** No borrar con productos ni con hijas: desactivar. RN-7.
-- [ ] **T-404** CRUD de categorías y subcategorías, con reordenamiento. RF-13.
-- [ ] **T-405** Mover una subcategoría de raíz sin tocar sus productos. RF-14.
-- [ ] **T-406** Ficha de producto: elegir categoría y subcategoría. RN-6.
-- [ ] **T-407** Grilla de ventas: raíces como pestañas, subcategorías como
+
+      **Hecha el 2026-08-23** en `app/domain/categories.py` —pura, 19 pruebas sin
+      base— y la regla se cierra **por los dos lados**: no se puede colgar de una
+      subcategoría (`check_can_nest`) y una categoría con hijas no puede volverse
+      hija (`check_can_become_child`). Con solo la primera, mover «Bebidas» —que
+      tiene «Cervezas»— debajo de «Licores» crea un tercer nivel sin que nadie
+      escriba nada de tres.
+
+      Con la profundidad en dos, el único ciclo posible es una fila que se
+      apunte a sí misma, que la foránea **no** impide. Lo impide
+      `check_not_itself`: sin eso la categoría desaparece de las dos listas —no
+      es raíz porque tiene madre, y no es hija de ninguna raíz—.
+
+- [x] **T-403** No borrar con productos ni con hijas: desactivar. RN-7.
+
+      **Hecha el 2026-08-23.** Borra solo lo que no arrastra nada; con productos
+      o con hijas responde 409 y el código dice qué hacer. El «no» lleva **las
+      dos cuentas** porque quien lo lee necesita saber qué mover primero.
+
+      **Desactivar una raíz esconde su rama y no toca ninguna hija**: así volver
+      a activarla devuelve la rama como estaba, en vez de tener que recordar cuál
+      hija se había desactivado a mano antes.
+
+      **De acá salió una decisión que no estaba en el spec** y que apareció
+      escribiendo la prueba de punta a punta: **RN-6 cuenta las hijas activas, y
+      borrar cuenta todas**. Una raíz a la que le desactivaron su única
+      subcategoría vuelve a ser una hoja y vuelve a recibir productos; contando
+      las desactivadas, esa rama se queda sin ningún sitio donde poner nada y la
+      única salida es reactivar algo que el dueño acaba de retirar. Borrar es lo
+      contrario: una hija desactivada sigue siendo una fila y borrar su madre la
+      dejaría huérfana.
+
+- [x] **T-404** CRUD de categorías y subcategorías, con reordenamiento. RF-13.
+
+      **Hecha el 2026-08-23**, en pantalla propia (`/inventario/categorias`) y no
+      en el modal que había: crear una categoría era un campo, y esto es un árbol
+      que se reordena, se mueve y se desactiva. En un modal, la mitad de RF-13 no
+      tenía dónde ir.
+
+      **Reordenar es un botón, no arrastrar.** El botón manda la categoría y la
+      dirección; el orden completo lo arma el servidor con `moveInOrder` —función
+      pura, con prueba—. Así funciona sin JavaScript como el resto del POS, y en
+      una pantalla táctil de caja arrastrar es peor. El API exige la lista
+      **completa** de hermanas: con una parcial, las que faltaran conservarían su
+      número y quedarían empatadas con las renumeradas.
+
+      Cuatro endpoints nuevos (`update_category`, `reorder`, `delete_category` y
+      el `register_category` que ya estaba, ahora con `parent_id`), declarados en
+      los guardianes de `test_aislamiento.py` y cubiertos por `require_admin`, que
+      es lo que hace que el bloqueo por suscripción los alcance sin tocar nada.
+
+- [x] **T-405** Mover una subcategoría de raíz sin tocar sus productos. RF-14.
+
+      **Hecha el 2026-08-23.** Es el mismo endpoint que renombra, porque las dos
+      comparten la comprobación del nombre repetido: al mudarse, un nombre que
+      era libre entre las hermanas viejas puede estar tomado entre las nuevas.
+
+      **Omitir `parent_id` y mandarlo en nulo son cosas distintas** —«no lo
+      toques» y «pasala a raíz»— y se leen con `model_fields_set`. Sin esa
+      diferencia, renombrar una subcategoría la promovería a raíz sin que nadie
+      lo pidiera, y el catálogo se iría aplanando solo.
+
+      Los productos no se tocan: siguen colgados de la subcategoría, que es la
+      que se mudó. La prueba de punta a punta lo comprueba por el camino más
+      visible —la columna del inventario pasa de «Yamaha › Llantas» a
+      «Suzuki › Llantas» y el producto sigue ahí—.
+
+- [x] **T-406** Ficha de producto: elegir categoría y subcategoría. RN-6.
+
+      **Hecha el 2026-08-23**, con dos desplegables y **un solo campo** viajando:
+      `category_id` oculto, con la subcategoría cuando la raíz tiene rama y con
+      la raíz cuando no. Es RN-6 escrita en un campo, y el backend la comprueba
+      igual: la pantalla no ofrece lo que va a ser rechazado.
+
+      La regla se aplica en **los dos caminos por los que nace un producto**: la
+      ficha y la entrada de mercadería. Sin el segundo, el archivo del proveedor
+      es la puerta de atrás de RN-6.
+
+      **Defecto encontrado por la prueba de punta a punta:** el desplegable
+      ofrecía subcategorías **desactivadas**, que el servidor rechaza. Al
+      arreglarlo apareció el caso contrario: el producto que ya cuelga de una
+      desactivada tiene que poder editarse sin cambiar de categoría, así que la
+      suya se sigue ofreciendo. Editarle el precio no puede moverlo de sitio.
+
+- [x] **T-407** Grilla de ventas: raíces como pestañas, subcategorías como
       fichas debajo. RF-15.
-- [ ] **T-408** Filtro por los dos niveles en inventario. RF-16.
-- [ ] **T-409** Verificar con dos catálogos reales: un súper (Bebidas →
+
+      **Hecha el 2026-08-23.** Las fichas de abajo **solo aparecen si hay**: en un
+      catálogo plano la pantalla se ve igual que antes de F4, que es lo que tiene
+      que pasarle a quien no usa dos niveles.
+
+      **La raíz muestra su rama entera** (`withDescendants`). Filtrar solo por el
+      id de la raíz dejaría la pestaña «Bebidas» vacía en cuanto alguien reparte
+      su catálogo en subcategorías, que es justo el momento en que empieza a
+      usarlo. Y cambiar de raíz descarta la subcategoría elegida: era de la otra
+      rama.
+
+- [x] **T-408** Filtro por los dos niveles en inventario. RF-16.
+
+      **Hecha el 2026-08-23**, en **un solo desplegable** con `optgroup` por
+      rama: la raíz filtra su rama entera y cada subcategoría, solo la suya. Dos
+      desplegables encadenados obligarían a elegir raíz para poder elegir
+      subcategoría, y el uso normal es «muéstrame Cervezas» sin pensar en dónde
+      cuelga.
+
+      La columna del inventario muestra el **camino completo** («Bebidas ›
+      Cervezas»), que es lo único que distingue dos subcategorías homónimas en
+      ramas distintas —el caso que el UNIQUE compuesto permite a propósito—.
+
+- [x] **T-409** Verificar con dos catálogos reales: un súper (Bebidas →
       Cervezas, Gaseosas) y un repuestero (Yamaha → Llantas, Focos).
+
+      **Hecha el 2026-08-23** en `tests/e2e/categorias.spec.ts`: 4 pruebas. Los
+      dos catálogos se usan distinto y por eso son dos:
+
+      * **El súper es el caso de leer** y va contra el catálogo del demo, que
+        ahora nace repartido (`Bebidas → Gaseosas, Aguas y jugos, Cervezas, Café
+        y té`). **No escribe nada.**
+      * **El repuestero es el caso de construir** y va contra una **compañía
+        propia**, dada de alta desde el panel al empezar la prueba. Es la lección
+        de T-310: una prueba que cambia el catálogo del demo se lo cambia a las
+        otras trece.
+
+      **Encontró dos cosas y ninguna se veía leyendo el código**: el desplegable
+      que ofrecía una subcategoría desactivada (T-406) y la decisión de las hijas
+      activas (T-403). Las pruebas de unidad no podían verlas: la primera es un
+      desacuerdo entre dos capas que por separado están bien.
+
+      Tres veces hubo que reintentar un clic, y las tres por lo mismo: **los
+      botones que abren un modal y los desplegables con `bind:value` no funcionan
+      hasta que Svelte hidrata**. El HTML ya está pintado, así que Playwright ve
+      un control listo y lo usa. `clicHasta` salió de `login.spec.ts` a
+      `sesion.ts` para no tener tres copias del mismo truco.
+
+**Fuera de guion, durante F4:**
+
+- [x] **T-410** `company_dump.py` no sabía de columnas generadas: exportaba
+      `parent_key` y la restauración fallaba con «The value specified for
+      generated column is not allowed». Ahora se exportan solo las columnas con
+      dato propio, y las filas salen **ordenadas por clave primaria**: desde F4
+      `categories` se apunta a sí misma, y una madre siempre tiene un id menor
+      que sus hijas, así que insertar en ese orden es lo que hace que la foránea
+      se cumpla fila por fila.
+- [x] **T-411** Cuatro mensajes de éxito en español dentro de acciones
+      (`return { success: 'Producto agregado…' }`) que ninguna mitad del guardián
+      de T-812 veía: no son marcado ni una llamada a `formError`. Pasaron al
+      catálogo. Queda **uno** en `/caja` con interpolación, anotado en T-914.
 
 ---
 
@@ -1405,5 +1583,22 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       stack vivo es `backend/` sobre `ventasys_db_data`.
 - [ ] **T-912** Borrar `deploy/` y su volumen `deploy_db_data`. Se dejaron
       intactos como respaldo de la migración de T-911; hay además un volcado en
+- [ ] **T-913** Las columnas de `companies`, `plans` y `user_companies` están en
+      **español** (`afiliado`, `estado`, `vence_el`, `max_usuarios`, `rol`),
+      contra la regla de código en inglés. Vienen de la migración 002 y hoy son
+      la única excepción; renombrarlas toca el modelo, los servicios, el panel de
+      soporte y una migración con datos. Decidir si se corrige o se acepta por
+      escrito.
+- [ ] **T-914** Un mensaje de éxito en español dentro de una acción: el
+      `Movimiento de ${type} registrado` de `/caja`. Lleva interpolación, así que
+      necesita una clave con el tipo de movimiento traducido, no un `m.*` pelado.
+      Y **el guardián de T-812 no ve esa forma**: conviene agregar `success` a los
+      sumideros de objeto, que es lo que encontró los cuatro de T-411.
+- [ ] **T-915** `create_all` crea `ix_<tabla>_company_id` en las catorce tablas
+      de negocio y la base migrada **no lo tiene**: en la base viva el índice que
+      usa el filtro es el UNIQUE compuesto que empieza por `company_id`. No
+      degrada nada hoy —la columna sigue siendo la primera de un índice— pero es
+      el mismo código con dos esquemas, que es justo lo que la regla prohíbe.
+      Apareció al comparar `information_schema` en T-401.
       SQL fuera del repositorio. Borrarlos cuando haya confianza de que el stack
       nuevo va bien.

@@ -295,6 +295,22 @@
       "impacto": "Quien se levanta de una máquina prestada y le da a «cerrar sesión» dejaba la sesión de soporte abierta, con acceso a todos los clientes del sistema. Nunca llegó a producción: se encontró el mismo día.",
       "arreglo": "`/logout` borra las dos cookies. Cerrar sesión cierra las dos sesiones.",
       "como_se_encontro": "Escribiendo la prueba de punta a punta. La prueba usaba `page.goto('/logout')`, que responde 405 porque la ruta es POST a propósito; al arreglar eso hubo que mirar qué hace `/logout` de verdad, y ahí estaba. El defecto no lo encontró la prueba: lo encontró tener que leer el código para escribirla."
+    },
+    {
+      "id": 30,
+      "donde": "backend: `company_dump.py`, respaldo y restauración de una compañía",
+      "que": "Exportaba **todas** las columnas, incluidas las generadas. Con `categories.parent_key` (F4), la restauración fallaba con «The value specified for generated column is not allowed»: MySQL rechaza un INSERT que le dé valor a una columna generada.",
+      "impacto": "El respaldo por compañía —la herramienta que existe para dar de baja un cliente y poder devolverle sus datos— dejaba de poder restaurar en cuanto una tabla de negocio tuviera una columna generada. Se exportaba bien y fallaba al volver, que es el peor momento para descubrirlo.",
+      "arreglo": "Se exportan solo las columnas con dato propio (`columna.computed is None`) y las filas salen ordenadas por clave primaria: desde F4 `categories` se apunta a sí misma, y una madre siempre tiene un id menor que sus hijas.",
+      "como_se_encontro": "Las tres pruebas de `test_respaldo_compania.py` se pusieron rojas al agregar la columna. Es exactamente para lo que estaban."
+    },
+    {
+      "id": 31,
+      "donde": "frontend: la ficha del producto, desplegable de subcategoría",
+      "que": "Ofrecía las subcategorías **desactivadas** de la raíz elegida. El servidor las rechaza con `category_inactive`, así que la pantalla ofrecía una opción que iba a fallar al guardar.",
+      "impacto": "Un producto nuevo asignado a la subcategoría retirada no se guardaba, y el mensaje hablaba de una categoría desactivada que la pantalla acababa de proponer.",
+      "arreglo": "El desplegable ofrece solo las activas. Y con una excepción que apareció al arreglarlo: la del producto que se está editando se sigue ofreciendo aunque esté desactivada, porque editarle el precio no puede moverlo de categoría.",
+      "como_se_encontro": "La prueba de punta a punta de T-409. Ninguna prueba de unidad podía verlo: es un desacuerdo entre dos capas que por separado están bien."
     }
   ],
   "decisiones": [
@@ -772,6 +788,26 @@
       "tema": "Los planes no se crean por el API",
       "decision": "No hay `POST /support/plans`. El catálogo se escribe en la base; `bootstrap.py` puede crear uno con sus límites (`--plan-max-*`) cuando no existe, y el panel solo ofrece los que hay.",
       "porque": "Un plan es una decisión comercial —qué se cobra y qué se deja hacer— y no un recurso más del CRUD. Un guion de arranque que invente precios es un guion que decide por el dueño. La base trae un solo plan («Comercio», migración 002) y los tres del modo simulado son de mentira, que es donde eso está bien."
+    },
+    {
+      "tema": "El UNIQUE de las categorías va sobre una columna generada",
+      "decision": "`categories` lleva `parent_key INT AS (IFNULL(parent_id, 0)) STORED` y el UNIQUE es (company_id, parent_key, name). La foránea del padre es compuesta: (parent_id, company_id) contra (id, company_id).",
+      "porque": "El UNIQUE que pedía la tarea —(company_id, parent_id, name)— no impide dos raíces homónimas, porque para MySQL dos nulos no son iguales, y las raíces son el caso más común. La generada convierte «sin madre» en 0 y el índice vuelve a servir. La foránea compuesta cierra lo otro: que una subcategoría cuelgue de una raíz de otra compañía. El filtro de `tenancy.py` ya lo impide, pero eso es el cinturón y esto es el muro."
+    },
+    {
+      "tema": "RN-6 cuenta las hijas activas; borrar cuenta todas",
+      "decision": "Una raíz admite productos si no tiene subcategorías **activas**. Para borrarla, en cambio, cuentan también las desactivadas.",
+      "porque": "Si contaran las desactivadas, una raíz a la que le retiraron su única subcategoría se queda sin ningún sitio donde poner un producto: la raíz bloqueada por su hija y la hija fuera de circulación. La única salida sería reactivar algo que el dueño acaba de retirar a propósito. Borrar es lo contrario: una hija desactivada sigue siendo una fila, y borrar su madre la dejaría huérfana. Apareció escribiendo la prueba de punta a punta, no leyendo el spec."
+    },
+    {
+      "tema": "Reordenar categorías es un botón, no arrastrar",
+      "decision": "Subir y bajar son dos formularios que mandan la categoría y la dirección. El orden completo lo arma el servidor y el API exige la lista entera de hermanas.",
+      "porque": "Arrastrar no funciona sin JavaScript ni con el dedo en una pantalla de caja, y el resto del POS se maneja con formularios de verdad. Exigir la lista completa evita el estado a medias: con una parcial, las hermanas que faltaran conservarían su número y quedarían empatadas con las renumeradas, así que el orden dejaría de estar definido."
+    },
+    {
+      "tema": "La pantalla de categorías no es un modal",
+      "decision": "El árbol se administra en `/inventario/categorias`. El modal de «nueva categoría» que había en el inventario se quitó.",
+      "porque": "Crear una categoría era un campo y cabía en un modal. Un árbol que se reordena, se mueve entre ramas y se desactiva no cabe: la mitad de RF-13 no habría tenido dónde ir. El inventario conserva un enlace, que es como se llega."
     }
   ],
   "invariantes_verificados": {
@@ -1434,6 +1470,21 @@
       ],
       "lo_que_ensena": "Los guardianes de F8 dejaron un hueco y costó 144 errores encontrarlo: `project.inlang/settings.json` lista los catálogos uno por uno, y `admin.json` existía, estaba traducido a los tres idiomas, pasaba las nueve pruebas de paridad… y Paraglide no lo compilaba. El síntoma fue un muro de «Property does not exist» señalando las pantallas, que es el único sitio donde no estaba el problema. Ahora hay una décima prueba que compara la carpeta con esa lista, en los dos sentidos.\n\nY el defecto 29 no lo encontró una prueba: lo encontró tener que leer `/logout` para escribirla. La prueba fallaba por un 405 —la ruta es POST a propósito— y el defecto de verdad estaba al lado.",
       "estado_de_la_fase": "F3 cerrada: T-301 a T-310. Quedan F4 (categorías de dos niveles), F5 (impuesto por producto y CABYS), F6 (preparación de factura electrónica) y F7 (emisión). Lo siguiente en orden es **F4**, que es la que desbloquea la grilla de ventas por dos niveles y el filtro del inventario."
+    },
+    {
+      "fecha": "2026-08-23",
+      "titulo": "F4 terminada: el catálogo es un árbol de dos niveles",
+      "hecho": [
+        "T-401: migración 005 con `parent_id`, `sort_order`, `is_active` y la columna generada `parent_key`. Aplicada a la base viva (6 categorías, todas raíces, numeradas por nombre) y comprobada contra `create_all`: 7 columnas y 6 índices idénticos.",
+        "T-402/T-403: `domain/categories.py`, pura y con 19 pruebas. RN-5 cerrada por los dos lados y RN-7 con las dos cuentas en el «no».",
+        "T-404/T-405: pantalla propia en `/inventario/categorias` —crear, renombrar, mover, reordenar, activar y borrar— con cuatro endpoints nuevos y ocho códigos de error en los cuatro sitios de siempre.",
+        "T-406/T-407/T-408: la ficha del producto con categoría y subcategoría, la grilla de ventas con raíces arriba y fichas debajo, y el filtro del inventario en un solo desplegable con `optgroup`.",
+        "T-409: 4 pruebas de punta a punta con los dos catálogos que pedía la tarea —un súper que solo lee y un repuestero que se arma desde cero en su propia compañía—.",
+        "Dos defectos: el 30 (el respaldo por compañía no sabía de columnas generadas) y el 31 (el desplegable ofrecía subcategorías desactivadas).",
+        "Verificado: `npm run check` 0/0, 488 pruebas de unidad con 100 % de cobertura, 42 de punta a punta, y 667 en `pytest` con 100 % en dominio y aplicación."
+      ],
+      "lo_que_ensena": "El UNIQUE que pedía la tarea no protegía el caso más común. `(company_id, parent_id, name)` suena completo, pero MySQL no considera iguales dos nulos: dos raíces «Bebidas» entran las dos. El mismo hueco que en `products.barcode` es allá una ventaja —los productos sin código conviven— y acá un defecto, y la diferencia no está en el índice sino en qué significa el nulo en cada tabla.\n\nY la prueba de punta a punta encontró lo que ninguna otra podía: el POS ofrecía una subcategoría desactivada que el servidor rechaza. Las dos capas estaban bien por separado.",
+      "estado_de_la_fase": "F4 cerrada: T-401 a T-409, más T-410 y T-411 fuera de guion. Quedan F5 (impuesto por producto y CABYS), F6 (preparación de factura electrónica) y F7 (emisión). Lo siguiente en orden es **F5**, que es la que más toca plata: la tarifa se congela en la línea de venta y la devolución deja de usar el promedio del documento."
     }
   ],
   "$reparto": {
