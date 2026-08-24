@@ -1,0 +1,63 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "La pantalla de categorías (F4). Dos niveles: raíces y subcategorías. Los rótulos de los botones de fila son aria-label porque son iconos: quien usa un lector de pantalla necesita saber de qué categoría habla cada uno.",
+
+	"categories_title": "Categorías",
+	"categories_description": "Cómo se agrupa el catálogo en la grilla de ventas.",
+	"categories_two_levels_note": "El catálogo tiene dos niveles: categorías y subcategorías. Una subcategoría no puede tener subcategorías propias.",
+	"categories_back_to_inventory": "Inventario",
+	"categories_new_root": "Nueva categoría",
+	"categories_new_child": "Nueva subcategoría",
+	"categories_child_of": "Dentro de {category}",
+	"categories_empty": "Todavía no hay categorías",
+	"categories_empty_hint": "Cree la primera para poder agregar productos.",
+	"categories_inactive": "Desactivada",
+	"categories_children_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Una subcategoría",
+				"countPlural=other": "{count} subcategorías"
+			}
+		}
+	],
+	"categories_products_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Un producto",
+				"countPlural=other": "{count} productos"
+			}
+		}
+	],
+	"categories_label_name": "Nombre",
+	"categories_root_placeholder": "Ej.: Bebidas",
+	"categories_child_placeholder": "Ej.: Cervezas",
+	"categories_rename_title": "Cambiar el nombre",
+	"categories_move": "Mover",
+	"categories_move_title": "Mover de categoría",
+	"categories_label_parent": "Dentro de",
+	"categories_parent_root": "Ninguna: que sea una categoría",
+	"categories_move_hint": "Los productos se quedan donde están: se mueve la subcategoría con ellos.",
+	"categories_delete_title": "Borrar la categoría",
+	"categories_delete_confirm": "¿Borrar «{category}»?",
+	"categories_delete_note": "Solo se borra si no tiene productos ni subcategorías. Si los tiene, desactívela: deja de aparecer y nada se pierde.",
+	"categories_move_up": "Subir {category}",
+	"categories_move_down": "Bajar {category}",
+	"categories_rename_label": "Cambiar el nombre de {category}",
+	"categories_move_label": "Mover {category} a otra categoría",
+	"categories_activate_label": "Activar {category}",
+	"categories_deactivate_label": "Desactivar {category}",
+	"categories_delete_label": "Borrar {category}",
+	"categories_created_root": "Categoría creada.",
+	"categories_created_child": "Subcategoría creada.",
+	"categories_renamed": "Nombre cambiado.",
+	"categories_moved": "Categoría movida.",
+	"categories_activated": "Categoría activada.",
+	"categories_deactivated": "Categoría desactivada. Sus productos se quedan como están.",
+	"categories_deleted": "Categoría borrada.",
+	"categories_reordered": "Orden guardado."
+}

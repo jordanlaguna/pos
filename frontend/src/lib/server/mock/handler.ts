@@ -19,6 +19,7 @@ import type {
 	CashMovement,
 	CashSession,
 	CashSessionReport,
+	Category,
 	LowStockProduct,
 	PaymentBreakdown,
 	Product,
@@ -667,6 +668,8 @@ route('POST', '/products/add_product', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const barcode = String(body?.barcode ?? '').trim();
 	if (db.products.some((p) => p.barcode === barcode)) fail(400, 'barcode_taken', { barcode });
+	// RN-6: el producto va en la hoja del árbol, y la hoja tiene que estar activa.
+	categoriaParaProducto(companyId, Number(body?.category_id ?? 0));
 	const id = nextId('products');
 	db.products.push({
 		id_product: id,
@@ -689,6 +692,12 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 	if (!product) fail(404, 'product_not_found', { product_id: id });
 	if (body?.barcode && db.products.some((p) => p.id_product !== id && p.barcode === body.barcode))
 		fail(400, 'barcode_taken', { barcode: String(body.barcode) });
+	// Mover de categoría pasa por la misma regla que crear (RN-6). Solo si de
+	// verdad cambia: revalidar la que ya tiene haría que un cambio de precio
+	// fallara por una categoría que se desactivó después.
+	const categoriaNueva = body?.category_id == null ? null : Number(body.category_id);
+	if (categoriaNueva !== null && categoriaNueva !== product.category_id)
+		categoriaParaProducto(companyId, categoriaNueva);
 	for (const [key, value] of Object.entries(body ?? {})) {
 		if (value == null || value === '') continue;
 		if (key === 'price') product.price = round2(Number(value));
@@ -735,18 +744,194 @@ route('GET', '/products/search/:term', ({ params, companyId }) => {
 });
 
 // ----------------------------------------------------------------- categorías
+//
+// El árbol de dos niveles (F4), con el mismo contrato que FastAPI: los mismos
+// códigos de error para las mismas situaciones y el mismo orden en la lista. Las
+// reglas viven en `$lib/domain/categories.ts` del lado del POS y en
+// `app/domain/categories.py` del lado del servidor; acá está la parte que en el
+// backend hace la base.
 
-route('GET', '/categories/categories_list', ({ companyId }) => getDb(companyId).categories);
+function categoriaPorId(companyId: number, id: number): Category | undefined {
+	return getDb(companyId).categories.find((c) => c.id === id);
+}
+
+function hermanas(companyId: number, parentId: number | null): Category[] {
+	return getDb(companyId)
+		.categories.filter((c) => (c.parent_id ?? null) === parentId)
+		.sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+}
+
+/**
+ * El nombre se compara sin tildes ni mayúsculas, como la colación de MySQL.
+ *
+ * `utf8mb4_0900_ai_ci` ignora las dos cosas, así que «Lácteos» y «lacteos»
+ * chocan en la base de verdad. Comparar acá solo con `toLowerCase()` dejaría
+ * pasar en el demo un nombre que el servidor rechaza.
+ */
+function mismoNombre(a: string, b: string): boolean {
+	// `sensitivity: 'base'` ignora tildes y mayúsculas, que es exactamente lo que
+	// hace la colación de la tabla en MySQL (`utf8mb4_0900_ai_ci`). Comparar solo
+	// en minúsculas dejaría pasar en el demo un nombre que el servidor rechaza.
+	return a.trim().localeCompare(b.trim(), 'es', { sensitivity: 'base' }) === 0;
+}
+
+function nombreTomado(
+	companyId: number,
+	parentId: number | null,
+	name: string,
+	excepto?: number
+): boolean {
+	return hermanas(companyId, parentId).some(
+		(c) => c.id !== excepto && mismoNombre(c.name, name)
+	);
+}
+
+function cuantasHijas(companyId: number, id: number): number {
+	return getDb(companyId).categories.filter((c) => c.parent_id === id).length;
+}
+
+/**
+ * Las hijas que siguen en circulación.
+ *
+ * Es la cuenta de RN-6 y no la de arriba: una raíz a la que le desactivaron su
+ * única subcategoría vuelve a ser una hoja y vuelve a recibir productos. Borrar
+ * sí cuenta todas —una hija desactivada sigue siendo una fila—.
+ */
+function cuantasHijasActivas(companyId: number, id: number): number {
+	return getDb(companyId).categories.filter((c) => c.parent_id === id && c.is_active).length;
+}
+
+function cuantosProductos(companyId: number, id: number): number {
+	return getDb(companyId).products.filter((p) => p.category_id === id).length;
+}
+
+/** RN-6: el producto va en la hoja, y la hoja tiene que estar activa. */
+function categoriaParaProducto(companyId: number, id: number): Category {
+	const categoria = categoriaPorId(companyId, id);
+	if (!categoria) fail(404, 'category_not_found', { category_id: id });
+	if (!categoria.is_active)
+		fail(400, 'category_inactive', { category_id: id, name: categoria.name });
+	const hijas = cuantasHijasActivas(companyId, id);
+	if (hijas > 0)
+		fail(400, 'category_needs_subcategory', {
+			category_id: id,
+			name: categoria.name,
+			children: hijas
+		});
+	return categoria;
+}
+
+/** Primero las raíces y después cada rama junta, igual que el `ORDER BY`. */
+function categoriasOrdenadas(companyId: number): Category[] {
+	return [...getDb(companyId).categories].sort(
+		(a, b) =>
+			(a.parent_id ?? 0) - (b.parent_id ?? 0) ||
+			a.sort_order - b.sort_order ||
+			a.id - b.id
+	);
+}
+
+route('GET', '/categories/categories_list', ({ companyId }) => categoriasOrdenadas(companyId));
 
 route('POST', '/categories/register_category', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const name = String(body?.name ?? '').trim();
-	if (db.categories.some((c) => c.name.toLowerCase() === name.toLowerCase()))
-		fail(400, 'category_name_taken', { name });
+	const parentId = body?.parent_id == null ? null : Number(body.parent_id);
+
+	if (parentId !== null) {
+		const madre = categoriaPorId(companyId, parentId);
+		if (!madre) fail(404, 'category_not_found', { category_id: parentId });
+		// RN-5: dos niveles. De una subcategoría no cuelga nada.
+		if (madre.parent_id !== null) fail(400, 'category_too_deep', { category_id: parentId });
+	}
+	if (nombreTomado(companyId, parentId, name)) fail(400, 'category_name_taken', { name });
+
 	const id = nextId('categories');
-	db.categories.push({ id, name });
+	const orden = hermanas(companyId, parentId).reduce((max, c) => Math.max(max, c.sort_order), 0);
+	db.categories.push({ id, name, parent_id: parentId, sort_order: orden + 1, is_active: true });
 	persist();
-	return { id, name };
+	return { id, name, parent_id: parentId };
+});
+
+route('PUT', '/categories/update_category/:id', ({ params, body, companyId }) => {
+	const id = Number(params[0]);
+	const categoria = categoriaPorId(companyId, id);
+	if (!categoria) fail(404, 'category_not_found', { category_id: id });
+
+	const datos = (body ?? {}) as Record<string, unknown>;
+	// `parent_id` ausente es «no se toca» y en nulo es «pasa a raíz», igual que
+	// el `model_fields_set` de Pydantic. Sin la diferencia, renombrar una
+	// subcategoría la promovería a raíz sin que nadie lo pidiera.
+	const pideMadre = 'parent_id' in datos;
+	const madreNueva = pideMadre && datos.parent_id != null ? Number(datos.parent_id) : null;
+	const seMueve = pideMadre && madreNueva !== categoria.parent_id;
+	const destino = seMueve ? madreNueva : categoria.parent_id;
+	const nombre = typeof datos.name === 'string' && datos.name.trim() ? datos.name.trim() : categoria.name;
+
+	if (seMueve) {
+		if (madreNueva === id) fail(400, 'category_self_parent', { category_id: id });
+		if (madreNueva !== null) {
+			const madre = categoriaPorId(companyId, madreNueva);
+			if (!madre) fail(404, 'category_not_found', { category_id: madreNueva });
+			if (madre.parent_id !== null) fail(400, 'category_too_deep', { category_id: madreNueva });
+			const hijas = cuantasHijas(companyId, id);
+			// La otra mitad de RN-5: con hijas propias, mudarse crea un tercer nivel.
+			if (hijas > 0) fail(400, 'category_has_children', { category_id: id, children: hijas });
+		}
+	}
+
+	if ((nombre !== categoria.name || seMueve) && nombreTomado(companyId, destino, nombre, id))
+		fail(400, 'category_name_taken', { name: nombre });
+
+	categoria.name = nombre;
+	if (seMueve) {
+		categoria.parent_id = destino;
+		const orden = hermanas(companyId, destino)
+			.filter((c) => c.id !== id)
+			.reduce((max, c) => Math.max(max, c.sort_order), 0);
+		categoria.sort_order = orden + 1;
+	}
+	if (typeof datos.is_active === 'boolean') categoria.is_active = datos.is_active;
+	persist();
+	return categoria;
+});
+
+route('PUT', '/categories/reorder', ({ body, companyId }) => {
+	const parentId = body?.parent_id == null ? null : Number(body.parent_id);
+	const ids = Array.isArray(body?.ids) ? body.ids.map(Number) : [];
+	const grupo = hermanas(companyId, parentId);
+
+	// La lista tiene que estar completa: con una parcial, las que faltaran
+	// conservarían su número y quedarían empatadas con las renumeradas.
+	const esperado = grupo.map((c) => c.id);
+	const iguales =
+		esperado.length === ids.length &&
+		[...esperado].sort((a, b) => a - b).join() === [...ids].sort((a, b) => a - b).join();
+	if (!iguales) fail(400, 'category_reorder_incomplete', { expected: esperado, received: ids });
+
+	ids.forEach((id: number, posicion: number) => {
+		const categoria = categoriaPorId(companyId, id);
+		if (categoria) categoria.sort_order = posicion + 1;
+	});
+	persist();
+	return hermanas(companyId, parentId);
+});
+
+route('DELETE', '/categories/delete_category/:id', ({ params, companyId }) => {
+	const db = getDb(companyId);
+	const id = Number(params[0]);
+	const indice = db.categories.findIndex((c) => c.id === id);
+	if (indice === -1) fail(404, 'category_not_found', { category_id: id });
+
+	// RN-7: con productos o con hijas no se borra, se desactiva.
+	const productos = cuantosProductos(companyId, id);
+	const hijas = cuantasHijas(companyId, id);
+	if (productos > 0 || hijas > 0)
+		fail(409, 'category_in_use', { category_id: id, products: productos, children: hijas });
+
+	db.categories.splice(indice, 1);
+	persist();
+	return null;
 });
 
 // --------------------------------------------------------------------- ventas
@@ -1308,6 +1493,9 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 			if (!barcode) fail(400, 'entry_missing_barcode', { line: index + 1 });
 			if (db.products.some((p) => p.barcode === barcode))
 				fail(400, 'barcode_taken', { barcode });
+			// RN-6 también acá: la entrada de mercadería crea productos, así que
+			// sin esto el archivo del proveedor es la puerta de atrás de la regla.
+			categoriaParaProducto(companyId, Number(data.category_id ?? 0));
 
 			const product: Product = {
 				id_product: nextId('products'),

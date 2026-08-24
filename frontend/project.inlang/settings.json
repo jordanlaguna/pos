@@ -29,7 +29,8 @@
 			"./messages/{locale}/invoices.json",
 			"./messages/{locale}/settings.json",
 			"./messages/{locale}/documents.json",
-			"./messages/{locale}/admin.json"
+			"./messages/{locale}/admin.json",
+			"./messages/{locale}/categories.json"
 		]
 	}
 }

@@ -1,0 +1,63 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "A tela de categorias (F4). Dois níveis: raízes e subcategorias. Os botões de linha são ícones, então seus rótulos são aria-label: quem usa leitor de tela precisa saber de qual categoria cada um fala.",
+
+	"categories_title": "Categorias",
+	"categories_description": "Como o catálogo se agrupa na grade de vendas.",
+	"categories_two_levels_note": "O catálogo tem dois níveis: categorias e subcategorias. Uma subcategoria não pode ter subcategorias próprias.",
+	"categories_back_to_inventory": "Estoque",
+	"categories_new_root": "Nova categoria",
+	"categories_new_child": "Nova subcategoria",
+	"categories_child_of": "Dentro de {category}",
+	"categories_empty": "Ainda não há categorias",
+	"categories_empty_hint": "Crie a primeira para poder adicionar produtos.",
+	"categories_inactive": "Desativada",
+	"categories_children_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Uma subcategoria",
+				"countPlural=other": "{count} subcategorias"
+			}
+		}
+	],
+	"categories_products_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "Um produto",
+				"countPlural=other": "{count} produtos"
+			}
+		}
+	],
+	"categories_label_name": "Nome",
+	"categories_root_placeholder": "Ex.: Bebidas",
+	"categories_child_placeholder": "Ex.: Cervejas",
+	"categories_rename_title": "Alterar o nome",
+	"categories_move": "Mover",
+	"categories_move_title": "Mover para outra categoria",
+	"categories_label_parent": "Dentro de",
+	"categories_parent_root": "Nenhuma: que seja uma categoria",
+	"categories_move_hint": "Os produtos ficam onde estão: a subcategoria se move com eles.",
+	"categories_delete_title": "Excluir a categoria",
+	"categories_delete_confirm": "Excluir «{category}»?",
+	"categories_delete_note": "Só é excluída se não tiver produtos nem subcategorias. Se tiver, desative-a: deixa de aparecer e nada se perde.",
+	"categories_move_up": "Subir {category}",
+	"categories_move_down": "Descer {category}",
+	"categories_rename_label": "Alterar o nome de {category}",
+	"categories_move_label": "Mover {category} para outra categoria",
+	"categories_activate_label": "Ativar {category}",
+	"categories_deactivate_label": "Desativar {category}",
+	"categories_delete_label": "Excluir {category}",
+	"categories_created_root": "Categoria criada.",
+	"categories_created_child": "Subcategoria criada.",
+	"categories_renamed": "Nome alterado.",
+	"categories_moved": "Categoria movida.",
+	"categories_activated": "Categoria ativada.",
+	"categories_deactivated": "Categoria desativada. Os produtos ficam como estão.",
+	"categories_deleted": "Categoria excluída.",
+	"categories_reordered": "Ordem salva."
+}

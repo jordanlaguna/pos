@@ -18,6 +18,7 @@
 	"sales_in_stock": "{stock} em estoque",
 
 	"sales_all_categories": "Todas",
+	"sales_whole_branch": "Toda a categoria",
 	"sales_out_of_stock": "Sem estoque",
 	"sales_sold_out": "Esgotado",
 	"sales_units_short": "{stock} un",

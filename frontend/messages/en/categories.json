@@ -1,0 +1,63 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"$comentario": "The categories screen (F4). Two levels: roots and subcategories. The row buttons are icons, so their labels are aria-label: a screen reader user needs to know which category each one is about.",
+
+	"categories_title": "Categories",
+	"categories_description": "How the catalog is grouped on the sales grid.",
+	"categories_two_levels_note": "The catalog has two levels: categories and subcategories. A subcategory cannot have subcategories of its own.",
+	"categories_back_to_inventory": "Inventory",
+	"categories_new_root": "New category",
+	"categories_new_child": "New subcategory",
+	"categories_child_of": "Inside {category}",
+	"categories_empty": "No categories yet",
+	"categories_empty_hint": "Create the first one so you can add products.",
+	"categories_inactive": "Deactivated",
+	"categories_children_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "One subcategory",
+				"countPlural=other": "{count} subcategories"
+			}
+		}
+	],
+	"categories_products_count": [
+		{
+			"declarations": ["input count", "local countPlural = count: plural"],
+			"selectors": ["countPlural"],
+			"match": {
+				"countPlural=one": "One product",
+				"countPlural=other": "{count} products"
+			}
+		}
+	],
+	"categories_label_name": "Name",
+	"categories_root_placeholder": "E.g.: Drinks",
+	"categories_child_placeholder": "E.g.: Beer",
+	"categories_rename_title": "Rename",
+	"categories_move": "Move",
+	"categories_move_title": "Move to another category",
+	"categories_label_parent": "Inside",
+	"categories_parent_root": "None: make it a category",
+	"categories_move_hint": "Products stay where they are: the subcategory moves with them.",
+	"categories_delete_title": "Delete category",
+	"categories_delete_confirm": "Delete «{category}»?",
+	"categories_delete_note": "It is only deleted if it has no products and no subcategories. If it does, deactivate it: it stops showing up and nothing is lost.",
+	"categories_move_up": "Move {category} up",
+	"categories_move_down": "Move {category} down",
+	"categories_rename_label": "Rename {category}",
+	"categories_move_label": "Move {category} to another category",
+	"categories_activate_label": "Activate {category}",
+	"categories_deactivate_label": "Deactivate {category}",
+	"categories_delete_label": "Delete {category}",
+	"categories_created_root": "Category created.",
+	"categories_created_child": "Subcategory created.",
+	"categories_renamed": "Name changed.",
+	"categories_moved": "Category moved.",
+	"categories_activated": "Category activated.",
+	"categories_deactivated": "Category deactivated. Its products stay as they are.",
+	"categories_deleted": "Category deleted.",
+	"categories_reordered": "Order saved."
+}

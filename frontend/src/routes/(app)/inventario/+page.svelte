@@ -9,6 +9,12 @@
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney } from '$lib/domain/money';
+	import {
+		buildTree,
+		categoryPath,
+		childrenOf,
+		withDescendants
+	} from '$lib/domain/categories';
 	import { formatInt } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Product } from '$lib/domain/types';
@@ -23,7 +29,6 @@
 	let onlyLowStock = $state(false);
 
 	let productModal = $state(false);
-	let categoryModal = $state(false);
 	let deleteTarget = $state<Product | null>(null);
 	let editing = $state<Product | null>(null);
 	let submitting = $state(false);
@@ -34,16 +39,60 @@
 	let fPrice = $state('');
 	let fStock = $state('');
 	let fBarcode = $state('');
-	let fCategory = $state('');
+	// La categoría son dos campos: la raíz y —si la raíz tiene rama— la
+	// subcategoría. Lo que viaja al servidor es uno solo, `category_id`.
+	let fRoot = $state('');
+	let fSub = $state('');
 
-	const categoryName = $derived((id: number) =>
-		data.categories.find((c) => c.id === id)?.name ?? '—'
-	);
+	const tree = $derived(buildTree(data.categories));
+
+	/** «Bebidas › Cervezas», o solo el nombre si es una raíz. */
+	const categoryName = $derived((id: number) => {
+		const camino = categoryPath(data.categories, id);
+		return camino.length > 0 ? camino.join(' › ') : '—';
+	});
+
+	/** Las hojas donde se puede colgar un producto, agrupadas por su raíz (RN-6). */
+	const branchesForForm = $derived(buildTree(data.categories, { onlyActive: true }));
+
+	/**
+	 * Las subcategorías que se pueden elegir: las activas de la raíz elegida.
+	 *
+	 * Y, si el producto que se está editando cuelga de una desactivada, esa
+	 * también: editarle el precio no tiene por qué moverlo de categoría. Sin esa
+	 * excepción, el desplegable no mostraría la suya, mandaría la primera activa
+	 * y el producto cambiaría de sitio sin que nadie lo pidiera.
+	 */
+	const subcategories = $derived.by(() => {
+		const activas = branchesForForm.find((b) => b.root.id === Number(fRoot))?.children ?? [];
+		const suya = data.categories.find((c) => c.id === Number(fSub));
+		return suya && !suya.is_active && suya.parent_id === Number(fRoot)
+			? [...activas, suya]
+			: activas;
+	});
+
+	/** Las raíces elegibles, con la misma excepción para la del producto editado. */
+	const rootsForForm = $derived.by(() => {
+		const activas = branchesForForm.map((b) => b.root);
+		const suya = data.categories.find((c) => c.id === Number(fRoot));
+		return suya && !suya.is_active ? [...activas, suya] : activas;
+	});
+	/**
+	 * Lo que se envía: la subcategoría si la raíz tiene, y la raíz si no.
+	 *
+	 * Es RN-6 escrita en un campo oculto. El backend lo comprueba igual —esto es
+	 * para no ofrecer lo que va a rechazar—.
+	 */
+	const categoryValue = $derived(subcategories.length > 0 ? fSub : fRoot);
 
 	const filtered = $derived.by(() => {
 		const term = search.trim().toLowerCase();
+		// Una raíz arrastra sus subcategorías: filtrar solo por su id dejaría la
+		// lista casi vacía en cuanto el catálogo se reparte en dos niveles.
+		const alcance =
+			categoryFilter === 'todas' ? null : withDescendants(data.categories, categoryFilter);
 		return data.products.filter((p) => {
-			if (categoryFilter !== 'todas' && p.category_id !== categoryFilter) return false;
+			if (alcance && !alcance.includes(p.category_id)) return false;
 			if (onlyLowStock && p.stock > LOW_STOCK) return false;
 			if (!term) return true;
 			return (
@@ -66,7 +115,7 @@
 		fPrice = '';
 		fStock = '';
 		fBarcode = '';
-		fCategory = String(data.categories[0]?.id ?? '');
+		elegirCategoria(branchesForForm[0]?.root.id ?? 0);
 		productModal = true;
 	}
 
@@ -77,8 +126,33 @@
 		fPrice = String(product.price);
 		fStock = String(product.stock);
 		fBarcode = product.barcode;
-		fCategory = String(product.category_id);
+		elegirCategoria(product.category_id);
 		productModal = true;
+	}
+
+	/**
+	 * Reparte una categoría en los dos campos del formulario.
+	 *
+	 * Un producto guarda una sola categoría, que puede ser raíz o subcategoría; el
+	 * formulario tiene dos desplegables. Al editar hay que deshacer eso: si la
+	 * categoría tiene madre, la madre va arriba y ella abajo.
+	 */
+	function elegirCategoria(id: number) {
+		const categoria = data.categories.find((c) => c.id === id);
+		if (categoria?.parent_id) {
+			fRoot = String(categoria.parent_id);
+			fSub = String(categoria.id);
+		} else {
+			fRoot = categoria ? String(categoria.id) : '';
+			fSub = '';
+		}
+	}
+
+	/** Al cambiar de raíz, la subcategoría anterior ya no pertenece a ninguna. */
+	function cambiarRaiz(valor: string) {
+		fRoot = valor;
+		const activas = childrenOf(data.categories, Number(valor)).filter((c) => c.is_active);
+		fSub = String(activas[0]?.id ?? '');
 	}
 
 	/**
@@ -105,16 +179,16 @@
 			<Icon name="download" size={15} />
 			{m.inventory_entries()}
 		</a>
-		<button type="button" class="btn btn-ghost" onclick={() => (categoryModal = true)}>
+		<a href="/inventario/categorias" class="btn btn-ghost">
 			<Icon name="tag" size={15} />
-			{m.inventory_new_category()}
-		</button>
+			{m.inventory_categories()}
+		</a>
 		<button
 			type="button"
 			class="btn btn-primary"
 			onclick={openCreate}
-			disabled={data.categories.length === 0}
-			title={data.categories.length === 0 ? m.inventory_category_first() : undefined}
+			disabled={branchesForForm.length === 0}
+			title={branchesForForm.length === 0 ? m.inventory_category_first() : undefined}
 		>
 			<Icon name="plus" size={15} />
 			{m.inventory_new_product()}
@@ -170,10 +244,25 @@
 
 	<div>
 		<label class="label" for="inv-categoria">{m.inventory_category()}</label>
-		<select id="inv-categoria" bind:value={categoryFilter} class="input w-44">
+		<!--
+			Los dos niveles en un solo desplegable (RF-16): la raíz filtra su rama
+			entera y cada subcategoría, solo la suya. Dos desplegables encadenados
+			obligarían a elegir raíz para poder elegir subcategoría, y acá el uso
+			normal es «muéstrame Cervezas» sin pensar en dónde cuelga.
+		-->
+		<select id="inv-categoria" bind:value={categoryFilter} class="input w-52">
 			<option value="todas">{m.common_all_f()}</option>
-			{#each data.categories as category (category.id)}
-				<option value={category.id}>{category.name}</option>
+			{#each tree as branch (branch.root.id)}
+				{#if branch.children.length === 0}
+					<option value={branch.root.id}>{branch.root.name}</option>
+				{:else}
+					<optgroup label={branch.root.name}>
+						<option value={branch.root.id}>{m.inventory_whole_branch()}</option>
+						{#each branch.children as child (child.id)}
+							<option value={child.id}>{child.name}</option>
+						{/each}
+					</optgroup>
+				{/if}
 			{/each}
 		</select>
 	</div>
@@ -341,22 +430,50 @@
 			</Field>
 		</div>
 
-		<div class="sm:col-span-2">
+		<!--
+			Categoría y subcategoría (T-406, RN-6). El campo que viaja es uno:
+			`category_id`, oculto, con la subcategoría cuando la raíz tiene rama y
+			con la raíz cuando no. Los dos desplegables son de la pantalla.
+
+			El `<select>` de la raíz no usa `bind:value` sino `selected` en cada
+			opción, por el defecto 27: un select controlado se reinicia al hidratar
+			y se come la elección de quien alcanzó a tocarlo antes.
+		-->
+		<input type="hidden" name="category_id" value={categoryValue} />
+
+		<div>
 			<label class="label" for="product-category">{m.inventory_label_category_required()}</label>
 			<select
 				id="product-category"
-				name="category_id"
-				bind:value={fCategory}
 				class="input"
-				required
+				onchange={(e) => cambiarRaiz(e.currentTarget.value)}
 				aria-invalid={form?.errors?.category_id ? 'true' : undefined}
 			>
-				{#each data.categories as category (category.id)}
-					<option value={String(category.id)}>{category.name}</option>
+				{#each rootsForForm as root (root.id)}
+					<option value={String(root.id)} selected={String(root.id) === fRoot}>
+						{root.name}
+					</option>
 				{/each}
 			</select>
 			{#if form?.errors?.category_id}
 				<p class="mt-1 text-xs text-[var(--negative)]">{form.errors.category_id}</p>
+			{/if}
+		</div>
+
+		<div>
+			<label class="label" for="product-subcategory">{m.inventory_label_subcategory()}</label>
+			{#if subcategories.length > 0}
+				<select id="product-subcategory" class="input" onchange={(e) => (fSub = e.currentTarget.value)}>
+					{#each subcategories as child (child.id)}
+						<option value={String(child.id)} selected={String(child.id) === fSub}>
+							{child.name}
+						</option>
+					{/each}
+				</select>
+			{:else}
+				<p class="input flex items-center text-[var(--text-subtle)]">
+					{m.inventory_no_subcategories()}
+				</p>
 			{/if}
 		</div>
 	</form>
@@ -378,34 +495,6 @@
 				<Icon name="check" size={15} />
 				{editing ? m.common_save_changes() : m.inventory_add_product()}
 			{/if}
-		</button>
-	{/snippet}
-</Modal>
-
-<!-- ------------------------------------------------------- categoría -->
-<Modal
-	open={categoryModal}
-	title={m.inventory_new_category()}
-	size="sm"
-	onclose={() => (categoryModal = false)}
->
-	<form id="category-form" method="POST" action="?/crearCategoria" use:enhance={submit({ onSuccess: () => (categoryModal = false) })}>
-		<Field
-			label={m.inventory_label_name()}
-			name="name"
-			required
-			placeholder={m.inventory_category_placeholder()}
-			error={form?.errors?.name}
-		/>
-	</form>
-
-	{#snippet footer()}
-		<button type="button" class="btn btn-ghost" onclick={() => (categoryModal = false)}>
-			{m.common_cancel()}
-		</button>
-		<button type="submit" form="category-form" class="btn btn-primary">
-			<Icon name="check" size={15} />
-			{m.common_create()}
 		</button>
 	{/snippet}
 </Modal>

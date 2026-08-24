@@ -1,23 +1,5 @@
-import { expect, test, type Locator } from '@playwright/test';
-
-/**
- * Hace clic hasta que la página reaccione.
- *
- * El primer clic después de un `goto` se pierde. El HTML ya está pintado —lo
- * renderizó el servidor— pero Svelte todavía no le enganchó los manejadores, y
- * Playwright no tiene forma de saberlo: ve un botón visible y habilitado, y lo
- * pulsa. Para lo que pasa por formulario da igual, porque funciona sin
- * JavaScript; para un botón que solo vive en el cliente, no.
- *
- * Se reintenta en vez de esperar un tiempo fijo: un `waitForTimeout` sería más
- * lento en la máquina rápida y seguiría fallando en la lenta.
- */
-async function clicHasta(boton: Locator, comprobar: () => Promise<void>) {
-	await expect(async () => {
-		await boton.click();
-		await comprobar();
-	}).toPass({ timeout: 10_000 });
-}
+import { expect, test } from '@playwright/test';
+import { clicHasta } from './sesion';
 
 /**
  * Entrar y salir. Es el flujo del que dependen todos los demás: si el cajero no

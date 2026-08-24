@@ -5,6 +5,7 @@ import { toLocalIso } from '$lib/domain/datetime';
 import { formError, Validator } from '$lib/application/validation';
 import type { Category, Product } from '$lib/domain/types';
 import { F } from '$lib/ui/fields';
+import { m } from '$lib/paraglide/messages.js';
 import { apiMessage, validationErrors } from '$lib/ui/messages';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -48,7 +49,7 @@ export const actions: Actions = {
 		} catch (error) {
 			return fail(400, { errors: formError(apiMessage(error)), action: 'crear' });
 		}
-		return { success: 'Producto agregado correctamente.' };
+		return { success: m.inventory_created() };
 	},
 
 	actualizar: async ({ request, locals, url }) => {
@@ -68,7 +69,7 @@ export const actions: Actions = {
 		} catch (error) {
 			return fail(400, { errors: formError(apiMessage(error)), action: 'actualizar' });
 		}
-		return { success: 'Producto actualizado correctamente.' };
+		return { success: m.inventory_updated() };
 	},
 
 	eliminar: async ({ request, locals, url }) => {
@@ -82,24 +83,6 @@ export const actions: Actions = {
 		} catch (error) {
 			return fail(400, { errors: formError(apiMessage(error)), action: 'eliminar' });
 		}
-		return { success: 'Producto eliminado.' };
-	},
-
-	crearCategoria: async ({ request, locals, url }) => {
-		requireAdmin(locals, url.pathname);
-		const v = new Validator(await request.formData());
-		const name = v.text('name', F.categoryName(), { max: 100 });
-		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), action: 'categoria' });
-
-		try {
-			await api('/categories/register_category', {
-				method: 'POST',
-				token: locals.token,
-				body: { name }
-			});
-		} catch (error) {
-			return fail(400, { errors: formError(apiMessage(error)), action: 'categoria' });
-		}
-		return { success: 'Categoría creada.' };
+		return { success: m.inventory_deleted() };
 	}
 };

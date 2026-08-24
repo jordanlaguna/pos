@@ -130,6 +130,53 @@
 	"api_product_has_sales": "It cannot be deleted: the product already has sales recorded.",
 	"api_category_name_taken": "There is already a category named {name}.",
 
+	"$comentario_categorias": "F4. The tree has two levels, and the sentences that say so have to say what to do about it: «it has subcategories» without «pick one» leaves the reader staring at the screen.",
+	"api_category_not_found": "That category no longer exists. Refresh the screen.",
+	"api_category_too_deep": "The catalog has two levels: a subcategory cannot have subcategories.",
+	"api_category_has_children": [
+		{
+			"declarations": ["input children", "local childrenPlural = children: plural"],
+			"selectors": ["childrenPlural"],
+			"match": {
+				"childrenPlural=one": "It has one subcategory. Move it before turning this category into a subcategory.",
+				"childrenPlural=other": "It has {children} subcategories. Move them before turning this category into a subcategory."
+			}
+		}
+	],
+	"api_category_self_parent": "A category cannot be inside itself.",
+	"api_category_in_use_products": [
+		{
+			"declarations": ["input products", "local productsPlural = products: plural"],
+			"selectors": ["productsPlural"],
+			"match": {
+				"productsPlural=one": "It has one product. Deactivate it instead of deleting it: its products stay where they are.",
+				"productsPlural=other": "It has {products} products. Deactivate it instead of deleting it: its products stay where they are."
+			}
+		}
+	],
+	"api_category_in_use_children": [
+		{
+			"declarations": ["input children", "local childrenPlural = children: plural"],
+			"selectors": ["childrenPlural"],
+			"match": {
+				"childrenPlural=one": "It has one subcategory. Delete that one first, or deactivate the category.",
+				"childrenPlural=other": "It has {children} subcategories. Delete those first, or deactivate the category."
+			}
+		}
+	],
+	"api_category_needs_subcategory": [
+		{
+			"declarations": ["input children", "local childrenPlural = children: plural"],
+			"selectors": ["childrenPlural"],
+			"match": {
+				"childrenPlural=one": "«{category}» has one subcategory: the product goes there.",
+				"childrenPlural=other": "«{category}» has {children} subcategories: pick the one the product goes in."
+			}
+		}
+	],
+	"api_category_inactive": "«{category}» is deactivated. Activate it or pick another one.",
+	"api_category_reorder_incomplete": "The new order arrived incomplete. Refresh the screen and try again.",
+
 	"api_person_identification_taken": "There is already a person registered with that ID number.",
 	"api_email_taken": "There is already an account with that email address.",
 	"api_person_not_found": "We could not find that person.",

@@ -12,6 +12,7 @@
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney, parseAmount, changeDue, taxLabel } from '$lib/domain/money';
 	import { PAYMENT_METHODS, type Product } from '$lib/domain/types';
+	import { buildTree, withDescendants } from '$lib/domain/categories';
 	import { m } from '$lib/paraglide/messages.js';
 	import { cartMessage, paymentLabel } from '$lib/ui/messages';
 	import type { ActionData, PageData } from './$types';
@@ -22,6 +23,8 @@
 	let searchInput = $state<HTMLInputElement | null>(null);
 	let highlighted = $state(0);
 	let activeCategory = $state<number | 'todas'>('todas');
+	/** La subcategoría elegida dentro de la raíz activa. Nulo es «toda la rama». */
+	let activeSubcategory = $state<number | null>(null);
 
 	let paymentOpen = $state(false);
 	let cashOpen = $state(false);
@@ -70,11 +73,29 @@
 
 	const showDropdown = $derived(matches.length > 0 && searchTerm.trim().length > 0);
 
-	const visibleProducts = $derived(
+	/** Solo las activas: una categoría retirada no aparece en la grilla (RN-7). */
+	const branches = $derived(buildTree(data.categories, { onlyActive: true }));
+	const activeChildren = $derived(
 		activeCategory === 'todas'
-			? data.products
-			: data.products.filter((p) => p.category_id === activeCategory)
+			? []
+			: (branches.find((b) => b.root.id === activeCategory)?.children ?? [])
 	);
+
+	const visibleProducts = $derived.by(() => {
+		if (activeSubcategory !== null)
+			return data.products.filter((p) => p.category_id === activeSubcategory);
+		if (activeCategory === 'todas') return data.products;
+		// La raíz muestra su rama entera: sin esto, elegir «Bebidas» dejaría la
+		// grilla vacía en cuanto sus productos viven en las subcategorías.
+		const alcance = withDescendants(data.categories, activeCategory);
+		return data.products.filter((p) => alcance.includes(p.category_id));
+	});
+
+	/** Cambiar de raíz descarta la subcategoría: pertenecía a la anterior. */
+	function elegirRaiz(id: number | 'todas') {
+		activeCategory = id;
+		activeSubcategory = null;
+	}
 
 	$effect(() => {
 		// Al cambiar los resultados, la selección vuelve al primero.
@@ -280,29 +301,59 @@
 			{/if}
 		</div>
 
-		<!-- Filtro por categoría para la operación táctil -->
+		<!--
+			Filtro por categoría para la operación táctil, en dos niveles (RF-15):
+			las raíces arriba y, cuando la raíz elegida tiene rama, sus
+			subcategorías debajo. Las fichas de abajo solo aparecen si hay: en un
+			catálogo plano la pantalla se ve igual que antes de F4.
+		-->
 		<div class="flex shrink-0 flex-wrap gap-1.5">
 			<button
 				type="button"
 				class="badge border {activeCategory === 'todas'
 					? 'border-transparent bg-[var(--accent)] text-[var(--accent-text)]'
 					: 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]'}"
-				onclick={() => (activeCategory = 'todas')}
+				onclick={() => elegirRaiz('todas')}
 			>
 				{m.sales_all_categories()}
 			</button>
-			{#each data.categories as category (category.id)}
+			{#each branches as branch (branch.root.id)}
 				<button
 					type="button"
-					class="badge border {activeCategory === category.id
+					class="badge border {activeCategory === branch.root.id
 						? 'border-transparent bg-[var(--accent)] text-[var(--accent-text)]'
 						: 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]'}"
-					onclick={() => (activeCategory = category.id)}
+					onclick={() => elegirRaiz(branch.root.id)}
 				>
-					{category.name}
+					{branch.root.name}
 				</button>
 			{/each}
 		</div>
+
+		{#if activeChildren.length > 0}
+			<div class="flex shrink-0 flex-wrap gap-1.5 border-l-2 border-[var(--border)] pl-2">
+				<button
+					type="button"
+					class="badge border {activeSubcategory === null
+						? 'border-[var(--accent)] text-[var(--accent)]'
+						: 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]'}"
+					onclick={() => (activeSubcategory = null)}
+				>
+					{m.sales_whole_branch()}
+				</button>
+				{#each activeChildren as child (child.id)}
+					<button
+						type="button"
+						class="badge border {activeSubcategory === child.id
+							? 'border-[var(--accent)] text-[var(--accent)]'
+							: 'border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-sunken)]'}"
+						onclick={() => (activeSubcategory = child.id)}
+					>
+						{child.name}
+					</button>
+				{/each}
+			</div>
+		{/if}
 
 		<div
 			class="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4 lg:min-h-0 lg:flex-1 lg:content-start lg:overflow-y-auto lg:pr-1"

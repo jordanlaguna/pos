@@ -4,9 +4,15 @@
 	"inventory_title": "Inventory",
 	"inventory_description": "Products, stock and categories.",
 	"inventory_entries": "Entries",
-	"inventory_new_category": "New category",
 	"inventory_new_product": "New product",
 	"inventory_category_first": "Create a category first",
+	"inventory_categories": "Categories",
+	"inventory_whole_branch": "Whole category",
+	"inventory_label_subcategory": "Subcategory",
+	"inventory_no_subcategories": "No subcategories",
+	"inventory_created": "Product added.",
+	"inventory_updated": "Product updated.",
+	"inventory_deleted": "Product deleted.",
 
 	"inventory_products": "Products",
 	"inventory_value": "Inventory value",
@@ -39,7 +45,6 @@
 	"inventory_label_category_required": "Category *",
 	"inventory_add_product": "Add product",
 
-	"inventory_category_placeholder": "E.g., Frozen food",
 
 	"inventory_delete_title": "Delete product",
 	"inventory_delete_confirm": "Are you sure you want to delete",

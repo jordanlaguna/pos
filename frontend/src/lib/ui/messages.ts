@@ -283,6 +283,15 @@ export const API_CODES = [
 	// catálogo
 	'product_has_sales',
 	'category_name_taken',
+	// categorías de dos niveles (F4)
+	'category_not_found',
+	'category_too_deep',
+	'category_has_children',
+	'category_self_parent',
+	'category_in_use',
+	'category_needs_subcategory',
+	'category_inactive',
+	'category_reorder_incomplete',
 	// personas
 	'person_identification_taken',
 	'email_taken',
@@ -589,6 +598,33 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_product_has_sales();
 		case 'category_name_taken':
 			return m.api_category_name_taken({ name: texto(d.name) });
+
+		// ------------------------------------------ categorías de dos niveles
+		case 'category_not_found':
+			return m.api_category_not_found();
+		case 'category_too_deep':
+			return m.api_category_too_deep();
+		case 'category_has_children':
+			return m.api_category_has_children({ children: numero(d.children) });
+		case 'category_self_parent':
+			return m.api_category_self_parent();
+		// El backend manda las dos cuentas y la frase nombra una: la de los
+		// productos manda cuando hay, porque moverlos es lo que hay que hacer
+		// primero. Con las dos en la misma oración harían falta cuatro
+		// variantes de plural por idioma para decir lo mismo.
+		case 'category_in_use':
+			return numero(d.products) > 0
+				? m.api_category_in_use_products({ products: numero(d.products) })
+				: m.api_category_in_use_children({ children: numero(d.children) });
+		case 'category_needs_subcategory':
+			return m.api_category_needs_subcategory({
+				category: texto(d.name),
+				children: numero(d.children)
+			});
+		case 'category_inactive':
+			return m.api_category_inactive({ category: texto(d.name) });
+		case 'category_reorder_incomplete':
+			return m.api_category_reorder_incomplete();
 
 		// ---------------------------------------------------------- personas
 		case 'person_identification_taken':

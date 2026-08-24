@@ -122,8 +122,17 @@ test.describe('el documento no habla el idioma de la pantalla (RN-29)', () => {
 		page
 	}) => {
 		await entrar(page, ADMIN);
+		/*
+		 * Hay que **esperar** a que la elección de compañía termine antes de
+		 * navegar. Sin esta espera, el `goto` de abajo corre contra el POST del
+		 * formulario: si gana el `goto`, la sesión todavía es la de tránsito,
+		 * `/configuracion` rebota a `/compania` (RF-27) y la prueba se queda
+		 * buscando la pestaña de Documentos en una pantalla que no la tiene. La
+		 * carrera estaba desde el principio y falla una vez de cada dos.
+		 */
 		if (page.url().includes('/compania')) {
 			await page.getByRole('button', { name: /Abastecedor La Esquina/i }).click();
+			await expect(page).toHaveURL(/\/(ventas|dashboard)/);
 		}
 		await page.goto('/configuracion');
 

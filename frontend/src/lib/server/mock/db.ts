@@ -174,7 +174,7 @@ const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
  * pierde el estado de la demostración, que es exactamente lo que hay que perder:
  * los datos de prueba no valen más que la prueba.
  */
-const SEED_VERSION = 4;
+const SEED_VERSION = 5;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -296,13 +296,21 @@ function daysAgo(days: number, hour = 12, minute = 0): Date {
 
 // ------------------------------------------------------------------ datos base
 
+// El árbol de dos niveles (F4). «Bebidas» viene repartida en subcategorías y las
+// demás raíces no: el demo tiene que mostrar los dos casos, porque son los dos
+// que la grilla de ventas y la ficha del producto tratan distinto —una raíz sin
+// hijas admite productos, una con hijas muestra fichas (RN-6)—.
 const CATEGORIES: Category[] = [
-	{ id: 1, name: 'Abarrotes' },
-	{ id: 2, name: 'Bebidas' },
-	{ id: 3, name: 'Lácteos' },
-	{ id: 4, name: 'Panadería' },
-	{ id: 5, name: 'Limpieza' },
-	{ id: 6, name: 'Snacks' }
+	{ id: 1, name: 'Abarrotes', parent_id: null, sort_order: 1, is_active: true },
+	{ id: 2, name: 'Bebidas', parent_id: null, sort_order: 2, is_active: true },
+	{ id: 3, name: 'Lácteos', parent_id: null, sort_order: 3, is_active: true },
+	{ id: 4, name: 'Panadería', parent_id: null, sort_order: 4, is_active: true },
+	{ id: 5, name: 'Limpieza', parent_id: null, sort_order: 5, is_active: true },
+	{ id: 6, name: 'Snacks', parent_id: null, sort_order: 6, is_active: true },
+	{ id: 7, name: 'Gaseosas', parent_id: 2, sort_order: 1, is_active: true },
+	{ id: 8, name: 'Aguas y jugos', parent_id: 2, sort_order: 2, is_active: true },
+	{ id: 9, name: 'Cervezas', parent_id: 2, sort_order: 3, is_active: true },
+	{ id: 10, name: 'Café y té', parent_id: 2, sort_order: 4, is_active: true }
 ];
 
 const PRODUCT_SEED: Omit<Product, 'id_product' | 'created_at'>[] = [
@@ -312,12 +320,12 @@ const PRODUCT_SEED: Omit<Product, 'id_product' | 'created_at'>[] = [
 	{ name: 'Azúcar Doña María 1kg', description: 'Azúcar blanca refinada', price: 1250, stock: 95, barcode: '7441000100046', category_id: 1 },
 	{ name: 'Sal Sol 1kg', description: 'Sal refinada yodada', price: 620, stock: 140, barcode: '7441000100053', category_id: 1 },
 	{ name: 'Pasta espagueti 400g', description: 'Pasta de sémola de trigo', price: 890, stock: 72, barcode: '7441000100060', category_id: 1 },
-	{ name: 'Café 1820 500g', description: 'Café molido tueste medio', price: 4250, stock: 38, barcode: '7441000200014', category_id: 2 },
-	{ name: 'Coca-Cola 2L', description: 'Refresco de cola', price: 1790, stock: 64, barcode: '7441000200021', category_id: 2 },
-	{ name: 'Agua Cristal 600ml', description: 'Agua purificada sin gas', price: 690, stock: 180, barcode: '7441000200038', category_id: 2 },
-	{ name: 'Jugo Del Valle 1L', description: 'Néctar de naranja', price: 1390, stock: 52, barcode: '7441000200045', category_id: 2 },
-	{ name: 'Cerveza Imperial 350ml', description: 'Cerveza lager, lata', price: 1150, stock: 96, barcode: '7441000200052', category_id: 2 },
-	{ name: 'Té helado Lipton 500ml', description: 'Té negro con limón', price: 950, stock: 7, barcode: '7441000200069', category_id: 2 },
+	{ name: 'Café 1820 500g', description: 'Café molido tueste medio', price: 4250, stock: 38, barcode: '7441000200014', category_id: 10 },
+	{ name: 'Coca-Cola 2L', description: 'Refresco de cola', price: 1790, stock: 64, barcode: '7441000200021', category_id: 7 },
+	{ name: 'Agua Cristal 600ml', description: 'Agua purificada sin gas', price: 690, stock: 180, barcode: '7441000200038', category_id: 8 },
+	{ name: 'Jugo Del Valle 1L', description: 'Néctar de naranja', price: 1390, stock: 52, barcode: '7441000200045', category_id: 8 },
+	{ name: 'Cerveza Imperial 350ml', description: 'Cerveza lager, lata', price: 1150, stock: 96, barcode: '7441000200052', category_id: 9 },
+	{ name: 'Té helado Lipton 500ml', description: 'Té negro con limón', price: 950, stock: 7, barcode: '7441000200069', category_id: 10 },
 	{ name: 'Leche Dos Pinos 1L', description: 'Leche entera UHT', price: 1290, stock: 58, barcode: '7441000300013', category_id: 3 },
 	{ name: 'Queso Turrialba 400g', description: 'Queso fresco artesanal', price: 3450, stock: 22, barcode: '7441000300020', category_id: 3 },
 	{ name: 'Yogurt natural 1kg', description: 'Yogurt sin azúcar añadida', price: 2290, stock: 31, barcode: '7441000300037', category_id: 3 },

@@ -4,9 +4,15 @@
 	"inventory_title": "Estoque",
 	"inventory_description": "Produtos, estoque e categorias.",
 	"inventory_entries": "Entradas",
-	"inventory_new_category": "Nova categoria",
 	"inventory_new_product": "Novo produto",
 	"inventory_category_first": "Crie uma categoria primeiro",
+	"inventory_categories": "Categorias",
+	"inventory_whole_branch": "Toda a categoria",
+	"inventory_label_subcategory": "Subcategoria",
+	"inventory_no_subcategories": "Não tem subcategorias",
+	"inventory_created": "Produto adicionado.",
+	"inventory_updated": "Produto atualizado.",
+	"inventory_deleted": "Produto excluído.",
 
 	"inventory_products": "Produtos",
 	"inventory_value": "Valor do estoque",
@@ -39,7 +45,6 @@
 	"inventory_label_category_required": "Categoria *",
 	"inventory_add_product": "Adicionar produto",
 
-	"inventory_category_placeholder": "Ex.: Congelados",
 
 	"inventory_delete_title": "Excluir produto",
 	"inventory_delete_confirm": "Tem certeza de que quer excluir",

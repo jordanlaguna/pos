@@ -303,7 +303,19 @@ export type ProductInput = Omit<Product, 'id_product'>;
 export interface Category {
 	id: number;
 	name: string;
+	/** Nulo es una raíz. El árbol tiene dos niveles y no más (RN-5). */
+	parent_id: number | null;
+	/** El orden que eligió el dueño para la grilla de ventas (RF-13). */
+	sort_order: number;
+	/**
+	 * Una categoría con productos o con hijas no se borra, se desactiva (RN-7).
+	 * La lista trae las dos: el inventario tiene que poder nombrar la categoría
+	 * de un producto viejo y volver a activarla.
+	 */
+	is_active: boolean;
 }
+
+export type CategoryInput = Pick<Category, 'name'> & { parent_id?: number | null };
 
 // ---------------------------------------------------------------------- ventas
 

@@ -37,6 +37,10 @@
 		idcard: 'M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM9 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM6 16a3 3 0 0 1 6 0M15 10h4M15 14h3',
 		calendar: 'M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2ZM16 2v4M8 2v4M3 10h18',
 		tag: 'M20.59 13.41 12 22l-9-9V3h10l7.59 7.59a2 2 0 0 1 0 2.82ZM7 7h.01',
+		// Reordenar categorías (F4). `back` y `forward` ya existían para navegar;
+		// estas dos son las de subir y bajar un lugar en una lista.
+		up: 'M18 15l-6-6-6 6',
+		down: 'M6 9l6 6 6-6',
 		undo: 'M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10',
 		home: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10',
 		barcode: 'M3 5v14M7 5v14M11 5v10M15 5v14M19 5v14M21 5v14',

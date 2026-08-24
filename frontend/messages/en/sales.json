@@ -18,6 +18,7 @@
 	"sales_in_stock": "{stock} in stock",
 
 	"sales_all_categories": "All",
+	"sales_whole_branch": "Whole category",
 	"sales_out_of_stock": "Out of stock",
 	"sales_sold_out": "Sold out",
 	"sales_units_short": "{stock} pcs",

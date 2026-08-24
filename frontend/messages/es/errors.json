@@ -130,6 +130,53 @@
 	"api_product_has_sales": "No se puede eliminar: el producto ya tiene ventas registradas.",
 	"api_category_name_taken": "Ya hay una categoría llamada {name}.",
 
+	"$comentario_categorias": "F4. El árbol tiene dos niveles, y las frases que lo dicen tienen que decir además qué hacer: «tiene subcategorías» sin el «elija una» deja a quien lo lee mirando la pantalla.",
+	"api_category_not_found": "Esa categoría ya no existe. Actualice la pantalla.",
+	"api_category_too_deep": "El catálogo tiene dos niveles: una subcategoría no puede tener subcategorías.",
+	"api_category_has_children": [
+		{
+			"declarations": ["input children", "local childrenPlural = children: plural"],
+			"selectors": ["childrenPlural"],
+			"match": {
+				"childrenPlural=one": "Tiene una subcategoría. Muévala antes de convertir esta categoría en subcategoría.",
+				"childrenPlural=other": "Tiene {children} subcategorías. Muévalas antes de convertir esta categoría en subcategoría."
+			}
+		}
+	],
+	"api_category_self_parent": "Una categoría no puede estar dentro de sí misma.",
+	"api_category_in_use_products": [
+		{
+			"declarations": ["input products", "local productsPlural = products: plural"],
+			"selectors": ["productsPlural"],
+			"match": {
+				"productsPlural=one": "Tiene un producto. Desactívela en vez de borrarla: sus productos se quedan donde están.",
+				"productsPlural=other": "Tiene {products} productos. Desactívela en vez de borrarla: sus productos se quedan donde están."
+			}
+		}
+	],
+	"api_category_in_use_children": [
+		{
+			"declarations": ["input children", "local childrenPlural = children: plural"],
+			"selectors": ["childrenPlural"],
+			"match": {
+				"childrenPlural=one": "Tiene una subcategoría. Bórrela primero, o desactive la categoría.",
+				"childrenPlural=other": "Tiene {children} subcategorías. Bórrelas primero, o desactive la categoría."
+			}
+		}
+	],
+	"api_category_needs_subcategory": [
+		{
+			"declarations": ["input children", "local childrenPlural = children: plural"],
+			"selectors": ["childrenPlural"],
+			"match": {
+				"childrenPlural=one": "«{category}» tiene una subcategoría: el producto va ahí.",
+				"childrenPlural=other": "«{category}» tiene {children} subcategorías: elija en cuál va el producto."
+			}
+		}
+	],
+	"api_category_inactive": "«{category}» está desactivada. Actívela o elija otra.",
+	"api_category_reorder_incomplete": "El orden llegó incompleto. Actualice la pantalla e inténtelo de nuevo.",
+
 	"api_person_identification_taken": "Ya hay una persona registrada con esa cédula.",
 	"api_email_taken": "Ya hay una cuenta con ese correo.",
 	"api_person_not_found": "No encontramos esa persona.",
