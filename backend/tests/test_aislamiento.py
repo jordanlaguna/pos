@@ -152,6 +152,8 @@ RUTAS_POR_ID = [
     ("PUT", "/clients/update_client/{cliente_id}", {"name": "Secuestrado"}),
     ("PUT", "/users/role/{user_id}", {"role": "cajero"}),
     ("POST", "/inventory/entry/{entrada_id}/cancel", None),
+    ("PUT", "/categories/update_category/{categoria_id}", {"name": "Secuestrada"}),
+    ("DELETE", "/categories/delete_category/{categoria_id}", None),
 ]
 
 
@@ -171,6 +173,7 @@ class TestNoSeVeLoDeLaOtraCompania:
             producto_id=mundo_b["producto"]["id_product"],
             cliente_id=mundo_b["cliente_id"],
             user_id=mundo_b["user_id"],
+            categoria_id=mundo_b["categoria_id"],
         )
         estado, respuesta = api.call(metodo, ruta, cuerpo)
 
@@ -518,6 +521,11 @@ FUERA_DE_LA_BATERIA = {
     "/cash/close": "opera sobre el usuario de la sesión",
     "/cash/movement": "opera sobre el usuario de la sesión",
     "/categories/register_category": "crea en la compañía de la sesión",
+    "/categories/reorder": (
+        "reordena hermanas de la compañía de la sesión; con ids ajenos la lista "
+        "no coincide con las hermanas y responde category_reorder_incomplete "
+        "—probado en test_categorias.py—"
+    ),
     "/clients/register_client": "crea en la compañía de la sesión",
     "/products/add_product": "crea en la compañía de la sesión",
     "/sales/add_sale": "crea en la compañía de la sesión",
@@ -568,6 +576,8 @@ def test_ninguna_ruta_de_negocio_quedo_sin_probar():
         "/products/update_product/{producto_id}": "/products/update_product/{id_product}",
         "/products/delete_product/{producto_id}": "/products/delete_product/{id_product}",
         "/clients/update_client/{cliente_id}": "/clients/update_client/{id_client}",
+        "/categories/update_category/{categoria_id}": "/categories/update_category/{category_id}",
+        "/categories/delete_category/{categoria_id}": "/categories/delete_category/{category_id}",
     }
     cubiertas = {equivalencias.get(r, r) for r in cubiertas}
 

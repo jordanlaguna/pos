@@ -41,6 +41,7 @@ from app.models.model_person import Person
 from app.models.model_product import Product
 from app.models.model_stock_entry import StockEntry, StockEntryDetail
 from app.models.model_user import User
+from app.services import crud_categories
 from app.utils.api_errors import api_error
 
 
@@ -99,6 +100,16 @@ def create_entry(db: Session, payload) -> dict:
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
     )
+
+    # RN-6, también acá: la entrada de mercadería crea productos, así que sin
+    # esto el archivo del proveedor sería la puerta por la que entran productos
+    # colgados de una raíz que ya solo muestra fichas. Se comprueba una vez por
+    # categoría distinta y no una por línea: una factura de cien renglones suele
+    # traer dos o tres.
+    for categoria in {
+        l.new_product.category_id for l in (payload.lines or []) if l.new_product
+    }:
+        crud_categories.check_category_for_product(db, categoria)
 
     peticion = EntryRequest(
         document_number=payload.document_number,

@@ -28,7 +28,7 @@ from pathlib import Path
 import pytest
 
 from app.utils.api_errors import CODES, DONE
-from .conftest import Api, bootstrap, cerrar_caja_abierta, entrar, marca_unica
+from .conftest import Api, bootstrap, cerrar_caja_abierta, codigo, entrar, marca_unica
 
 APP = Path(__file__).resolve().parent.parent / "app"
 
@@ -190,19 +190,6 @@ def test_los_si_tambien_son_codigos():
 
 
 # --------------------------------------------------- situación → código (HTTP)
-
-
-def codigo(respuesta: tuple[int, object], estado_esperado: int) -> str:
-    """El código de un «no», comprobando de paso el estado HTTP."""
-    estado, cuerpo = respuesta
-    assert estado == estado_esperado, f"se esperaba {estado_esperado} y vino {estado}: {cuerpo}"
-    assert isinstance(cuerpo, dict), f"el cuerpo no es un objeto: {cuerpo}"
-    detail = cuerpo.get("detail")
-    assert isinstance(detail, dict), (
-        f"el detalle tiene que ser código y datos, y vino {detail!r}. "
-        "El backend no escribe frases (RN-30)."
-    )
-    return detail["code"]
 
 
 def venta(api: Api, lineas: list[tuple[dict, int]], **cambios) -> dict:

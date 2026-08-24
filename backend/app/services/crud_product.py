@@ -4,10 +4,16 @@ from app.models.model_categories import Category
 from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
 from app.schemas.schemas_product import ProdcutRegisterSuccess, ProductRegister
+from app.services.crud_categories import check_category_for_product
 from app.utils.api_errors import api_error
 
 
 def create_product(db: Session, product: ProductRegister):
+    # RN-6: el producto va en la hoja del árbol. Con la categoría convertida en
+    # raíz de una rama, colgarle un producto lo dejaría fuera de la grilla de
+    # ventas —que en una raíz con hijas muestra fichas, no productos—.
+    check_category_for_product(db, product.category_id)
+
     db_product = Product(
         name=product.name,
         description=product.description,
@@ -64,6 +70,13 @@ def update_product_information(db: Session, id_product: int, product_data: dict)
         )
         if clash:
             raise api_error(400, "barcode_taken", barcode=new_barcode)
+
+    # Mover un producto de categoría pasa por la misma regla que crearlo
+    # (RN-6). Solo si de verdad cambia: revalidar la que ya tiene haría que un
+    # cambio de precio fallara por una categoría que se desactivó después.
+    nueva_categoria = product_data.get("category_id")
+    if nueva_categoria is not None and nueva_categoria != db_product.category_id:
+        check_category_for_product(db, nueva_categoria)
 
     for key, value in product_data.items():
         if value is not None and hasattr(db_product, key):

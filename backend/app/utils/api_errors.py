@@ -123,6 +123,26 @@ CODES: frozenset[str] = frozenset(
         # ------------------------------------------------------- catálogo
         "product_has_sales",
         "category_name_taken",
+        # ------------------------------------------- categorías de dos niveles
+        "category_not_found",
+        # `category_id` es la madre que ya es hija: colgar de ella haría un
+        # tercer nivel (RN-5).
+        "category_too_deep",
+        # La otra mitad de RN-5: la que se quiere volver hija tiene hijas.
+        # `children` es cuántas, porque la frase las cuenta.
+        "category_has_children",
+        "category_self_parent",
+        # RN-7: con productos o con hijas no se borra, se desactiva. Van las dos
+        # cuentas —`products` y `children`— porque quien lo lee necesita saber
+        # qué mover primero.
+        "category_in_use",
+        # RN-6: el producto va en la hoja. `name` y `children` para poder decir
+        # «Bebidas tiene 3 subcategorías: elija una».
+        "category_needs_subcategory",
+        "category_inactive",
+        # `expected` y `received`: reordenar exige la lista completa de
+        # hermanas, y con una parcial el orden queda sin definir.
+        "category_reorder_incomplete",
         # ------------------------------------------------------- personas
         "person_identification_taken",
         "email_taken",

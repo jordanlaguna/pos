@@ -202,3 +202,63 @@ class InvalidMovement(DomainError):
         #: 'missing_reason' u 'opening_negative'. Era una frase en español y la
         #: interfaz la reenviaba tal cual cuando no la reconocía.
         self.code = code
+
+
+# ------------------------------------------------------------------ catálogo
+
+class CategoryTooDeep(DomainError):
+    """Se quiso colgar una categoría de una subcategoría (RN-5)."""
+
+    def __init__(self, parent_id: int) -> None:
+        super().__init__(f"la categoría {parent_id} ya es una subcategoría")
+        self.parent_id = parent_id
+
+
+class CategoryHasChildren(DomainError):
+    """Se quiso volver hija a una categoría que tiene hijas (RN-5).
+
+    La otra mitad de la regla de profundidad: sin esta, mover una raíz con
+    hijas debajo de otra raíz crea un tercer nivel sin crear ninguna fila.
+    """
+
+    def __init__(self, category_id: int, children: int) -> None:
+        super().__init__(f"la categoría {category_id} tiene {children} subcategorías")
+        self.category_id = category_id
+        self.children = children
+
+
+class CategoryIsItsOwnParent(DomainError):
+    """Se quiso poner una categoría como madre de sí misma."""
+
+    def __init__(self, category_id: int) -> None:
+        super().__init__(f"la categoría {category_id} no puede ser su propia madre")
+        self.category_id = category_id
+
+
+class CategoryInUse(DomainError):
+    """Se quiso borrar una categoría con productos o con hijas (RN-7).
+
+    Lleva las dos cuentas porque la frase las nombra y porque quien la lee
+    necesita saber qué mover antes de volver a intentarlo.
+    """
+
+    def __init__(self, category_id: int, products: int, children: int) -> None:
+        super().__init__(
+            f"la categoría {category_id} tiene {products} productos "
+            f"y {children} subcategorías"
+        )
+        self.category_id = category_id
+        self.products = products
+        self.children = children
+
+
+class CategoryNeedsSubcategory(DomainError):
+    """Se quiso colgar un producto de una raíz que ya tiene hijas (RN-6)."""
+
+    def __init__(self, category_id: int, children: int) -> None:
+        super().__init__(
+            f"la categoría {category_id} tiene {children} subcategorías: "
+            "el producto va en una de ellas"
+        )
+        self.category_id = category_id
+        self.children = children

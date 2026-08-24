@@ -130,8 +130,27 @@ def _deserializar(valor: Any) -> Any:
     return valor
 
 
+def _columnas(tabla) -> list:
+    """Las columnas que se respaldan: las que guardan un dato propio.
+
+    Las generadas quedan fuera —`categories.parent_key` es la primera (F4)— y no
+    por ahorrar espacio: MySQL **rechaza** un INSERT que le dé valor a una
+    columna generada, así que exportarlas hace que la restauración falle. Y
+    tiene sentido: son un derivado de otra columna de la misma fila, y
+    restaurarlas sería restaurar dos veces el mismo dato.
+    """
+    return [columna for columna in tabla.c if columna.computed is None]
+
+
 def _filas(conexion, tabla, condicion=None) -> list[dict]:
-    consulta = select(tabla) if condicion is None else select(tabla).where(condicion)
+    consulta = select(*_columnas(tabla))
+    if condicion is not None:
+        consulta = consulta.where(condicion)
+    # Por clave primaria, y no es cosmética: desde F4 `categories` se apunta a sí
+    # misma, y una madre siempre tiene un id menor que sus hijas —tuvo que
+    # existir antes—. Insertar en ese orden es lo que hace que la foránea se
+    # cumpla fila por fila; sin ORDER BY, el orden lo elige la base.
+    consulta = consulta.order_by(*tabla.primary_key.columns)
     return [
         {k: _serializar(v) for k, v in fila._mapping.items()}
         for fila in conexion.execute(consulta)

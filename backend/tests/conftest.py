@@ -52,6 +52,25 @@ def marca_unica() -> str:
     """
     return f"{time.time():.0f}{next(_secuencia):04d}"
 
+
+def codigo(respuesta: tuple[int, object], estado_esperado: int) -> str:
+    """El código de un «no», comprobando de paso el estado HTTP.
+
+    Vivía en `test_error_codes.py`, que sigue siendo su casa principal. Pasó acá
+    al escribir las de categorías: dos archivos que comparan códigos de error no
+    pueden tener cada uno su versión de qué forma tiene un «no» (RN-30).
+    """
+    estado, cuerpo = respuesta
+    assert estado == estado_esperado, f"se esperaba {estado_esperado} y vino {estado}: {cuerpo}"
+    assert isinstance(cuerpo, dict), f"el cuerpo no es un objeto: {cuerpo}"
+    detail = cuerpo.get("detail")
+    assert isinstance(detail, dict), (
+        f"el detalle tiene que ser código y datos, y vino {detail!r}. "
+        "El backend no escribe frases (RN-30)."
+    )
+    return detail["code"]
+
+
 # 127.0.0.1 y no «localhost» a propósito. En Windows, `localhost` resuelve
 # primero a ::1, el puerto solo escucha en IPv4, y cada conexión paga el intento
 # fallido antes de reintentar: unos dos segundos por petición, que con seis
