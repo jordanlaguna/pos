@@ -30,6 +30,10 @@ class ReturnResponse(BaseModel):
     user_name: str | None = None
     created_at: datetime.datetime
     reason: str
+    # El desglose de lo reembolsado (T-509b). En nulo para las devoluciones
+    # anteriores a la migración 006, que solo guardaron el total.
+    subtotal: float | None = None
+    tax: float | None = None
     total: float
     # True cuando ya no queda ninguna unidad de la venta por devolver.
     is_full: bool

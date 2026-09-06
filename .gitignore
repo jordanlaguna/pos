@@ -34,3 +34,9 @@ htmlcov/
 # acuerdo del proyecto— pero el `.local` lleva rutas del scratchpad y permisos
 # que concedió quien está sentado acá, y no le sirven a nadie más.
 .claude/settings.local.json
+
+# Comprobantes de ejemplo de Hacienda. Sirven de referencia para F7 —son XML 4.4
+# reales, con su firma— pero NO se versionan: los emite SWS Software S.A. con su
+# cédula jurídica, llevan correos corporativos y el nombre de un tercero, y este
+# es el repositorio personal. Viven en la máquina de quien los necesite.
+docs/hacienda/costa-rica/XML-Ejemplos/

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Numeric, String
 
 from app.database.database import Base
 from app.utils.tenancy import TenantMixin
@@ -13,6 +13,14 @@ class CashSession(TenantMixin, Base):
     """
 
     __tablename__ = "cash_sessions"
+
+    # Los dos índices de la migración, declarados también acá (T-915). El
+    # primero es el del arqueo —«el turno abierto de este cajero», que se
+    # consulta en cada venta— y el segundo ordena el historial por fecha.
+    __table_args__ = (
+        Index("idx_cash_sessions_user_status", "user_id", "status"),
+        Index("idx_cash_sessions_opened", "opened_at"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id_user"), nullable=False)
@@ -37,6 +45,9 @@ class CashMovement(TenantMixin, Base):
     """
 
     __tablename__ = "cash_movements"
+
+    # Los movimientos se leen siempre por turno, que es como los suma el arqueo.
+    __table_args__ = (Index("idx_cash_movements_session", "session_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False)

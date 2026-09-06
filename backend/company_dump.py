@@ -98,8 +98,11 @@ TABLAS_DE_COMPANIA = [
 #: exporta para poder recrearla si hiciera falta al restaurar.
 TABLAS_DE_IDENTIDAD = ["persons", "users"]
 
-#: Las que no son ni una cosa ni la otra. `plans` es catálogo común.
-TABLAS_AJENAS = {"plans"}
+#: Las que no son ni una cosa ni la otra. `plans` es el catálogo de
+#: suscripciones y `cabys_cache` el del impuesto: los dos son comunes a todas
+#: las compañías y no llevan dato de ninguna. `cabys_cache` además se rellena
+#: sola con lo que se vaya usando, así que no restaurarla no pierde nada.
+TABLAS_AJENAS = {"plans", "cabys_cache"}
 
 
 def _serializar(valor: Any) -> Any:

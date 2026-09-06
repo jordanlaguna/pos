@@ -35,6 +35,7 @@
 	"doc_no_detail_hint": "Aplique o endpoint {endpoint} do patch para vê-lo.",
 
 	"doc_subtotal": "Subtotal",
+	"doc_tax_at_rate": "{name} ({rate} %)",
 	"doc_total": "Total",
 	"doc_cash_received": "Dinheiro recebido",
 	"doc_change": "Troco",

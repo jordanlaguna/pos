@@ -27,7 +27,12 @@ from app.application.ports.repositories import (
 )
 from app.domain.errors import DomainError, InvalidQuantity
 from app.domain.money import Money
-from app.domain.returns import ReturnLine, check_returnable, is_fully_returned, refund_total
+from app.domain.returns import (
+    ReturnLine,
+    check_returnable,
+    is_fully_returned,
+    refund_totals,
+)
 from app.domain.tax import TaxRate
 
 
@@ -98,7 +103,21 @@ class RegisterReturn:
 
         vendido = self._sales.sold_quantities(request.sale_id)
         precios = self._sales.sold_prices(request.sale_id)
+        tarifas = self._sales.sold_tax_rates(request.sale_id)
         ya_devuelto = self._returns.returned_quantities(request.sale_id)
+
+        # La tasa del ENCABEZADO de esta venta, reconstruida de sus montos. Desde
+        # F5 es solo el respaldo: sirve para las ventas anteriores a la migración
+        # 006, que no tienen tarifa en la línea y llevan una sola, así que el
+        # cociente la reconstruye exacta. La configurada entra un escalón más
+        # abajo, para las del WinForms que quedaron sin desglose.
+        #
+        # **No sirve cuando la venta mezcla tarifas**: ahí `tax / subtotal` es un
+        # promedio, y devolver una sola línea con el promedio reembolsa de más o
+        # de menos. Por eso lo primero que se mira es la tarifa de la línea.
+        del_encabezado = TaxRate.of_sale(
+            Money(venta.subtotal), Money(venta.tax), default=self._settings.tax_rate()
+        )
 
         # Se valida TODO antes de escribir: o entra la devolución completa, o
         # ninguna.
@@ -112,23 +131,23 @@ class RegisterReturn:
                     product_id=pedida.product_id,
                     unit_price=precios[pedida.product_id],
                     quantity=pedida.quantity,
+                    # Resuelta acá y nunca nula, igual que en la venta: lo que se
+                    # guarda no puede depender de lo que esté configurado el día
+                    # que alguien lea esta devolución.
+                    tax_rate=tarifas.get(pedida.product_id, del_encabezado),
                 )
             )
 
-        # La tasa de ESTA venta, reconstruida de sus montos. La configurada solo
-        # entra como respaldo para ventas viejas guardadas sin desglose, que es
-        # como quedaron las del WinForms.
-        tasa = TaxRate.of_sale(
-            Money(venta.subtotal), Money(venta.tax), default=self._settings.tax_rate()
-        )
-        total = refund_total(lineas, tasa)
+        totales = refund_totals(lineas, del_encabezado)
 
         with self._uow:
             id_return = self._returns.add(
                 sale_id=request.sale_id,
                 user_id=request.user_id,
                 reason=request.reason.strip(),
-                total=total,
+                subtotal=totales.subtotal,
+                tax=totales.tax,
+                total=totales.total,
                 created_at=self._clock.now(),
                 lines=lineas,
             )
@@ -143,7 +162,7 @@ class RegisterReturn:
 
         return RegisteredReturn(
             id_return=id_return,
-            total=total,
+            total=totales.total,
             lines=lineas,
             is_full=is_fully_returned(vendido, despues),
         )

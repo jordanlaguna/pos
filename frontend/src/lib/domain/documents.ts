@@ -1,6 +1,7 @@
 import { readableInk, withLightness } from './color';
+import { round2 } from './money';
 import type { Settings } from './settings';
-import type { Client, SaleDetail, SaleReturn } from './types';
+import type { Client, SaleDetail, SaleItem, SaleReturn } from './types';
 
 /**
  * Documento de venta: lo que el cliente se lleva.
@@ -28,6 +29,55 @@ export interface DocumentProps {
 	 * es la plantilla la que lo necesita.
 	 */
 	docLocale: string;
+}
+
+/** Una fila del desglose por tarifa del documento (RF-21). */
+export interface TaxLine {
+	/** Entre 0 y 1: el 13 % es `0.13`. */
+	rate: number;
+	/** Lo que se vendió a esa tarifa. */
+	base: number;
+	/** Lo que se cobró de impuesto a esa tarifa. */
+	tax: number;
+}
+
+/**
+ * El desglose por tarifa de una venta **ya cobrada**.
+ *
+ * Lee lo que se guardó en cada línea, no lo recalcula: un documento reimpreso
+ * dentro de cinco años tiene que decir lo que se cobró, aunque para entonces la
+ * tarifa del producto sea otra o haya cambiado cómo se redondea (RN-12).
+ *
+ * Para las ventas **anteriores a la migración 006** las líneas no traen tarifa.
+ * Ahí se devuelve un solo grupo con la del encabezado —`tax / subtotal`—, que en
+ * ellas es exacta porque llevan una sola. Es el mismo respaldo que usa el
+ * servidor al devolver.
+ *
+ * De menor a mayor tarifa, para que el documento salga siempre igual.
+ */
+export function taxBreakdown(sale: {
+	subtotal: number;
+	tax: number;
+	items?: SaleItem[];
+}): TaxLine[] {
+	const conTarifa = (sale.items ?? []).filter((i) => i.tax_rate != null);
+
+	if (conTarifa.length === 0) {
+		const rate = sale.subtotal > 0 ? sale.tax / sale.subtotal : 0;
+		return [{ rate, base: sale.subtotal, tax: sale.tax }];
+	}
+
+	const grupos = new Map<number, TaxLine>();
+	for (const item of conTarifa) {
+		const rate = item.tax_rate as number;
+		const previo = grupos.get(rate) ?? { rate, base: 0, tax: 0 };
+		grupos.set(rate, {
+			rate,
+			base: round2(previo.base + item.subtotal),
+			tax: round2(previo.tax + (item.tax_amount ?? 0))
+		});
+	}
+	return [...grupos.values()].sort((a, b) => a.rate - b.rate);
 }
 
 /**

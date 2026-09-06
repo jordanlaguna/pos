@@ -71,9 +71,23 @@ class TenantMixin:
     # Sin anotación de retorno a propósito: con `-> Column`, SQLAlchemy 2.0 cree
     # que se está usando la forma declarativa con anotaciones y exige
     # `Mapped[...]`. La firma se queda desnuda y el tipo lo dice el `Column`.
+    #
+    # **Sin `index=True`, y es deliberado** (T-915). El `ForeignKey` ya garantiza
+    # el índice: InnoDB no admite una clave foránea sin un índice que empiece por
+    # su columna, así que si no lo encuentra lo fabrica —y lo fabrica *antes*,
+    # porque en el `CREATE TABLE` que emite SQLAlchemy la foránea va en línea y
+    # el `CREATE INDEX` viene después—. Con `index=True` toda instalación nueva
+    # terminaba con **dos** índices sobre `company_id` en las catorce tablas,
+    # mientras la base migrada tenía uno; el duplicado se pagaba en cada INSERT
+    # de las tablas que más escriben (`sale_details`, `cash_movements`) sin
+    # responder ninguna consulta que el otro no respondiera ya.
+    #
+    # El límite de este razonamiento, por si algún día cambia: vale porque el
+    # `declared_attr` siempre pone la foránea. Una tabla de negocio con
+    # `company_id` **sin** `ForeignKey` sí necesitaría declarar su índice.
     @declared_attr
     def company_id(cls):  # noqa: N805
-        return Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+        return Column(Integer, ForeignKey("companies.id"), nullable=False)
 
 
 @contextmanager

@@ -10,7 +10,15 @@
 	import { quickCash, saleNumber } from '$lib/domain/cart';
 	import { cart } from '$lib/ui/stores/cart.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
-	import { formatMoney, parseAmount, changeDue, taxLabel } from '$lib/domain/money';
+	import {
+		formatMoney,
+		parseAmount,
+		changeDue,
+		ratePercentText,
+		taxLabel,
+		taxLabelAt,
+		taxRate
+	} from '$lib/domain/money';
 	import { PAYMENT_METHODS, type Product } from '$lib/domain/types';
 	import { buildTree, withDescendants } from '$lib/domain/categories';
 	import { m } from '$lib/paraglide/messages.js';
@@ -514,15 +522,38 @@
 					compact
 				/>
 			{:else}
-				<ul class="divide-y divide-[var(--border)]">
+				<!--
+					`data-testid` porque las pruebas de punta a punta corren en los tres
+					idiomas y necesitan saber que el carrito ya tiene algo sin poder
+					apoyarse en ningún rótulo. El precedente es `cabys-results`.
+				-->
+				<ul class="divide-y divide-[var(--border)]" data-testid="cart-lines">
 					{#each cart.lines as line (line.id_product)}
 						<li class="flex items-center gap-2 px-3 py-2.5">
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm font-medium text-[var(--text)]" title={line.name}>
 									{line.name}
 								</p>
-								<p class="text-xs tabular-nums text-[var(--text-subtle)]">
-									{formatMoney(line.price)} {m.sales_each()}
+								<!--
+									La tarifa va en la línea y no solo en los totales. Abajo el
+									impuesto se agrupa por tarifa, así que con dos tarifas se ve
+									que las hay pero no cuál línea puso cuál — y este es el
+									último momento en que un producto mal clasificado se puede
+									atajar: después de cobrar ya está en un documento fiscal.
+
+									Sin clasificar no es «13 %»: es que nadie lo decidió y se
+									está cobrando la configurada. Una es una decisión y la otra
+									una omisión, y en Inventario ya se distinguen.
+								-->
+								<p class="flex items-center gap-1.5 text-xs tabular-nums text-[var(--text-subtle)]">
+									<span>{formatMoney(line.price)} {m.sales_each()}</span>
+									{#if line.taxRate == null}
+										<span class="text-[var(--warning)]">
+											{ratePercentText(taxRate())} % · {m.sales_line_unclassified()}
+										</span>
+									{:else}
+										<span>{ratePercentText(line.taxRate)} %</span>
+									{/if}
 								</p>
 							</div>
 
@@ -593,11 +624,26 @@
 					<dt>{m.common_subtotal()}</dt>
 					<dd class="tabular-nums">{formatMoney(totals.subtotal)}</dd>
 				</div>
-				<div class="flex justify-between text-[var(--text-muted)]">
-					<!-- El nombre del impuesto lo configura el negocio, no el idioma. -->
-					<dt>{taxLabel()}</dt>
-					<dd class="tabular-nums">{formatMoney(totals.tax)}</dd>
-				</div>
+				<!--
+					El nombre del impuesto lo configura el negocio, no el idioma.
+
+					Con una sola tarifa va una línea, como siempre. Con varias van
+					todas: rotular la suma con la tasa configurada diría un porcentaje
+					que no se está cobrando en ninguna de ellas (F5, RN-10).
+				-->
+				{#if totals.byRate.length > 1}
+					{#each totals.byRate as fila (fila.rate)}
+						<div class="flex justify-between text-[var(--text-muted)]">
+							<dt>{taxLabelAt(fila.rate)}</dt>
+							<dd class="tabular-nums">{formatMoney(fila.tax)}</dd>
+						</div>
+					{/each}
+				{:else}
+					<div class="flex justify-between text-[var(--text-muted)]">
+						<dt>{totals.byRate.length === 1 ? taxLabelAt(totals.byRate[0].rate) : taxLabel()}</dt>
+						<dd class="tabular-nums">{formatMoney(totals.tax)}</dd>
+					</div>
+				{/if}
 				<div
 					class="flex justify-between border-t border-[var(--border)] pt-2 text-lg font-bold text-[var(--text)]"
 				>

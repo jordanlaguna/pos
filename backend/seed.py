@@ -21,6 +21,7 @@ sesión sin membresía y no hay membresía sin compañía—, así que primero:
 """
 
 import argparse
+import collections
 import json
 import random
 import sys
@@ -45,33 +46,42 @@ CAJEROS = [
 
 CATEGORIAS = ["Abarrotes", "Bebidas", "Lácteos", "Panadería", "Limpieza", "Snacks"]
 
+# El último campo es el código CABYS, y **no lleva la tarifa al lado a
+# propósito**: la tarifa la define el catálogo, y escribirla acá sería una
+# segunda fuente de verdad que se desactualiza sola. El seed la pregunta
+# (`clasificar`), que además es el mismo camino que recorre una persona.
+#
+# Los códigos son reales, consultados el 2026-09-06. La mezcla no es casual:
+# arroz, frijoles, leche, pan y papel higiénico son canasta básica al 1 % y
+# cerveza, jabón y refrescos van al 13 %. Sin esta mezcla el demo enseña un
+# catálogo entero al 13 % y F5 parece no existir.
 PRODUCTOS = [
-    ("Arroz Tío Pelón 1kg", "Arroz blanco 80% grano entero", 1450, 120, "7441000100015", 1),
-    ("Frijoles negros 900g", "Frijol negro seleccionado", 1690, 84, "7441000100022", 1),
-    ("Aceite Sabemas 900ml", "Aceite vegetal de girasol", 2350, 46, "7441000100039", 1),
-    ("Azúcar Doña María 1kg", "Azúcar blanca refinada", 1250, 95, "7441000100046", 1),
-    ("Sal Sol 1kg", "Sal refinada yodada", 620, 140, "7441000100053", 1),
-    ("Pasta espagueti 400g", "Pasta de sémola de trigo", 890, 72, "7441000100060", 1),
-    ("Café 1820 500g", "Café molido tueste medio", 4250, 38, "7441000200014", 2),
-    ("Coca-Cola 2L", "Refresco de cola", 1790, 64, "7441000200021", 2),
-    ("Agua Cristal 600ml", "Agua purificada sin gas", 690, 180, "7441000200038", 2),
-    ("Jugo Del Valle 1L", "Néctar de naranja", 1390, 52, "7441000200045", 2),
-    ("Cerveza Imperial 350ml", "Cerveza lager, lata", 1150, 96, "7441000200052", 2),
-    ("Té helado Lipton 500ml", "Té negro con limón", 950, 7, "7441000200069", 2),
-    ("Leche Dos Pinos 1L", "Leche entera UHT", 1290, 58, "7441000300013", 3),
-    ("Queso Turrialba 400g", "Queso fresco artesanal", 3450, 22, "7441000300020", 3),
-    ("Yogurt natural 1kg", "Yogurt sin azúcar añadida", 2290, 31, "7441000300037", 3),
-    ("Natilla Dos Pinos 200g", "Crema agria", 1180, 9, "7441000300044", 3),
-    ("Pan cuadrado Bimbo", "Pan blanco de molde 680g", 1850, 40, "7441000400012", 4),
-    ("Tortillas de maíz 20u", "Tortilla de maíz nixtamalizado", 1090, 55, "7441000400029", 4),
-    ("Pan dulce surtido", "Bolsa de 6 unidades", 1650, 18, "7441000400036", 4),
-    ("Detergente Irex 1kg", "Detergente en polvo multiusos", 2790, 44, "7441000500011", 5),
-    ("Jabón de baño Protex", "Jabón antibacterial 110g", 890, 76, "7441000500028", 5),
-    ("Papel higiénico Scott 4u", "Papel higiénico doble hoja", 2450, 5, "7441000500035", 5),
-    ("Cloro Magia Blanca 1L", "Blanqueador desinfectante", 1120, 62, "7441000500042", 5),
-    ("Galletas Chiky 12u", "Galleta con chispas de chocolate", 1590, 68, "7441000600010", 6),
-    ("Tostitos original 200g", "Tortilla chips de maíz", 1950, 34, "7441000600027", 6),
-    ("Maní salado 150g", "Maní tostado con sal", 1150, 3, "7441000600034", 6),
+    ("Arroz Tío Pelón 1kg", "Arroz blanco 80% grano entero", 1450, 120, "7441000100015", 1, "2316100000100"),
+    ("Frijoles negros 900g", "Frijol negro seleccionado", 1690, 84, "7441000100022", 1, "0170102000400"),
+    ("Aceite Sabemas 900ml", "Aceite vegetal de girasol", 2350, 46, "7441000100039", 1, "2163200000000"),
+    ("Azúcar Doña María 1kg", "Azúcar blanca refinada", 1250, 95, "7441000100046", 1, "2352001010000"),
+    ("Sal Sol 1kg", "Sal refinada yodada", 620, 140, "7441000100053", 1, "2399908000200"),
+    ("Pasta espagueti 400g", "Pasta de sémola de trigo", 890, 72, "7441000100060", 1, "2371000000200"),
+    ("Café 1820 500g", "Café molido tueste medio", 4250, 38, "7441000200014", 2, "2391102010200"),
+    ("Coca-Cola 2L", "Refresco de cola", 1790, 64, "7441000200021", 2, "2449003000100"),
+    ("Agua Cristal 600ml", "Agua purificada sin gas", 690, 180, "7441000200038", 2, "2441002020000"),
+    ("Jugo Del Valle 1L", "Néctar de naranja", 1390, 52, "7441000200045", 2, "2449002000100"),
+    ("Cerveza Imperial 350ml", "Cerveza lager, lata", 1150, 96, "7441000200052", 2, "2431000000000"),
+    ("Té helado Lipton 500ml", "Té negro con limón", 950, 7, "7441000200069", 2, "2449002000200"),
+    ("Leche Dos Pinos 1L", "Leche entera UHT", 1290, 58, "7441000300013", 3, "2211001030000"),
+    ("Queso Turrialba 400g", "Queso fresco artesanal", 3450, 22, "7441000300020", 3, "2225101010200"),
+    ("Yogurt natural 1kg", "Yogurt sin azúcar añadida", 2290, 31, "7441000300037", 3, None),
+    ("Natilla Dos Pinos 200g", "Crema agria", 1180, 9, "7441000300044", 3, None),
+    ("Pan cuadrado Bimbo", "Pan blanco de molde 680g", 1850, 40, "7441000400012", 4, "2349002010700"),
+    ("Tortillas de maíz 20u", "Tortilla de maíz nixtamalizado", 1090, 55, "7441000400029", 4, "2349001010100"),
+    ("Pan dulce surtido", "Bolsa de 6 unidades", 1650, 18, "7441000400036", 4, "2349002010600"),
+    ("Detergente Irex 1kg", "Detergente en polvo multiusos", 2790, 44, "7441000500011", 5, "3532201060000"),
+    ("Jabón de baño Protex", "Jabón antibacterial 110g", 890, 76, "7441000500028", 5, "3532101010199"),
+    ("Papel higiénico Scott 4u", "Papel higiénico doble hoja", 2450, 5, "7441000500035", 5, "3219301000000"),
+    ("Cloro Magia Blanca 1L", "Blanqueador desinfectante", 1120, 62, "7441000500042", 5, "3532201010000"),
+    ("Galletas Chiky 12u", "Galleta con chispas de chocolate", 1590, 68, "7441000600010", 6, "2342001009900"),
+    ("Tostitos original 200g", "Tortilla chips de maíz", 1950, 34, "7441000600027", 6, "2314000990300"),
+    ("Maní salado 150g", "Maní tostado con sal", 1150, 3, "7441000600034", 6, None),
 ]
 
 CLIENTES = [
@@ -112,6 +122,60 @@ class Api:
             print(f"\n  No se pudo conectar con {self.base}: {e.reason}")
             print("  ¿Está levantado?  docker compose ps")
             sys.exit(1)
+
+
+def clasificar(api):
+    """Le pone su CABYS a cada producto, con la tarifa que diga el catálogo.
+
+    La tarifa **se pregunta, no se escribe**. Es la misma regla que RN-11 le
+    aplica a la persona que clasifica desde la pantalla, y saltársela acá sería
+    dejar en el repositorio una tabla de tarifas que envejece sin que nadie se
+    entere — y el catálogo cambia: Hacienda estrenó el CABYS 2025.
+
+    Sin catálogo no se clasifica y se dice. Inventarse la tarifa sería peor que
+    dejar los productos sin clasificar, porque un IVA que no concuerda con el
+    CABYS es causa de rechazo del comprobante y acá quedaría escrito como si
+    alguien lo hubiera comprobado.
+    """
+    print("\nCABYS")
+    _, productos = api.call("GET", "/products/products_list")
+    por_barcode = {p["barcode"]: p["id_product"] for p in (productos or [])}
+
+    tarifas, sin_catalogo = {}, []
+    for codigo in dict.fromkeys(p[6] for p in PRODUCTOS if p[6] is not None):
+        status, body = api.call("GET", f"/cabys/{codigo}")
+        entrada = (body or {}).get("items", [None])[0] if status == 200 else None
+        if entrada is None:
+            sin_catalogo.append(codigo)
+        else:
+            tarifas[codigo] = entrada["tax_rate"]
+
+    if sin_catalogo:
+        print(f"  {len(sin_catalogo)} códigos sin respuesta del catálogo: se dejan sin clasificar.")
+        print(f"  El primero es {sin_catalogo[0]}. ¿Hay salida a internet?")
+
+    # Un `PUT` por código y no uno por producto: es el mismo endpoint de la
+    # asignación en lote (T-506), así que el seed recorre el camino que recorre
+    # una persona en vez de uno propio que podría divergir sin que nadie lo note.
+    asignados, reparto = 0, collections.Counter()
+    for codigo, tarifa in tarifas.items():
+        ids = [por_barcode[p[4]] for p in PRODUCTOS if p[6] == codigo and p[4] in por_barcode]
+        if not ids:
+            continue
+        status, _ = api.call("PUT", "/products/assign_cabys", {
+            "product_ids": ids, "cabys_code": codigo, "tax_rate": tarifa,
+        })
+        if status == 200:
+            asignados += len(ids)
+            reparto[tarifa] += len(ids)
+
+    detalle = ", ".join(f"{n} al {t * 100:g} %" for t, n in sorted(reparto.items()))
+    print(f"  {asignados} productos clasificados con {len(tarifas)} códigos ({detalle})")
+
+    faltan = sum(1 for p in PRODUCTOS if p[6] is None)
+    print(f"  {faltan} quedan sin clasificar **a propósito**: es lo que un catálogo")
+    print("  heredado tiene el primer día, y sin eso la asignación en lote no tiene")
+    print("  nada que hacer y el aviso del carrito no se ve nunca.")
 
 
 def main():
@@ -182,13 +246,15 @@ def main():
     print("\nProductos")
     creados = 0
     ahora = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    for nombre, desc, precio, stock, barcode, cat in PRODUCTOS:
+    for nombre, desc, precio, stock, barcode, cat, _cabys in PRODUCTOS:
         status, _ = api.call("POST", "/products/add_product", {
             "name": nombre, "description": desc, "price": precio, "stock": stock,
             "barcode": barcode, "created_at": ahora, "category_id": cat,
         })
         creados += status == 200
     print(f"  {creados} creados, {len(PRODUCTOS) - creados} ya existían")
+
+    clasificar(api)
 
     print("\nClientes")
     creados = 0

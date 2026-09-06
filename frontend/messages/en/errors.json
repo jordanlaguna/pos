@@ -176,6 +176,8 @@
 	],
 	"api_category_inactive": "«{category}» is deactivated. Activate it or pick another one.",
 	"api_category_reorder_incomplete": "The new order arrived incomplete. Refresh the screen and try again.",
+	"api_cabys_invalid_code": "A CABYS code must have thirteen digits. Received: {value}.",
+	"api_cabys_not_found": "The tax authority has no item with code {code}.",
 
 	"api_person_identification_taken": "There is already a person registered with that ID number.",
 	"api_email_taken": "There is already an account with that email address.",

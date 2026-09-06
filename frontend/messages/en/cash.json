@@ -5,6 +5,17 @@
 	"cash_description": "Opening, cash movements and end of shift.",
 	"cash_movement_in": "Cash in",
 	"cash_movement_out": "Cash out",
+	"cash_movement_registered": [
+		{
+			"declarations": ["input type"],
+			"selectors": ["type"],
+			"match": {
+				"type=entrada": "Cash-in movement recorded.",
+				"type=salida": "Cash-out movement recorded.",
+				"type=*": "Movement recorded."
+			}
+		}
+	],
 	"cash_close_register": "Close register",
 	"cash_open_register": "Open register",
 

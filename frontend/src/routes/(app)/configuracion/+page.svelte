@@ -834,7 +834,7 @@
 							bind:value={eInvoicing.environment}
 						>
 							<option value="sandbox">{m.settings_environment_sandbox()}</option>
-							<option value="produccion">{m.settings_environment_production()}</option>
+							<option value="production">{m.settings_environment_production()}</option>
 						</select>
 					</div>
 					<Field
@@ -844,27 +844,27 @@
 						error={form?.errors?.electronica_actividad}
 						hint={m.settings_economic_activity_hint()}
 					/>
-					<Field
-						label={m.settings_branch()}
-						name="electronica_sucursal"
-						bind:value={eInvoicing.branch}
-						error={form?.errors?.electronica_sucursal}
-						hint={m.settings_branch_hint()}
-					/>
-					<Field
-						label={m.settings_terminal()}
-						name="electronica_terminal"
-						bind:value={eInvoicing.terminal}
-						error={form?.errors?.electronica_terminal}
-						hint={m.settings_terminal_hint()}
-					/>
-					<Field
-						label={m.settings_atv_user()}
-						name="electronica_usuario"
-						bind:value={eInvoicing.atvUser}
-						error={form?.errors?.electronica_usuario}
-						class="sm:col-span-2"
-					/>
+					<!--
+						La sucursal y la terminal se **muestran**, no se escriben (T-614).
+						Las fija la sesión desde el token y cada venta ya guarda la suya. El
+						campo editable era una copia por compañía de algo que es por sesión,
+						y rota por construcción: hay **una sola fila de configuración por
+						compañía**, así que dos cajas del mismo negocio declaraban la misma
+						terminal — y dos terminales con el mismo código producen
+						consecutivos repetidos, que Hacienda rechaza.
+
+						El usuario de ATV tampoco está: es por ambiente, no por compañía, y
+						vive con su contraseña en `fe_credentials` (F6).
+					-->
+					<div class="sm:col-span-2">
+						<span class="label">{m.settings_branch_terminal()}</span>
+						<p class="font-mono text-sm text-[var(--text)]">
+							{data.branchCode || '—'} · {data.terminalCode || '—'}
+						</p>
+						<p class="mt-1 text-xs text-[var(--text-subtle)]">
+							{m.settings_branch_terminal_hint()}
+						</p>
+					</div>
 				</div>
 			</div>
 

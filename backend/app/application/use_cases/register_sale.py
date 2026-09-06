@@ -134,6 +134,12 @@ class RegisterSale:
                 [line.product_id for line in request.lines]
             )
 
+            # La tasa del negocio se lee UNA vez y sirve de respaldo para los
+            # productos que no tienen la suya (RN-9). Leerla por línea abriría la
+            # puerta a que dos líneas de la misma venta usaran tasas distintas si
+            # alguien guarda la configuración en medio del cobro.
+            tasa_del_negocio = self._settings.tax_rate()
+
             lineas: list[SaleLine] = []
             for pedida in request.lines:
                 producto = disponibles.get(pedida.product_id)
@@ -148,6 +154,15 @@ class RegisterSale:
                         product_id=pedida.product_id,
                         unit_price=producto.price,
                         quantity=pedida.quantity,
+                        # **Resuelta acá, no al guardar.** La línea sale de este
+                        # bucle con una tarifa concreta, nunca con un nulo: lo que
+                        # se congela en `sale_details` no puede depender de lo que
+                        # esté configurado el día que alguien devuelva (RN-12).
+                        tax_rate=(
+                            producto.tax_rate
+                            if producto.tax_rate is not None
+                            else tasa_del_negocio
+                        ),
                     )
                 )
 
@@ -160,7 +175,12 @@ class RegisterSale:
             # llegaba: un cliente con una lista de precios vieja —o alterada—
             # dejaba en la base una venta cuyos totales no correspondían a sus
             # propias líneas.
-            totales = sale_totals(lineas, self._settings.tax_rate())
+            # Desde F5 cada línea trae la suya, así que la tasa que se pasa acá
+            # es solo el respaldo —y no la usa ninguna línea, porque ya se
+            # resolvieron todas arriba—. Se sigue pasando porque la firma la
+            # exige y porque el día que entre una línea sin tarifa, la correcta
+            # es esta y no cero.
+            totales = sale_totals(lineas, tasa_del_negocio)
             check_declared_totals(request.declared, totales)
             check_payment(request.cash_received, totales.total)
             vuelto = change_due(request.cash_received, totales.total)

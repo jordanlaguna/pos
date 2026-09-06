@@ -65,12 +65,61 @@ export function taxName(): string {
 	return tax.name;
 }
 
-/** `IVA (13 %)` — el encabezado que se repite en tickets, carrito y devoluciones. */
+/**
+ * `0.13` → `13`, `0.045` → `4,5`. El texto de un porcentaje, sin el signo.
+ *
+ * Sin decimales cuando es redondo y con uno cuando no: «13 %» se lee mejor que
+ * «13,0 %», y «4,5 %» no se puede recortar a «5 %».
+ */
+export function ratePercentText(rate: number): string {
+	const pct = round2(rate * 100);
+	return Number.isInteger(pct) ? String(pct) : formatNumber(pct, 1);
+}
+
+/** Seis decimales: la precisión de `TaxRate` y la de la columna `DECIMAL(7,6)`. */
+const RATE_PRECISION = 1_000_000;
+
+/**
+ * `13` → `0.13`. La vuelta de `ratePercentText`, para leer lo que escribe alguien.
+ *
+ * En la ficha del producto la tarifa se escribe en porcentaje, que es como se
+ * piensa y como la publica Hacienda; adentro circula entre 0 y 1 en todo el
+ * sistema. La conversión vive acá y no en la pantalla porque **recorta a seis
+ * decimales**, que es la precisión de `TaxRate` y la de la columna
+ * `DECIMAL(7,6)`: sin eso lo recortaría la base, en silencio, y la tarifa
+ * releída dejaría de ser igual a la guardada —la comparación de RN-11 avisaría
+ * entonces de una diferencia que nadie hizo—.
+ *
+ * Fuera de 0..1 devuelve `null`: escribir `1300` en vez de `13` multiplicaría la
+ * factura, y es el mismo «no» que hace `TaxRate` en el servidor.
+ */
+export function rateFromPercent(percent: number): number | null {
+	if (!Number.isFinite(percent)) return null;
+	const rate = Math.round((percent / 100) * RATE_PRECISION) / RATE_PRECISION;
+	return rate < 0 || rate > 1 ? null : rate;
+}
+
+/**
+ * `IVA (13 %)` — el encabezado que se repite en carrito y devoluciones.
+ *
+ * Sale del estado de módulo, o sea de la configuración **vigente**. Eso es
+ * correcto donde se está cobrando y NO en un documento: una factura vieja
+ * reimpresa mostraría el porcentaje de hoy junto al monto de entonces. Las
+ * plantillas usan `taxAtRate` del diccionario, con la tarifa que se guardó.
+ */
 export function taxLabel(): string {
-	const pct = tax.rate * 100;
-	// Sin decimales cuando es redondo (13 %), con uno cuando no (4,5 %).
-	const text = Number.isInteger(pct) ? String(pct) : formatNumber(pct, 1);
-	return `${tax.name} (${text} %)`;
+	return taxLabelAt(tax.rate);
+}
+
+/**
+ * `IVA (2 %)` — el mismo encabezado, con una tarifa que no es la del negocio.
+ *
+ * Lo necesita el carrito desde F5: cuando la venta mezcla tarifas, una sola
+ * línea de impuesto rotulada con la configurada dice un porcentaje que no es el
+ * que se está cobrando en ninguna de ellas.
+ */
+export function taxLabelAt(rate: number): string {
+	return `${tax.name} (${ratePercentText(rate)} %)`;
 }
 
 /**
@@ -105,23 +154,89 @@ export function lineTotal(price: number, quantity: number): number {
 	return round2(price * quantity);
 }
 
+/** Una línea para calcular: su tarifa manda sobre la del documento (RN-9). */
+export interface TotalsLine {
+	price: number;
+	quantity: number;
+	/** `undefined` o `null` significa «la tarifa del documento». */
+	taxRate?: number | null;
+}
+
+/** Lo que se cobró a una tarifa. Es lo que imprime el desglose (RF-21). */
+export interface RateBucket {
+	rate: number;
+	base: number;
+	tax: number;
+}
+
 export interface Totals {
 	subtotal: number;
 	tax: number;
 	total: number;
+	/** Una entrada por tarifa presente, de menor a mayor. Siempre viene. */
+	byRate: RateBucket[];
+}
+
+/**
+ * Agrupa por tarifa y le calcula a cada grupo su impuesto, de menor a mayor.
+ *
+ * El orden es fijo a propósito: en un documento impreso no puede depender de en
+ * qué orden marcó el cajero.
+ */
+function groupByRate(lines: TotalsLine[], fallbackRate: number): RateBucket[] {
+	const acumulado = new Map<number, { base: number; tax: number }>();
+	for (const line of lines) {
+		const rate = line.taxRate ?? fallbackRate;
+		const base = lineTotal(line.price, line.quantity);
+		const previo = acumulado.get(rate) ?? { base: 0, tax: 0 };
+		acumulado.set(rate, {
+			base: round2(previo.base + base),
+			// El impuesto de cada línea se redondea por separado y se suma: es lo
+			// que se guarda en `sale_details.tax_amount`, y así el desglose y el
+			// encabezado cuadran con el detalle por construcción.
+			tax: round2(previo.tax + lineTax(base, rate))
+		});
+	}
+
+	return [...acumulado.entries()]
+		.sort(([a], [b]) => a - b)
+		.map(([rate, g]) => ({ rate, base: g.base, tax: g.tax }));
+}
+
+/** El impuesto de UNA línea. Es lo que se guarda por línea al cobrar. */
+export function lineTax(lineSubtotal: number, taxRateValue: number): number {
+	return round2(lineSubtotal * taxRateValue);
 }
 
 /**
  * Subtotal → tax → total, en el mismo orden que `CalculateTotalNew()` del
- * original. La tasa se pasa siempre desde quien conoce la configuración.
+ * original. La tasa de respaldo se pasa siempre desde quien conoce la
+ * configuración.
+ *
+ * Desde F5 el impuesto es la **suma de los de cada línea** (RN-10): cada línea
+ * redondea el suyo, los grupos suman los de sus líneas y el documento suma los
+ * de sus grupos. Es lo que hace que `sale_details.tax_amount` sume exactamente
+ * el impuesto del encabezado —si no, la factura no cuadraría consigo misma— y
+ * es la estructura que valida Hacienda.
+ *
+ * No mueve ninguna cifra de referencia, y está medido: las cuatro de
+ * `progress.json` dan idéntico por las dos vías, porque el catálogo son colones
+ * enteros. Con precios en céntimos, redondear por línea o por tarifa difiere en
+ * un céntimo en cerca del 39 % de los casos —dentro de lo que ya tolera la
+ * comparación con el servidor—.
+ *
+ * El espejo de esto en el servidor es `app/domain/sale.py::sale_totals`, y
+ * tienen que dar lo mismo: si difieren en más de un céntimo, la venta se
+ * rechaza.
  */
 export function computeTotals(
-	lines: { price: number; quantity: number }[],
-	taxRateValue: number = DEFAULT_TAX_RATE
+	lines: TotalsLine[],
+	fallbackRate: number = DEFAULT_TAX_RATE
 ): Totals {
-	const subtotal = round2(lines.reduce((acc, l) => acc + lineTotal(l.price, l.quantity), 0));
-	const taxAmount = round2(subtotal * taxRateValue);
-	return { subtotal, tax: taxAmount, total: round2(subtotal + taxAmount) };
+	const byRate = groupByRate(lines, fallbackRate);
+	const subtotal = round2(byRate.reduce((acc, g) => acc + g.base, 0));
+	const taxAmount = round2(byRate.reduce((acc, g) => acc + g.tax, 0));
+	return { subtotal, tax: taxAmount, total: round2(subtotal + taxAmount), byRate };
 }
 
 /** Vuelto. Nunca negativo: un pago insuficiente se bloquea antes de llegar aquí. */

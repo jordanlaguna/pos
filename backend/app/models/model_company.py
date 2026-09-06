@@ -26,6 +26,8 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    UniqueConstraint,
+    text,
 )
 
 from app.database.database import Base
@@ -38,16 +40,20 @@ class Plan(Base):
 
     __tablename__ = "plans"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     nombre = Column(String(60), nullable=False)
-    precio_mensual = Column(Numeric(10, 2), nullable=False, default=0)
-    max_sucursales = Column(Integer, nullable=False, default=1)
-    max_terminales = Column(Integer, nullable=False, default=1)
-    max_usuarios = Column(Integer, nullable=False, default=3)
+    precio_mensual = Column(
+        Numeric(10, 2), nullable=False, default=0, server_default=text("0")
+    )
+    max_sucursales = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    max_terminales = Column(Integer, nullable=False, default=1, server_default=text("1"))
+    max_usuarios = Column(Integer, nullable=False, default=3, server_default=text("3"))
     # Booleano y no entero: MySQL lo guarda igual —TINYINT(1)— pero así el
     # modelo dice lo mismo que la migración, y una instalación nueva no
     # queda con un esquema distinto de una migrada.
-    factura_electronica = Column(Boolean, nullable=False, default=False)
+    factura_electronica = Column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
 
 
 class Company(Base):
@@ -61,21 +67,34 @@ class Company(Base):
 
     __tablename__ = "companies"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # El par es la identidad del cliente, así que el UNIQUE es la regla y no una
+    # optimización: sin él, dos altas simultáneas eligen el mismo número (el
+    # backend lo calcula con `siguiente_par`) y quedan dos clientes con la misma
+    # identidad. El índice por estado es el que usa el listado del panel.
+    __table_args__ = (
+        UniqueConstraint("afiliado", "compania", name="uq_companies_afiliado_compania"),
+        Index("idx_companies_estado", "estado"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
     afiliado = Column(Integer, nullable=False)
     compania = Column(Integer, nullable=False)
     nombre = Column(String(160), nullable=False)
     identificacion = Column(String(30), nullable=True)
     plan_id = Column(Integer, ForeignKey("plans.id"), nullable=False)
     # 'prueba' | 'activa' | 'vencida' | 'suspendida' | 'cancelada' (spec §2)
-    estado = Column(String(20), nullable=False, default="prueba")
+    estado = Column(
+        String(20), nullable=False, default="prueba", server_default="prueba"
+    )
     vence_el = Column(Date, nullable=True)
     creada_el = Column(DateTime, nullable=False)
 
     # Idioma de la pantalla y idioma de los documentos, separados a propósito:
     # la factura es para el cliente y para Hacienda, no para el cajero (RN-29).
-    locale = Column(String(10), nullable=False, default="es")
-    document_locale = Column(String(10), nullable=False, default="es")
+    locale = Column(String(10), nullable=False, default="es", server_default="es")
+    document_locale = Column(
+        String(10), nullable=False, default="es", server_default="es"
+    )
 
 
 class Branch(TenantMixin, Base):
@@ -84,10 +103,17 @@ class Branch(TenantMixin, Base):
 
     __tablename__ = "branches"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # El código no se repite dentro de una compañía: es el que va en el
+    # consecutivo del comprobante, y dos sucursales con el mismo código
+    # producirían dos facturas con la misma numeración ante Hacienda.
+    __table_args__ = (
+        UniqueConstraint("company_id", "codigo", name="uq_branches"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
     codigo = Column(CHAR(3), nullable=False)
     nombre = Column(String(120), nullable=False)
-    activa = Column(Boolean, nullable=False, default=True)
+    activa = Column(Boolean, nullable=False, default=True, server_default=text("1"))
 
 
 class Terminal(TenantMixin, Base):
@@ -95,11 +121,17 @@ class Terminal(TenantMixin, Base):
 
     __tablename__ = "terminals"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # Lleva la sucursal adentro: el código de terminal es único **por sucursal**,
+    # no por compañía. Dos locales pueden tener los dos su caja «00001».
+    __table_args__ = (
+        UniqueConstraint("company_id", "branch_id", "codigo", name="uq_terminals"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
     branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
     codigo = Column(CHAR(5), nullable=False)
     nombre = Column(String(120), nullable=False)
-    activa = Column(Boolean, nullable=False, default=True)
+    activa = Column(Boolean, nullable=False, default=True, server_default=text("1"))
 
 
 class UserCompany(Base):
@@ -111,12 +143,23 @@ class UserCompany(Base):
 
     __tablename__ = "user_companies"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    # El UNIQUE es lo único que impide una membresía duplicada —la misma persona
+    # dos veces en la misma compañía, con dos roles que se contradicen—.
+    #
+    # El índice aparte hace falta porque en el UNIQUE `company_id` va segunda, y
+    # un índice solo sirve por su prefijo izquierdo: «quiénes pertenecen a esta
+    # compañía» —la consulta del panel y la del login— no lo puede usar.
+    __table_args__ = (
+        UniqueConstraint("user_id", "company_id", name="uq_user_companies"),
+        Index("idx_user_companies_company", "company_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id_user"), nullable=False)
-    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=False)
     # 'admin' | 'cajero'
     rol = Column(String(20), nullable=False)
-    activa = Column(Boolean, nullable=False, default=True)
+    activa = Column(Boolean, nullable=False, default=True, server_default=text("1"))
     creada_el = Column(DateTime, nullable=False)
 
     # Cuándo la aceptó la persona. NULL es «invitada, sin aceptar» (T-229), y es
@@ -147,7 +190,7 @@ class AuditLog(Base):
         Index("idx_audit_creado", "creado_el"),
     )
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False)
     company_id = Column(Integer, nullable=True)
     accion = Column(String(60), nullable=False)

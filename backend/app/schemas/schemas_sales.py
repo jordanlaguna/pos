@@ -49,6 +49,12 @@ class SaleItem(BaseModel):
     price: float
     subtotal: float
 
+    # Lo que se cobró de impuesto en ESTA línea, con la tarifa que se le congeló
+    # (RN-12). Es lo que desglosa el documento cuando la venta mezcla tarifas
+    # (RF-21). En nulo para las ventas anteriores a la migración 006.
+    tax_rate: float | None = None
+    tax_amount: float | None = None
+
 
 class SaleDetailResponse(SalesList):
     """Venta con sus líneas. La necesitan la factura y las devoluciones."""

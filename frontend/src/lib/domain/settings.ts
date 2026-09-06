@@ -75,13 +75,36 @@ export interface AppearanceSettings {
 	accentColor: string;
 }
 
+/**
+ * Lo que la configuración de la compañía tiene que decir sobre factura
+ * electrónica, y **solo eso** (T-614).
+ *
+ * Tenía tres campos más —`branch`, `terminal` y `atvUser`— y los tres estaban
+ * en el sitio equivocado, no de más:
+ *
+ * - **La sucursal y la terminal ya las resuelve la sesión.** `sucursal_actual()`
+ *   y `terminal_actual()` las fijan desde el token, cada venta guarda su
+ *   `terminal_id` y `/users/me` publica los dos códigos. Acá eran una copia por
+ *   compañía de algo que ya es por sesión, y la copia estaba **rota por
+ *   construcción**: hay una sola fila de configuración por compañía, así que dos
+ *   cajas del mismo negocio declaraban la misma terminal — y dos terminales con
+ *   el mismo código producen consecutivos repetidos, que Hacienda rechaza.
+ * - **El usuario de ATV es por ambiente**, no por compañía: el de pruebas y el
+ *   de producción son credenciales distintas. Vive en `fe_credentials`, con su
+ *   contraseña, donde la llave primaria es `(company_id, environment)`.
+ *
+ * Queda lo que sí es de la compañía y uno solo: si emite, contra qué ambiente y
+ * con qué actividad económica.
+ */
 export interface EInvoiceSettings {
 	enabled: boolean;
-	environment: 'sandbox' | 'produccion';
+	/**
+	 * `production` y no `produccion`: el código va en inglés y es el mismo valor
+	 * que estrena la columna `environment` de `fe_credentials`. Tener dos
+	 * vocablos para el mismo estado es cómo se pierde una migración.
+	 */
+	environment: 'sandbox' | 'production';
 	economicActivity: string;
-	branch: string;
-	terminal: string;
-	atvUser: string;
 }
 
 export interface Settings {
@@ -196,10 +219,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	eInvoicing: {
 		enabled: false,
 		environment: 'sandbox',
-		economicActivity: '',
-		branch: '001',
-		terminal: '00001',
-		atvUser: ''
+		economicActivity: ''
 	}
 };
 
@@ -274,6 +294,24 @@ function pick<T extends string>(value: unknown, allowed: readonly T[], fallback:
 	return typeof value === 'string' && (allowed as readonly string[]).includes(value)
 		? (value as T)
 		: fallback;
+}
+
+/**
+ * El ambiente, aceptando lo que se guardó antes en español (T-614).
+ *
+ * `'produccion'` se lee como `'production'` en vez de caer al de fábrica.
+ * Tratarlo como valor inválido tendría un efecto peor que perder el dato:
+ * devolvería `'sandbox'`, y un negocio que ya estaba emitiendo en producción
+ * pasaría a pruebas sin que nadie lo pidiera ni lo viera.
+ *
+ * La conversión vive acá y no en una migración de la base porque la
+ * configuración es un JSON que se lee entero por este camino: cualquier fila
+ * vieja queda al día la primera vez que se abre, y la que nunca se abra no
+ * hace daño.
+ */
+function environment(value: unknown, fallback: 'sandbox' | 'production') {
+	if (value === 'produccion') return 'production';
+	return pick(value, ['sandbox', 'production'] as const, fallback);
 }
 
 function obj(value: unknown): Record<string, unknown> {
@@ -381,19 +419,15 @@ export function mergeSettings(raw: unknown): Settings {
 		},
 		eInvoicing: {
 			enabled: bool(legacy(eInvoicing, 'enabled', 'activa'), d.eInvoicing.enabled),
-			environment: pick(
+			environment: environment(
 				legacy(eInvoicing, 'environment', 'ambiente'),
-				['sandbox', 'produccion'],
 				d.eInvoicing.environment
 			),
 			economicActivity: optional(
 				legacy(eInvoicing, 'economicActivity', 'actividad_economica'),
 				d.eInvoicing.economicActivity,
 				10
-			),
-			branch: optional(legacy(eInvoicing, 'branch', 'sucursal'), d.eInvoicing.branch, 3),
-			terminal: optional(eInvoicing.terminal, d.eInvoicing.terminal, 5),
-			atvUser: optional(legacy(eInvoicing, 'atvUser', 'usuario_atv'), d.eInvoicing.atvUser, 120)
+			)
 		}
 	};
 }

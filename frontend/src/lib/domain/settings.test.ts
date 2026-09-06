@@ -111,7 +111,9 @@ describe('mergeSettings: reglas de cada tipo de campo', () => {
 	it('las listas cerradas solo aceptan sus valores', () => {
 		expect(mergeSettings({ document: { template: 'moderna' } }).document.template).toBe('moderna');
 		expect(mergeSettings({ document: { template: 'inventada' } }).document.template).toBe('tiquete');
-		expect(mergeSettings({ eInvoicing: { environment: 'produccion' } }).eInvoicing.environment).toBe('produccion');
+		expect(mergeSettings({ eInvoicing: { environment: 'production' } }).eInvoicing.environment).toBe(
+			'production'
+		);
 		expect(mergeSettings({ eInvoicing: { environment: 7 } }).eInvoicing.environment).toBe('sandbox');
 		expect(mergeSettings({ business: { taxIdType: '02' } }).business.taxIdType).toBe('02');
 		expect(mergeSettings({ business: { taxIdType: '99' } }).business.taxIdType).toBe('01');
@@ -255,6 +257,10 @@ describe('compatibilidad con las claves en español (T-113)', () => {
 			terminal: '00003',
 			usuario_atv: 'atv@laesquina.cr'
 		}
+		// Los tres últimos ya no se leen (T-614): la sucursal y la terminal las
+		// pone la sesión, y el usuario de ATV es por ambiente. Se dejan escritos
+		// acá a propósito, porque una fila guardada de verdad los tiene y hay que
+		// comprobar que **sobran sin estorbar**.
 	};
 
 	it('una fila guardada con las claves viejas se lee entera', () => {
@@ -289,11 +295,15 @@ describe('compatibilidad con las claves en español (T-113)', () => {
 		expect(s.appearance.accentColor).toBe('#7c3aed');
 
 		expect(s.eInvoicing.enabled).toBe(true);
-		expect(s.eInvoicing.environment).toBe('produccion');
 		expect(s.eInvoicing.economicActivity).toBe('471101');
-		expect(s.eInvoicing.branch).toBe('002');
-		expect(s.eInvoicing.terminal).toBe('00003');
-		expect(s.eInvoicing.atvUser).toBe('atv@laesquina.cr');
+		// `'produccion'` se **convierte**, no se descarta. Descartarlo daría
+		// `'sandbox'`, y un negocio que ya emitía en producción pasaría a pruebas
+		// sin que nadie lo pidiera ni lo viera.
+		expect(s.eInvoicing.environment).toBe('production');
+		// Y lo que se quitó no reaparece por leer una fila vieja que lo tenía.
+		expect('branch' in s.eInvoicing).toBe(false);
+		expect('terminal' in s.eInvoicing).toBe(false);
+		expect('atvUser' in s.eInvoicing).toBe(false);
 	});
 
 	it('la clave nueva gana cuando están las dos', () => {

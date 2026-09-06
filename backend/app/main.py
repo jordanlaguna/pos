@@ -16,6 +16,7 @@ from app.models.model_company import (  # noqa: F401
     Terminal,
     UserCompany,
 )
+from app.models.model_cabys import CabysCache  # noqa: F401
 from app.models.model_categories import Category  # noqa: F401
 from app.models.model_client import Client  # noqa: F401
 from app.models.model_person import Person  # noqa: F401
@@ -28,6 +29,7 @@ from app.models.model_stock_entry import StockEntry, StockEntryDetail  # noqa: F
 from app.models.model_user import User  # noqa: F401
 from app.router import (
     auth_routes,
+    cabys_routes,
     cash_routes,
     categories_routes,
     client_routes,
@@ -71,6 +73,10 @@ app.include_router(client_routes.router, prefix="/clients", tags=["Clients"])
 app.include_router(product_routes.router, prefix="/products", tags=["Products"])
 app.include_router(sale_routes.router, prefix="/sales", tags=["Sales"])
 app.include_router(categories_routes.router, prefix="/categories", tags=["Categories"])
+# El catálogo CABYS va proxeado y no se llama desde el navegador: el POS puede
+# estar en una LAN sin salida, y así la respuesta se cachea una vez para todas
+# las compañías (plan §6.2).
+app.include_router(cabys_routes.router, prefix="/cabys", tags=["CABYS"])
 app.include_router(cash_routes.router, prefix="/cash", tags=["Cash register"])
 app.include_router(return_routes.router, prefix="/returns", tags=["Returns"])
 app.include_router(report_routes.router, prefix="/reports", tags=["Reports"])

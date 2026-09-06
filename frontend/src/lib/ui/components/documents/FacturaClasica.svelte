@@ -12,12 +12,13 @@
 	 * interfaz. Verla clara en pantalla es la única manera de saber cómo va a
 	 * salir de la impresora.
 	 */
-	import { formatMoney, taxLabel } from '$lib/domain/money';
+	import { formatMoney, ratePercentText } from '$lib/domain/money';
 	import { formatDate, formatDateTime, fullName } from '$lib/ui/format';
 	import {
 		brandTones,
 		issuerLines,
 		returnedTotal,
+		taxBreakdown,
 		type DocumentProps
 	} from '$lib/domain/documents';
 	import { documentLabels, issuerText } from '$lib/ui/documents';
@@ -43,6 +44,13 @@
 	const marca = $derived(brandTones(doc.color));
 	const emisor = $derived(issuerText(issuerLines(settings), t));
 	const devuelto = $derived(returnedTotal(returns));
+
+	/**
+	 * El desglose por tarifa (RF-21). Con una sola tarifa da una fila —igual que
+	 * antes de F5— y con varias, una por cada una. Sale de lo que se GUARDÓ en
+	 * cada línea, no de recalcular con la configuración de hoy.
+	 */
+	const impuestos = $derived(taxBreakdown(sale));
 </script>
 
 <svelte:head>
@@ -180,10 +188,14 @@
 						<dt class="font-semibold">{t.subtotal}</dt>
 						<dd>{formatMoney(sale.subtotal)}</dd>
 					</div>
-					<div class="flex justify-between">
-						<dt class="font-semibold">{taxLabel()}</dt>
-						<dd>{formatMoney(sale.tax)}</dd>
-					</div>
+					{#each impuestos as fila (fila.rate)}
+						<div class="flex justify-between">
+							<dt class="font-semibold">
+								{t.taxAtRate(settings.tax.name, ratePercentText(fila.rate))}
+							</dt>
+							<dd>{formatMoney(fila.tax)}</dd>
+						</div>
+					{/each}
 					{#if sale.payment_method === 'Efectivo' && sale.cash_received > 0}
 						<div class="flex justify-between text-slate-600">
 							<dt>{t.cashReceived}</dt>

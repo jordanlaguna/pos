@@ -143,6 +143,15 @@ CODES: frozenset[str] = frozenset(
         # `expected` y `received`: reordenar exige la lista completa de
         # hermanas, y con una parcial el orden queda sin definir.
         "category_reorder_incomplete",
+        # ------------------------------------------------------------- CABYS
+        # `value` y `reason` ('empty' | 'not_digits' | 'bad_length'): el código
+        # del catálogo son trece dígitos, y eso se comprueba antes de salir a la
+        # red porque es una regla del catálogo, no algo que haya que preguntar.
+        "cabys_invalid_code",
+        # `code`: Hacienda contestó y dijo que ese código no existe. Es distinto
+        # de no haber podido preguntar, que no es un error sino una degradación
+        # con aviso (RNF-4) y viaja en el cuerpo de una respuesta que sí llega.
+        "cabys_not_found",
         # ------------------------------------------------------- personas
         "person_identification_taken",
         "email_taken",
@@ -179,6 +188,7 @@ DONE: frozenset[str] = frozenset(
         "product_registered",
         "product_updated",
         "product_deleted",
+        "cabys_assigned",
         "sale_registered",
         "return_registered",
         "entry_registered",

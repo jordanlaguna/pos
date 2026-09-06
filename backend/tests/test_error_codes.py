@@ -810,6 +810,30 @@ class TestConfiguracion:
         respuesta = api.call("PUT", "/settings/", {"data": {"impuesto": {"tasa": 13}}})
         assert codigo(respuesta, 400) == "tax_rate_out_of_range"
 
+    # Las dos de arriba mandan `impuesto.tasa`, la forma vieja. El POS escribe
+    # `tax.rate` desde T-113, y era justo la que la validación no miraba: estas
+    # dos pruebas cubren el camino por el que de verdad llega la configuración.
+
+    def test_tasa_fuera_de_rango_con_la_clave_nueva(self, api: Api):
+        """El defecto: `tax.rate` se guardaba sin validar y el cálculo la
+        descartaba después, así que el dueño configuraba 500 % y se le cobraba
+        13 % sin un solo error."""
+        respuesta = api.call("PUT", "/settings/", {"data": {"tax": {"rate": 5}}})
+        assert codigo(respuesta, 400) == "tax_rate_out_of_range"
+
+    def test_tasa_que_no_es_un_numero_con_la_clave_nueva(self, api: Api):
+        respuesta = api.call("PUT", "/settings/", {"data": {"tax": {"rate": "mucho"}}})
+        assert codigo(respuesta, 400) == "tax_rate_not_a_number"
+
+    # Que el rechazo no se haya vuelto tan ancho que no deje pasar lo bueno se
+    # comprueba en `test_settings_tasa.py`, sobre la función pura y sin tocar la
+    # base. La primera versión de esta prueba guardaba una tasa buena por el API
+    # —0,04— y **tumbó diecinueve pruebas de otros archivos**: la configuración
+    # es de la compañía, la comparten todas las pruebas de la corrida, y a partir
+    # de ahí el servidor cobró 4 % donde cada una esperaba 13 %. Es la misma
+    # lección de T-310, esta vez en el backend: no se restaura mejor, no se toca
+    # lo que otros usan.
+
     def test_configuracion_demasiado_grande(self, api: Api):
         respuesta = api.call("PUT", "/settings/", {"data": {"relleno": "x" * 25_000}})
         assert codigo(respuesta, 400) == "settings_too_large"

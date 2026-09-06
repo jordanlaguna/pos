@@ -12,7 +12,7 @@
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-08-23",
+  "actualizado": "2026-09-06",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -100,6 +100,13 @@
     "soporte": {
       "estado": "listo",
       "detalle": "Panel /admin con listado de clientes y su uso, alta de compañía, cambio de suscripción (estado, fecha y plan), entrar como para diagnosticar y bitácora consultable. Rol soporte sin compañía (users.is_support), bloqueo por vencimiento con gracia de 7 días y límites de plan al crear usuarios."
+    },
+    "impuesto_por_producto": {
+      "estado": "listo",
+      "detalle": "Cada producto lleva su tarifa y su código CABYS; la configurada del negocio pasa a ser el valor por omisión de un producto nuevo (RN-9). El impuesto de una venta es la suma del de sus líneas, cada una con la tarifa que se le congeló al cobrar, y una devolución usa la de SU venta y no la vigente (RN-10, RN-12). El documento desglosa por tarifa cuando hay más de una.",
+      "catalogo": "El catálogo CABYS se consulta proxeado desde FastAPI y se cachea en `cabys_cache`, global para todas las compañías. Sin internet responde desde la caché y lo dice en `source`, con la fecha: degrada con aviso y nunca bloquea (RNF-4). Se busca desde la ficha del producto y se asigna en lote para catálogos ya cargados.",
+      "redes": "Doce pruebas contra MySQL fijan el caso de aceptación —2 %, 13 % y 0 % en la misma venta— y una de punta a punta lo vende, lo imprime y lo devuelve. Las líneas suman exactamente el impuesto del encabezado, que es la igualdad que valida Hacienda.",
+      "fase": "F5, terminada el 2026-09-05 (T-501 a T-511)."
     }
   },
   "defectos_corregidos": [
@@ -311,6 +318,95 @@
       "impacto": "Un producto nuevo asignado a la subcategoría retirada no se guardaba, y el mensaje hablaba de una categoría desactivada que la pantalla acababa de proponer.",
       "arreglo": "El desplegable ofrece solo las activas. Y con una excepción que apareció al arreglarlo: la del producto que se está editando se sigue ofreciendo aunque esté desactivada, porque editarle el precio no puede moverlo de categoría.",
       "como_se_encontro": "La prueba de punta a punta de T-409. Ninguna prueba de unidad podía verlo: es un desacuerdo entre dos capas que por separado están bien."
+    },
+    {
+      "id": 32,
+      "donde": "backend app/services/crud_settings.py — save_settings",
+      "que": "La validación de la tasa leía `impuesto.tasa` —la forma anterior a T-113— mientras el POS escribe `tax.rate`. `get_tax_rate` sí leía las dos, así que la validación y el cálculo miraban campos distintos: una tasa fuera de rango entraba sin levantar `tax_rate_out_of_range` y se perdía después en el respaldo que devuelve la tasa de fábrica.",
+      "impacto": "El dueño configuraba 500 %, la pantalla se lo mostraba y el servidor cobraba 13 %, en cada venta, sin un solo error. Lo tapaba a medias la validación del POS (min 0, max 100), que es control de pantalla y no de servidor. Las dos pruebas que cubrían esos códigos mandaban la clave vieja, así que el hueco era invisible. Con F5 dejaría de ser una fila mal configurada: RN-9 convierte esa tasa en el valor por omisión de todo producto nuevo, y el silencio se propagaría al catálogo entero.",
+      "arreglo": "Un solo lector, `tasa_declarada`, que usan la validación y el cálculo. Para que miraran campos distintos otra vez habría que hacerlo a propósito. 16 pruebas puras en `test_settings_tasa.py` y 2 de integración con la clave nueva; comprobado que se ponen rojas sin el arreglo.",
+      "encontrado": "mapeando la superficie de F5 antes de empezar la fase"
+    },
+    {
+      "id": 33,
+      "donde": "backend app/models/ — las cinco tablas de la suscripción y las de negocio",
+      "que": "Cuatro UNIQUE y diez índices existían solo en `migrations/*.sql` y ningún modelo los declaraba: `companies (afiliado, compania)`, `branches (company_id, codigo)`, `terminals (company_id, branch_id, codigo)`, `user_companies (user_id, company_id)`, `idx_companies_estado` y nueve de rendimiento, entre ellos `idx_cash_sessions_user_status`, que es la consulta del arqueo.",
+      "impacto": "`docker-compose.test.yml` no corre las migraciones: crea la base con `create_all`. O sea que TODA la batería corría sobre un esquema que aceptaba membresías duplicadas, códigos de sucursal repetidos y dos clientes con la misma identidad, mientras la base de producción los rechazaba. Un camino de código que los creara pasaba en verde en `pytest` y reventaba con `IntegrityError` en la base del cliente. Y una instalación nueva nacía sin los índices de rendimiento, haciendo barrido completo donde la migrada usa índice.",
+      "arreglo": "Declarados en los modelos, con paridad total comprobada. De paso se quitaron 19 `index=True` redundantes —18 duplicaban `PRIMARY` y uno lo cubría ya un UNIQUE compuesto— y el `index=True` del `TenantMixin`, que creaba un segundo índice sobre `company_id` porque InnoDB ya fabrica el suyo para la foránea.",
+      "encontrado": "escribiendo la prueba de T-915. La tarea pedía decidir entre dos opciones sobre UN índice; la prueba que sostenía la decisión encontró catorce objetos de esquema más, y los peligrosos no eran el de la tarea."
+    },
+    {
+      "id": 34,
+      "donde": "frontend: las tres plantillas de documento",
+      "que": "El rótulo del impuesto salía de `taxLabel()`, que lee el estado de módulo de `money.ts` —o sea la configuración VIGENTE— en vez de la tarifa con la que se cobró esa venta.",
+      "impacto": "Reimprimir una factura después de cambiar el IVA mostraba el porcentaje de hoy junto al monto de entonces: «IVA (15 %) ₡565,50» sobre una venta cobrada al 13 %. El monto era correcto y el rótulo mentía, que es la peor combinación —parece un error de cálculo y no lo es—. Alcanzable desde el día que alguien tocara la tasa en Configuración. Y por el mismo camino, el nombre del impuesto no seguía al idioma del documento (RN-29).",
+      "arreglo": "El rótulo lleva la tarifa que se guardó en la línea, y sale del diccionario del documento (`doc_tax_at_rate`) y no de una función que mira la configuración. `taxLabel()` se queda para el carrito y las devoluciones, donde mirar la vigente sí es lo correcto, con su docstring diciendo dónde no usarlo.",
+      "encontrado": "haciendo T-510: al ir a imprimir una fila por tarifa hubo que preguntarse de dónde salía el porcentaje de la fila única"
+    },
+    {
+      "id": 35,
+      "donde": "frontend: el carrito (`domain/cart.ts` y `ui/stores/cart.svelte.ts`)",
+      "que": "`CartLine` no llevaba la tarifa del producto, así que `computeTotals` le aplicaba a todas las líneas la tasa configurada del negocio. T-509 daba el carrito por propagado y no lo estaba.",
+      "impacto": "No era cosmético: el servidor recalcula el impuesto por línea y rechaza la venta si no cuadra (`totals_mismatch`), de modo que **una venta con tarifas mezcladas ni siquiera se podía cobrar**. Con un catálogo clasificado —o sea, en cuanto alguien usara lo que F5 acababa de construir— el POS dejaba de vender. Alcanzable desde el primer producto clasificado.",
+      "arreglo": "`newLine` copia la tarifa como copia el precio (`taxRate: product.tax_rate ?? null`), y `computeTotals` cae a la configurada solo donde no la hay. El resumen del carrito muestra además una línea por tarifa cuando hay más de una: rotular la suma con la configurada diría un porcentaje que no se está cobrando en ninguna.",
+      "encontrado": "haciendo T-511, al vender de verdad las tres tarifas. La verificación de T-509 se había hecho con `curl` contra el API, que es justo el camino donde el carrito no aparece: por ahí todo daba bien."
+    },
+    {
+      "id": 36,
+      "donde": "frontend: el simulado, `mock/handler.ts` → `POST /returns/add_return`",
+      "que": "Los totales de la devolución se calculaban leyendo `i.unit_price`, y una línea devuelta se llama `price`. `undefined` entraba a `lineTotal`, `round2` lo convertía en 0 y la devolución entera reembolsaba **₡0** sin lanzar ningún error.",
+      "impacto": "Todo el modo simulado devolvía cero desde T-509. No lo cazó nadie porque no hay prueba de punta a punta de devoluciones y porque el `map` venía de `body`, o sea `any`: TypeScript no tenía tipo con el que quejarse.",
+      "arreglo": "`price`, y el `map` declara `ReturnItem[]`. Con el tipo puesto, el nombre equivocado no compila. La devolución quedó cubierta de punta a punta en `clasificar-cabys.spec.ts`, que exige el reembolso exacto de ₡1 020.",
+      "encontrado": "haciendo T-511: la devolución parcial de la venta de tres tarifas tenía que dar ₡1 020 y daba ₡0"
+    },
+    {
+      "id": 37,
+      "donde": "backend: `crud_product.update_product_information`",
+      "que": "El bucle de actualización se saltaba los nulos —correcto para un PUT parcial, que así no borra lo que no se mandó— y por eso `tax_rate: null` no llegaba nunca a la base.",
+      "impacto": "Clasificar un producto era una puerta de una sola dirección: una vez puesta la tarifa, no había forma de volver a «la configurada» (RN-9). El día que el dueño cambiara su tasa, el catálogo que clasificó por error se quedaría congelado en la vieja.",
+      "arreglo": "Se distingue «no mandé este campo» de «ponelo en nulo»: el router manda `model_dump(exclude_unset=True)` y `crud_product.VACIABLES` declara las dos columnas donde el nulo **es** un valor. En el resto sigue siendo una omisión, porque `name=None` rompería un NOT NULL. Mismo criterio en el simulado.",
+      "encontrado": "diseñando la ficha de T-505: al decidir qué significa dejar el campo de tarifa en blanco"
+    },
+    {
+      "id": 38,
+      "donde": "backend: doce columnas de `plans`, `companies`, `branches`, `terminals`, `user_companies` y `users`",
+      "que": "Declaraban su valor por omisión con `default=` —del lado de Python— mientras la migración lo pone en el DDL. Es el defecto de T-507 repetido doce veces: `default=` no emite `DEFAULT` en el `CREATE TABLE`.",
+      "impacto": "Una instalación nueva creaba esas columnas **sin** valor por omisión mientras la migrada sí lo tiene, así que un INSERT que omitiera `estado`, `locale`, `activa` o `max_usuarios` funcionaba en la base de un cliente viejo y fallaba en una recién instalada. Latente hoy —todos los caminos los escriben— y del tipo que se descubre el día de instalar en un cliente nuevo.",
+      "arreglo": "`server_default` en las doce, con `text(\"1\")` y no `\"1\"`: una cadena se emite entrecomillada y `DEFAULT '1'` no es `DEFAULT 1`. No toca ninguna base desplegada, porque `create_all` no altera lo que ya existe.",
+      "encontrado": "por el guardián de columnas de T-919, la primera vez que corrió"
+    },
+    {
+      "id": 39,
+      "donde": "base de datos: `company_id` (×12), `branch_id` (×3) y `terminal_id` (×3)",
+      "que": "Tenían `DEFAULT 1` en la base desplegada y ninguno en el modelo. No era diseño: era la cicatriz del backfill de la 002 —`ADD COLUMN … NOT NULL` sobre una tabla con filas necesita un valor para las que ya estaban—.",
+      "impacto": "En una instalación nueva un INSERT que olvidara la compañía reventaba; en la base migrada de un cliente entraba callado y la fila quedaba en la compañía 1. En la columna que sostiene el aislamiento entre clientes, la diferencia entre un error ruidoso y un dato ajeno archivado en silencio. Y al revés de como conviene: la base de pruebas era la estricta y la de producción la permisiva.",
+      "arreglo": "Migración 007: `ALTER COLUMN … DROP DEFAULT` en las dieciocho. No toca una sola fila, es reversible y es idempotente. Aplicada el 2026-09-06 y comprobada: cero columnas con defecto, invariantes intactos, y `sql_mode` con `STRICT_TRANS_TABLES` —sin eso MySQL habría insertado un 0 con advertencia en vez de fallar—.",
+      "encontrado": "por el mismo guardián, en la misma corrida"
+    },
+    {
+      "que": "Escribir el CABYS a mano no copiaba la tarifa, y dejaba el aviso de RN-11 comparando contra el código anterior",
+      "donde": "frontend/src/routes/(app)/inventario/+page.svelte",
+      "sintoma": "Había que escribir la tarifa a mano. Y peor: en un producto nuevo el aviso de diferencia no aparecía nunca, y en uno ya clasificado comparaba contra la tarifa del código viejo — podía avisar de una diferencia inexistente o callar una real. Como al reabrir el producto sí se consultaba, parecía intermitente.",
+      "causa": "La copia colgaba de un solo sitio, `asignarCabys`, que corre al elegir un resultado de la lupa. El campo de texto no lo vigilaba nadie, y `officialRate` no sabía a qué código pertenecía.",
+      "arreglo": "Un `$effect` con espera de 400 ms, y `codigoLeido` como dueño de `officialRate`. La consulta distingue asignar de abrir: abrir lee pero no copia, porque el producto puede apartarse del catálogo a propósito.",
+      "fecha": "2026-09-06"
+    },
+    {
+      "que": "Dos pruebas de punta a punta se caían por carreras del modal de cobro",
+      "donde": "frontend/tests/e2e/tres-idiomas.spec.ts y clasificar-cabys.spec.ts",
+      "sintoma": "«No encuentro el campo de efectivo», solo en corridas largas y saltando de una prueba a otra.",
+      "causa": "Tres cosas: un clic sobre un producto antes de que la página hidratara —carrito vacío, F1 sin efecto—; dar por sentado cuál de los dos modales abre F1, que depende de si la caja está abierta; y esperar a que el campo del modal de apertura dejara de verse en vez de a que el modal se desmontara, con la capa de fondo interceptando el clic en medio.",
+      "arreglo": "`clicHasta` contra `[data-testid=\"cart-lines\"]` —independiente del idioma, que esa prueba corre en tres—, `apertura.or(recibido)` para ver cuál salió, y espera al desmontaje.",
+      "lo_que_no_sirvio": "Reintentar F1. Parecía inofensivo y no lo es: con un modal ya abierto deja una segunda capa encima. El intento empeoró la corrida de una falla a cinco.",
+      "fecha": "2026-09-06"
+    },
+    {
+      "que": "`settings.eInvoicing.terminal` no podía distinguir dos cajas de la misma compañía",
+      "donde": "frontend/src/lib/domain/settings.ts y la pantalla de Configuración",
+      "sintoma": "Ninguno todavía: el campo no lo consumía nadie. Habría aparecido en F7 como consecutivos repetidos y comprobantes rechazados.",
+      "causa": "`uq_settings_company` garantiza una fila de configuración por compañía, y el código de terminal es por terminal. El campo prometía un dato que su propia forma no podía guardar.",
+      "arreglo": "Se quitó. La sucursal y la terminal se muestran desde la sesión, que ya las resolvía bien.",
+      "fecha": "2026-09-06"
     }
   ],
   "decisiones": [
@@ -808,6 +904,137 @@
       "tema": "La pantalla de categorías no es un modal",
       "decision": "El árbol se administra en `/inventario/categorias`. El modal de «nueva categoría» que había en el inventario se quitó.",
       "porque": "Crear una categoría era un campo y cabía en un modal. Un árbol que se reordena, se mueve entre ramas y se desactiva no cabe: la mitad de RF-13 no habría tenido dónde ir. El inventario conserva un enlace, que es como se llega."
+    },
+    {
+      "tema": "Las columnas de la suscripción se quedan en español (T-913)",
+      "decision": "`companies`, `plans`, `user_companies`, `branches` y `terminals` conservan sus 17 columnas en español. La regla de código en inglés sigue vigente para todo lo demás: es una excepción sobre lo que ya existe, no una licencia para lo nuevo.",
+      "porque": "El rename son 58 archivos y ~890 menciones, y trece de los diecisiete nombres son claves JSON publicadas que hay que mover en cinco frentes sin compilador común —`npm run check` no ve el backend, `pytest` no ve el POS—, así que una clave que quede vieja no rompe la build: devuelve `undefined` en pantalla. El punto de no retorno es `company_dump.py`, que exporta por nombre de columna y no versiona el esquema: todo respaldo ya entregado a un cliente quedaría inservible, en silencio, hasta el día que hubiera que restaurarlo. No compra nada funcional y se pagaría con el presupuesto de riesgo justo antes de la fase que toca todo el cálculo de impuestos.",
+      "donde_se_reabre": "F6, si se hace T-608 (ABM de sucursales y terminales): se paga una vez, con la migración que esa fase ya va a escribir. Anotado en T-916."
+    },
+    {
+      "tema": "El índice por compañía lo garantiza la foránea, no el mixin (T-915)",
+      "decision": "Se quitó `index=True` del `TenantMixin` en vez de agregar `ix_<tabla>_company_id` en una migración. Y se declararon en los modelos las cuatro UNIQUE y los diez índices que solo tenía la migración.",
+      "porque": "InnoDB no admite una foránea sin un índice que empiece por su columna, así que si no lo encuentra lo fabrica —y lo fabrica antes, porque en el `CREATE TABLE` de SQLAlchemy la foránea va en línea y el `CREATE INDEX` viene después—. Con `index=True`, toda instalación nueva terminaba con dos índices sobre `company_id` en las catorce tablas, y el duplicado se pagaba en cada INSERT de las que más escriben sin responder ninguna consulta que el otro no respondiera ya. El camino contrario costaba una migración de catorce ALTER para instalar el duplicado en todas partes.",
+      "custodia": "`backend/tests/test_esquema.py`: lee los `.sql` en orden, aplicando los DROP INDEX, y los compara con `Base.metadata` sin levantar ninguna base.",
+      "correccion_2026_09_05": "La parte de «quitar `index=True`» estaba medida contra `backend/migration.sql`, que **nunca se aplicó a esta base**: son arreglos heredados de antes de F1 (README:23), y las tablas de negocio las creó `create_all`. Catorce de esos índices SÍ existen en las bases desplegadas, así que quitarlos del modelo dejaba a una instalación nueva con otro esquema. Se restauraron los catorce y se declararon en `INDICES_DE_CREATE_ALL` con su porqué. Sigue en pie lo del mixin: `ix_<tabla>_company_id` no existe en ninguna base, porque InnoDB ya fabrica el suyo para la foránea. Los nueve índices de rendimiento que se creían «de la migración» tampoco existían en ninguna base; van en la 006, aplicada el 2026-09-05."
+    },
+    {
+      "tema": "El redondeo del impuesto va por línea, no por tarifa (T-509c)",
+      "decision": "Cada línea redondea su impuesto, los grupos suman los de sus líneas y el documento suma los de sus grupos. Se descartó redondear el impuesto de cada tarifa sobre su base.",
+      "porque": "`sale_details.tax_amount` tiene que sumar exactamente el impuesto del encabezado. Redondeando por tarifa, la suma de las líneas de un grupo puede quedar un céntimo aparte de `round(base × tasa)`: la factura no cuadraría consigo misma, un reporte que sume líneas contradiría el encabezado, y Hacienda valida justamente esa igualdad. Es además la estructura del comprobante electrónico, que pide el impuesto en cada línea y un resumen que sea su suma.",
+      "medido_antes_de_decidir": "Las cuatro cifras de referencia del proyecto —4 915,50; 6 441,00; 5 796,90; 1 638,50— dan idéntico por las dos vías, porque el catálogo son colones enteros. Sobre 200 000 ventas al azar con precios en céntimos, las dos formas difieren en un céntimo en el 38,66 %; con precios enteros, en ninguna. Un céntimo es lo que ya tolera TOTALS_TOLERANCE entre el POS y el servidor."
+    },
+    {
+      "tema": "La tarifa de la línea se resuelve en el caso de uso, no al guardar (T-509)",
+      "decision": "`RegisterSale` y `RegisterReturn` dejan cada línea con una tarifa concreta —la del producto, o la configurada si no tiene— antes de calcular. El repositorio solo la serializa. La tasa del negocio se lee UNA vez por documento.",
+      "porque": "Si se resolviera al escribir, lo que queda congelado dependería de lo que esté configurado en ese instante, que es justo lo que RN-12 prohíbe. Y leerla por línea dejaría dos líneas de la misma factura con tasas distintas si alguien guarda la configuración a mitad del cobro."
+    },
+    {
+      "tema": "El catálogo CABYS se proxea y se cachea, y sin internet degrada con aviso (T-502, T-503)",
+      "decision": "FastAPI llama a Hacienda, guarda lo que lee en `cabys_cache` —global, sin `company_id`— y responde siempre con un campo `source` que dice si viene de Hacienda o de la caché. Sin internet no lanza: responde lo cacheado y lo dice.",
+      "porque": "RNF-4: el POS funciona en una LAN sin salida, y lo que necesita internet degrada con aviso y nunca bloquea. Proxear en vez de llamar desde el navegador evita exponer internet al cliente, evita CORS y permite cachear una vez para todas las compañías en lugar de una por caja. Y `source` viaja siempre porque es la diferencia entre «esto dice Hacienda hoy» y «esto decía la última vez que hubo internet»: quien clasifica un producto necesita saber cuál está leyendo.",
+      "tres_decisiones_que_la_tarea_no_nombraba": "«Hacienda dice que no existe» NO cae a la caché —es una respuesta del catálogo, no una falla, y la caché podría contradecir al catálogo de hoy—; el formato de trece dígitos se valida antes de salir a la red, para no gastar un viaje en un código imposible y para que el «no» distinga el error de quien pide del de la red; y con texto vacío no se consulta nada.",
+      "sin_dependencia_nueva": "`urllib` de la biblioteca estándar. Es un GET con tiempo de espera, y el proyecto acota sus dependencias porque fue `passlib` lo que le rompió una instalación entera."
+    },
+    {
+      "tema": "La asignación de CABYS en lote es un endpoint propio y es todo o nada (T-506)",
+      "decision": "`PUT /products/assign_cabys` recibe la lista de identificadores, el código y la tarifa, y si un identificador no resuelve **no aplica ninguno**: responde 404 como si se hubiera pedido ese producto por su ruta.",
+      "porque": "Medio catálogo clasificado es exactamente el desorden que RF-20 existe para arreglar, y quien lo pidió no tendría cómo saber qué mitad quedó hecha. Un bucle de PUT desde el POS habría sido más barato de escribir y habría dejado esa mitad. Además el filtro de compañía se aplica una vez, en una consulta, en vez de confiar en N búsquedas sueltas.",
+      "consecuencia": "Los identificadores viajan en el cuerpo, así que la ruta se escapa de `RUTAS_POR_ID` —que sustituye ids en la ruta—. No se declaró exenta: se probó aparte en `TestElLoteDeCabysNoAlcanzaLoAjeno`, con las tres piezas (404 con un id ajeno, el ajeno intacto después, y el lote propio funcionando para que un 404 en todo no pase el examen)."
+    },
+    {
+      "tema": "En la ficha, la tarifa en blanco significa «la configurada» y eso obliga a poder vaciar la columna (T-505)",
+      "decision": "El campo de tarifa no es obligatorio. En blanco manda `null`, y `null` en `products.tax_rate` significa «la tasa configurada del negocio» (RN-9). Para que eso funcione, `update_product_information` distingue un campo ausente de un nulo explícito.",
+      "porque": "Es lo que ya decidió la migración 006 al dejar las columnas en NULL: no congelar en el 13 % un catálogo que nadie tocó. Si la ficha no pudiera expresarlo, esa decisión duraría hasta la primera edición de cualquier producto —incluso un cambio de precio— y la semántica del NULL moriría en silencio.",
+      "alternativa_descartada": "Que la ficha proponga siempre la tasa vigente como número explícito. Es más simple y convierte a todo el catálogo en «congelado en la tasa del día que lo edité», que es justo lo contrario de lo que pide RN-9."
+    },
+    {
+      "tema": "El aviso de RN-11 necesita leer el catálogo al abrir la ficha, no solo al asignar",
+      "decision": "Al abrir un producto ya clasificado, el POS consulta `/inventario/cabys?codigo=` para saber cuál es la tarifa oficial de su código. Es best effort: si no se puede leer el catálogo, no se avisa nada.",
+      "porque": "Un aviso que solo existiera durante la sesión en que se asignó el código no avisaría nada al día siguiente, que es cuando importa: quien abre la ficha de un producto que otro clasificó mal necesita ver que la tarifa no es la del catálogo. Y sin tarifa oficial no se avisa porque inventarse una diferencia que nadie puede comprobar es peor que callarse."
+    },
+    {
+      "tema": "El guardián de esquema compara el DDL compilado, no una traducción de tipos escrita a mano (T-919)",
+      "decision": "El lado del modelo se obtiene pidiéndole a SQLAlchemy que compile el `CREATE TABLE` para MySQL, y se lee con el mismo lector que los `.sql`.",
+      "porque": "Lo comparado pasa a ser literalmente el DDL que corre una instalación nueva contra el que corrió una vieja, en vez de la opinión de la prueba sobre a qué equivale un `Numeric(7, 6)`. Traducir tipos a mano habría metido un tercer criterio que puede estar mal sin que nada lo diga. Y es lo que hace visible el caso que originó la tarea: un `default=` de Python no aparece en ese DDL y un `server_default=` sí.",
+      "consecuencia": "Hay que normalizar la notación —`INT`/`INTEGER`, `TINYINT(1)`/`BOOL`, la ausencia de `NOT NULL`, el `AFTER x` que es posición y no definición— y eso es una función corta y comprobable, no una tabla de equivalencias que envejece."
+    },
+    {
+      "tema": "El `DEFAULT 1` de compañía se quita de la base en vez de declararse excepción (T-919b)",
+      "decision": "Migración 007 con `DROP DEFAULT` en las dieciocho columnas, en lugar de anotarlas en la lista de excepciones del guardián.",
+      "porque": "Es lo único que cierra la divergencia en vez de bendecirla, y el riesgo era medible: no toca una fila, es reversible, y la prueba de que nada dependía del defecto es que la batería entera ya corría contra el esquema sin él. Un guardián que nace con dieciocho excepciones permanentes enseña que las excepciones son normales.",
+      "consecuencia": "`OMISIONES_DE_LA_MIGRACION` queda vacía a propósito: existe para que la primera excepción tenga dónde ir con su porqué."
+    },
+    {
+      "tema": "F6 contempla DOS secretos y los dos son por ambiente (corrección de alcance, 2026-09-06)",
+      "decision": "`fe_credentials` pasa a tener llave primaria `(company_id, ambiente)` y guarda las dos credenciales: el `.p12` + PIN que **firma** y el usuario + contraseña de ATV que **transmite**. Se agregan RF-29 a RF-31 y RN-33 a RN-35.",
+      "porque": "El plan contemplaba solo el certificado, y con el certificado solo no se emite: el API de Hacienda autentica con un token OIDC que sale de un `grant_type=password` con credenciales de ATV, que son otra cosa y se piden en otra parte del portal. Y Hacienda las emite **por ambiente**: las de sandbox no funcionan contra el realm de producción y viceversa, y el certificado de pruebas también es distinto del real. Con `company_id` como llave primaria solo cabía un juego, así que «pasar a producción» significaba borrar lo de pruebas sin poder volver.",
+      "de_donde_salio": "Lo planteó el usuario —«falta la parte donde el usuario agregue sus credenciales de ATV, que él decida si va a prod o sand»— y lo confirmó `docs/hacienda/costa-rica/README.md` §7 y §12, que ya estaba en el repo desde antes.",
+      "consecuencia_no_obvia": "La numeración también es por ambiente (RN-34). Si el consecutivo fuera uno solo, cinco facturas de prueba se comerían los números 1 al 5 de producción y dejarían un hueco, y el consecutivo tiene que ir sin huecos."
+    },
+    {
+      "tema": "La llave privada del certificado va detrás de un puerto, con Vault transit como uno de dos adaptadores",
+      "decision": "`FirmaDeComprobantes` recibe un digest y devuelve una firma. Adaptador **local** —`.p12` cifrado con AES-256-GCM y `FE_CRYPTO_KEY`— y adaptador **Vault transit**, donde la llave privada se importa y nunca entra en memoria de la aplicación.",
+      "porque": "Lo que gana Vault es exactamente lo flojo del adaptador local: `FE_CRYPTO_KEY` es estático, no rota, no deja rastro de cada uso y si se pierde obliga a todos los clientes a volver a subir su certificado. Transit da rotación y bitácora de cada firma, que para una llave que emite documentos fiscales es la mitad del valor. Pero VentaSys también se despliega como `docker compose up` en la VM de un negocio, donde no hay quien administre un Vault, así que no puede ser la única forma.",
+      "la_objecion_y_como_se_resuelve": "Vault se sella al reiniciar y el auto-unseal necesita un KMS en la nube; un POS que tiene que seguir vendiendo sin internet (RNF-4) no puede depender de eso. Se disuelve con una regla de diseño: **se firma al transmitir, no al vender**. La clave y el consecutivo se asignan sin red —son aritmética— y la firma espera al mismo momento en que hay que alcanzar a Hacienda. Con eso Vault caído no es un modo de falla nuevo: es el que ya hay que resolver con la contingencia.",
+      "prior_art": "DetCore ya usa `ISigningVault` + Vault transit PKCS#1 v1.5 para XAdES-EPES; está documentado en `docs/hacienda/costa-rica/recepcion-comprobantes-mensaje-receptor.md` §3.1."
+    },
+    {
+      "tema": "El recorrido de un comprobante se especifica ahora, aunque la ruta de F7 siga sin decidir",
+      "decision": "Estados visibles, consulta del veredicto, reenvío con espera creciente, contingencia y archivo entran en spec §5.4b (RN-39 a RN-44) y en plan §7.2, con doce tareas en F7.",
+      "porque": "Nada de eso depende de si firmamos nosotros o pasamos por un proveedor: lo que cambia es quién está del otro lado del puerto `EmisorFE`. Dejarlo sin especificar por esperar la decisión de la ruta era mantener en suspenso la parte que sí se sabe.",
+      "dos_ciclos_y_no_uno": "La cadencia del veredicto (10 s → 30 s → 1 → 2 → 5 min) es distinta de la del reenvío (5 → 15 → 30 min → … → 72 h). El README §8 dice que la validación normal toma segundos: con la cadencia del reenvío, una venta resuelta en tres segundos se vería «pendiente» cinco minutos en la pantalla del cajero.",
+      "solo_lo_transitorio_se_reintenta": "Un rechazo es una respuesta y se detiene. Un certificado vencido o unas credenciales rotadas se detienen en el primer intento: hacer backoff 72 horas sobre eso no es tolerancia a fallos, es demorar el aviso tres días para llegar a la misma conclusión.",
+      "agotar_no_es_rendirse": "El plazo legal de contingencia son ~8 días hábiles y Hacienda rechaza pasados los 30 días; nuestras 72 horas son operativas. Cuando se dejan de reintentar, el documento pasa a `detenido`, sigue transmitible a mano y su antigüedad se ve."
+    },
+    {
+      "tema": "La contingencia es un modo del negocio, no una decisión por documento (RN-43)",
+      "decision": "El dígito de situación de la clave se decide **al vender**, a partir del estado de las transmisiones recientes, y no al transmitir.",
+      "porque": "Corrige un error de razonamiento del día anterior. Se había escrito que, como se firma al transmitir, la clave se armaría sabiendo ya si Hacienda responde. No: la clave de 50 dígitos es **contenido obligatorio de la representación impresa** (README §10) y se entrega en el mostrador, así que existe al vender. Lo que se difiere es la firma, no la clave — son cosas distintas y estaban mezcladas.",
+      "consecuencia": "Preguntarle al cajero no sirve y adivinar por documento tampoco: emitir con situación 2 cuando Hacienda estaba arriba es causa de rechazo. La decisión sale de un hecho observado —las transmisiones recientes— y por eso es un modo con entrada y salida."
+    },
+    {
+      "tema": "El consecutivo continúa el del sistema anterior, y su contador tiene cinco dimensiones",
+      "decision": "Al configurarse, el cliente indica su oficina y la última secuencia **por tipo de comprobante**; el resto de la clave lo arma el sistema. El contador va por `(compañía, sucursal, terminal, tipo, ambiente)` y solo se puede subir.",
+      "porque": "Casi ningún cliente llega en cero: viene de otro sistema y un consecutivo repetido lo rechaza Hacienda. Lo planteó el usuario —«el cliente deberá poner la oficina, la última secuencia del consecutivo, ya el resto lo armamos nosotros por debajo»— y el matiz que agrega la investigación es que **no es un número sino uno por tipo**: las posiciones 11-20 del consecutivo son «numeración secuencial dentro del tipo».",
+      "las_cinco_dimensiones": "El plan decía «por terminal y por ambiente»: dos de cinco. Con un contador por terminal, un tiquete, una factura y otro tiquete dan tiquetes 1, 3, 5 y facturas 2, 4 — huecos en las dos series, que es lo que Hacienda rechaza."
+    },
+    {
+      "tema": "La tarifa la define el CABYS; lo configurado es el respaldo del producto sin clasificar",
+      "decision": "Se confirma y se hace visible: escribir el código copia la tarifa igual que elegirlo de la lupa, y la línea del carrito muestra la tarifa y marca lo que está sin clasificar.",
+      "porque": "Lo planteó el usuario mirando la pantalla —«no es más que el CABYS lo defina y no la configuración?»— y la prueba en vivo lo cierra: `2314000991000` arroz precocido va al 1 % y `2312000000300` harina de arroz al 13 %. Nadie decide eso por el nombre del producto. El README de Hacienda lo respalda del lado del castigo: «IVA incorrecto, el porcentaje no coincide con el definido para ese CABYS» es causa de rechazo.",
+      "se_copia_no_se_deriva": "La tarifa se copia al asignar y no se consulta al leer, por dos razones y la segunda manda: el comerciante a veces tiene que apartarse del catálogo —de eso avisa RN-11— y el catálogo es un GET a Hacienda con 5 s de espera. Derivarla al leer haría que Hacienda caída dejara de mostrar el inventario y de cobrar.",
+      "sin_clasificar_no_es_una_tarifa": "Un producto sin CABYS no es «13 %»: es que nadie lo decidió. Una es una decisión y la otra una omisión, y hasta ahora se veían iguales en el carrito."
+    },
+    {
+      "tema": "El demo se clasifica con códigos reales, y tres productos quedan sin clasificar a propósito",
+      "decision": "El seed y el simulado traen el catálogo clasificado con CABYS reales; yogurt, natilla y maní quedan sin clasificar.",
+      "porque": "El demo enseñaba F5 como si no existiera: los 26 productos nacían sin CABYS, heredaban el 13 % y el arroz —canasta básica al 1 %— cobraba 13 %. Le pasaba a cualquiera que levantara el proyecto, y fue justo lo que vio el usuario.",
+      "la_tarifa_se_pregunta": "El seed llama a `/cabys/{codigo}` y usa lo que responda, en vez de llevar la tarifa escrita al lado del código. Escribirla sería una segunda fuente de verdad que envejece sola —Hacienda estrenó el CABYS 2025— y quedaría en el repositorio como si alguien la hubiera comprobado. Sin catálogo no clasifica y lo dice.",
+      "los_tres_sin_clasificar": "Es el estado en que llega un catálogo heredado. Sin ellos la asignación en lote no tiene nada que hacer y el aviso del carrito no se ve nunca: un demo donde todo está bien no enseña la mitad que importa.",
+      "los_del_simulado_eran_inventados": "`CABYS_DEMO` tenía códigos que no existen. Un código inventado en una prueba enseña a leer una tarifa que el catálogo real no confirma, que es exactamente el defecto que se está previniendo."
+    },
+    {
+      "tema": "Las cuatro decisiones de F6, resueltas el 2026-09-06",
+      "identificacion_del_emisor": "Manda `companies`, con una columna `identification_type` nueva, y Configuración la muestra de solo lectura (RN-45). El certificado se emite A esa identificación y el usuario de ATV la lleva dentro de su nombre: un campo editable deja que el negocio la haga discrepar de su propio certificado, y entonces no se rechaza un comprobante sino todos.",
+      "nombre_del_ambiente": "`'sandbox' | 'production'`, en inglés. Es un valor en un JSON de configuración con una sola compañía viva: el momento más barato que va a haber.",
+      "certificacion_en_sandbox": "En F6 se avisa y se deja pasar; la puerta dura es T-713, en F7 (RN-46). En F6 no existe nada que contar, así que el candado nacería cerrado y sin forma de comprobar que abre.",
+      "respaldo_y_certificado": "Va lo público —certificado, usuario de ATV, fechas— y no los secretos (RN-47). Y se clasifica **por columna, no por tabla**, que es lo que el guardián de `company_dump.py` no contempla todavía.",
+      "lo_que_destapo": "La primera le puso precio a T-916: `companies` tiene sus columnas en español, así que `identification_type` quedaría al lado de `identificacion`. Es la única decisión de la fase que sigue abierta, y se paga en la misma migración o no se paga."
+    },
+    {
+      "tema": "El catálogo CABYS pasa a vivir en la base (T-516)",
+      "decision": "`cabys_cache` deja de ser una caché de lo consultado y pasa a ser el catálogo completo, importado y con versión.",
+      "porque": "Lo propuso el usuario —«sería mejor guardarlos en la db»— y es lo único que permite filtrar por prefijo: medido el 2026-09-06, el API de Hacienda responde 400 sin `q`, devuelve cero para `q=2314` y solo resuelve el código exacto. Son unas 19 000 entradas y no hay endpoint de listado.",
+      "la_division_que_lo_hace_seguro": "Lo local contesta **la búsqueda**; la tarifa que se **asigna** se confirma contra Hacienda cuando hay internet (RN-48). Asignar desde una copia vieja emite una tarifa que Hacienda ya no acepta, y vuelve como «el IVA no coincide con el definido para ese CABYS».",
+      "lo_que_falta_averiguar": "De dónde se toma el archivo. La URL que se probó da 404, y eso se averigua antes de diseñar el importador."
+    },
+    {
+      "tema": "Los cinco campos muertos de Configuración: dos se quedan, tres estaban en el sitio equivocado (T-614)",
+      "decision": "`environment` y `economicActivity` se quedan; `atvUser`, `branch` y `terminal` se van de la configuración.",
+      "porque": "No sobraban: estaban mal ubicados. El usuario de ATV es **por ambiente** —pruebas y producción son credenciales distintas— y vive en `fe_credentials`. La sucursal y la terminal ya las resuelve la sesión: `sucursal_actual()`, `terminal_actual()`, cada venta guarda su `terminal_id` y `/users/me` publica los dos códigos.",
+      "el_hallazgo": "El campo de terminal estaba **roto por construcción**. Hay una sola fila de `settings` por compañía —lo garantiza `uq_settings_company`—, así que dos cajas del mismo negocio declaraban la misma terminal, y dos terminales con el mismo código producen consecutivos repetidos, que Hacienda rechaza. Es la misma familia del contador de dos dimensiones, en otro sitio.",
+      "produccion_se_convierte": "`'produccion'` se lee como `'production'` en vez de caer al valor de fábrica. Descartarlo daría `'sandbox'`, y un negocio que ya emitía en producción pasaría a pruebas sin que nadie lo pidiera ni lo viera. La conversión vive en `mergeSettings` y no en una migración: la configuración se lee entera por ese camino, así que cada fila queda al día la primera vez que se abre."
     }
   ],
   "invariantes_verificados": {
@@ -937,6 +1164,17 @@
       "claves_en_portugues": 0,
       "voseo_en_pantalla": 0,
       "pruebas_de_unidad": 412
+    },
+    "venta_tres_tarifas": {
+      "$comentario": "El caso de aceptación de F5 (T-511). Tres productos de 1000 con las tres tarifas del país.",
+      "subtotal": 3000,
+      "impuesto": 150,
+      "total": 3150,
+      "con_tasa_unica_al_13": 390,
+      "devolver_solo_el_2pct": 1020,
+      "devolver_solo_el_13pct": 1130,
+      "devolver_solo_el_0pct": 1000,
+      "las_tres_parciales_suman": 3150
     }
   },
   "riesgos_conocidos": [
@@ -1485,6 +1723,152 @@
       ],
       "lo_que_ensena": "El UNIQUE que pedía la tarea no protegía el caso más común. `(company_id, parent_id, name)` suena completo, pero MySQL no considera iguales dos nulos: dos raíces «Bebidas» entran las dos. El mismo hueco que en `products.barcode` es allá una ventaja —los productos sin código conviven— y acá un defecto, y la diferencia no está en el índice sino en qué significa el nulo en cada tabla.\n\nY la prueba de punta a punta encontró lo que ninguna otra podía: el POS ofrecía una subcategoría desactivada que el servidor rechaza. Las dos capas estaban bien por separado.",
       "estado_de_la_fase": "F4 cerrada: T-401 a T-409, más T-410 y T-411 fuera de guion. **Antes de empezar F5 van tres pendientes transversales**, decidido así el 23 de agosto: T-913 (las columnas en español de `companies`, `plans` y `user_companies`, que hay que corregir o aceptar por escrito), T-914 (el mensaje en español que queda en `/caja` y el hueco del guardián que lo dejó pasar) y T-915 (el índice que `create_all` crea y la base migrada no tiene). Los tres están en `task.md` con lo que se sabe de cada uno; ninguno se empezó. Después quedan F5 (impuesto por producto y CABYS), F6 (preparación de factura electrónica) y F7 (emisión). F5 es la que más toca plata: la tarifa se congela en la línea de venta y la devolución deja de usar el promedio del documento."
+    },
+    {
+      "fecha": "2026-09-05",
+      "titulo": "Los tres pendientes previos a F5, y lo que encontraron",
+      "hecho": [
+        "T-913: decidido, no implementado. Las columnas en español se aceptan por escrito, con las cifras medidas en `plan.md` §3.9. La tarea medía de menos: son cinco tablas y no tres, y diecisiete columnas y no diez.",
+        "T-914: el mensaje de movimiento de `/caja` pasó a una variante de Paraglide con selector sobre el tipo —en los tres idiomas cambia la frase entera, no solo la palabra—. El guardián creció por tres lados y los tres tenían un caso real: `return { success: … }`, el `{:else}` de un `{#each}` y la única respuesta del simulado con prosa adentro.",
+        "T-915: quitado `index=True` del mixin, y la prueba que sostenía la decisión encontró cuatro UNIQUE y diez índices que ningún modelo declaraba. Paridad total, con `test_esquema.py` de red.",
+        "Defecto 32: la validación de la tasa leía una clave y el POS escribía otra, así que una tasa fuera de rango se guardaba y se cobraba 13 % en silencio.",
+        "Defecto 33: la batería entera corría sobre un esquema sin el UNIQUE que impide una membresía duplicada.",
+        "Medida la superficie real de F5 antes de empezarla: ~80 sitios y no ~20, con nueve correcciones de alcance anotadas en `task.md`.",
+        "Verificado: `npm run check` 0/0, 488 pruebas de frontend con 100 % de cobertura, y 691 en `pytest` con 100 % en dominio y aplicación."
+      ],
+      "lo_que_ensena": "Las tres tareas estaban escritas como decisiones pequeñas y las tres medían de menos, cada una a su manera. T-913 nombraba tres tablas y eran cinco. T-915 planteaba una disyuntiva sobre un índice y el problema real eran cuatro UNIQUE que la base de pruebas no tenía —o sea que `pytest` llevaba desde F2 aprobando un esquema más permisivo que el de producción—. Y T-914 pedía arreglar un mensaje, pero lo que importaba era que el guardián no veía la forma por la que salen casi todos los avisos del POS.\n\nEl patrón es el mismo en las tres: la tarea describía el síntoma que alguien alcanzó a ver, no el hueco. Lo que los destapó no fue leerlas con más cuidado sino escribir la verificación primero —la prueba de paridad de esquemas encontró los trece objetos que nadie había nombrado, y ampliar el guardián encontró los dos textos que quedaban—. Una verificación bien escrita mide el hueco entero; una tarea, solo lo que su autor vio.\n\nY una trampa propia, de la misma familia que las ya anotadas: la primera versión de la prueba del defecto 32 guardaba una tasa buena por el API para comprobar que el rechazo no fuera demasiado ancho. La configuración es de la compañía y la comparten todas las pruebas de la corrida, así que tumbó diecinueve pruebas de otros archivos, todas señalando el cálculo de totales. Es la lección de T-310 otra vez, ahora en el backend: no se restaura mejor, no se toca lo que otros usan. La prueba pasó a ser pura."
+    },
+    {
+      "fecha": "2026-09-05",
+      "titulo": "F5 arranca: el impuesto pasa a ser por línea",
+      "hecho": [
+        "T-508: `sale_totals` y `computeTotals` reciben la tarifa en cada línea y devuelven el desglose `by_rate`. Mismo diseño y mismas cifras en el backend y en el POS.",
+        "T-501, T-507 y T-509b: migración 006 con las nueve columnas nuevas, `cabys_cache` y diez índices. Aplicada a la base viva y verificada: 38 ventas por ₡360.413,50 y 28 productos, iguales antes y después.",
+        "`returns` se partió en subtotal + impuesto. No estaba en T-509b: la tabla guardaba solo el total y con tarifas mezcladas no hay de dónde deducir el impuesto.",
+        "`cabys_cache` declarada en `company_dump.py`; sin eso el respaldo por compañía se negaba a correr.",
+        "Corregida la conclusión de T-915: `migration.sql` nunca se aplicó a esta base, así que la «paridad total» estaba medida contra un esquema que nadie tiene. Restaurados los catorce `index=True` que sí existen en producción; los nueve índices de rendimiento pasaron a la migración 006.",
+        "Verificado: 711 pruebas en `pytest` con 100 % en dominio y aplicación, 495 en el POS con 100 % de cobertura, `npm run check` 0/0, y la API viva respondiendo con sus cifras intactas."
+      ],
+      "pendiente_de_f5": "T-509 y T-509c (propagar a casos de uso, repositorios, carrito, reportes y simulado, y que el servidor verifique por línea), T-502 a T-506 (el proxy de CABYS y la interfaz), T-510 (el desglose en las tres plantillas y en el PDF del backend, que es un cuarto documento que el plan no contaba) y T-511 (la verificación de punta a punta con 13 %, 2 % y 0 %).",
+      "lo_que_ensena": "El arranque de F5 salió limpio porque la fase se ordenó por dependencia y no por como estaba listada: primero el dominio —que es puro y da retroalimentación en menos de un segundo—, después el esquema, y la propagación al final. Lo contrario habría sido migrar la base antes de saber qué forma tenía el cálculo.\n\nLa decisión que más se va a notar es que **el redondeo del impuesto va por tarifa y no por línea**. Con una sola tarifa el grupo único da `round(subtotal × tasa)`, que es el número de siempre, así que los invariantes no se movieron y F5 no obliga a remedir nada de lo ya cobrado. Por línea habrían cambiado, y cada cifra de referencia del proyecto habría dejado de valer justo en la fase que más toca la plata. Es además lo que pide el documento: Hacienda quiere base e impuesto por tarifa, y un desglose cuyas filas no cuadren con su propio impuesto no suma el total.\n\nY una lección sobre las verificaciones, que me toca a mí. Al cerrar T-915 escribí «paridad total» entre modelos y migraciones. La medida estaba tomada con un lector de SQL que no entendía la forma `CREATE INDEX` suelta, así que midió limpio porque no sabía mirar una forma entera. Al enseñársela salieron cuatro índices más, y tirando de ahí, lo de fondo: `migration.sql` nunca se aplicó a esta base —lo decía el README y lo confirman los nombres de los índices vivos—, o sea que se estaba comparando contra un esquema que nadie tiene. De ahí salieron nueve índices que parecían faltar y en realidad no existían en ninguna parte, y una retirada de `index=True` que rompía la paridad en vez de arreglarla. **Un verde vale lo que valga lo que el lector alcanza a leer**, y eso hay que comprobarlo aparte de la comparación."
+    },
+    {
+      "fecha": "2026-09-05",
+      "titulo": "T-509: la tarifa llega hasta la fila guardada",
+      "hecho": [
+        "T-509: la tarifa viaja del catálogo a `sale_details` y `return_details`, resuelta en el caso de uso y congelada al guardar. Puertos, repositorios, esquemas del producto, el router y el simulado.",
+        "T-509c: el servidor calcula por línea. La tolerancia ya se medía por documento, así que no hubo que cambiar la granularidad.",
+        "Verificado contra el stack real: venta de medicamento al 2 % + arroz al 13 % guarda 20,00 y 130,00 que suman los 150,00 del encabezado; devolver solo el medicamento reembolsa ₡1 020,00 y solo el arroz ₡1 130,00.",
+        "`SEED_VERSION` a 6 y una carrera corregida en `categorias.spec.ts`: las 42 pruebas de punta a punta en verde.",
+        "Verificado: 717 en `pytest` con 100 % en dominio y aplicación, 496 en el POS con 100 % de cobertura, `npm run check` 0/0 y 42 de punta a punta."
+      ],
+      "pendiente_de_f5": "T-502 a T-506 (el proxy de CABYS, su caché sin internet y el buscador en la ficha), T-510 (el desglose por tarifa en las tres plantillas y en el PDF del backend, que es un cuarto documento) y T-511 (la verificación de punta a punta con 13 %, 2 % y 0 %, que necesita catálogo de demostración con tarifas mezcladas).",
+      "lo_que_ensena": "Lo que más costó de T-509 no fue propagar la tarifa sino **decidir dónde se redondea**, y esa decisión no se podía tomar leyendo: había que medirla. La primera versión redondeaba por tarifa y la escribí con un argumento que sonaba bien —«así los invariantes no se mueven»—. Al llegar a `sale_details.tax_amount` apareció que esa forma no garantiza que las líneas sumen el encabezado, que es una propiedad más importante que la que estaba protegiendo. Y al medir, el argumento original resultó falso de todas formas: las cuatro cifras de referencia dan igual por las dos vías, porque el catálogo son colones enteros. Había generalizado de un «pueden diferir» a un «habrían cambiado» sin comprobarlo.\n\nLa lección práctica: cuando una decisión de redondeo se justifica con «esto no cambia nada», hay que producir la tabla. Dos minutos de aritmética contra 200 000 casos dijeron más que el párrafo que había escrito.\n\nY una de método, sobre las pruebas de punta a punta. Cuatro fallaron en la suite completa y pasaban al correrlas solas. Tres eran estado acumulado —el archivo del simulado tenía 29 compañías, una por cada corrida pasada de la prueba que da de alta la suya— y la cuarta, una carrera: la prueba enviaba un formulario y navegaba sin esperar, y con la máquina cargada ganaba la navegación. Ninguna de las cuatro tenía que ver con lo que se acababa de escribir, y las cuatro señalaban pantallas que no eran el problema. Antes de creerle a un fallo de punta a punta conviene correr el archivo solo: si pasa, el problema es del vecindario, no del código."
+    },
+    {
+      "fecha": "2026-09-05",
+      "titulo": "T-510: el documento desglosa por tarifa",
+      "hecho": [
+        "T-510: el tiquete y las dos facturas imprimen una fila por tarifa, leyendo lo que se guardó en cada línea. `taxBreakdown` en el dominio, con 9 pruebas.",
+        "El API de la factura devuelve `tax_rate` y `tax_amount` por línea, y el simulado guarda las dos.",
+        "Clave nueva `doc_tax_at_rate` en los tres catálogos. El nombre del impuesto no se traduce —se configura—; lo que aporta la clave es la forma.",
+        "Defecto 34: el rótulo del impuesto en las plantillas salía de la configuración vigente, así que una factura reimpresa después de cambiar el IVA mostraba el porcentaje de hoy junto al monto de entonces.",
+        "Verificado contra el stack real: `GET /sales/sale/150` devuelve 20,00 al 2 % y 130,00 al 13 %, que suman los 150,00 del encabezado.",
+        "Verificado: 717 en `pytest`, 504 en el POS con 100 % de cobertura, `npm run check` 0/0 y 42 de punta a punta."
+      ],
+      "pendiente_de_f5": "T-502 a T-506 (el proxy de CABYS, su caché sin internet y el buscador en la ficha del producto) y T-511 (la verificación de punta a punta con 13 %, 2 % y 0 %, que necesita catálogo de demostración con tarifas mezcladas). Fuera de F5 queda T-922: el PDF de reportlab, que es un cuarto documento sin desglose, sin idioma y con ocho rótulos en español contra RN-30.",
+      "lo_que_ensena": "T-510 parecía «agregar una fila al documento» y fueron cuatro capas: el API no devolvía la tarifa por línea, el simulado guardaba la tasa pero no el monto, el diccionario del documento no tenía dónde poner el rótulo —las plantillas no pueden importar Paraglide, por RN-29— y el rótulo que ya existía mentía. Ninguna de las cuatro se veía desde la tarea; todas aparecieron al tirar del hilo hacia atrás desde la fila que había que imprimir.\n\nLo que sí salió gratis fue el requisito: RF-21 pide desglosar «solo cuando hay más de una tarifa», y recorrer el desglose da una fila cuando hay una sola —la misma que había antes de F5—. El condicional que la tarea sugería habría sido código para no hacer nada.\n\nY una que se repite en esta fase: el documento tiene que leer **lo cobrado**, no recalcularlo. Es la misma regla que congela la tarifa en la línea, vista desde la impresora: una factura reimpresa dentro de cinco años no puede depender de cómo esté configurado el negocio ese día."
+    },
+    {
+      "fecha": "2026-09-05",
+      "titulo": "T-502 y T-503: el catálogo CABYS, con y sin internet",
+      "hecho": [
+        "T-502: proxy `GET /cabys/buscar` y `GET /cabys/{codigo}` en FastAPI, con las dos formas de respuesta de Hacienda —objeto por texto, lista por código—. Comprobado EN VIVO: «arroz» devuelve `2312000000300 Harina de arroz` al 13 % y `Arroz precocido` al 1 %.",
+        "T-503: sin internet responde desde `cabys_cache` y lo dice en `source`. Ejercitado contra un servidor inalcanzable: cinco entradas cacheadas, `source: cache`, y la fecha de cuándo se leyeron. Sin excepción y sin bloquear.",
+        "Arquitectura: dos puertos (`CabysCatalog` y `CabysCacheRepository`), un caso de uso con la regla de RNF-4 y un adaptador con `urllib` —sin dependencia nueva—.",
+        "Dos códigos de error nuevos en los cuatro sitios de siempre, y las rutas declaradas en el guardián de aislamiento: CABYS es el catálogo del país, común a todas las compañías.",
+        "T-920 arreglado: `POS_MOCK_FRESH=1` hace que la suite de punta a punta siembre de cero. 42 de 42 dos corridas seguidas.",
+        "Verificado: 759 en `pytest` con 100 % en dominio y aplicación, 506 en el POS con 100 % de cobertura, `npm run check` 0/0 y 42 de punta a punta."
+      ],
+      "pendiente_de_f5": "T-504 (el buscador de CABYS en la ficha del producto), T-505 (copiar la tarifa al asignar y avisar si el usuario la cambia, RN-11), T-506 (asignación en lote) y T-511 (la verificación de punta a punta con 13 %, 2 % y 0 %). El simulado ya tiene diez códigos de demostración con las tres tarifas, así que T-511 tiene con qué.",
+      "lo_que_ensena": "Lo que más rindió de T-502 fue separar en dos puertos lo que parecía uno: **el catálogo de Hacienda** y **la caché local**. La diferencia entre ellos es exactamente la que importa —uno depende de que haya internet y el otro no— y tenerla escrita en el tipo hizo que la regla de RNF-4 viviera en el caso de uso, en once pruebas que corren sin Docker y sin red, en vez de enterrada en un `try` del adaptador. La verificación contra un servidor inalcanzable fue después la confirmación, no el descubrimiento.\n\nY una sobre las pruebas de punta a punta que cierra un ciclo. En T-310 la lección fue «una prueba que cambia el estado del demo se lo cambia a todas», y la salida fue que cada prueba diera de alta su propia compañía. Correcto, y con una cola que tardó tres fases en aparecer: **nadie la retira al terminar**, así que el archivo acumulaba una por corrida. Con veintinueve encima, cuatro pruebas de tres archivos empezaron a fallar señalando pantallas que no eran el problema. La salida tampoco es que cada prueba limpie lo suyo —una que falla a mitad no limpia nada, que es cómo empezó todo esto— sino **empezar limpio**: `POS_MOCK_FRESH=1` y sembrar de cero. Ignorar el archivo en vez de borrarlo deja intacta la demostración de quien esté usando el POS a mano."
+    },
+    {
+      "fecha": "2026-09-05",
+      "titulo": "T-504 a T-506 y T-511: clasificar productos, y F5 cerrada",
+      "hecho": [
+        "T-504: buscador de CABYS en la ficha, como componente (`CabysSearch.svelte`) porque lo usan dos pantallas. Habla con `/inventario/cabys`, el único sitio del POS donde el navegador pide algo por su cuenta: buscar es teclear y ver resultados, y eso no cabe en un envío de formulario.",
+        "T-505: asignar copia la tarifa y cambiarla avisa (RN-11). El aviso no bloquea —hay exoneraciones— y vuelve al reabrir la ficha, porque para eso el puente también resuelve un código exacto.",
+        "T-506: `PUT /products/assign_cabys`, todo o nada, con pantalla propia en `/inventario/clasificar` que marca lo que está a la vista y no el catálogo entero.",
+        "T-511: el caso de aceptación de la fase, en los dos niveles y como prueba permanente. Doce pruebas contra MySQL en `test_impuesto_por_producto.py` y una de punta a punta que vende las tres tarifas, comprueba el desglose del documento y devuelve solo el medicamento.",
+        "Tres defectos (35, 36, 37): el carrito sin tarifa por línea —que impedía cobrar cualquier venta mezclada—, el simulado reembolsando cero, y `tax_rate` que no se podía vaciar.",
+        "`returns.subtotal` y `returns.tax` ya viajan en el API y en el simulado: se guardaban desde la 006 y no los devolvía nadie.",
+        "Verificado: 786 en `pytest` con 100 % en dominio y aplicación, 549 en el POS con 100 % de cobertura —también en ramas—, `npm run check` 0/0 y 48 de punta a punta. Invariantes intactos: 38 ventas por ₡360.413,50."
+      ],
+      "lo_que_ensena": "**Verificar de punta a punta no es repetir la prueba que ya pasó: es tomar el camino que la prueba no toma.** T-509 se había verificado con `curl` contra el API y daba bien —₡1 020, ₡1 130, las líneas sumando el encabezado—, y esa verificación era correcta y no servía para lo que faltaba: por `curl` no hay carrito. T-511 pedía vender de verdad, y vendiendo apareció que `CartLine` nunca recibió la tarifa. No era un detalle de pantalla: el servidor rechaza lo que no cuadra, así que una venta con tarifas mezcladas **no se podía cobrar**. La fase entera funcionaba en todas partes menos donde se usa.\n\nEl segundo hallazgo dice lo mismo desde otro lado. El simulado reembolsaba cero desde T-509 —leía `unit_price` en una línea que se llama `price`— y no lo cazó nadie porque el `map` venía de `body`, o sea `any`, y porque las devoluciones no tenían prueba de punta a punta. Un `any` que entra por el borde de la petición se arrastra por todo lo que toca; poner el tipo —`ReturnItem[]`— convirtió el defecto en un error de compilación.\n\nY una tercera, más chica pero de la misma familia: la ficha no podía decir «la configurada». La migración 006 había decidido con cuidado que NULL significa eso, y el `PUT` parcial se saltaba los nulos, así que la decisión duraba hasta la primera edición. Una regla que solo vive en la migración y no en el camino por donde pasa la gente es una regla que ya se perdió."
+    },
+    {
+      "fecha": "2026-09-06",
+      "titulo": "T-919: el guardián de esquema mira las columnas, y encuentra treinta",
+      "hecho": [
+        "`test_esquema.py` compara ahora nombre, tipo, nulabilidad, valor por omisión y expresión generada, además de los índices y restricciones que ya comparaba. Cinco pruebas nuevas; de 7 a 12.",
+        "Treinta diferencias el primer día. Tipos y nulabilidad coincidían en todo: las treinta eran de valor por omisión.",
+        "Doce del lado del modelo —el defecto de T-507 repetido— arregladas con `server_default`. Dieciocho del lado de la migración —la cicatriz del backfill de la 002— quitadas con la migración 007, aplicada y verificada.",
+        "La prueba se comprobó al revés: cuatro sabotajes deliberados y las cuatro veces falló la que tenía que fallar, y solo esa.",
+        "Verificado: 791 en `pytest` con 100 % en dominio y aplicación. Invariantes intactos: 38 ventas por ₡360.413,50."
+      ],
+      "lo_que_ensena": "**Un guardián que compara dos cosas tiene que comparar lo mismo que corre, no una descripción de lo que corre.** La tentación era traducir los tipos de SQLAlchemy a MySQL con una tabla de equivalencias; eso habría metido un tercer criterio —el de la prueba— que puede estar mal sin que nada lo diga, y que envejece cada vez que alguien usa un tipo nuevo. Pedirle a SQLAlchemy el DDL compilado y leerlo con el mismo lector que los `.sql` deja **dos** fuentes y ninguna opinión en el medio.\n\nY una sobre el orden en que aparecen las cosas. T-919 estaba anotada desde F5 como «falta extender la prueba», o sea como deuda de la prueba. Resultó ser deuda del esquema: la prueba tardó una tarde y lo que destapó fueron treinta divergencias reales, doce de ellas el mismo defecto que motivó la tarea, repetido en columnas que nadie había vuelto a mirar. La tarea no era escribir una prueba: era **enterarse**."
+    },
+    {
+      "fecha": "2026-09-06",
+      "titulo": "Alcance de F6 corregido antes de escribir una línea",
+      "hecho": [
+        "spec.md §5.4: las credenciales de ATV y el ambiente entran en lo que la fase deja listo, con la tabla que separa firmar de transmitir. RF-29 a RF-31, RN-33 a RN-35, y RN-16 y RNF-5 ampliadas para cubrir la contraseña de ATV.",
+        "plan.md §7.1 reescrita: llave primaria `(company_id, ambiente)`, columnas para las dos credenciales, el puerto de firma con sus dos adaptadores, la regla de firmar al transmitir, y el riesgo TRIBU-CR con su mitigación.",
+        "task.md: F6 pasa de 9 tareas a 15, con T-916 declarada como puerta de la fase.",
+        "Anotado que `atvUser`, `environment`, `economicActivity`, `branch` y `terminal` existen hoy en el JSON de `settings` y **no los consume nadie** (T-614).",
+        "Sin código: la fase sigue sin empezar, a pedido."
+      ],
+      "lo_que_ensena": "**El hueco no estaba en el código sino en el plan, y la investigación para encontrarlo ya estaba en el repo.** `docs/hacienda/costa-rica/README.md` dice desde abril, en §7 y §12, que hay dos credenciales y que son por ambiente; plan §7.1 se escribió contemplando una sola. Nadie lo cruzó hasta que el usuario preguntó por ATV. La lección no es «leer más» sino que **al escribir el plan de una fase conviene releer el material fuente de esa fase**, no el resumen que uno se hizo cuando lo leyó.\n\nY una sobre las pantallas que prometen. Configuración tiene desde hace meses un campo de ambiente y uno de usuario ATV que no hacen nada: se guardan en el JSON y nadie los lee. Un campo así es peor que su ausencia —quien lo llena cree que configuró algo— y además fue lo que hizo que el hueco pareciera cubierto al mirar la pantalla."
+    },
+    {
+      "fecha": "2026-09-06",
+      "titulo": "Tres revisiones y el alcance de F7, en una pasada",
+      "hecho": [
+        "Los tres revisores de documentos corrieron sobre spec, plan y task antes de abrir F6. Entre los tres encontraron dos contradicciones graves en lo escrito el día anterior y cinco defectos de diseño que no habían aparecido.",
+        "spec.md: seis correcciones —RN-33 decía «por ambiente, no por compañía», que leído literal contradice el aislamiento; RF-29 decía del usuario de ATV lo contrario que el plan; RF-31 colapsaba tres desenlaces en dos— y la sección §5.4b nueva con RN-36 a RN-44 y RF-32 a RF-36.",
+        "plan.md: §7 reescrita entera. Nombres en inglés, marcas de tiempo separadas por secreto, el nombre de la llave de Vault **derivado y no guardado**, `TenantMixin` con su trampa del trabajador de fondo, el ambiente en la fila del documento, el contador de cinco dimensiones y cinco riesgos nuevos.",
+        "task.md: F6 pasa de 15 a 25 tareas y F7 de 3 a 12. T-614 se movió al principio —es el insumo de cuatro tareas, no su limpieza— y T-613 antes de T-612.",
+        "Cuatro decisiones quedan anotadas como pendientes en task.md, cada una con la tarea que espera: la identificación del emisor, el nombre del ambiente, la certificación previa en sandbox y si el respaldo se lleva el certificado.",
+        "Sin código: F6 sigue sin empezar, a pedido."
+      ],
+      "lo_que_ensena": "**Los tres hallazgos más caros salieron de leer el material fuente, no el diseño.** Que el certificado es por ambiente, que la clave impresa fija el dígito de situación al vender y que el consecutivo va por tipo estaban los tres en `docs/hacienda/costa-rica/README.md`, que vive en el repo desde abril. El plan de F6 y F7 se había escrito contra el recuerdo de esa lectura. La regla que queda: **al planear una fase se relee el material de esa fase**, no el resumen propio.\n\nY una sobre revisar. Escribí spec, plan y task el mismo día y los tres se veían coherentes conmigo; los revisores encontraron que **se contradecían entre sí** en dos puntos —el usuario de ATV se mostraba en un documento y se cifraba en otro— porque cada uno era coherente por separado. Un documento se revisa contra los otros dos, no contra sí mismo, y eso es justo lo que no puede hacer quien acaba de escribirlos."
+    },
+    {
+      "fecha": "2026-09-06",
+      "titulo": "Se levantó el POS a ver el avance de F5 y el arroz cobraba 13 %",
+      "hecho": [
+        "T-512: escribir el CABYS a mano ya copia la tarifa, y el aviso de RN-11 dejó de comparar contra el código anterior.",
+        "T-513: el buscador acepta códigos —`codigo=`, que el puente ya aceptaba y nadie usaba— y avisa de un código a medias sin gastar la petición.",
+        "T-514: la línea del carrito muestra su tarifa y marca lo que está sin clasificar.",
+        "T-515: el demo se clasifica con CABYS reales, en el seed y en el simulado, preguntándole la tarifa al catálogo. Tres quedan sin clasificar a propósito.",
+        "T-517: dos pruebas de punta a punta que se caían por carreras del modal de cobro.",
+        "T-516 queda abierta: el catálogo local, que es lo único que permite filtrar por prefijo.",
+        "Verde: 549 pruebas del POS, 791 del backend, 48 de punta a punta, `npm run check` en 0/0, cobertura 100 % en las dos capas obligatorias."
+      ],
+      "lo_que_ensena": "**Cinco defectos en una sesión, y ninguno se encuentra leyendo el código.** Salieron de levantar el POS y mirarlo: el usuario abrió la pantalla, vio que el arroz cobraba 13 % y de esa sola observación salieron la copia de la tarifa que no ocurría, el aviso que mentía, el buscador que no aceptaba códigos, el carrito que no decía la tarifa y un demo que enseñaba la fase anterior. F5 se había cerrado en verde —791 pruebas, 100 % de cobertura— y todo esto estaba ahí.\n\nLo que las pruebas no podían ver era **el camino**: cada pieza funcionaba y lo que fallaba era la secuencia que recorre una persona el primer día. La regla que queda es la de T-511 llevada un paso más allá: no basta con vender de verdad, hay que **entrar por donde entra quien no escribió el código** — que en este caso era teclear un código que ya se tiene, en vez de buscarlo por descripción.\n\nY una sobre arreglar fragilidad. El primer arreglo del modal empeoró la corrida de una falla a cinco, porque supuse que pulsar F1 de más era inofensivo sin comprobarlo. Al reintentar hay que preguntarse **qué hace la acción la segunda vez**: F1 apila un modal, un clic en un producto agrega otra unidad. Reintentar solo es gratis cuando la acción es idempotente, y casi nunca lo es."
+    },
+    {
+      "fecha": "2026-09-06",
+      "titulo": "Empieza F6 por T-614, y las cuatro decisiones quedan resueltas",
+      "hecho": [
+        "Las cuatro decisiones de F6, resueltas y escritas: identificación del emisor en `companies` de solo lectura (RN-45), ambiente en inglés, certificación en sandbox que avisa y no impide (RN-46), respaldo con lo público y no los secretos (RN-47).",
+        "T-516 diseñada con la propuesta del usuario: el catálogo CABYS completo en la base, con la división que lo hace seguro (RN-48) — lo local contesta la búsqueda, la tarifa que se asigna se confirma contra Hacienda.",
+        "T-614 hecha: dos campos se quedan, tres se van. El de terminal estaba roto por construcción.",
+        "T-517 completada de verdad: `abrirCobro` en `sesion.ts`, un solo sitio para las tres trampas del modal de cobro.",
+        "T-916 sigue abierta y es la puerta de T-601: `companies` gana `identification_type` al lado de `identificacion`."
+      ],
+      "lo_que_ensena": "**Un campo que nadie lee no es solo trabajo pendiente: puede estar mal y no haber forma de enterarse.** `settings.eInvoicing.terminal` llevaba meses guardándose y era imposible que funcionara —una fila de configuración por compañía, un código por terminal— pero como no lo consumía nadie, ninguna prueba podía fallar. Se habría descubierto en F7, como consecutivos repetidos y comprobantes rechazados. Por eso T-614 iba primero: el orden no era higiene, era la única forma de encontrarlo antes de construirle encima.\n\nY una sobre arreglar pruebas frágiles, que costó tres intentos. El primero supuso que reintentar F1 era inofensivo —apila un modal—; el segundo esperó a que el modal se desmontara pero seguía pulsando una sola vez, y abrir la caja recarga la página, así que la pulsación llegaba antes de que Svelte volviera a enganchar. La forma que funciona combina las dos: **reintentar, pero solo pulsar si no hay ningún modal abierto**. Cuando una acción no es idempotente, el reintento necesita una guardia, no menos reintentos."
     }
   ],
   "$reparto": {

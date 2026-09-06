@@ -103,6 +103,10 @@ class TestArqueo:
             sale_id=1,
             user_id=CAJERO,
             reason="prueba",
+            # El arqueo solo mira el total; el desglose se guarda desde F5 y
+            # acá va por coherencia con la fila real (1 450 + 13 %).
+            subtotal=Money("1450.00"),
+            tax=Money("188.50"),
             total=Money("1638.50"),
             created_at=reloj.now(),
             lines=[],

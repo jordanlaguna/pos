@@ -199,6 +199,12 @@ test.describe('un repuestero: el catálogo se arma desde cero (RF-13, RF-14)', (
 		);
 		await page.locator('#category-parent').selectOption({ label: 'Suzuki' });
 		await page.locator('button[type="submit"][form="category-move"]').click();
+		// Esperar a que el modal se cierre antes de navegar. Sin esto, el `goto`
+		// compite con el envío del formulario y gana cuando la máquina va
+		// cargada: la prueba pasaba sola y fallaba en la suite completa,
+		// señalando el inventario —que es el único sitio donde no está el
+		// problema—.
+		await expect(page.locator('#category-parent')).toBeHidden();
 
 		await page.goto('/inventario');
 		// El producto sigue en «Llantas», que es la que se mudó: ahora su camino
@@ -218,8 +224,15 @@ test.describe('un repuestero: el catálogo se arma desde cero (RF-13, RF-14)', (
 		await clicHasta(page.getByRole('button', { name: /^Nuevo producto$/ }), () =>
 			expect(page.locator('#product-category')).toBeVisible({ timeout: 1000 })
 		);
-		await page.locator('#product-category').selectOption({ label: 'Suzuki' });
-		await expect(page.locator('#product-subcategory')).toHaveCount(0);
+		// Con `elegirHasta` y no con un `selectOption` pelado: es el desplegable
+		// después de un `goto`, o sea el caso que este archivo documenta arriba.
+		// Suelto pasaba casi siempre y fallaba una de cada varias corridas
+		// —Playwright fija el valor del DOM aunque Svelte todavía no le haya
+		// enganchado el `onchange`, así que la raíz cambiaba en la pantalla y no
+		// en el estado— y el fallo señalaba la subcategoría, que no es el problema.
+		await elegirHasta(page.locator('#product-category'), 'Suzuki', () =>
+			expect(page.locator('#product-subcategory')).toHaveCount(0, { timeout: 1000 })
+		);
 	});
 
 	test('reordenar cambia el orden de la grilla (RF-13)', async ({ page }) => {

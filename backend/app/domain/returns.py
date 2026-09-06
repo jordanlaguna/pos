@@ -15,14 +15,23 @@ from dataclasses import dataclass
 
 from .errors import ExcessiveReturn, InvalidQuantity, NotSoldInThisSale
 from .money import Money
+from .sale import Totals, group_by_rate
 from .tax import TaxRate
 
 
 @dataclass(frozen=True)
 class ReturnLine:
+    """Lo que se devuelve, con **la tarifa que llevaba esa línea al venderse**.
+
+    En `None` para las ventas anteriores a F5, que no tienen la columna: ahí la
+    tasa se reconstruye del encabezado con `TaxRate.of_sale`, que es correcto
+    porque esas ventas llevan una sola tarifa.
+    """
+
     product_id: int
     unit_price: Money
     quantity: int
+    tax_rate: TaxRate | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.quantity, bool) or not isinstance(self.quantity, int):
@@ -69,12 +78,40 @@ def is_fully_returned(sold: dict[int, int], already_returned: dict[int, int]) ->
     )
 
 
-def refund_total(lines: list[ReturnLine], rate: TaxRate) -> Money:
+def refund_totals(lines: list[ReturnLine], rate: TaxRate) -> Totals:
     """
-    Lo que se le devuelve al cliente: el neto de las líneas más su impuesto.
+    Lo que se le devuelve al cliente, desglosado por tarifa.
 
-    Con la tasa de la venta original, que es lo que hace que subir el IVA no
-    cambie lo que se reembolsa por algo cobrado antes.
+    `rate` es el respaldo: se usa en las líneas que no traen la suya, o sea las
+    de una venta anterior a F5. Para esas sigue siendo lo correcto —llevaban una
+    sola tarifa— y es lo que hace que subir el IVA no cambie lo que se reembolsa
+    por algo cobrado antes.
+
+    **Por qué la tarifa tiene que venir en la línea y no deducirse del
+    encabezado.** Mientras toda la venta lleve una tasa, `tax / subtotal`
+    (`TaxRate.of_sale`) la reconstruye exacta. En cuanto se mezclan, ese cociente
+    es un **promedio**, y devolver una sola línea con el promedio devuelve de más
+    o de menos:
+
+        venta: 1 medicamento ₡1 000 al 2 %  +  1 arroz ₡1 000 al 13 %
+               subtotal ₡2 000 · impuesto ₡150 · promedio 7,5 %
+
+        devolver solo el medicamento →  con su tarifa   1 000 × 1,02 = ₡1 020
+                                        con el promedio 1 000 × 1,075 = ₡1 075
+
+    ₡55 de más, y ₡55 de menos si lo que se devuelve es el arroz. La caja no
+    cuadra y nadie sabe por qué.
     """
-    neto = Money.sum(line.subtotal for line in lines)
-    return rate.add_to(neto)
+    by_rate = group_by_rate(((l.subtotal, l.tax_rate) for l in lines), rate)
+    neto = Money.sum(grupo.base for grupo in by_rate)
+    impuesto = Money.sum(grupo.tax for grupo in by_rate)
+    return Totals(
+        subtotal=neto, tax=impuesto, total=neto + impuesto, by_rate=by_rate
+    )
+
+
+def refund_total(lines: list[ReturnLine], rate: TaxRate) -> Money:
+    """Solo la cifra que se le entrega al cliente. El desglose está en
+    `refund_totals`, que es lo que hay que guardar (`returns` lo parte en
+    subtotal e impuesto desde F5)."""
+    return refund_totals(lines, rate).total

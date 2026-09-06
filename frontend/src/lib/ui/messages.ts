@@ -292,6 +292,9 @@ export const API_CODES = [
 	'category_needs_subcategory',
 	'category_inactive',
 	'category_reorder_incomplete',
+	// CABYS
+	'cabys_invalid_code',
+	'cabys_not_found',
 	// personas
 	'person_identification_taken',
 	'email_taken',
@@ -625,6 +628,12 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_category_inactive({ category: texto(d.name) });
 		case 'category_reorder_incomplete':
 			return m.api_category_reorder_incomplete();
+
+		// ------------------------------------------------------------ CABYS
+		case 'cabys_invalid_code':
+			return m.api_cabys_invalid_code({ value: texto(d.value) });
+		case 'cabys_not_found':
+			return m.api_cabys_not_found({ code: texto(d.code) });
 
 		// ---------------------------------------------------------- personas
 		case 'person_identification_taken':

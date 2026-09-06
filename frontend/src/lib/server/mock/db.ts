@@ -174,7 +174,26 @@ const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
  * pierde el estado de la demostración, que es exactamente lo que hay que perder:
  * los datos de prueba no valen más que la prueba.
  */
-const SEED_VERSION = 5;
+// 6 (F5, 2026-09-05): los productos llevan `cabys_code`, `tax_rate` y
+// `unit_of_measure`, y cada línea de venta guarda la tarifa que se le congeló al
+// cobrar. Un archivo de la 5 no tiene esos campos.
+//
+// La subida arregló además algo que no era de forma sino de acumulación: el
+// archivo guardado tenía **29 compañías**, una «Repuestos Yamaha» por cada
+// corrida pasada de `categorias.spec.ts`, y esa pila hacía fallar cuatro pruebas
+// de tres archivos distintos —incluida una del aviso de vencimiento, que no toca
+// nada de eso—. Las pruebas que dan de alta su propia compañía no la retiran, así
+// que el archivo crece sin techo entre corridas; sembrar de nuevo es lo que hay
+// hoy para vaciarlo, y queda anotado como pendiente en T-920.
+// 7 (2026-09-06): el catálogo de demostración **viene clasificado**. Antes los
+// 26 productos nacían sin CABYS, así que todos heredaban el 13 % configurado y
+// la pantalla enseñaba F5 como si no existiera: el arroz y los frijoles, que son
+// canasta básica al 1 %, cobraban 13 %. Los códigos son reales.
+//
+// Tres quedan sin clasificar **a propósito** —yogurt, natilla y maní—: es el
+// estado en que llega un catálogo heredado, y sin él la asignación en lote no
+// tiene nada que hacer y el aviso de «sin clasificar» del carrito no se ve nunca.
+const SEED_VERSION = 7;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -197,10 +216,26 @@ export function nextId(key: string): number {
 	return next;
 }
 
+/**
+ * `POS_MOCK_FRESH=1` ignora lo guardado y siembra de cero (T-920).
+ *
+ * Lo pone la configuración de Playwright. Las pruebas de punta a punta que dan
+ * de alta su propia compañía —la salida correcta de T-310— no la retiran al
+ * terminar, así que el archivo **acumula una por corrida**: llegó a 29
+ * compañías, y esa pila tumbó cuatro pruebas de tres archivos, incluida una del
+ * aviso de vencimiento que no toca nada de eso.
+ *
+ * La salida no es que cada prueba limpie lo suyo —una que falla a mitad no
+ * limpia nada— sino **empezar limpio**, que es la misma lección de T-310 vista
+ * desde el otro lado. Se ignora el archivo en vez de borrarlo: la demostración
+ * de quien esté usando el POS a mano no se toca.
+ */
+const SEMBRAR_DE_CERO = process.env.POS_MOCK_FRESH === '1';
+
 function cargar(): MockRoot {
 	if (raiz) return raiz;
 
-	if (existsSync(DB_PATH)) {
+	if (!SEMBRAR_DE_CERO && existsSync(DB_PATH)) {
 		try {
 			const parsed = JSON.parse(readFileSync(DB_PATH, 'utf-8')) as MockRoot;
 			// Si el archivo quedó de una versión anterior del seed, se descarta.
@@ -314,31 +349,31 @@ const CATEGORIES: Category[] = [
 ];
 
 const PRODUCT_SEED: Omit<Product, 'id_product' | 'created_at'>[] = [
-	{ name: 'Arroz Tío Pelón 1kg', description: 'Arroz blanco 80% grano entero', price: 1450, stock: 120, barcode: '7441000100015', category_id: 1 },
-	{ name: 'Frijoles negros 900g', description: 'Frijol negro seleccionado', price: 1690, stock: 84, barcode: '7441000100022', category_id: 1 },
-	{ name: 'Aceite Sabemas 900ml', description: 'Aceite vegetal de girasol', price: 2350, stock: 46, barcode: '7441000100039', category_id: 1 },
-	{ name: 'Azúcar Doña María 1kg', description: 'Azúcar blanca refinada', price: 1250, stock: 95, barcode: '7441000100046', category_id: 1 },
-	{ name: 'Sal Sol 1kg', description: 'Sal refinada yodada', price: 620, stock: 140, barcode: '7441000100053', category_id: 1 },
-	{ name: 'Pasta espagueti 400g', description: 'Pasta de sémola de trigo', price: 890, stock: 72, barcode: '7441000100060', category_id: 1 },
-	{ name: 'Café 1820 500g', description: 'Café molido tueste medio', price: 4250, stock: 38, barcode: '7441000200014', category_id: 10 },
-	{ name: 'Coca-Cola 2L', description: 'Refresco de cola', price: 1790, stock: 64, barcode: '7441000200021', category_id: 7 },
-	{ name: 'Agua Cristal 600ml', description: 'Agua purificada sin gas', price: 690, stock: 180, barcode: '7441000200038', category_id: 8 },
-	{ name: 'Jugo Del Valle 1L', description: 'Néctar de naranja', price: 1390, stock: 52, barcode: '7441000200045', category_id: 8 },
-	{ name: 'Cerveza Imperial 350ml', description: 'Cerveza lager, lata', price: 1150, stock: 96, barcode: '7441000200052', category_id: 9 },
-	{ name: 'Té helado Lipton 500ml', description: 'Té negro con limón', price: 950, stock: 7, barcode: '7441000200069', category_id: 10 },
-	{ name: 'Leche Dos Pinos 1L', description: 'Leche entera UHT', price: 1290, stock: 58, barcode: '7441000300013', category_id: 3 },
-	{ name: 'Queso Turrialba 400g', description: 'Queso fresco artesanal', price: 3450, stock: 22, barcode: '7441000300020', category_id: 3 },
+	{ name: 'Arroz Tío Pelón 1kg', description: 'Arroz blanco 80% grano entero', price: 1450, stock: 120, barcode: '7441000100015', cabys_code: '2316100000100', tax_rate: 0.01, category_id: 1 },
+	{ name: 'Frijoles negros 900g', description: 'Frijol negro seleccionado', price: 1690, stock: 84, barcode: '7441000100022', cabys_code: '0170102000400', tax_rate: 0.01, category_id: 1 },
+	{ name: 'Aceite Sabemas 900ml', description: 'Aceite vegetal de girasol', price: 2350, stock: 46, barcode: '7441000100039', cabys_code: '2163200000000', tax_rate: 0.01, category_id: 1 },
+	{ name: 'Azúcar Doña María 1kg', description: 'Azúcar blanca refinada', price: 1250, stock: 95, barcode: '7441000100046', cabys_code: '2352001010000', tax_rate: 0.01, category_id: 1 },
+	{ name: 'Sal Sol 1kg', description: 'Sal refinada yodada', price: 620, stock: 140, barcode: '7441000100053', cabys_code: '2399908000200', tax_rate: 0.01, category_id: 1 },
+	{ name: 'Pasta espagueti 400g', description: 'Pasta de sémola de trigo', price: 890, stock: 72, barcode: '7441000100060', cabys_code: '2371000000200', tax_rate: 0.01, category_id: 1 },
+	{ name: 'Café 1820 500g', description: 'Café molido tueste medio', price: 4250, stock: 38, barcode: '7441000200014', cabys_code: '2391102010200', tax_rate: 0.01, category_id: 10 },
+	{ name: 'Coca-Cola 2L', description: 'Refresco de cola', price: 1790, stock: 64, barcode: '7441000200021', cabys_code: '2449003000100', tax_rate: 0.13, category_id: 7 },
+	{ name: 'Agua Cristal 600ml', description: 'Agua purificada sin gas', price: 690, stock: 180, barcode: '7441000200038', cabys_code: '2441002020000', tax_rate: 0.13, category_id: 8 },
+	{ name: 'Jugo Del Valle 1L', description: 'Néctar de naranja', price: 1390, stock: 52, barcode: '7441000200045', cabys_code: '2449002000100', tax_rate: 0.13, category_id: 8 },
+	{ name: 'Cerveza Imperial 350ml', description: 'Cerveza lager, lata', price: 1150, stock: 96, barcode: '7441000200052', cabys_code: '2431000000000', tax_rate: 0.13, category_id: 9 },
+	{ name: 'Té helado Lipton 500ml', description: 'Té negro con limón', price: 950, stock: 7, barcode: '7441000200069', cabys_code: '2449002000200', tax_rate: 0.13, category_id: 10 },
+	{ name: 'Leche Dos Pinos 1L', description: 'Leche entera UHT', price: 1290, stock: 58, barcode: '7441000300013', cabys_code: '2211001030000', tax_rate: 0.01, category_id: 3 },
+	{ name: 'Queso Turrialba 400g', description: 'Queso fresco artesanal', price: 3450, stock: 22, barcode: '7441000300020', cabys_code: '2225101010200', tax_rate: 0.01, category_id: 3 },
 	{ name: 'Yogurt natural 1kg', description: 'Yogurt sin azúcar añadida', price: 2290, stock: 31, barcode: '7441000300037', category_id: 3 },
 	{ name: 'Natilla Dos Pinos 200g', description: 'Crema agria', price: 1180, stock: 9, barcode: '7441000300044', category_id: 3 },
-	{ name: 'Pan cuadrado Bimbo', description: 'Pan blanco de molde 680g', price: 1850, stock: 40, barcode: '7441000400012', category_id: 4 },
-	{ name: 'Tortillas de maíz 20u', description: 'Tortilla de maíz nixtamalizado', price: 1090, stock: 55, barcode: '7441000400029', category_id: 4 },
-	{ name: 'Pan dulce surtido', description: 'Bolsa de 6 unidades', price: 1650, stock: 18, barcode: '7441000400036', category_id: 4 },
-	{ name: 'Detergente Irex 1kg', description: 'Detergente en polvo multiusos', price: 2790, stock: 44, barcode: '7441000500011', category_id: 5 },
-	{ name: 'Jabón de baño Protex', description: 'Jabón antibacterial 110g', price: 890, stock: 76, barcode: '7441000500028', category_id: 5 },
-	{ name: 'Papel higiénico Scott 4u', description: 'Papel higiénico doble hoja', price: 2450, stock: 5, barcode: '7441000500035', category_id: 5 },
-	{ name: 'Cloro Magia Blanca 1L', description: 'Blanqueador desinfectante', price: 1120, stock: 62, barcode: '7441000500042', category_id: 5 },
-	{ name: 'Galletas Chiky 12u', description: 'Galleta con chispas de chocolate', price: 1590, stock: 68, barcode: '7441000600010', category_id: 6 },
-	{ name: 'Tostitos original 200g', description: 'Tortilla chips de maíz', price: 1950, stock: 34, barcode: '7441000600027', category_id: 6 },
+	{ name: 'Pan cuadrado Bimbo', description: 'Pan blanco de molde 680g', price: 1850, stock: 40, barcode: '7441000400012', cabys_code: '2349002010700', tax_rate: 0.01, category_id: 4 },
+	{ name: 'Tortillas de maíz 20u', description: 'Tortilla de maíz nixtamalizado', price: 1090, stock: 55, barcode: '7441000400029', cabys_code: '2349001010100', tax_rate: 0.01, category_id: 4 },
+	{ name: 'Pan dulce surtido', description: 'Bolsa de 6 unidades', price: 1650, stock: 18, barcode: '7441000400036', cabys_code: '2349002010600', tax_rate: 0.01, category_id: 4 },
+	{ name: 'Detergente Irex 1kg', description: 'Detergente en polvo multiusos', price: 2790, stock: 44, barcode: '7441000500011', cabys_code: '3532201060000', tax_rate: 0.13, category_id: 5 },
+	{ name: 'Jabón de baño Protex', description: 'Jabón antibacterial 110g', price: 890, stock: 76, barcode: '7441000500028', cabys_code: '3532101010199', tax_rate: 0.13, category_id: 5 },
+	{ name: 'Papel higiénico Scott 4u', description: 'Papel higiénico doble hoja', price: 2450, stock: 5, barcode: '7441000500035', cabys_code: '3219301000000', tax_rate: 0.01, category_id: 5 },
+	{ name: 'Cloro Magia Blanca 1L', description: 'Blanqueador desinfectante', price: 1120, stock: 62, barcode: '7441000500042', cabys_code: '3532201010000', tax_rate: 0.13, category_id: 5 },
+	{ name: 'Galletas Chiky 12u', description: 'Galleta con chispas de chocolate', price: 1590, stock: 68, barcode: '7441000600010', cabys_code: '2342001009900', tax_rate: 0.13, category_id: 6 },
+	{ name: 'Tostitos original 200g', description: 'Tortilla chips de maíz', price: 1950, stock: 34, barcode: '7441000600027', cabys_code: '2314000990300', tax_rate: 0.13, category_id: 6 },
 	{ name: 'Maní salado 150g', description: 'Maní tostado con sal', price: 1150, stock: 3, barcode: '7441000600034', category_id: 6 }
 ];
 

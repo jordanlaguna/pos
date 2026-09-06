@@ -1,21 +1,29 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import { submit } from '$lib/ui/forms';
 	import Icon from '$lib/ui/components/Icon.svelte';
 	import PageHeader from '$lib/ui/components/PageHeader.svelte';
 	import Modal from '$lib/ui/components/Modal.svelte';
 	import Field from '$lib/ui/components/Field.svelte';
+	import CabysSearch from '$lib/ui/components/CabysSearch.svelte';
 	import EmptyState from '$lib/ui/components/EmptyState.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
-	import { formatMoney } from '$lib/domain/money';
+	import { formatMoney, rateFromPercent, ratePercentText } from '$lib/domain/money';
 	import {
 		buildTree,
 		categoryPath,
 		childrenOf,
 		withDescendants
 	} from '$lib/domain/categories';
-	import { formatInt } from '$lib/ui/format';
+	import {
+		cabysCodeProblem,
+		differsFromOfficial,
+		type CabysAnswer,
+		type CabysEntry
+	} from '$lib/domain/cabys';
+	import { formatDateTime, formatInt } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Product } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
@@ -43,6 +51,57 @@
 	// subcategoría. Lo que viaja al servidor es uno solo, `category_id`.
 	let fRoot = $state('');
 	let fSub = $state('');
+
+	// ------------------------------------------------------- CABYS (T-504, T-505)
+	//
+	// La tarifa se escribe en **porcentaje**, que es como se piensa y como la
+	// publica Hacienda; entre 0 y 1 circula del lado del servidor. En blanco
+	// significa «la configurada del negocio» (RN-9), que no es lo mismo que 0.
+	let fCabys = $state('');
+	let fRatePct = $state('');
+	/**
+	 * La tarifa que el catálogo le pone a `fCabys`, si se pudo averiguar.
+	 *
+	 * Es lo único con lo que se puede avisar de una diferencia (RN-11), y por eso
+	 * se lee también al abrir un producto ya clasificado: un aviso que solo
+	 * existiera durante la sesión en que se asignó el código no avisaría nada al
+	 * día siguiente, que es cuando importa.
+	 */
+	let officialRate = $state<number | null>(null);
+	/**
+	 * A qué código pertenece `officialRate`.
+	 *
+	 * Sin esto, el aviso comparaba contra el catálogo del código **anterior**: se
+	 * leía al abrir la ficha y nadie lo volvía a tocar, así que cambiar el código
+	 * a mano dejaba el dato viejo comparándose con la tarifa nueva. Podía avisar
+	 * de una diferencia inexistente o callar una real, y como al reabrir el
+	 * producto sí se consultaba, parecía intermitente.
+	 */
+	let codigoLeido = $state('');
+
+	let cabysOpen = $state(false);
+
+	/**
+	 * Lo que se espera entre teclas antes de preguntarle al catálogo.
+	 *
+	 * Un código son trece dígitos: sin espera, escribirlo a mano son trece
+	 * peticiones y solo la última sirve.
+	 */
+	const CABYS_DEBOUNCE_MS = 400;
+
+	/** La tarifa escrita, entre 0 y 1. `null` si está en blanco o no es un número. */
+	const chosenRate = $derived.by(() => {
+		const raw = fRatePct.trim().replace(',', '.');
+		if (!raw) return null;
+		const numero = Number(raw);
+		return Number.isFinite(numero) ? rateFromPercent(numero) : null;
+	});
+
+	/** RN-11: se puede cambiar, pero se avisa. */
+	const rateDiffers = $derived(differsFromOfficial(chosenRate, officialRate));
+
+	/** El código escrito a mano puede no ser un código. Trece dígitos. */
+	const cabysProblem = $derived(fCabys.trim() ? cabysCodeProblem(fCabys) : null);
 
 	const tree = $derived(buildTree(data.categories));
 
@@ -115,6 +174,10 @@
 		fPrice = '';
 		fStock = '';
 		fBarcode = '';
+		// Un producto nuevo nace sin clasificar y con la tarifa en blanco: en
+		// blanco ES la configurada (RN-9), y dejarla así es lo que hace que el
+		// día que el dueño cambie su tasa le cambie el catálogo que no tocó.
+		limpiarCabys();
 		elegirCategoria(branchesForForm[0]?.root.id ?? 0);
 		productModal = true;
 	}
@@ -126,8 +189,97 @@
 		fPrice = String(product.price);
 		fStock = String(product.stock);
 		fBarcode = product.barcode;
+		limpiarCabys();
+		fCabys = product.cabys_code ?? '';
+		fRatePct = product.tax_rate == null ? '' : ratePercentText(product.tax_rate);
+		// `codigoLeido` se adelanta para que el vigilante no tome esto por una
+		// asignación: abrir la ficha lee el catálogo, pero no copia (ver
+		// `leerTarifaOficial`).
+		codigoLeido = fCabys;
+		leerTarifaOficial(fCabys, false);
 		elegirCategoria(product.category_id);
 		productModal = true;
+	}
+
+	function limpiarCabys() {
+		fCabys = '';
+		fRatePct = '';
+		officialRate = null;
+		codigoLeido = '';
+		cabysOpen = false;
+	}
+
+	/** RN-11: asignar un CABYS **es** copiar su tarifa. */
+	function asignarCabys(entry: CabysEntry) {
+		fCabys = entry.code;
+		officialRate = entry.tax_rate;
+		codigoLeido = entry.code;
+		fRatePct = ratePercentText(entry.tax_rate);
+		cabysOpen = false;
+	}
+
+	function quitarCabys() {
+		fCabys = '';
+		officialRate = null;
+		codigoLeido = '';
+	}
+
+	/**
+	 * Vigila el código escrito a mano.
+	 *
+	 * Escribir los trece dígitos **es** asignar el código, así que tiene que hacer
+	 * lo mismo que elegirlo de la lupa: traer su tarifa y copiarla (RN-11). Antes
+	 * la copia colgaba solo de `asignarCabys`, de modo que quien tenía el código a
+	 * mano —que es lo normal— lo escribía y la tarifa se quedaba en blanco.
+	 *
+	 * El `untrack` es lo que evita el bucle: el efecto escribe `codigoLeido` y no
+	 * puede depender de lo que escribe.
+	 */
+	$effect(() => {
+		const code = fCabys.trim();
+		if (code === untrack(() => codigoLeido)) return;
+
+		// Lo que se sabía del código anterior deja de valer en cuanto el campo
+		// cambia. Se borra ya, y no cuando llegue la respuesta, porque entre una
+		// cosa y la otra el aviso estaría comparando contra el catálogo de otro
+		// código.
+		officialRate = null;
+		if (cabysCodeProblem(code) !== null) return;
+
+		const temporizador = setTimeout(() => leerTarifaOficial(code, true), CABYS_DEBOUNCE_MS);
+		return () => clearTimeout(temporizador);
+	});
+
+	/**
+	 * La tarifa oficial de un código, y —si se está asignando— su copia.
+	 *
+	 * `copiar` distingue las dos veces que se llama, que parecen la misma y no lo
+	 * son: **abrir** una ficha no es asignar nada, y el producto puede apartarse
+	 * del catálogo a propósito —de eso avisa RN-11—, así que copiarle la tarifa al
+	 * abrirlo borraría justo lo que hay que mostrar.
+	 *
+	 * Best effort a propósito: sin catálogo no hay con qué comparar, y avisar de
+	 * una diferencia que nadie puede comprobar sería peor que no avisar.
+	 */
+	async function leerTarifaOficial(code: string, copiar: boolean) {
+		if (cabysCodeProblem(code) !== null) return;
+
+		let answer: CabysAnswer | null = null;
+		try {
+			const respuesta = await fetch(`/inventario/cabys?codigo=${encodeURIComponent(code.trim())}`);
+			if (respuesta.ok) answer = (await respuesta.json()) as CabysAnswer;
+		} catch {
+			answer = null;
+		}
+		// Puede haber cambiado de código mientras se consultaba.
+		if (!answer || fCabys.trim() !== code.trim()) return;
+
+		const oficial = answer.items[0]?.tax_rate ?? null;
+		officialRate = oficial;
+		codigoLeido = code.trim();
+		// Un código que el catálogo no reconoce no tiene tarifa que copiar, y
+		// pisar la escrita con un blanco sería perder lo que había.
+		if (copiar && oficial !== null) fRatePct = ratePercentText(oficial);
 	}
 
 	/**
@@ -182,6 +334,10 @@
 		<a href="/inventario/categorias" class="btn btn-ghost">
 			<Icon name="tag" size={15} />
 			{m.inventory_categories()}
+		</a>
+		<a href="/inventario/clasificar" class="btn btn-ghost">
+			<Icon name="filter" size={15} />
+			{m.inventory_classify()}
 		</a>
 		<button
 			type="button"
@@ -282,6 +438,7 @@
 					<th scope="col">{m.inventory_col_barcode()}</th>
 					<th scope="col">{m.inventory_col_category()}</th>
 					<th scope="col" class="num">{m.inventory_col_price()}</th>
+					<th scope="col" class="num">{m.inventory_col_tax()}</th>
 					<th scope="col" class="num">{m.inventory_col_stock()}</th>
 					<th scope="col"><span class="sr-only">{m.common_actions()}</span></th>
 				</tr>
@@ -298,6 +455,20 @@
 						<td class="font-mono text-xs">{product.barcode}</td>
 						<td>{categoryName(product.category_id)}</td>
 						<td class="num tabular-nums">{formatMoney(product.price)}</td>
+						<!--
+							La tarifa propia, o «la configurada» cuando no la tiene. Se
+							muestra porque es lo que hace visible qué falta por clasificar,
+							que es de lo que vive la asignación en lote (RF-20).
+						-->
+						<td class="num tabular-nums">
+							{#if product.tax_rate == null}
+								<span class="text-xs text-[var(--text-subtle)]">
+									{ratePercentText(data.defaultTaxRate)} %
+								</span>
+							{:else}
+								{ratePercentText(product.tax_rate)} %
+							{/if}
+						</td>
 						<td class="num">
 							<span
 								class="badge tabular-nums {product.stock <= 0
@@ -335,7 +506,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="6">
+						<td colspan="7">
 							<EmptyState
 								icon="box"
 								title={m.inventory_no_products()}
@@ -428,6 +599,81 @@
 					<Icon name="refresh" size={15} />
 				</button>
 			</Field>
+		</div>
+
+		<!--
+			Impuesto del producto (T-504, T-505; RN-9 y RN-11).
+
+			Son dos campos y viajan los dos: el código del catálogo y la tarifa. En
+			blanco la tarifa significa «la configurada del negocio», que no es lo
+			mismo que 0 —un libro infantil paga 0 % de verdad—, y por eso el campo
+			no es obligatorio y su valor vacío se manda tal cual.
+		-->
+		<div class="sm:col-span-2 rounded-xl border border-[var(--border)] p-3">
+			<div class="grid gap-4 sm:grid-cols-2">
+				<Field
+					label={m.inventory_label_cabys()}
+					name="cabys_code"
+					bind:value={fCabys}
+					inputmode="numeric"
+					icon="tag"
+					error={form?.errors?.cabys_code}
+					hint={m.inventory_cabys_hint()}
+				>
+					{#if fCabys.trim()}
+						<button
+							type="button"
+							class="rounded p-1.5 text-[var(--text-subtle)] hover:text-[var(--negative)]"
+							onclick={quitarCabys}
+							title={m.inventory_cabys_clear()}
+							aria-label={m.inventory_cabys_clear()}
+						>
+							<Icon name="close" size={15} />
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="rounded p-1.5 text-[var(--text-subtle)] hover:text-[var(--accent)]"
+						onclick={() => (cabysOpen = !cabysOpen)}
+						title={m.inventory_cabys_search()}
+						aria-label={m.inventory_cabys_search()}
+						aria-expanded={cabysOpen}
+					>
+						<Icon name="search" size={15} />
+					</button>
+				</Field>
+
+				<div>
+					<Field
+						label={m.inventory_label_tax_rate()}
+						name="tax_rate"
+						bind:value={fRatePct}
+						inputmode="decimal"
+						error={form?.errors?.tax_rate}
+						hint={m.inventory_tax_rate_inherited({
+							rate: ratePercentText(data.defaultTaxRate)
+						})}
+					/>
+					{#if rateDiffers && officialRate !== null}
+						<p class="mt-1 flex items-start gap-1.5 text-xs text-[var(--warning)]">
+							<Icon name="alert" size={13} />
+							{m.inventory_tax_rate_differs({ rate: ratePercentText(officialRate) })}
+						</p>
+					{/if}
+				</div>
+			</div>
+
+			{#if cabysProblem}
+				<p class="mt-2 text-xs text-[var(--negative)]">
+					{m.inventory_cabys_bad_code()}
+				</p>
+			{/if}
+
+			{#if cabysOpen}
+				<div class="mt-3 rounded-lg bg-[var(--surface-sunken)] p-3">
+					<CabysSearch onpick={asignarCabys} selected={fCabys} />
+				</div>
+			{/if}
 		</div>
 
 		<!--

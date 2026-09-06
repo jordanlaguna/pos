@@ -4,7 +4,7 @@
 > construye. El cómo está en [plan.md](plan.md) y el trabajo concreto en
 > [task.md](task.md).
 >
-> Actualizado: 2026-08-16 · Estado: vigente
+> Actualizado: 2026-09-06 · Estado: vigente
 
 ---
 
@@ -128,8 +128,11 @@ una compañía no puede terminar en la factura de otra.
 - Categorías de **dos niveles**: categoría → subcategoría.
 - Impuesto **por producto**, tomado del catálogo CABYS.
 - Búsqueda de CABYS contra el API de Hacienda, con copia local.
-- Certificado (.p12) y PIN del emisor, cifrados.
-- Sucursales y terminales, con su numeración.
+- Certificado (.p12) y PIN del emisor, cifrados, **por ambiente**.
+- **Credenciales del API de Hacienda (usuario y contraseña de ATV)**, también por
+  ambiente, y la elección del ambiente en el que se trabaja.
+- Sucursales y terminales, con su numeración, **continuando la que el negocio ya
+  traía** si viene de otro sistema.
 - Lo ya construido: ventas, caja, devoluciones, inventario y entradas,
   clientes, usuarios, reportes, configuración, tres plantillas de documento.
 
@@ -219,17 +222,149 @@ histórico.
 Lo que esta fase deja listo:
 
 - Código CABYS y tarifa por producto (§5.2).
-- Certificado `.p12` y PIN por compañía, cifrados en reposo, que **nunca**
-  vuelven al navegador.
+- Certificado `.p12` y PIN por compañía **y por ambiente**, cifrados en reposo,
+  que **nunca** vuelven al navegador.
+- **Credenciales del API de Hacienda** —usuario y contraseña de ATV— también por
+  ambiente. Son un secreto distinto del certificado y sirven para otra cosa.
+- **El ambiente elegido**: pruebas o producción.
 - Actividad económica del emisor, consultable contra el API de Hacienda.
 - Sucursal y terminal (§5.3).
 - Datos obligatorios del receptor: tipo y número de identificación, correo.
 - Unidad de medida por producto, del catálogo de Hacienda.
 
-**RN-16.** El PIN y el certificado no se muestran, no se registran en bitácora
-y no salen del servidor. La pantalla solo dice si hay uno cargado, cuándo se
-subió y cuándo vence.
-**RN-17.** Mientras no se emita, el documento impreso lo dice en su leyenda.
+#### Son dos secretos, no uno
+
+Firmar y transmitir son cosas separadas y cada una tiene su credencial:
+
+| | Para qué | De dónde sale |
+|---|---|---|
+| `.p12` + PIN | **Firmar** el XML (XAdES-EPES) | ATV → Llave Criptográfica |
+| Usuario + contraseña ATV | **Transmitir**: obtener el token OIDC del IdP de Hacienda | ATV → Obtener credenciales API |
+
+El certificado no autentica contra el API y las credenciales no firman nada. Con
+solo uno de los dos no se emite. Está en `docs/hacienda/costa-rica/README.md` §7.
+
+**RN-16.** **La llave privada, el PIN y la contraseña de ATV** no se muestran,
+no se registran en bitácora y no salen del servidor. La pantalla solo dice si
+hay certificado cargado, cuándo se subió y cuándo vence.
+
+Lo que sí sale es la **parte pública** del certificado, y tiene que salir: viaja
+dentro de cada XML firmado, que es como el receptor y Hacienda verifican la
+firma. Llamar «el certificado» a las dos mitades es lo que hacía que esta regla
+pareciera prohibir lo que el formato exige.
+**RN-17.** Mientras no se emita, el documento impreso lo dice en su leyenda. Y
+**lo emitido en el ambiente de pruebas también lo dice**: son comprobantes que
+no tienen efecto fiscal, y entregar uno sin distintivo es entregar un papel que
+parece una factura y no lo es.
+**RN-33.** Cada compañía tiene **un juego de credenciales por ambiente**, no
+uno solo. Los de pruebas no sirven contra producción y viceversa —Hacienda los
+emite en registros separados—, así que una compañía que está integrando tiene
+los dos a la vez: pasar a producción no puede significar borrar lo de pruebas y
+quedarse sin poder volver. Siguen siendo datos **de la compañía**, con el mismo
+aislamiento que todo lo demás (RNF-1).
+**RN-34.** **La numeración también es por ambiente.** Un comprobante de pruebas
+nunca consume un número de producción. Si el consecutivo fuera uno solo, cinco
+facturas de prueba se comerían los números 1 al 5 de los reales y dejarían un
+hueco — y el consecutivo tiene que ir sin huecos.
+**RN-35.** **Pasar a producción se confirma y queda en bitácora.** Es el momento
+en que los documentos dejan de ser un ensayo y pasan a tener efecto fiscal, y no
+puede ocurrir por haber tocado un desplegable sin querer.
+
+#### El negocio que ya venía facturando
+
+Casi ningún cliente llega en cero: viene de otro sistema y **su numeración tiene
+que continuar**, no volver a empezar. Un consecutivo repetido lo rechaza
+Hacienda, y dos sistemas contando desde uno es la forma más rápida de repetirlo.
+
+**RN-36.** Al configurarse, el cliente indica **su oficina y el último
+consecutivo que emitió**. El resto de la clave —país, fecha, identificación,
+terminal, tipo de comprobante, situación y código de seguridad— lo arma el
+sistema: son datos que ya tiene o que le tocan a él calcular, y pedírselos sería
+pedirle que haga de sistema.
+
+**RN-37.** El último consecutivo **es uno por tipo de comprobante**, no uno
+solo. La numeración de Hacienda es secuencial *dentro del tipo*: las facturas
+llevan su serie y los tiquetes la suya, y un negocio que emitió 4 200 facturas y
+15 300 tiquetes tiene que poder decir las dos.
+
+**RN-38.** El arranque **solo se puede subir, nunca bajar**, y cambiarlo queda en
+bitácora. Bajarlo significa volver a emitir números ya usados: rechazo seguro y
+un desorden que no se limpia. Una vez que el sistema emitió, el contador es suyo.
+
+### 5.4b Emisión (§7.2 del plan)
+
+Emitir no es un momento sino **un recorrido**, y lo que decide si el negocio
+puede trabajar es poder ver en qué punto va cada documento y qué hacer cuando se
+atasca.
+
+**RN-39.** Cada comprobante tiene un **estado visible** en la pantalla de
+facturas: numerado, firmado, enviado, aceptado, rechazado, reintentando o
+detenido. Los tres últimos son los que importan: una falla que no se ve es una
+falla que nadie atiende.
+
+**RN-40.** El estado se **consulta**, no se supone. Hacienda responde al envío
+con un «recibido» que no es una aceptación; el veredicto llega después y hay que
+ir a buscarlo.
+
+**RN-41.** **No todo lo que falla se reintenta.** Un rechazo es una respuesta y
+se detiene ahí. Una falla nuestra —certificado vencido, credenciales rotadas—
+también se detiene, en el primer intento y avisando: reintentar tres días para
+llegar a la misma conclusión no es tolerancia a fallos, es demorar el aviso.
+Solo lo transitorio se reintenta, espaciando los intentos.
+
+**RN-42.** **Agotar los reintentos no es rendirse.** Hacienda da un plazo para
+transmitir lo emitido en contingencia; cuando el sistema deja de reintentar
+solo, el documento sigue estando ahí, transmitible a mano y **contando el
+tiempo a la vista**. Lo que no puede pasar es que se pierda en silencio.
+
+**RN-43.** La **contingencia es un modo del negocio, no una corazonada por
+venta**. El comprobante declara en su clave si se emitió en contingencia, y esa
+clave se imprime y se entrega en el mostrador — o sea que se decide al vender,
+no al transmitir. Se decide por el estado de las transmisiones recientes, no
+preguntándole al cajero.
+
+**RN-44.** El **XML firmado se conserva tal como se envió**, byte por byte. La
+firma cubre esos bytes: regenerarlo produce otra firma y deja de ser el
+documento. Junto a él se conserva la respuesta de Hacienda, que va firmada por
+ella y es la prueba de la aceptación. **Cinco años**, los dos.
+
+
+**RN-45.** La **identificación del emisor es la de la compañía**, no un campo de
+su configuración. Vive en `companies` con su tipo, la fija soporte al dar de alta
+y el administrador del negocio la ve pero **no la edita**.
+
+No es burocracia: el certificado de firma se emite **a esa identificación** y el
+usuario de ATV la lleva dentro de su propio nombre
+(`cpf-01-1234-5678@comprobanteselectronicos.go.cr`). Un campo editable ahí deja
+que el negocio la haga discrepar de su propio certificado, y entonces **todos**
+sus comprobantes se rechazan. Corregir un error del alta pasa por soporte, que es
+la fricción correcta para el dato que identifica al contribuyente.
+
+**RN-46.** El paso a producción **avisa de lo que Hacienda exige y no lo impide**:
+una factura, un tiquete y una nota de crédito emitidos en pruebas. Mientras no
+existan comprobantes que contar —antes de la emisión— el aviso es lo único
+comprobable; la puerta dura entra cuando hay qué contar. Un candado que solo
+puede abrirse en una fase posterior nace cerrado y sin forma de probar que abre.
+
+**RN-47.** El respaldo por compañía se lleva **lo público del certificado y no
+sus secretos**: viajan el certificado público, el usuario de ATV y las fechas; no
+viajan el `.p12`, el PIN ni la contraseña. Al restaurar, la pantalla dice qué hay
+que volver a cargar.
+
+Llevarse el `.p12` cifrado sería correcto respecto de RNF-5 —la llave no viaja—
+y aun así el peor caso: en otra instalación, con otra `FE_CRYPTO_KEY`, es un
+archivo indescifrable que nadie distingue de uno bueno hasta el día de facturar.
+Un respaldo que parece completo y no lo es solo se descubre cuando hace falta.
+
+**RN-48.** El catálogo CABYS **vive en la base**, completo, y es lo que contesta
+las búsquedas. La tarifa que se **asigna**, en cambio, se confirma contra Hacienda
+cuando hay internet.
+
+Son dos cosas distintas y por eso se separan: buscar entre 19 000 entradas tiene
+que ser instantáneo y funcionar sin red (RNF-4), pero una tarifa local
+desactualizada se emite y vuelve como rechazo —«el IVA no coincide con el
+definido para ese CABYS»—. La velocidad sale de la base; la verdad, del catálogo,
+cuando se le puede preguntar.
 
 ---
 
@@ -378,6 +513,36 @@ al dar de alta la compañía, que es cuando se conoce su idioma (RF-6).
 - **RF-24** Reemplazar o quitar el certificado.
 - **RF-25** Consultar la actividad económica por cédula contra Hacienda.
 - **RF-26** Administrar sucursales y terminales con sus códigos.
+- **RF-29** Guardar el usuario y la contraseña de ATV. **La contraseña se cifra
+  y no vuelve al navegador; el usuario sí se muestra**, porque es un
+  identificador y no un secreto: sin verlo, nadie puede comprobar que escribió
+  el que era.
+- **RF-30** Elegir el ambiente —pruebas o producción— y ver, para cada uno, si
+  ya tiene su certificado y sus credenciales. Cambiar a producción se confirma.
+- **RF-31** Comprobar que las credenciales del ambiente sirven, **sin emitir
+  nada**. Es la única forma de saberlo antes de que haga falta.
+
+  Son **tres** desenlaces y hay que distinguirlos: sirven, **no** sirven, y no
+  se pudo comprobar. El tercero no es el segundo: decirle a un cliente que su
+  contraseña está mal el día que Hacienda está en mantenimiento lo lleva a rotar
+  una credencial buena. Es RNF-4 aplicado acá — lo que necesita internet degrada
+  con aviso.
+- **RF-32** Indicar la oficina y el último consecutivo emitido por tipo, para
+  continuar la numeración de un negocio que viene de otro sistema. RN-36 a RN-38.
+- **RF-37** La identificación del emisor y su tipo se ven en Configuración **sin
+  poder editarse**, con quién la puede cambiar. RN-45.
+- **RF-38** Buscar en el catálogo CABYS **por código además de por descripción**,
+  y filtrar por prefijo sin depender de internet. RN-48.
+
+### Emisión
+
+- **RF-33** La pantalla de facturas muestra el estado de cada comprobante y,
+  cuando está esperando, cuándo fue el último intento y cuándo es el próximo.
+- **RF-34** Descargar el XML firmado y la respuesta de Hacienda.
+- **RF-35** Una lista de lo **detenido**: lo que necesita a una persona, con el
+  motivo y el tiempo que lleva esperando.
+- **RF-36** Reintentar a mano un documento detenido, después de arreglar lo que
+  lo detuvo.
 
 ---
 
@@ -394,8 +559,11 @@ al dar de alta la compañía, que es cuando se conoce su idioma (RF-6).
   5 000 productos. La búsqueda por código de barras es instantánea.
 - **RNF-4 Sin internet.** El POS funciona en LAN sin salida a internet. Lo que
   necesita internet —CABYS, Hacienda— degrada con aviso, nunca bloquea la venta.
-- **RNF-5 Secretos.** Certificados y PIN cifrados en reposo, con la llave fuera
-  de la base de datos.
+- **RNF-5 Secretos.** **Llaves privadas, PIN y contraseñas de ATV** cifrados en
+  reposo, con la llave de cifrado **fuera de la base de datos**: un respaldo
+  robado no alcanza para firmar ni para transmitir. La parte pública del
+  certificado no es un secreto y queda fuera de esta regla. Dónde vive la llave
+  privada es una decisión de despliegue —ver plan §7.1— y no la cambia.
 - **RNF-6 Cada función tiene su prueba.** Es regla del proyecto, y se aplica por
   capa porque cada capa se prueba distinto:
 
@@ -457,6 +625,8 @@ con arqueo, devoluciones con reposición, inventario, entradas por manual/Excel/
 XML de Hacienda, clientes, usuarios, reportes, configuración con moneda,
 impuesto, marca y tres plantillas de documento.
 
-**Por construir**: todo lo de este documento marcado RF-1 a RF-26.
+**Por construir**: lo marcado **RF-22 a RF-26 y RF-29 a RF-38**. De RF-1 a
+RF-21 y RF-27 y RF-28 ya están construidos —F2 a F5 y F8—; el detalle de qué
+cerró cada fase está en `progress.json`.
 
 **Deuda conocida**: en `progress.json` → `pendientes`.

@@ -176,6 +176,8 @@
 	],
 	"api_category_inactive": "«{category}» está desativada. Ative-a ou escolha outra.",
 	"api_category_reorder_incomplete": "A nova ordem chegou incompleta. Atualize a tela e tente de novo.",
+	"api_cabys_invalid_code": "O código CABYS deve ter treze dígitos. Recebido: {value}.",
+	"api_cabys_not_found": "A autoridade tributária não tem nenhum item com o código {code}.",
 
 	"api_person_identification_taken": "Já existe uma pessoa cadastrada com esse documento.",
 	"api_email_taken": "Já existe uma conta com esse e-mail.",

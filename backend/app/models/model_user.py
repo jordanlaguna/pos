@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, text
 
 from app.database.database import Base
 
@@ -36,4 +36,6 @@ class User(Base):
     #
     # Va en `users` y no en `user_companies` porque soporte no pertenece a
     # ninguna compañía: es una propiedad de la identidad, como el correo.
-    is_support = Column(Boolean, nullable=False, default=False)
+    is_support = Column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )

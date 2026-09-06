@@ -9,8 +9,11 @@ import {
 	formatCompact,
 	formatMoney,
 	formatNumber,
+	lineTax,
 	lineTotal,
 	parseAmount,
+	rateFromPercent,
+	ratePercentText,
 	round2,
 	taxLabel,
 	taxName,
@@ -41,7 +44,12 @@ beforeEach(() => usar(CRC));
 describe('invariantes de progress.json', () => {
 	it('venta de 3 × 1450 da 4 915,50 y vuelve 84,50 de 5 000', () => {
 		const t = computeTotals([{ price: 1450, quantity: 3 }], 0.13);
-		expect(t).toEqual({ subtotal: 4350, tax: 565.5, total: 4915.5 });
+		expect(t).toEqual({
+			subtotal: 4350,
+			tax: 565.5,
+			total: 4915.5,
+			byRate: [{ rate: 0.13, base: 4350, tax: 565.5 }]
+		});
 		expect(changeDue(5000, t.total)).toBe(84.5);
 	});
 
@@ -53,7 +61,12 @@ describe('invariantes de progress.json', () => {
 			],
 			0.13
 		);
-		expect(t).toEqual({ subtotal: 5700, tax: 741, total: 6441 });
+		expect(t).toEqual({
+			subtotal: 5700,
+			tax: 741,
+			total: 6441,
+			byRate: [{ rate: 0.13, base: 5700, tax: 741 }]
+		});
 		expect(changeDue(10000, t.total)).toBe(3559);
 	});
 
@@ -66,7 +79,12 @@ describe('invariantes de progress.json', () => {
 			],
 			0.13
 		);
-		expect(t).toEqual({ subtotal: 5130, tax: 666.9, total: 5796.9 });
+		expect(t).toEqual({
+			subtotal: 5130,
+			tax: 666.9,
+			total: 5796.9,
+			byRate: [{ rate: 0.13, base: 5130, tax: 666.9 }]
+		});
 		expect(changeDue(6000, t.total)).toBe(203.1);
 	});
 
@@ -152,7 +170,7 @@ describe('lineTotal', () => {
 
 describe('computeTotals', () => {
 	it('sin líneas da todo en cero', () => {
-		expect(computeTotals([], 0.13)).toEqual({ subtotal: 0, tax: 0, total: 0 });
+		expect(computeTotals([], 0.13)).toEqual({ subtotal: 0, tax: 0, total: 0, byRate: [] });
 	});
 
 	it('sin tasa explícita usa la de Costa Rica', () => {
@@ -160,7 +178,8 @@ describe('computeTotals', () => {
 		expect(computeTotals([{ price: 1000, quantity: 1 }])).toEqual({
 			subtotal: 1000,
 			tax: 130,
-			total: 1130
+			total: 1130,
+			byRate: [{ rate: 0.13, base: 1000, tax: 130 }]
 		});
 	});
 
@@ -168,13 +187,117 @@ describe('computeTotals', () => {
 		expect(computeTotals([{ price: 1450, quantity: 2 }], 0)).toEqual({
 			subtotal: 2900,
 			tax: 0,
-			total: 2900
+			total: 2900,
+			byRate: [{ rate: 0, base: 2900, tax: 0 }]
 		});
 	});
 
 	it('redondea línea por línea, no al final', () => {
 		// 3 × 0,335 = 1,005 → 1,01 por línea. Sumar sin redondear daría 1,00.
 		expect(computeTotals([{ price: 0.335, quantity: 3 }], 0).subtotal).toBe(1.01);
+	});
+});
+
+describe('computeTotals con tarifa por línea (F5, RN-10)', () => {
+	const IVA = 0.13;
+	const MEDICAMENTO = 0.02;
+
+	it('la tarifa de la línea manda sobre la del documento', () => {
+		expect(computeTotals([{ price: 1000, quantity: 1, taxRate: 0 }], IVA).tax).toBe(0);
+		expect(computeTotals([{ price: 1000, quantity: 1 }], IVA).tax).toBe(130);
+	});
+
+	it('una línea sin tarifa toma la del documento, que es RN-9', () => {
+		// `null` y `undefined` significan lo mismo: el backend manda null y el
+		// carrito puede no traer el campo.
+		expect(computeTotals([{ price: 1000, quantity: 1, taxRate: null }], IVA).tax).toBe(130);
+	});
+
+	it('el caso del spec: medicamento al 2 % y arroz al 13 %', () => {
+		const t = computeTotals(
+			[
+				{ price: 1000, quantity: 1, taxRate: MEDICAMENTO },
+				{ price: 1000, quantity: 1, taxRate: IVA }
+			],
+			IVA
+		);
+		expect(t.subtotal).toBe(2000);
+		expect(t.tax).toBe(150); // 20 + 130, no 150 por promedio
+		expect(t.total).toBe(2150);
+	});
+
+	it('el desglose suma el subtotal y el impuesto', () => {
+		const t = computeTotals(
+			[
+				{ price: 1000, quantity: 1, taxRate: MEDICAMENTO },
+				{ price: 1000, quantity: 1, taxRate: IVA },
+				{ price: 500, quantity: 2, taxRate: 0 }
+			],
+			IVA
+		);
+		expect(round2(t.byRate.reduce((a, g) => a + g.base, 0))).toBe(t.subtotal);
+		expect(round2(t.byRate.reduce((a, g) => a + g.tax, 0))).toBe(t.tax);
+	});
+
+	it('el desglose va de menor a mayor y no depende del orden de las líneas', () => {
+		const uno = computeTotals(
+			[
+				{ price: 100, quantity: 1, taxRate: IVA },
+				{ price: 100, quantity: 1, taxRate: 0 }
+			],
+			IVA
+		);
+		const otro = computeTotals(
+			[
+				{ price: 100, quantity: 1, taxRate: 0 },
+				{ price: 100, quantity: 1, taxRate: IVA }
+			],
+			IVA
+		);
+		expect(uno.byRate.map((g) => g.rate)).toEqual([0, IVA]);
+		expect(uno.byRate).toEqual(otro.byRate);
+	});
+
+	it('las líneas de la misma tarifa caen en un solo grupo', () => {
+		const t = computeTotals(
+			[
+				{ price: 100, quantity: 1, taxRate: IVA },
+				{ price: 200, quantity: 1 }
+			],
+			IVA
+		);
+		expect(t.byRate).toEqual([{ rate: IVA, base: 300, tax: 39 }]);
+	});
+
+	it('con colones enteros da igual por línea que sobre el subtotal', () => {
+		// Por qué los invariantes no se movieron: el catálogo son colones
+		// enteros, y ahí las dos formas de redondear coinciden.
+		const t = computeTotals(
+			[
+				{ price: 1450, quantity: 3 },
+				{ price: 950, quantity: 1 },
+				{ price: 2730, quantity: 1 },
+				{ price: 4250, quantity: 2 }
+			],
+			IVA
+		);
+		expect(t.tax).toBe(round2(t.subtotal * IVA));
+	});
+
+	it('el impuesto del documento es la suma del de sus líneas', () => {
+		// La propiedad que hace que la factura cuadre consigo misma: es lo que
+		// se guarda en cada `sale_details`. Con céntimos, que es donde la otra
+		// forma de redondear se separaba.
+		const lineas = [
+			{ price: 333.33, quantity: 3 },
+			{ price: 0.335, quantity: 7 },
+			{ price: 1999.99, quantity: 1 }
+		];
+		const t = computeTotals(lineas, IVA);
+		const sumaDeLineas = round2(
+			lineas.reduce((a, l) => a + lineTax(lineTotal(l.price, l.quantity), IVA), 0)
+		);
+		expect(sumaDeLineas).toBe(t.tax);
 	});
 });
 
@@ -216,6 +339,41 @@ describe('impuesto configurado', () => {
 		usar(currency);
 		currency.symbol = 'XXX';
 		expect(currencySettings().symbol).toBe('₡');
+	});
+});
+
+describe('rateFromPercent (F5: la ficha se escribe en porcentaje)', () => {
+	it.each([
+		[13, 0.13],
+		[0, 0],
+		[1, 0.01],
+		[2, 0.02],
+		[4.5, 0.045],
+		[100, 1]
+	])('«%s» es %s', (percent, esperado) => {
+		expect(rateFromPercent(percent)).toBe(esperado);
+	});
+
+	it('recorta a seis decimales, que es lo que guarda la columna', () => {
+		// `tax_rate` es DECIMAL(7,6). Sin recortar acá lo haría la base, en
+		// silencio, y la tarifa releída dejaría de ser igual a la guardada: RN-11
+		// avisaría de una diferencia que nadie hizo.
+		expect(rateFromPercent(0.1234567)).toBe(0.001235);
+		expect(rateFromPercent(100 / 3)).toBe(0.333333);
+	});
+
+	it('es la vuelta exacta de ratePercentText', () => {
+		for (const rate of [0, 0.01, 0.02, 0.04, 0.045, 0.13, 1]) {
+			expect(rateFromPercent(Number(ratePercentText(rate).replace(',', '.')))).toBe(rate);
+		}
+	});
+
+	it.each([101, -1, 1300])('«%s» está fuera de rango y no se acepta', (percent) => {
+		expect(rateFromPercent(percent)).toBeNull();
+	});
+
+	it.each([NaN, Infinity, -Infinity])('«%s» no es un número', (percent) => {
+		expect(rateFromPercent(percent)).toBeNull();
 	});
 });
 

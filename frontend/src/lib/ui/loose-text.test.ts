@@ -163,7 +163,23 @@ function revisar(archivo: string, fuente: string): Hallazgo[] {
 			});
 		}
 
-		for (const clave of ['fragment', 'nodes', 'body', 'consequent', 'alternate', 'children']) {
+		// `fallback` es el `{:else}` de un `{#each}`, y `pending`/`then`/`catch`
+		// las tres ramas de un `{#await}`. Faltaban, así que todo lo que
+		// estuviera dentro era invisible: ahí vivía el «Sin datos.» de
+		// `SalesTrendChart`, mientras su gemelo `BarListChart` usaba la clave del
+		// catálogo para lo mismo.
+		for (const clave of [
+			'fragment',
+			'nodes',
+			'body',
+			'consequent',
+			'alternate',
+			'children',
+			'fallback',
+			'pending',
+			'then',
+			'catch'
+		]) {
 			const hijo = nodo[clave];
 			if (Array.isArray(hijo)) for (const n of hijo) recorrer(n, tecnica);
 			else if (hijo) recorrer(hijo, tecnica);
@@ -198,18 +214,25 @@ const SUMIDEROS = new Map<string, number[]>([
 ]);
 
 /**
- * Sumideros que reciben el texto **dentro de un objeto**.
+ * Propiedades que llegan a los ojos de alguien **esté donde esté el objeto**.
  *
- * `error(404, { message: '…' })` de SvelteKit es el que hay, y se escapó de la
- * primera versión de esta prueba: buscaba literales en posiciones, y acá el
- * literal está una capa más adentro. Eran seis, todos en español, y ninguna de
- * las dos mitades los veía —el marcado no los toca y no son una llamada a
- * `formError`—. La lección es de la forma de la prueba: un sumidero se declara
- * por dónde entra el texto, no por cómo se llama la función.
+ * Antes esto se declaraba por llamada —`error(404, { message: '…' })`, posición
+ * 1—, y por eso no veía la forma más usada de todas: `return { success: '…' }`
+ * desde una acción, que no es una llamada a nada. `lib/ui/forms.ts` lee
+ * `data.success` y `data.message` del resultado de la acción y los pasa a
+ * `toasts.success()` y `toasts.error()`; ese es el canal, y no importa por qué
+ * función pasó el objeto antes.
+ *
+ * Es la misma lección que ya estaba escrita acá y no se había aplicado del todo:
+ * **un sumidero se declara por dónde entra el texto, no por cómo se llama la
+ * función**. Declarado por propiedad, cubre de una vez `return { success }`,
+ * `return { message }`, `fail(400, { message })` y `error(404, { message })`
+ * —los cuatro caminos, incluidos los que nadie ha escrito todavía—.
+ *
+ * Dejó pasar los cuatro textos de T-411 y el `Movimiento de ${type} registrado`
+ * de T-914.
  */
-const SUMIDEROS_OBJETO = new Map<string, { posicion: number; propiedades: string[] }>([
-	['error', { posicion: 1, propiedades: ['message'] }]
-]);
+const PROPIEDADES_QUE_SE_VEN = ['success', 'message'];
 
 /** Una frase: tres letras seguidas y un espacio. Un identificador no lo tiene. */
 const FRASE = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{3}[^]*\s/;
@@ -257,17 +280,20 @@ function revisarTs(archivo: string, fuente: string): Hallazgo[] {
 				anotar(arg, `${nombre}(… "${literal}" …)`);
 			}
 
-			const objeto = SUMIDEROS_OBJETO.get(nombre);
-			const arg = objeto ? nodo.arguments[objeto.posicion] : undefined;
-			if (objeto && arg && ts.isObjectLiteralExpression(arg)) {
-				for (const prop of arg.properties) {
-					if (!ts.isPropertyAssignment(prop)) continue;
-					const clave = prop.name.getText(sf).replace(/['"]/g, '');
-					if (!objeto.propiedades.includes(clave)) continue;
-					const literal = textoLiteral(prop.initializer);
-					if (literal === null || !FRASE.test(literal)) continue;
-					anotar(prop, `${nombre}(…, { ${clave}: "${literal}" })`);
-				}
+		}
+
+		// Fuera del `if`: la propiedad se busca en **todo** objeto literal, no
+		// solo en los que son argumento de una llamada. Es lo que hace que se
+		// vea `return { success: '…' }`, que es por donde salen casi todos los
+		// avisos de éxito del POS.
+		if (ts.isObjectLiteralExpression(nodo)) {
+			for (const prop of nodo.properties) {
+				if (!ts.isPropertyAssignment(prop)) continue;
+				const clave = prop.name.getText(sf).replace(/['"]/g, '');
+				if (!PROPIEDADES_QUE_SE_VEN.includes(clave)) continue;
+				const literal = textoLiteral(prop.initializer);
+				if (literal === null || !FRASE.test(literal)) continue;
+				anotar(prop, `{ ${clave}: "${literal}" }`);
 			}
 		}
 		ts.forEachChild(nodo, recorrer);

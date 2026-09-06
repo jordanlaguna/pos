@@ -97,6 +97,15 @@ def serialize(db: Session, record: Return) -> dict:
         "user_name": _user_name(db, record.user_id),
         "created_at": record.created_at,
         "reason": record.reason,
+        # El desglose que la 006 empezó a guardar (T-509b). Con una sola tarifa
+        # el impuesto se podía deducir del total; con tarifas mezcladas no hay
+        # de dónde, así que se guarda y —por eso mismo— se devuelve.
+        #
+        # En nulo para las devoluciones anteriores a esa migración: ahí el total
+        # es lo único que se registró, y decir un subtotal inventado sería peor
+        # que decir que no se sabe.
+        "subtotal": _money(record.subtotal) if record.subtotal is not None else None,
+        "tax": _money(record.tax) if record.tax is not None else None,
         "total": _money(record.total),
         "is_full": _is_full(db, record.sale_id),
         "items": items,

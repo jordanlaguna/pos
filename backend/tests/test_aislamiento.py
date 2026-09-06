@@ -209,6 +209,59 @@ class TestNoSeVeLoDeLaOtraCompania:
         ), "la búsqueda por nombre trajo un producto de otra compañía"
 
 
+class TestElLoteDeCabysNoAlcanzaLoAjeno:
+    """Los identificadores en el cuerpo, no en la ruta (T-506).
+
+    `PUT /products/assign_cabys` recibe una lista de ids porque son muchos, y
+    esa es exactamente la forma que se escapa de la batería de arriba: la ruta
+    no lleva ningún id que sustituir. Se prueba aparte, no se declara exenta.
+    """
+
+    CODIGO = "3521000000100"
+
+    def test_un_id_ajeno_tumba_el_lote_entero(self, api: Api, mundo_a: dict, mundo_b: dict):
+        propio = mundo_a["producto"]["id_product"]
+        ajeno = mundo_b["producto"]["id_product"]
+
+        estado, _ = api.call(
+            "PUT",
+            "/products/assign_cabys",
+            {"product_ids": [propio, ajeno], "cabys_code": self.CODIGO, "tax_rate": 0.02},
+        )
+        assert estado == 404, (
+            "asignar CABYS a un producto de otra compañía respondió "
+            f"{estado}. Esperado 404: para esta sesión ese id no existe."
+        )
+
+    def test_y_tampoco_le_toca_la_tarifa_al_ajeno(self, api: Api, api_b: Api, mundo_b: dict):
+        """La contraprueba del 404: que no haya escrito antes de fallar."""
+        ajeno = mundo_b["producto"]
+        antes = api_b.ok("GET", f"/products/product/{ajeno['barcode']}")
+
+        api.call(
+            "PUT",
+            "/products/assign_cabys",
+            {"product_ids": [ajeno["id_product"]], "cabys_code": self.CODIGO, "tax_rate": 0.02},
+        )
+
+        despues = api_b.ok("GET", f"/products/product/{ajeno['barcode']}")
+        assert despues["cabys_code"] == antes["cabys_code"]
+        assert despues["tax_rate"] == antes["tax_rate"]
+
+    def test_el_lote_propio_sigue_funcionando(self, api: Api, mundo_a: dict):
+        """Sin esto, un 404 en todo también pasaría el examen."""
+        respuesta = api.ok(
+            "PUT",
+            "/products/assign_cabys",
+            {
+                "product_ids": [mundo_a["producto"]["id_product"]],
+                "cabys_code": self.CODIGO,
+                "tax_rate": 0.02,
+            },
+        )
+        assert respuesta["updated"] == 1
+
+
 # --------------------------------------------------------------------------
 # 2. Las listas solo traen lo propio
 # --------------------------------------------------------------------------
@@ -514,6 +567,14 @@ FUERA_DE_LA_BATERIA = {
         "en TestEntrarComo"
     ),
     "/support/audit": "panel de soporte; la bitácora es del sistema entero (RF-9)",
+    # CABYS es el catálogo del país, no dato de nadie: `cabys_cache` no lleva
+    # `company_id` ni hereda `TenantMixin` a propósito (T-501). La premisa de esta
+    # batería —«con el token de A no se ve B»— no aplica, porque acá la respuesta
+    # correcta es que las dos compañías vean lo mismo: son códigos que Hacienda
+    # publica. Lo que sí hay que exigirles es sesión, y eso está en
+    # `test_cabys_http.py`.
+    "/cabys/buscar": "catálogo del país, común a todas las compañías",
+    "/cabys/{codigo}": "catálogo del país, común a todas las compañías",
     "/cash/current": "opera sobre el usuario de la sesión",
     "/cash/sessions": "probado en TestLaCaja",
     "/cash/session/{session_id}": "probado en TestLaCaja por la vía de la lista",
@@ -528,6 +589,11 @@ FUERA_DE_LA_BATERIA = {
     ),
     "/clients/register_client": "crea en la compañía de la sesión",
     "/products/add_product": "crea en la compañía de la sesión",
+    "/products/assign_cabys": (
+        "recibe los ids en el cuerpo y no en la ruta, así que no cabe en "
+        "RUTAS_POR_ID; el intento con un id ajeno está probado arriba, en "
+        "TestElLoteDeCabysNoAlcanzaLoAjeno"
+    ),
     "/sales/add_sale": "crea en la compañía de la sesión",
     "/returns/add_return": "crea en la compañía de la sesión",
     "/inventory/entry": "crea en la compañía de la sesión",

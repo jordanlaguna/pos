@@ -36,6 +36,7 @@ export const F = {
 	categoryName: () => masculino(m.field_category_name()),
 	description: () => femenino(m.field_description()),
 	barcode: () => masculino(m.field_barcode()),
+	cabysCode: () => masculino(m.field_cabys_code()),
 	category: () => femenino(m.field_category()),
 	notes: () => femeninoPlural(m.field_notes()),
 	reason: () => masculino(m.field_reason()),
@@ -87,9 +88,6 @@ export const F = {
 
 	einvoicingEnvironment: () => masculino(m.field_einvoicing_environment()),
 	einvoicingActivity: () => femenino(m.field_einvoicing_activity()),
-	einvoicingBranch: () => femenino(m.field_einvoicing_branch()),
-	einvoicingTerminal: () => femenino(m.field_einvoicing_terminal()),
-	einvoicingAtvUser: () => masculino(m.field_einvoicing_atv_user()),
 
 	// ---------------------------------------------- panel de soporte (F3)
 	companyName: () => masculino(m.field_company_name()),

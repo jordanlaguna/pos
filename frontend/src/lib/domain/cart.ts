@@ -148,7 +148,12 @@ export function newLine(product: Product, quantity: number): CartLine {
 		name: product.name,
 		price: product.price,
 		quantity,
-		stock: product.stock
+		stock: product.stock,
+		// La tarifa se copia al agregar, igual que el precio (RN-9). Sin esto el
+		// carrito le aplicaría a todo la tasa configurada, y una venta con
+		// tarifas mezcladas llegaría al servidor con un impuesto que no cuadra:
+		// el servidor recalcula por línea y la rechazaría con `totals_mismatch`.
+		taxRate: product.tax_rate ?? null
 	};
 }
 

@@ -57,6 +57,16 @@ export default defineConfig({
 		// que en Windows se resuelve a ::1, y entonces el POS no responde en
 		// 127.0.0.1 —que es donde lo busca `baseURL`—.
 		command: `npm run dev -- --port ${PORT} --strictPort --host 127.0.0.1`,
+		/*
+		 * **La suite siembra de cero** (T-920).
+		 *
+		 * Las pruebas que dan de alta su propia compañía no la retiran, así que
+		 * el archivo del simulado acumulaba una por corrida. Con veinte encima,
+		 * cuatro pruebas de tres archivos empezaban a fallar señalando pantallas
+		 * que no eran el problema. Se ignora lo guardado; no se borra, para no
+		 * llevarse por delante la demostración de quien esté usando el POS.
+		 */
+		env: { ...process.env, POS_MOCK_FRESH: '1' },
 		url: `http://127.0.0.1:${PORT}/login`,
 		/*
 		 * **Nunca se reutiliza un servidor que ya esté escuchando.**

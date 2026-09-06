@@ -50,7 +50,12 @@ describe('venta que se puede cobrar', () => {
 
 		expect(r.ok).toBe(true);
 		if (!r.ok) return;
-		expect(r.totals).toEqual({ subtotal: 4350, tax: 565.5, total: 4915.5 });
+		expect(r.totals).toEqual({
+			subtotal: 4350,
+			tax: 565.5,
+			total: 4915.5,
+			byRate: [{ rate: 0.13, base: 4350, tax: 565.5 }]
+		});
 		expect(r.payload.subtotal).toBe(4350);
 		expect(r.payload.tax).toBe(565.5);
 		expect(r.payload.total).toBe(4915.5);

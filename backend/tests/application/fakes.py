@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.domain.money import Money
+from app.domain.tax import TaxRate
 
 
 @dataclass
@@ -21,6 +22,10 @@ class FakeProduct:
     name: str
     price: Money | None
     stock: int
+    # `None` es «la tasa configurada del negocio» (RN-9). Por omisión, para que
+    # las pruebas anteriores a F5 sigan describiendo el caso de siempre: un
+    # catálogo sin tarifas propias.
+    tax_rate: TaxRate | None = None
 
 
 class FakeProductRepository:
@@ -100,6 +105,20 @@ class FakeSaleRepository:
         venta = self.get(sale_id)
         return {l.product_id: l.unit_price for l in venta.lines} if venta else {}
 
+    def sold_tax_rates(self, sale_id: int) -> dict[int, TaxRate]:
+        """La tarifa congelada de cada línea, para las que la tengan.
+
+        Se salta las que la traen en nulo, que es como quedan las ventas
+        anteriores a la migración 006: quien llama cae al cociente del
+        encabezado, que en ellas es exacto.
+        """
+        venta = self.get(sale_id)
+        if venta is None:
+            return {}
+        return {
+            l.product_id: l.tax_rate for l in venta.lines if l.tax_rate is not None
+        }
+
     def in_window(self, user_id: int, start: datetime, end: datetime) -> list:
         return [
             v for v in self.ventas if v.user_id == user_id and start <= v.created_at <= end
@@ -112,6 +131,10 @@ class FilaDeDevolucion:
     sale_id: int
     user_id: int
     reason: str
+    # Desde F5 la devolución guarda su desglose: con tarifas mezcladas el
+    # impuesto no se deduce del total.
+    subtotal: Money
+    tax: Money
     total: Money
     created_at: datetime
     lines: list

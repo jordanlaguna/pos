@@ -83,6 +83,21 @@ export function documentLabels(locale: string) {
 		noDetailHint: (endpoint: string) => m.doc_no_detail_hint({ endpoint }, o),
 
 		subtotal: m.doc_subtotal({}, o),
+
+		/**
+		 * El rótulo del impuesto con su tarifa: «IVA (13 %)».
+		 *
+		 * Recibe el nombre y ya no lo lee de `taxLabel()`, que sale del estado de
+		 * módulo de `money.ts` —o sea de la configuración de la sesión que esté
+		 * pintando—. Ese era un defecto que ya estaba: reimprimir una factura vieja
+		 * después de cambiar el IVA mostraba el porcentaje de hoy junto al monto de
+		 * entonces, y el nombre no seguía al idioma del documento (RN-29).
+		 *
+		 * El nombre no se traduce, se configura: puede ser IVA, ISV o lo que el
+		 * país llame. Lo que aporta la clave es la forma.
+		 */
+		taxAtRate: (name: string, rate: string) => m.doc_tax_at_rate({ name, rate }, o),
+
 		total: m.doc_total({}, o),
 		cashReceived: m.doc_cash_received({}, o),
 		change: m.doc_change({}, o),

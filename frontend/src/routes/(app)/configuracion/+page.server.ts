@@ -36,7 +36,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	return {
 		configuracion: stored.settings,
 		tieneLogo: stored.logo !== null,
-		actualizado: stored.updated_at
+		actualizado: stored.updated_at,
+		/*
+		 * La sucursal y la terminal salen de la **sesión**, no de la configuración
+		 * (T-614). El backend las resuelve desde el token —`sucursal_actual()`,
+		 * `terminal_actual()`— y `/users/me` ya las publica, así que acá solo se
+		 * pasan a la pantalla, que las muestra sin dejar editarlas.
+		 */
+		branchCode: admin.branch_code,
+		terminalCode: admin.terminal_code
 	};
 };
 
@@ -136,17 +144,11 @@ export const actions: Actions = {
 
 		const ambiente = v.oneOf('electronica_ambiente', F.einvoicingEnvironment(), [
 			'sandbox',
-			'produccion'
+			'production'
 		] as const);
 		const actividad = v.text('electronica_actividad', F.einvoicingActivity(), {
 			required: false,
 			max: 10
-		});
-		const sucursal = v.text('electronica_sucursal', F.einvoicingBranch(), { required: false, max: 3 });
-		const terminal = v.text('electronica_terminal', F.einvoicingTerminal(), { required: false, max: 5 });
-		const usuarioAtv = v.text('electronica_usuario', F.einvoicingAtvUser(), {
-			required: false,
-			max: 120
 		});
 
 		/*
@@ -211,10 +213,7 @@ export const actions: Actions = {
 				// Se guarda la intención, no se activa nada.
 				enabled: checked(form, 'electronica_activa'),
 				environment: ambiente || 'sandbox',
-				economicActivity: actividad,
-				sucursal,
-				terminal,
-				atvUser: usuarioAtv
+				economicActivity: actividad
 			}
 		});
 

@@ -64,7 +64,7 @@ export const actions: Actions = {
 		} catch (error) {
 			return fail(400, { errors: formError(apiMessage(error)) });
 		}
-		return { success: `Movimiento de ${type} registrado.` };
+		return { success: m.cash_movement_registered({ type }) };
 	},
 
 	cerrar: async ({ request, locals, url }) => {

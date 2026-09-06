@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { abrirCobro, clicHasta } from './sesion';
 
 /**
  * El flujo completo en los tres idiomas (T-814).
@@ -51,21 +52,20 @@ async function ponerIdioma(page: Page, locale: string) {
  */
 async function cobrarUnaVenta(page: Page) {
 	await page.goto('/ventas');
-	await page.getByRole('button', { name: /Arroz/i }).first().click();
+	/*
+	 * Con `clicHasta` y no con un clic a pelo. El botón existe en el marcado que
+	 * llega del servidor, pero agregar al carrito lo hace el cliente: un clic
+	 * antes de que hidrate no hace nada, y entonces F1 no abre modal alguno
+	 * porque el carrito está vacío. El síntoma es «no encuentro el campo de
+	 * efectivo» —el campo de otro modal—, y aparecía solo en corridas largas,
+	 * saltando de una prueba a otra de este mismo archivo.
+	 */
+	await clicHasta(page.getByRole('button', { name: /Arroz/i }).first(), () =>
+		expect(page.locator('[data-testid="cart-lines"] > li')).toHaveCount(1, { timeout: 1000 })
+	);
 
 	// F1 abre el cobro. Es el atajo del WinForms y no depende del idioma.
-	await page.keyboard.press('F1');
-
-	const apertura = page.locator('input[name="opening_amount"]');
-	if (await apertura.isVisible()) {
-		await apertura.fill('50000');
-		await page.locator('button[type="submit"][form="open-cash-form"]').click();
-		await expect(apertura).toBeHidden();
-		await page.keyboard.press('F1');
-	}
-
-	const recibido = page.locator('input[name="cash_received"]');
-	await expect(recibido).toBeVisible();
+	const recibido = await abrirCobro(page);
 	await recibido.fill('50000');
 	await page.locator('button[type="submit"][form="payment-form"]').click();
 

@@ -5,6 +5,17 @@
 	"cash_description": "Abertura, movimentos de dinheiro e fechamento do turno.",
 	"cash_movement_in": "Entrada",
 	"cash_movement_out": "Saída",
+	"cash_movement_registered": [
+		{
+			"declarations": ["input type"],
+			"selectors": ["type"],
+			"match": {
+				"type=entrada": "Movimento de entrada registrado.",
+				"type=salida": "Movimento de saída registrado.",
+				"type=*": "Movimento registrado."
+			}
+		}
+	],
 	"cash_close_register": "Fechar caixa",
 	"cash_open_register": "Abrir caixa",
 

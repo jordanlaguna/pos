@@ -4,7 +4,7 @@
 > [spec.md](spec.md). Las tareas concretas y su orden están en
 > [task.md](task.md).
 >
-> Actualizado: 2026-08-16
+> Actualizado: 2026-09-06
 
 ---
 
@@ -625,6 +625,45 @@ La frontera está en **quién crea la cuenta**:
 Reinvitar a quien rechazó vuelve a dejar la membresía pendiente: haber dicho que
 no una vez no es haber dicho que sí.
 
+### 3.9 Las columnas de la suscripción se quedan en español (T-913, decidido el 2026-09-05)
+
+`companies`, `plans`, `user_companies`, `branches` y `terminals` tienen sus
+columnas en **español** —`afiliado`, `compania`, `nombre`, `identificacion`,
+`estado`, `vence_el`, `creada_el`, `precio_mensual`, `max_sucursales`,
+`max_terminales`, `max_usuarios`, `factura_electronica`, `rol`, `activa`,
+`aceptada_el`, `codigo`—, contra la regla de código en inglés. Vienen de la
+migración 002 y son la única excepción: F4 no las siguió y usó `sort_order` e
+`is_active`.
+
+**Se aceptan como están.** No es pereza; es que el rename no es un rename:
+
+- Son **58 archivos y unas 890 menciones**, medidas, no estimadas.
+- **Trece de los diecisiete nombres son claves JSON publicadas** —`CompanyOption`,
+  `CompanyOut`, `PlanOut`, `NewCompany`, `SubscriptionUpdate`— y hay que moverlas
+  en el mismo commit en cinco frentes que **no comparten compilador**: modelo y
+  migración, esquemas Pydantic, el simulado, los tipos y formularios de `/admin`,
+  y los catálogos `es`/`en`/`pt`. `npm run check` no ve el backend y `pytest` no
+  ve el POS, así que una clave que quede vieja **no rompe la build**: devuelve
+  `undefined` en pantalla.
+- El punto de no retorno es `company_dump.py`. Exporta **por nombre de columna**
+  (`fila._mapping`) y su `FORMATO = 1` no cambia con un rename, así que la guarda
+  de versión deja pasar un respaldo viejo como si fuera compatible y revienta
+  después, al insertar. **Todo respaldo entregado a un cliente antes del cambio
+  quedaría inservible**, en silencio, hasta el día que haya que restaurarlo —que
+  es el peor día para descubrirlo—.
+- No compra nada funcional. Es consistencia, y se pagaría con el presupuesto de
+  riesgo justo antes de F5, que toca todo el cálculo de impuestos.
+
+**Lo que haría cambiar la decisión**: F5 no toca estas tablas, pero **F6 sí**
+—T-608 construye el ABM de sucursales y terminales, que son de las afectadas—.
+Si se corrige, el sitio es ahí: se paga una vez, con el trabajo que de todos
+modos abre esos archivos, y con la migración que F6 ya va a escribir. En ese caso
+hace falta además subir `FORMATO` en `company_dump.py` y darle un lector de
+compatibilidad para los respaldos anteriores.
+
+Mientras tanto, la regla de código en inglés **sigue vigente para todo lo demás**:
+esta excepción es de las columnas que ya existen, no una licencia para las nuevas.
+
 ---
 
 ## 4. Panel de soporte (F3) — hecho el 2026-08-23
@@ -832,37 +871,238 @@ línea**, o una venta larga con tarifas mezcladas se rechazaría por acumulació
 
 ## 7. Facturación electrónica
 
-### 7.1 Certificado y PIN (entra en F6)
+### 7.1 Credenciales de Hacienda (entra en F6)
+
+#### Son dos secretos y los dos son por ambiente
+
+Firmar y transmitir son operaciones distintas con credenciales distintas, y
+Hacienda las emite por separado para pruebas y para producción
+(`docs/hacienda/costa-rica/README.md` §7 y §12):
+
+| | Para qué | Dónde se obtiene |
+|---|---|---|
+| `.p12` + PIN | Firmar el XML (XAdES-EPES) | ATV → Llave Criptográfica |
+| Usuario + contraseña ATV | Token OIDC del IdP, para transmitir | ATV → Credenciales API |
+
+El usuario tiene forma `cpf-01-1234-5678@comprobanteselectronicos.go.cr`, el
+`grant_type` es `password` y el `client_secret` va vacío. El `client_id` y el
+realm los decide el ambiente: `api-stag`/`rut-stag` contra `api-prod`/`rut`.
+
+**La llave primaria es `(company_id, environment)` y no `company_id`.** El diseño
+anterior solo admitía un juego por compañía, y con eso «pasar a producción»
+significaba borrar lo de pruebas sin poder volver. Un cliente en integración
+tiene los dos a la vez (RN-33).
 
 ```sql
 CREATE TABLE fe_credentials (
-    company_id     INT PRIMARY KEY,
-    archivo        LONGTEXT     NOT NULL,   -- .p12 cifrado, base64
-    pin            VARBINARY(512) NOT NULL, -- cifrado
-    nombre_archivo VARCHAR(160) NULL,
-    vence_el       DATE         NULL,
-    subido_el      DATETIME     NOT NULL,
-    subido_por     INT          NOT NULL,
+    company_id      INT          NOT NULL,
+    environment     VARCHAR(12)  NOT NULL,   -- 'sandbox' | 'production'
+
+    -- Firma -----------------------------------------------------------------
+    -- La parte PÚBLICA se guarda siempre y NO es secreta: viaja en el KeyInfo
+    -- de cada XML firmado. El `.p12` —que lleva la privada— solo se guarda con
+    -- custodia 'local'; con 'vault' la privada vive en Vault y acá no hay nada
+    -- que descifrar. Son dos columnas y no una porque son dos contenidos.
+    certificate_pem LONGTEXT     NULL,       -- parte pública, sin cifrar
+    p12_encrypted   LONGTEXT     NULL,       -- base64 del .p12 cifrado (solo 'local')
+    pin_encrypted   VARBINARY(512) NULL,
+    key_custody     VARCHAR(12)  NULL,       -- 'local' | 'vault'; NULL = sin certificado
+    key_version     TINYINT      NOT NULL DEFAULT 1,
+    certificate_name VARCHAR(160) NULL,
+    expires_at      DATETIME     NULL,       -- DATETIME y no DATE: el notAfter tiene hora
+    cert_uploaded_at DATETIME    NULL,
+    cert_uploaded_by INT         NULL,
+
+    -- Transmisión -----------------------------------------------------------
+    atv_user        VARCHAR(160) NULL,       -- identificador, NO secreto: se muestra
+    atv_password_encrypted VARBINARY(512) NULL,
+    atv_updated_at  DATETIME     NULL,
+    atv_updated_by  INT          NULL,
+    atv_verified_at DATETIME     NULL,       -- última vez que el IdP dio token
+
+    PRIMARY KEY (company_id, environment),
     CONSTRAINT fk_fe_credentials_company FOREIGN KEY (company_id) REFERENCES companies (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 ```
 
-- **AES-256-GCM** con llave de 32 bytes en la variable de entorno
-  `FE_CRYPTO_KEY`, con el `company_id` como dato asociado: un registro copiado a
-  otra compañía no descifra.
-- La llave vive **fuera de la base**. Un respaldo robado no alcanza para firmar.
-- El `.p12` se descifra en memoria, solo al firmar, y no se escribe a disco.
-- `GET` devuelve `{ configurado, nombre_archivo, vence_el, subido_el }`. El
-  archivo y el PIN **no tienen** endpoint de lectura. No existe el camino.
-- No se registran en bitácora ni en trazas de error.
+**Los nombres van en inglés**, como el resto del código. §3.9 cierra ese punto
+diciendo que la excepción de las columnas en español «es de las columnas que ya
+existen, **no una licencia para las nuevas**», y esta fase estrena una tabla
+entera. El valor del ambiente es `'sandbox'` y no `'pruebas'` porque es el que
+el POS ya publica hoy (`settings.eInvoicing.environment`), y tener dos vocablos
+para el mismo estado es cómo se pierde una migración.
 
-**Consecuencia asumida:** si se pierde `FE_CRYPTO_KEY`, cada compañía tiene que
-volver a subir su certificado. Es preferible a la alternativa, que es que la
-llave viaje con los datos que protege.
+**Las marcas de tiempo son dos pares** porque son dos secretos con vidas
+distintas: rotar la contraseña de ATV en marzo no puede hacer que la pantalla
+diga que el certificado se subió en marzo.
 
-### 7.2 Emisión (F7 — decisión pendiente)
+**Hereda `TenantMixin`.** Es una tabla de compañía y va con el filtro automático
+de `tenancy.py`, que falla cerrado: dejarla fuera la convertiría en la única
+tabla de negocio cuya lectura depende de que alguien se acuerde de escribir el
+`WHERE`, y lo que se filtraría es un certificado de firma. Dos consecuencias que
+hay que escribir porque muerden:
 
-No se programa hasta decidir la ruta. Lo que hay que resolver:
+1. El `company_id` del mixin entra en una **clave primaria compuesta**, así que
+   se declara con `PrimaryKeyConstraint('company_id', 'environment')` y no con
+   `primary_key=True` suelto.
+2. **El trabajador de transmisión corre fuera de una petición** (§7.2), donde no
+   hay compañía en el contexto. Sin un `with compania(cid)` alrededor de cada
+   documento, la primera lectura de credenciales lanza `SinCompania` y la cola
+   no avanza nunca. Es la misma trampa que CLAUDE.md ya documenta para los
+   objetos expirados después del `commit`.
+
+#### Dónde vive la llave privada: un puerto con dos adaptadores
+
+La decisión no es «Vault sí o no» sino **de quién es el problema**, y eso cambia
+con el despliegue. Va detrás de un puerto —`DocumentSigner`— con dos
+implementaciones:
+
+```python
+class DocumentSigner(Protocol):
+    def sign(self, digest: bytes, *, company_id: int, environment: str) -> bytes: ...
+```
+
+**La compañía y el ambiente van explícitos y no en un `ContextVar`.** Con estado
+escondido, el caso de uso no se puede probar contra «firmá esto con el de
+pruebas», y el adaptador de Vault no tendría cómo elegir llave sin heredar el
+contexto de la petición — que es justo lo que el trabajador de fondo no tiene.
+
+- **Local.** El `.p12` cifrado con **AES-256-GCM**, llave de 32 bytes en
+  `FE_CRYPTO_KEY` y el par `(company_id, environment)` como dato asociado: un
+  registro copiado a otra compañía o a otro ambiente no descifra. Se descifra en
+  memoria, solo al firmar, y no se escribe a disco. Es lo que corre en la VM de
+  un negocio, donde no hay quien administre un Vault.
+- **Vault transit.** La llave privada se importa a Vault y **nunca entra en
+  memoria de la aplicación**: se le manda el digest y devuelve la firma
+  (PKCS#1 v1.5, que es lo que pide XAdES-EPES). Es el despliegue multiempresa, y
+  es el que ya usa DetCore
+  (`docs/hacienda/costa-rica/recepcion-comprobantes-mensaje-receptor.md` §3.1).
+
+**El nombre de la llave en Vault se DERIVA, no se guarda.** Se calcula en el
+servidor a partir de `(company_id, environment)`. Guardarlo como un campo que
+alguien pueda escribir sería dejar que el administrador de la compañía 7 apunte
+a la llave de la compañía 3 y emita documentos fiscales firmados con el
+certificado de otro cliente. Es el equivalente exacto del dato asociado del
+AES-GCM: en los dos adaptadores, la identidad de la llave la fija el servidor.
+
+**`key_version` existe para poder rotar sin Vault.** El adaptador local usa una
+llave estática, y sin versión en la fila, rotar `FE_CRYPTO_KEY` significa que
+todos los clientes vuelvan a subir su certificado. Con versión, es un trabajo de
+fondo que recifra fila por fila.
+
+**El arranque falla si `FE_CRYPTO_KEY` no está o no mide 32 bytes.** Sin eso, el
+primer aviso llega el día que alguien sube un certificado, que es tarde.
+
+#### Lo que Vault arregla, y el modo de falla que introduce
+
+Lo que gana es exactamente lo flojo del adaptador local: una llave estática no
+rota, no deja rastro de cada uso y, si se pierde, obliga a todos los clientes a
+volver a subir su certificado. Transit da rotación y **bitácora de cada firma**,
+que para una llave que emite documentos fiscales es la mitad del valor.
+
+**El modo de falla nuevo no es «sin internet».** El despliegue de LAN usa el
+adaptador local, donde Vault nunca está en el camino, y el hospedado ya necesita
+red para que el POS alcance al backend. El riesgo real es **Vault sellado con el
+backend arriba**: se sigue vendiendo, se sigue numerando, y la cola crece sin que
+nada falle a la vista.
+
+Y tiene reloj. Lo emitido en contingencia tiene un plazo para transmitirse —unos
+8 días hábiles— y Hacienda rechaza por antigüedad pasados los 30 días. Un Vault
+sellado un viernes por un reinicio, sin quien lo abra hasta el lunes, se come
+tres días de ese presupuesto en silencio. **La mitigación es la alarma de
+antigüedad de la cola (§7.2), no el desellado**: cualquier cosa que detenga la
+firma —Vault, un certificado vencido, un disco lleno— se ve por el mismo sitio.
+
+#### Reglas que no dependen del adaptador
+
+- El `GET` de estado devuelve **los dos ambientes**, no el activo: RF-30 pide ver
+  qué le falta a cada uno, y con un objeto singular la pantalla necesitaría dos
+  llamadas y no podría decir «producción está listo, pruebas no».
+- El archivo, el PIN y la contraseña **no tienen** endpoint de lectura. No existe
+  el camino.
+- No se registran en bitácora ni en trazas de error. Sí se registra **que** se
+  usaron —quién pidió un token, quién reemplazó un certificado—, nunca su
+  contenido.
+- Subir, reemplazar o quitar credenciales es de **administrador**. Con eso el
+  bloqueo por suscripción las alcanza sin tocar nada.
+- Probar la conexión (RF-31) pide un token y lo descarta, con tiempo de espera
+  explícito —el precedente es el adaptador de CABYS— y distinguiendo los tres
+  desenlaces. Guarda `atv_verified_at` para que la pantalla pueda decir
+  «verificadas el 3 de septiembre» en vez de obligar a probar a ciegas.
+
+#### El ambiente activo
+
+`fe_credentials` guarda credenciales **por** ambiente; cuál está en uso es otro
+dato y vive en la configuración de la compañía, que es donde ya está hoy
+(`settings.eInvoicing.environment`). RN-35 —confirmar y registrar el paso a
+producción— es un cambio de estado sobre ese dato.
+
+**Y el ambiente viaja también en la fila del documento**, no solo en la del
+contador. Sin eso: cinco tiquetes de prueba quedan en cola sin firmar porque el
+sandbox estaba lento, al día siguiente el administrador pasa a producción, el
+trabajador toma la cola y toma las credenciales vigentes — cinco documentos con
+efecto fiscal real que nadie quiso emitir.
+
+#### El respaldo por compañía: lo público sí, los secretos no (decidido el 2026-09-06)
+
+`company_dump.py` tiene un guardián que tumba `pytest` en cuanto aparece una
+tabla sin clasificar, así que `fe_credentials` se clasifica **por columna y no
+por tabla**, que es lo que el guardián no contemplaba y hay que enseñarle:
+
+| Va en el respaldo | No va |
+|---|---|
+| `certificate_pem`, `certificate_name`, `expires_at` | `p12_encrypted`, `pin_encrypted` |
+| `atv_user`, las marcas de tiempo | `atv_password_encrypted` |
+| `environment`, `key_custody` | |
+
+El descarte del `.p12` cifrado no es por RNF-5 —ahí estaría bien, la llave no
+viaja—: es porque en otra instalación, con otra `FE_CRYPTO_KEY`, es un archivo
+indescifrable que nadie distingue de uno bueno hasta el día de facturar. Lo que
+sí viaja es todo lo que puede volver solo, y **al restaurar la pantalla dice qué
+falta cargar** (RN-47). Un respaldo que parece completo y no lo es solo se
+descubre cuando hace falta.
+
+#### La identificación del emisor vive en `companies` (decidido el 2026-09-06)
+
+Estaba en dos sitios y ninguno alcanzaba solo: `companies.identificacion` la pone
+soporte al dar de alta pero es **opcional y sin tipo**, y `business.taxId` +
+`business.taxIdType` de Configuración tienen el tipo pero los edita el
+administrador del negocio.
+
+Manda `companies`, con una columna `identification_type` nueva, y Configuración
+la muestra **de solo lectura** (RN-45, RF-37). El argumento no es de orden sino
+de consecuencia: el `.p12` se emite **a esa identificación** y el usuario de ATV
+la lleva dentro de su nombre. Un campo editable deja que el negocio la haga
+discrepar de su propio certificado, y ahí no se rechaza un comprobante: se
+rechazan todos.
+
+**Y esto le pone precio a T-916.** `companies` es de las tablas con columnas en
+español, así que agregarle `identification_type` deja `identificacion` e
+`identification_type` **una al lado de la otra en la misma tabla**. O se renombra
+en la misma migración, o esa mezcla queda escrita.
+
+#### La certificación previa en sandbox se avisa, no se impide (decidido el 2026-09-06)
+
+Hacienda exige emitir una factura, un tiquete y una nota de crédito en pruebas
+antes de producción (README §12). En F6 el paso a producción **avisa de los tres
+y deja pasar**, con la bitácora de RN-35; la puerta dura entra en F7 (RN-46).
+
+El motivo es que en F6 no existe nada que contar: no hay emisión todavía. Un
+candado construido acá nacería cerrado, sin forma de comprobar que abre, y la
+primera vez que se ejercitaría sería con un cliente esperando.
+
+#### Riesgo abierto: TRIBU-CR
+
+`docs/hacienda/costa-rica/README.md` §12 deja pendiente confirmar si TRIBU-CR
+—que reemplaza a ATV desde octubre de 2025— cambia URLs o credenciales.
+Mitigación comprobable: **ambiente, `client_id`, realm y URL base salen de un
+solo módulo**, y una prueba tumba `pytest` si el dominio de Hacienda aparece
+escrito en cualquier otro sitio. Es el mismo patrón que ya sostiene
+`test_error_codes.py`.
+
+### 7.2 Emisión (F7 — la ruta sigue sin decidir)
+
+La ruta —firmar nosotros o pasar por un proveedor autorizado— sigue abierta:
 
 | | Directo | Vía proveedor autorizado |
 |---|---|---|
@@ -872,18 +1112,130 @@ No se programa hasta decidir la ruta. Lo que hay que resolver:
 | Salir a producción | lento | rápido |
 | Dependencia | ninguna | fuerte |
 
-**Diseño que no obliga a decidir hoy:** la emisión se define como una interfaz
-(`EmisorFE`: `emitir(venta) → {clave, consecutivo, estado}`, `consultar(clave)`)
-con dos implementaciones posibles. Todo lo demás —CABYS, tarifas, numeración,
-sucursal, terminal, datos del receptor, cola de reintentos, contingencia— es
-igual en ambos casos y es lo que se construye en F5 y F6.
+**Nada de lo que sigue depende de esa decisión.** El recorrido del documento, sus
+estados, la numeración, la contingencia y lo que se guarda son iguales por las
+dos rutas; lo que cambia es quién está del otro lado del puerto `EmisorFE`
+(`emitir(venta) → {clave, consecutivo, estado}`, `consultar(clave)`).
 
-Piezas que faltarían en cualquiera de las dos rutas: clave de 50 dígitos,
-consecutivo de 20 sin huecos (con bloqueo de fila por terminal), envío
-asíncrono con consulta de estado, entrega al receptor por correo con XML y PDF,
-y modo contingencia para poder cobrar con Hacienda caída.
+#### La numeración
+
+El consecutivo son 20 dígitos: **sucursal (3) + terminal (5) + tipo (2) +
+secuencia (10)**, y la secuencia es «dentro del tipo». De ahí que el contador
+tenga **cinco dimensiones**:
+
+```
+(company_id, branch, terminal, document_type, environment) → última secuencia
+```
+
+Con menos, la serie nace con huecos. Escenario con un contador por terminal: se
+emite un tiquete, luego una factura, luego otro tiquete → los tiquetes van 1, 3,
+5 y las facturas 2, 4. Las dos series quedan con saltos, que es exactamente lo
+que Hacienda rechaza («consecutivo fuera de orden»).
+
+**El contador se confirma en la misma transacción que el documento.** Un contador
+en transacción propia y corta no serializa las cajas, pero una venta que después
+falla —por stock, por un total que no cuadra— deja el número consumido y abre un
+hueco. Es el defecto 1 del proyecto otra vez, y el `UnitOfWork` que ya existe es
+donde se hace comprobable.
+
+**Un rechazo sí deja hueco, y es esperado.** La clave es la llave de idempotencia
+de Hacienda: un comprobante rechazado no se reenvía con la misma clave, hay que
+emitir otro con consecutivo nuevo. El número del rechazado queda fuera de la
+serie aceptada por diseño de Hacienda, no por defecto nuestro, y hay que
+documentarlo o el primer rechazo va a parecer un contador roto.
+
+**Arranque de un negocio que ya facturaba** (RN-36 a RN-38): el cliente indica su
+oficina y la última secuencia por tipo, y el sistema continúa desde ahí. Solo se
+puede subir, queda en bitácora, y una vez que el sistema emitió el contador es
+suyo.
+
+**Y hay un consecutivo que ya existe y no sirve para esto.** `sale_number` lo
+fabrica hoy **el navegador**, con `yyyyMMddHHmmss` y el reloj del cliente. Dos
+cajas cobrando en el mismo segundo chocan contra `UNIQUE (company_id,
+sale_number)` y una de las dos ventas se rechaza en la cara del cliente; además
+contradice la regla de que la hora la pone el servidor. F7 tiene que decidir si
+`sale_number` pasa a ser el consecutivo o convive con él, y en los dos casos
+deja de venir del cliente.
+
+#### La clave y la contingencia
+
+La clave son 50 dígitos y su posición 42 es la **situación**: 1 normal, 2
+contingencia, 3 sin internet. Esa clave es **contenido obligatorio de la
+representación impresa** y se entrega en el mostrador, así que **se decide al
+vender**, no al transmitir.
+
+De ahí RN-43: **la contingencia es un modo del negocio**. Si las transmisiones
+recientes vienen fallando, el POS está en contingencia y los documentos nuevos
+nacen con situación 2; cuando Hacienda vuelve, sale del modo. No se le pregunta
+al cajero y no se adivina por documento — y emitir con situación 2 cuando
+Hacienda estaba arriba es causa de rechazo, así que la decisión tiene que salir
+de un hecho observado y no de una precaución.
+
+**Lo que sí se difiere es la firma**, no la clave. Son cosas distintas: la clave
+es aritmética y se arma sin red; la firma necesita la llave y puede esperar al
+momento de transmitir. Esa separación es la que hace que el adaptador de Vault
+no agregue un modo de falla en el mostrador.
+
+#### El recorrido y sus estados
+
+```
+numerado ──> firmado ──> enviado ──> aceptado
+                │            │
+                │            └──> rechazado        (respuesta final)
+                │
+                └──> reintentando ──> detenido     (necesita a una persona)
+```
+
+Cada uno se ve en la pantalla de facturas (RF-33). `reintentando` muestra el
+último intento y el próximo; `detenido` muestra el motivo.
+
+#### Dos ciclos, no uno
+
+Son dos esperas distintas y confundirlas se paga de los dos lados:
+
+| Ciclo | Cuándo | Cadencia |
+|---|---|---|
+| **Veredicto** | Hacienda ya recibió (202) | 10 s → 30 s → 1 → 2 → 5 min |
+| **Reenvío** | No se pudo alcanzar a Hacienda | 5 → 15 → 30 min → … → 72 h |
+
+El primero sale de `docs/hacienda/costa-rica/README.md` §8: tras el 202 hay que
+esperar 5–10 s y «en condiciones normales la validación toma segundos». Con la
+cadencia del segundo ciclo, una venta que Hacienda resolvió en tres segundos se
+vería «pendiente» cinco minutos en la pantalla del cajero.
+
+**Solo lo transitorio se reintenta** (RN-41). Un rechazo es una respuesta. Un
+certificado vencido o unas credenciales rotadas son fallas nuestras y se
+detienen en el primer intento: hacer backoff 72 horas sobre eso es demorar el
+aviso tres días para llegar a la misma conclusión.
+
+**Y agotar los reintentos no es rendirse** (RN-42): el documento pasa a
+`detenido`, sigue transmitible a mano, y su antigüedad se ve. **La alarma de
+antigüedad de la cola es una pieza, no un detalle**: es lo único que avisa antes
+de que se acabe el plazo de contingencia, y lo que hace visible un Vault sellado,
+un disco lleno o un certificado que venció el sábado.
+
+#### Por qué polling y no callbacks
+
+Hacienda soporta `callbackUrl` en el `POST /recepcion` y avisa ella, reintentando
+tres veces (README §8). Es más barato que consultar. **Pero un POS en la LAN de
+una tienda no tiene URL pública**, así que para este producto el mecanismo
+primario es la consulta. En un despliegue hospedado el callback sí sirve y el
+puerto tiene que admitir los dos sin cambiar el resto.
+
+#### Lo que se guarda
+
+El **XML firmado tal como se envió**, byte por byte —la firma cubre esos bytes,
+regenerarlo da otra firma y deja de ser el documento— y la **respuesta de
+Hacienda**, que va firmada por ella y es la prueba de la aceptación. Los dos por
+**cinco años**, y los dos descargables (RF-34).
+
+Piezas que faltan en cualquiera de las dos rutas: clave de 50 dígitos,
+consecutivo de 20 sin huecos, envío asíncrono con consulta de estado, entrega al
+receptor por correo con XML y PDF, y modo contingencia para poder cobrar con
+Hacienda caída.
 
 ---
+
 
 ## 8. Multi-idioma (F8)
 
@@ -1022,8 +1374,8 @@ la cadena adentro; convertirlas después, no.
 | **F3** Soporte | Panel `/admin`, planes, estados, bitácora | Se puede dar de alta una compañía y operarla de punta a punta |
 | **F4** Categorías | Dos niveles en catálogo, ventas e inventario | Un repuestero y un súper organizan su catálogo sin tocar código |
 | **F5** Impuesto y CABYS | Tarifa por producto, búsqueda de CABYS, totales por línea | Una venta con 13 %, 2 % y 0 % cuadra y desglosa bien |
-| **F6** Preparación FE | Certificado cifrado, sucursales, terminales, actividad | Se sube un `.p12`, se ve su estado y no hay forma de leerlo de vuelta |
-| **F7** Emisión | (decisión pendiente) | — |
+| **F6** Preparación FE | Certificado y credenciales ATV cifrados **por ambiente**, sucursales, terminales, actividad, arranque del consecutivo | Se suben el `.p12` y las credenciales de los dos ambientes, se ve el estado de cada uno, se prueba la conexión, se pasa a producción con confirmación y bitácora, y no hay forma de leer de vuelta ni el archivo ni el PIN ni la contraseña |
+| **F7** Emisión | La ruta sigue pendiente; **el recorrido no depende de ella**: numeración, estados, consulta, contingencia y archivo | Una venta se emite, se ve pasar por sus estados hasta aceptada, y su XML firmado y la respuesta de Hacienda se pueden descargar |
 | **F8** Multi-idioma | Español, inglés y portugués; el backend deja de escribir texto | Los tres catálogos tienen las mismas claves y la build se cae si alguien escribe una cadena dentro de un componente |
 
 **F1 fue primero y no era opcional.** Todo lo que sigue toca dinero, existencias o
@@ -1054,7 +1406,11 @@ primer día, no.
 | El refactor de F2 toca todos los archivos y puede romper lo que ya funciona | Las pruebas de F1 son la red. Por eso F1 va antes: los invariantes de `progress.json` dejan de comprobarse a mano y pasan a correr solos |
 | Reorganizar por capas (F1) es mover mucho código sin cambiar comportamiento, que es donde se cuelan los errores silenciosos | Pruebas de caracterización **antes** de mover nada, y se mueve capa por capa, no todo junto |
 | La cobertura del 100 % empuja a escribir pruebas de relleno para pasar el umbral | El umbral cubre solo dominio y aplicación, que son código puro y de reglas. Ahí una función sin prueba es una regla sin verificar, no burocracia |
-| `FE_CRYPTO_KEY` se pierde | Documentado: hay que volver a subir los certificados. Se guarda fuera del repositorio y fuera de la base |
+| `FE_CRYPTO_KEY` se pierde | **El arranque falla si no está o no mide 32 bytes**, para no enterarse al firmar. `key_version` en la fila permite rotarla como trabajo de fondo en vez de pedirle a cada cliente que vuelva a subir su certificado. Se guarda fuera del repositorio y fuera de la base |
+| **Vault sellado con el backend arriba**: se sigue vendiendo y numerando, y la cola de transmisión crece sin que nada falle a la vista | La alarma de antigüedad de la cola (§7.2). No es el desellado: cualquier cosa que detenga la firma —Vault, un certificado vencido, un disco lleno— se ve por el mismo sitio, y avisa antes de que se acabe el plazo de contingencia |
+| **TRIBU-CR** cambia URLs o credenciales de ATV (README §12 lo deja pendiente de confirmar) | Ambiente, `client_id`, realm y URL base salen de **un solo módulo**, y una prueba tumba `pytest` si el dominio de Hacienda aparece escrito en otro sitio |
+| **El certificado vence sin que nadie mire** y la emisión se detiene | Aviso 30 días antes (T-606) y estado `detenido` con su motivo en la lista de RF-35. `expires_at` guarda la hora, no solo el día |
+| Diferir la firma alarga la ventana entre emitir y transmitir, y la contingencia tiene plazo | El plazo se vigila explícitamente: la antigüedad de la cola es visible y alarma antes de los 8 días hábiles. Hacienda además rechaza por antigüedad mayor a 30 días |
 | El API de CABYS no responde | Caché local; la venta nunca depende de él |
 | Borrar los clones de referencia | Están en GitHub y el análisis quedó escrito en `progress.json` y en `backend/README.md` |
 | El impuesto por línea toca dinero ya verificado | Los invariantes de `progress.json` se recalculan y se documentan de nuevo |

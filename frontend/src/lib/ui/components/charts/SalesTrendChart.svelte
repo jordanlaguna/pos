@@ -272,7 +272,7 @@
 						<td class="num tabular-nums">{formatMoney(point.total)}</td>
 					</tr>
 				{:else}
-					<tr><td colspan="3" class="text-[var(--text-subtle)]">Sin datos.</td></tr>
+					<tr><td colspan="3" class="text-[var(--text-subtle)]">{m.chart_no_data()}</td></tr>
 				{/each}
 			</tbody>
 		</table>

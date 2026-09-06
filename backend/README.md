@@ -129,14 +129,36 @@ docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' 
 # Después de esta, la cuenta de soporte se crea con `bootstrap.py --soporte`.
 docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
     < migrations/004-soporte.sql
+
+# F4: categorías de dos niveles. La unicidad del nombre pasa a ser por rama.
+docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
+    < migrations/005-categorias.sql
+
+# F5: el impuesto es del producto. Todas las columnas nuevas nacen en NULL, así
+# que no cambia ni un céntimo de lo ya cobrado.
+docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
+    < migrations/006-impuesto-por-producto.sql
+
+# Quita el `DEFAULT 1` de company_id, branch_id y terminal_id: la cicatriz del
+# backfill de la 002. No toca ninguna fila.
+docker exec -i mysql_db_api sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" posdb' \
+    < migrations/007-sin-defecto-de-compania.sql
 ```
 
-Ninguna es idempotente: MySQL 8 no tiene `ADD COLUMN IF NOT EXISTS`, así que
-correrlas dos veces falla en el primer `ALTER`. Falla, no corrompe. Cada una
-termina con consultas de control que dicen si quedó bien.
+De la 002 a la 006 **ninguna es idempotente**: MySQL 8 no tiene
+`ADD COLUMN IF NOT EXISTS`, así que correrlas dos veces falla en el primer
+`ALTER`. Falla, no corrompe. La 007 sí lo es —quitar un defecto que ya no está
+no falla—. Cada una termina con consultas de control que dicen si quedó bien.
 
-Sobre una base nueva no hacen falta: `create_all()` deja el mismo esquema
-—comprobado columna por columna— y solo hay que correr `bootstrap.py`.
+Sobre una base nueva no hacen falta: `create_all()` deja el mismo esquema y solo
+hay que correr `bootstrap.py`.
+
+**Que dejen el mismo esquema lo comprueba `tests/test_esquema.py`, no la
+memoria.** Esta línea decía «comprobado columna por columna», de una revisión a
+mano de F2, y era falso: cuando la prueba pasó a mirar las columnas (T-919)
+aparecieron treinta diferencias de valor por omisión. Doce se arreglaron en los
+modelos y dieciocho con la 007. Una afirmación así solo vale si algo la vuelve a
+comprobar en cada corrida.
 
 ### Respaldar una sola compañía
 

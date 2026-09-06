@@ -24,6 +24,49 @@ export async function clicHasta(boton: Locator, comprobar: () => Promise<void>) 
 	}).toPass({ timeout: 10_000 });
 }
 
+/** El contenedor de cualquier modal. Su capa de fondo intercepta los clics. */
+const MODAL = 'div.no-print.fixed.inset-0.z-50';
+
+/**
+ * Deja abierto el modal de cobro, abriendo la caja antes si hace falta.
+ *
+ * Esto era tres líneas copiadas en dos archivos y las tres estaban mal, cada una
+ * a su manera. Lo que costó entenderlo:
+ *
+ * 1. **F1 abre uno de dos modales** —el de apertura si la caja está cerrada, el
+ *    de cobro si no—, así que preguntar directamente por el campo de apertura
+ *    responde «no está» tanto cuando salió el otro como cuando todavía no salió
+ *    ninguno.
+ * 2. **Cerrar el modal de apertura no termina cuando su campo deja de verse.**
+ *    Queda la capa de fondo, que intercepta el clic sobre el botón de cobrar: el
+ *    síntoma es «el botón no se deja pulsar».
+ * 3. **Abrir la caja recarga los datos de la página**, y hasta que Svelte no
+ *    vuelve a enganchar los manejadores, F1 no hace nada. Una sola pulsación
+ *    después de cerrar el modal llega demasiado pronto.
+ *
+ * De ahí sale la forma: se reintenta, pero **solo se pulsa F1 si no hay ningún
+ * modal abierto**. Reintentar F1 a secas parecía inofensivo y no lo es —apila
+ * una segunda capa encima, que es justo el problema 2—; con la guardia, el
+ * reintento no puede hacer daño y espera lo que haga falta.
+ */
+export async function abrirCobro(page: Page, apertura = '50000') {
+	const campoApertura = page.locator('input[name="opening_amount"]');
+	const recibido = page.locator('input[name="cash_received"]');
+
+	await page.keyboard.press('F1');
+	await expect(campoApertura.or(recibido)).toBeVisible();
+
+	if (await campoApertura.isVisible()) {
+		await campoApertura.fill(apertura);
+		await page.locator('button[type="submit"][form="open-cash-form"]').click();
+		await expect(async () => {
+			if ((await page.locator(MODAL).count()) === 0) await page.keyboard.press('F1');
+			await expect(recibido).toBeVisible({ timeout: 1000 });
+		}).toPass({ timeout: 20_000 });
+	}
+	return recibido;
+}
+
 /**
  * Entrar al POS, en un solo lugar.
  *

@@ -153,6 +153,17 @@ def get_sale_detail(db: Session, sale_id: int) -> dict | None:
                 "quantity": detail.quantity,
                 "price": float(detail.unit_price),
                 "subtotal": float(detail.subtotal),
+                # Lo que se COBRÓ en esta línea, con su tarifa y su redondeo
+                # (RN-12). Es lo que necesita el desglose del documento (RF-21):
+                # se imprime lo cobrado, no una recuperación del cálculo.
+                #
+                # En nulo para las ventas anteriores a la migración 006, que
+                # llevan una sola tarifa; ahí el documento la deduce del
+                # encabezado, que para ellas es exacto.
+                "tax_rate": float(detail.tax_rate) if detail.tax_rate is not None else None,
+                "tax_amount": (
+                    float(detail.tax_amount) if detail.tax_amount is not None else None
+                ),
             }
         )
 

@@ -204,8 +204,23 @@ describe('newLine', () => {
 			name: 'Arroz 1 kg',
 			price: 1450,
 			quantity: 3,
-			stock: 10
+			stock: 10,
+			// Sin clasificar: la venta le aplicará la tasa configurada (RN-9).
+			taxRate: null
 		});
+	});
+
+	it('copia la tarifa del producto, como copia el precio (F5, RN-9)', () => {
+		// Sin esto el carrito le aplicaba a todo la configurada, y una venta con
+		// tarifas mezcladas llegaba al servidor con un impuesto que no cuadraba:
+		// el servidor recalcula por línea y la rechazaba con `totals_mismatch`.
+		expect(newLine({ ...producto(10), tax_rate: 0.02 }, 1).taxRate).toBe(0.02);
+	});
+
+	it('el 0 % se copia y no se confunde con «sin clasificar»', () => {
+		// Un libro infantil paga 0 % de verdad. Si `0` cayera a la configurada,
+		// el único producto exonerado sería el que pagaría el 13 %.
+		expect(newLine({ ...producto(10), tax_rate: 0 }, 1).taxRate).toBe(0);
 	});
 });
 

@@ -89,7 +89,14 @@ export function prepareSale(
 		return no({ code: 'checkout_bad_sale_number' });
 	}
 
-	const priced: { id_product: number; price: number; quantity: number }[] = [];
+	// `taxRate` en nulo es «la configurada del negocio» (RN-9); `computeTotals`
+	// la resuelve con la tasa que recibe de respaldo.
+	const priced: {
+		id_product: number;
+		price: number;
+		quantity: number;
+		taxRate: number | null;
+	}[] = [];
 	for (const line of request.lines) {
 		const product = catalog.find((p) => p.id_product === Number(line.id_product));
 		if (!product) return no({ code: 'checkout_product_gone' });
@@ -104,8 +111,15 @@ export function prepareSale(
 			});
 		}
 
-		// El precio sale del catálogo. Lo que mandó el navegador ni se mira.
-		priced.push({ id_product: product.id_product, price: Number(product.price), quantity });
+		// El precio sale del catálogo. Lo que mandó el navegador ni se mira. Y
+		// desde F5, la tarifa también: cada producto lleva la suya, y `null` es
+		// «la configurada del negocio» (RN-9), que es la que va de respaldo.
+		priced.push({
+			id_product: product.id_product,
+			price: Number(product.price),
+			quantity,
+			taxRate: product.tax_rate ?? null
+		});
 	}
 
 	const totals = computeTotals(priced, taxRate);

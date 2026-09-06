@@ -10,9 +10,14 @@
 	 * El ancho de la hoja lo pone `@page` desde acá, no una clase: `@page` es una
 	 * regla global y cada plantilla necesita la suya.
 	 */
-	import { formatMoney, taxLabel } from '$lib/domain/money';
+	import { formatMoney, ratePercentText } from '$lib/domain/money';
 	import { formatDateTime, fullName } from '$lib/ui/format';
-	import { issuerLines, returnedTotal, type DocumentProps } from '$lib/domain/documents';
+	import {
+		issuerLines,
+		returnedTotal,
+		taxBreakdown,
+		type DocumentProps
+	} from '$lib/domain/documents';
 	import { documentLabels, issuerText } from '$lib/ui/documents';
 
 	let {
@@ -35,6 +40,13 @@
 	const doc = $derived(settings.document);
 	const emisor = $derived(issuerText(issuerLines(settings), t));
 	const devuelto = $derived(returnedTotal(returns));
+
+	/**
+	 * El desglose por tarifa (RF-21). Con una sola tarifa da una fila —igual que
+	 * antes de F5— y con varias, una por cada una. Sale de lo que se GUARDÓ en
+	 * cada línea, no de recalcular con la configuración de hoy.
+	 */
+	const impuestos = $derived(taxBreakdown(sale));
 </script>
 
 <svelte:head>
@@ -133,10 +145,12 @@
 			<dt>{t.subtotal}</dt>
 			<dd>{formatMoney(sale.subtotal)}</dd>
 		</div>
-		<div class="flex justify-between text-[var(--text-muted)]">
-			<dt>{taxLabel()}</dt>
-			<dd>{formatMoney(sale.tax)}</dd>
-		</div>
+		{#each impuestos as fila (fila.rate)}
+			<div class="flex justify-between text-[var(--text-muted)]">
+				<dt>{t.taxAtRate(settings.tax.name, ratePercentText(fila.rate))}</dt>
+				<dd>{formatMoney(fila.tax)}</dd>
+			</div>
+		{/each}
 		<div
 			class="flex justify-between border-t border-[var(--border)] pt-2 text-base font-bold text-[var(--text)]"
 		>

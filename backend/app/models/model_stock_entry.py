@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Numeric, String
 
 from app.database.database import Base
 from app.utils.tenancy import TenantMixin
@@ -14,6 +14,14 @@ class StockEntry(TenantMixin, Base):
     """
 
     __tablename__ = "stock_entries"
+
+    # Los dos índices de la migración, declarados también acá (T-915). El de
+    # documento es el que sostiene la regla de la factura duplicada: antes de
+    # aplicar una entrada se busca si ese número ya se cargó y sigue aplicada.
+    __table_args__ = (
+        Index("idx_stock_entries_created", "created_at"),
+        Index("idx_stock_entries_document", "document_number"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     # Número de factura del proveedor, o el consecutivo del XML de Hacienda.
@@ -33,6 +41,10 @@ class StockEntry(TenantMixin, Base):
 
 class StockEntryDetail(TenantMixin, Base):
     __tablename__ = "stock_entry_details"
+
+    # Las líneas se leen por documento, y es lo que recorre la anulación para
+    # revertir el stock.
+    __table_args__ = (Index("idx_stock_entry_details_entry", "entry_id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     entry_id = Column(Integer, ForeignKey("stock_entries.id"), nullable=False)

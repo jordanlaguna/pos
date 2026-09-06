@@ -296,6 +296,21 @@ export interface Product {
 	barcode: string;
 	created_at: string;
 	category_id: number;
+
+	// --- F5: el impuesto es del producto, no del negocio (RN-9) -------------
+
+	/** Código del catálogo de Hacienda. Trece dígitos, con ceros a la izquierda. */
+	cabys_code?: string | null;
+	/**
+	 * La tarifa de ESTE producto, entre 0 y 1: el 13 % es `0.13`.
+	 *
+	 * `null` o ausente significa **la tasa configurada del negocio**, que es lo
+	 * que tienen los productos anteriores a F5 y los que nadie ha clasificado.
+	 * No es lo mismo que `0`, que es una exoneración de verdad.
+	 */
+	tax_rate?: number | null;
+	/** Unidad de medida del comprobante de Hacienda. 'Unid' por omisión. */
+	unit_of_measure?: string;
 }
 
 export type ProductInput = Omit<Product, 'id_product'>;
@@ -335,6 +350,15 @@ export interface CartLine {
 	price: number;
 	quantity: number;
 	stock: number;
+	/**
+	 * La tarifa de ESTE producto, copiada al agregarlo (F5, RN-9).
+	 *
+	 * `null` o ausente significa «la tasa configurada del negocio», que es lo que
+	 * aplica mientras nadie lo clasifique. Ausente además en los carritos que
+	 * quedaron guardados antes de F5: se recuperan y caen a la configurada, que
+	 * es exactamente lo que se les estaba cobrando.
+	 */
+	taxRate?: number | null;
 }
 
 export interface SaleItem {
@@ -343,6 +367,14 @@ export interface SaleItem {
 	quantity: number;
 	price: number;
 	subtotal: number;
+	/**
+	 * La tarifa **congelada** al cobrar, no la que tenga el producto hoy
+	 * (RN-12). Ausente en las ventas anteriores a la migración 006, que llevan
+	 * una sola tarifa y la reconstruyen del encabezado.
+	 */
+	tax_rate?: number | null;
+	/** Lo que se cobró de impuesto en esta línea, con su redondeo. */
+	tax_amount?: number | null;
 }
 
 /** Respuesta de GET /sales/sale/{id} — endpoint añadido por este proyecto. */
@@ -445,6 +477,15 @@ export interface SaleReturn {
 	user_name?: string | null;
 	created_at: string;
 	reason: string;
+	/**
+	 * El desglose de lo reembolsado (F5, T-509b).
+	 *
+	 * Con una sola tarifa el impuesto se deducía del total; con tarifas mezcladas
+	 * no hay de dónde, así que se guarda al devolver. Ausente en las devoluciones
+	 * anteriores a la migración 006.
+	 */
+	subtotal?: number | null;
+	tax?: number | null;
 	total: number;
 	/** Devolución completa de la venta (todas las líneas, cantidad total). */
 	is_full: boolean;

@@ -11,11 +11,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.domain.cabys import CabysCode
 from app.domain.money import Money
 from app.domain.tax import TaxRate
+from app.models.model_cabys import CabysCache
 from app.models.model_cash import CashMovement, CashSession
 from app.models.model_product import Product
 from app.models.model_return import Return, ReturnDetail
@@ -33,6 +35,9 @@ class ProductData:
     name: str
     price: Money | None
     stock: int
+    #: `None` es «la tasa configurada del negocio» (RN-9). Lo resuelve el caso de
+    #: uso, no este adaptador: acá solo se transporta lo que dice la fila.
+    tax_rate: TaxRate | None = None
 
 
 def _a_producto(fila: Product) -> ProductData:
@@ -43,6 +48,7 @@ def _a_producto(fila: Product) -> ProductData:
         # qué hacer con eso, acá solo se transporta.
         price=Money(fila.price) if fila.price is not None else None,
         stock=fila.stock,
+        tax_rate=TaxRate(fila.tax_rate) if fila.tax_rate is not None else None,
     )
 
 
@@ -236,6 +242,13 @@ class SqlAlchemySaleRepository:
                     quantity=linea.quantity,
                     unit_price=linea.unit_price.amount,
                     subtotal=linea.subtotal.amount,
+                    # La tarifa llega **ya resuelta** desde el caso de uso: nunca
+                    # nula. Congelarla acá es lo que hace que devolver algo
+                    # vendido el mes pasado use la tarifa de entonces y no la de
+                    # hoy (RN-12), y lo que permite que una devolución parcial de
+                    # una sola tarifa no se calcule con el promedio de la venta.
+                    tax_rate=linea.tax_rate.value,
+                    tax_amount=linea.tax_rate.apply(linea.subtotal).amount,
                 )
             )
 
@@ -257,6 +270,25 @@ class SqlAlchemySaleRepository:
         filas = self._db.query(SaleDetail).filter(SaleDetail.sale_id == sale_id).all()
         # `unit_price` de la línea, no el precio de hoy del producto.
         return {fila.product_id: Money(fila.unit_price) for fila in filas}
+
+    def sold_tax_rates(self, sale_id: int) -> dict[int, TaxRate]:
+        """La tarifa CONGELADA de cada línea, para las que la tengan.
+
+        Solo las ventas posteriores a la migración 006 la traen; las anteriores
+        devuelven un diccionario vacío o incompleto, y el caso de uso cae al
+        cociente del encabezado, que para ellas es exacto porque llevan una sola
+        tarifa (RN-12).
+
+        Es lo que impide que una devolución parcial de una venta con tarifas
+        mezcladas se calcule con el promedio: devolver el medicamento al 2 %
+        junto al arroz al 13 % reembolsaría ₡1 075 en vez de ₡1 020.
+        """
+        filas = self._db.query(SaleDetail).filter(SaleDetail.sale_id == sale_id).all()
+        return {
+            fila.product_id: TaxRate(fila.tax_rate)
+            for fila in filas
+            if fila.tax_rate is not None
+        }
 
     def in_window(self, user_id: int, start: datetime, end: datetime) -> list:
         return (
@@ -291,6 +323,8 @@ class SqlAlchemyReturnRepository:
         sale_id: int,
         user_id: int,
         reason: str,
+        subtotal: Money,
+        tax: Money,
         total: Money,
         created_at: datetime,
         lines: list,
@@ -303,6 +337,12 @@ class SqlAlchemyReturnRepository:
             sale_id=sale_id,
             user_id=user_id,
             reason=reason,
+            # Desde F5 se guarda el desglose y no solo el total: con tarifas
+            # mezcladas el impuesto no se puede deducir del total, así que sin
+            # estas dos columnas la devolución no tendría con qué cuadrar la caja
+            # ni qué reimprimir.
+            subtotal=subtotal.amount,
+            tax=tax.amount,
             total=total.amount,
             created_at=created_at,
         )
@@ -317,6 +357,11 @@ class SqlAlchemyReturnRepository:
                     quantity=linea.quantity,
                     unit_price=linea.unit_price.amount,
                     subtotal=linea.subtotal.amount,
+                    # Copiada de la línea de la venta, no releída del producto:
+                    # la del producto pudo cambiar desde entonces (RN-12). Llega
+                    # ya resuelta desde el caso de uso.
+                    tax_rate=linea.tax_rate.value,
+                    tax_amount=linea.tax_rate.apply(linea.subtotal).amount,
                 )
             )
         return registro.id
@@ -442,3 +487,76 @@ class SqlAlchemyUnitOfWork:
 
     def rollback(self) -> None:
         self._db.rollback()
+
+
+class SqlAlchemyCabysCacheRepository:
+    """La caché del catálogo CABYS. Cumple `CabysCacheRepository`.
+
+    **Sin filtro por compañía, y es a propósito**: `cabys_cache` no hereda
+    `TenantMixin` porque el catálogo es del país. Es la segunda tabla global del
+    sistema, después de `plans`, y no guarda dato de nadie: son códigos que
+    Hacienda publica.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    @staticmethod
+    def _a_codigo(fila: CabysCache) -> CabysCode:
+        return CabysCode(
+            code=fila.code,
+            description=fila.description,
+            tax_rate=TaxRate(fila.tax_rate),
+        )
+
+    def search(self, text: str, limit: int) -> list[CabysCode]:
+        """Busca en lo que ya se consultó alguna vez.
+
+        Por descripción **y por código**: quien busca sin internet suele estar
+        pegando un código que ya usó, y obligarlo a recordar la descripción sería
+        una degradación peor que la falta de internet.
+        """
+        patron = f"%{text}%"
+        filas = (
+            self._db.query(CabysCache)
+            .filter(or_(CabysCache.description.like(patron), CabysCache.code.like(patron)))
+            .order_by(CabysCache.description)
+            .limit(limit)
+            .all()
+        )
+        return [self._a_codigo(f) for f in filas]
+
+    def by_code(self, code: str) -> CabysCode | None:
+        fila = self._db.query(CabysCache).filter(CabysCache.code == code).first()
+        return self._a_codigo(fila) if fila else None
+
+    def updated_at(self, code: str) -> datetime | None:
+        fila = self._db.query(CabysCache).filter(CabysCache.code == code).first()
+        return fila.updated_at if fila else None
+
+    def remember(self, entries: list[CabysCode], now: datetime) -> None:
+        """Guarda o actualiza. Es lo que hace que facturar no dependa de que
+        Hacienda esté arriba: el código que se le asignó a un producto ya está
+        acá el día que no haya internet."""
+        for entrada in entries:
+            fila = (
+                self._db.query(CabysCache)
+                .filter(CabysCache.code == entrada.code)
+                .first()
+            )
+            if fila is None:
+                self._db.add(
+                    CabysCache(
+                        code=entrada.code,
+                        description=entrada.description,
+                        tax_rate=entrada.tax_rate.value,
+                        updated_at=now,
+                    )
+                )
+            else:
+                # Se refresca lo que puede cambiar: Hacienda corrige
+                # descripciones y tarifas, y la caché tiene que seguirlas.
+                fila.description = entrada.description
+                fila.tax_rate = entrada.tax_rate.value
+                fila.updated_at = now
+        self._db.commit()

@@ -218,3 +218,85 @@ class TestDevolucionRechazada:
 
         assert devoluciones.devoluciones == []
         assert catalogo.get(1).stock == 17, "se repuso una línea de una devolución que falló"
+
+
+class TestTarifasMezcladas:
+    """El caso que F5 existe para hacer imposible (plan §6.3).
+
+    Con una sola tarifa, `tax / subtotal` del encabezado la reconstruye exacta y
+    todo cuadra. En cuanto se mezclan, ese cociente es un **promedio**, y
+    devolver una sola línea con el promedio reembolsa de más o de menos.
+    """
+
+    MEDICAMENTO = TaxRate("0.02")
+
+    def montar_mezclada(self):
+        """Un medicamento al 2 % y un arroz al 13 %, ₡1 000 cada uno.
+
+        Encabezado: subtotal ₡2 000, impuesto ₡150 → promedio 7,5 %.
+        """
+        catalogo = FakeProductRepository(
+            [
+                FakeProduct(1, "Medicamento", Money(1000), stock=10,
+                            tax_rate=self.MEDICAMENTO),
+                FakeProduct(2, "Arroz 1 kg", Money(1000), stock=10, tax_rate=IVA),
+            ]
+        )
+        ventas = FakeSaleRepository()
+        ventas.add(
+            sale_number="20260905120000",
+            client_id=None,
+            user_id=1,
+            subtotal=Money(2000),
+            tax=Money(150),
+            total=Money(2150),
+            payment_method="Efectivo",
+            cash_received=Money(2150),
+            change_given=Money(0),
+            created_at=MOMENTO,
+            lines=[
+                SaleLine(1, Money(1000), 1, tax_rate=self.MEDICAMENTO),
+                SaleLine(2, Money(1000), 1, tax_rate=IVA),
+            ],
+        )
+        devoluciones = FakeReturnRepository()
+        caso = RegisterReturn(
+            sales=ventas,
+            returns=devoluciones,
+            products=catalogo,
+            settings=FakeSettingsRepository(IVA),
+            uow=FakeUnitOfWork(),
+            clock=FixedClock(MOMENTO),
+        )
+        return caso, devoluciones
+
+    def test_devolver_solo_el_medicamento_da_1020_y_no_1075(self):
+        caso, devoluciones = self.montar_mezclada()
+        hecha = caso(peticion([(1, 1)]))
+
+        assert hecha.total == Money("1020.00"), "usó el promedio del encabezado"
+        assert devoluciones.devoluciones[0].tax == Money("20.00")
+        assert devoluciones.devoluciones[0].subtotal == Money("1000.00")
+
+    def test_devolver_solo_el_arroz_da_1130_y_no_1075(self):
+        caso, _ = self.montar_mezclada()
+        assert caso(peticion([(2, 1)])).total == Money("1130.00")
+
+    def test_las_dos_parciales_suman_la_venta_entera(self):
+        """Si no sumaran, el negocio ganaría o perdería según el orden en que se
+        devuelva, que es la peor forma de perder plata: nadie la ve."""
+        caso, _ = self.montar_mezclada()
+        primera = caso(peticion([(1, 1)])).total
+        segunda = caso(peticion([(2, 1)])).total
+        assert primera + segunda == Money("2150.00")
+
+    def test_una_venta_vieja_sin_tarifa_en_la_linea_usa_la_del_encabezado(self):
+        """RN-12 para lo cobrado antes de la migración 006: esas ventas llevan
+        una sola tarifa y el cociente la reconstruye exacta."""
+        caso, _, _, devoluciones, _ = montar(
+            tasa_configurada=TaxRate("0.25"), tasa_de_la_venta=IVA
+        )
+        hecha = caso(peticion([(1, 1)]))
+
+        assert hecha.total == Money("1638.50"), "usó la tasa de hoy y no la de su venta"
+        assert devoluciones.devoluciones[0].tax == Money("188.50")

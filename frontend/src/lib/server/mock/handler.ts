@@ -13,7 +13,13 @@ import {
 	type MockSettings,
 	type MockUser
 } from './db';
-import { DEFAULT_TAX_RATE, changeDue, computeTotals, round2 } from '$lib/domain/money';
+import {
+	DEFAULT_TAX_RATE,
+	changeDue,
+	computeTotals,
+	lineTax,
+	round2
+} from '$lib/domain/money';
 import { COMPANY_STATES } from '$lib/domain/types';
 import type {
 	CashMovement,
@@ -24,6 +30,7 @@ import type {
 	PaymentBreakdown,
 	Product,
 	ReportSummary,
+	ReturnItem,
 	SaleItem,
 	SaleReturn,
 	SalesByDay,
@@ -662,6 +669,9 @@ route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
 
 // ------------------------------------------------------------------ productos
 
+/** Columnas donde el nulo **es un valor**. Espejo de `crud_product.VACIABLES`. */
+const VACIABLES = new Set(['cabys_code', 'tax_rate']);
+
 route('GET', '/products/products_list', ({ companyId }) => getDb(companyId).products);
 
 route('POST', '/products/add_product', ({ body, companyId }) => {
@@ -679,7 +689,11 @@ route('POST', '/products/add_product', ({ body, companyId }) => {
 		stock: Math.trunc(Number(body?.stock ?? 0)),
 		barcode,
 		created_at: String(body?.created_at ?? nowIso()),
-		category_id: Number(body?.category_id ?? 0)
+		category_id: Number(body?.category_id ?? 0),
+		// F5: en nulo significa «la tasa configurada del negocio» (RN-9).
+		cabys_code: body?.cabys_code != null ? String(body.cabys_code) : null,
+		tax_rate: body?.tax_rate != null ? Number(body.tax_rate) : null,
+		unit_of_measure: String(body?.unit_of_measure ?? 'Unid')
 	});
 	persist();
 	return { message: 'product_registered', id_product: id };
@@ -699,14 +713,51 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 	if (categoriaNueva !== null && categoriaNueva !== product.category_id)
 		categoriaParaProducto(companyId, categoriaNueva);
 	for (const [key, value] of Object.entries(body ?? {})) {
-		if (value == null || value === '') continue;
+		// En casi todo el formulario un nulo significa «no mandé este campo», que
+		// es lo que hace que un PUT parcial no borre el resto. En `VACIABLES` no:
+		// ahí el nulo **es** el valor, y sin esa excepción clasificar un producto
+		// sería una puerta de una sola dirección (RN-9). Mismo criterio y misma
+		// lista que `crud_product.VACIABLES` en el backend.
+		if ((value == null || value === '') && !VACIABLES.has(key)) continue;
 		if (key === 'price') product.price = round2(Number(value));
 		else if (key === 'stock') product.stock = Math.trunc(Number(value));
 		else if (key === 'category_id') product.category_id = Number(value);
+		else if (key === 'tax_rate') product.tax_rate = value === '' || value == null ? null : Number(value);
+		else if (key === 'cabys_code')
+			product.cabys_code = value === '' || value == null ? null : String(value);
 		else if (key in product) (product as any)[key] = value;
 	}
 	persist();
 	return { message: 'product_updated', id_product: id };
+});
+
+/**
+ * Asignación de CABYS en lote (RF-20). Todo o nada, como el backend: medio
+ * catálogo clasificado es el desorden que esto existe para arreglar.
+ */
+route('PUT', '/products/assign_cabys', ({ body, companyId }) => {
+	const db = getDb(companyId);
+	const codigo = String(body?.cabys_code ?? '').trim();
+	// Las mismas tres razones que el dominio, y en el mismo orden.
+	if (!codigo) fail(400, 'cabys_invalid_code', { value: codigo, reason: 'empty' });
+	if (!/^\d+$/.test(codigo)) fail(400, 'cabys_invalid_code', { value: codigo, reason: 'not_digits' });
+	if (codigo.length !== 13) fail(400, 'cabys_invalid_code', { value: codigo, reason: 'bad_length' });
+
+	const tarifa = Number(body?.tax_rate);
+	if (!Number.isFinite(tarifa) || tarifa < 0 || tarifa > 1)
+		fail(400, 'tax_rate_out_of_range', { value: body?.tax_rate });
+
+	const pedidos = [...new Set((body?.product_ids as unknown[]) ?? [])].map(Number);
+	const productos = pedidos.map((id) => db.products.find((p) => p.id_product === id));
+	const faltante = pedidos.find((id, i) => productos[i] === undefined);
+	if (faltante !== undefined) fail(404, 'product_not_found', { product_id: faltante });
+
+	for (const producto of productos) {
+		producto!.cabys_code = codigo;
+		producto!.tax_rate = tarifa;
+	}
+	persist();
+	return { message: 'cabys_assigned', updated: productos.length };
 });
 
 route('DELETE', '/products/delete_product/:id', ({ params, companyId }) => {
@@ -983,6 +1034,12 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 	const products = Array.isArray(body?.products) ? body.products : [];
 	if (!products.length) fail(400, 'empty_sale');
 
+	// F5: cada línea lleva la tarifa de SU producto; la configurada es solo el
+	// respaldo de los que no tienen la suya (RN-9). Se lee UNA vez y no por
+	// línea, igual que en `RegisterSale`: si alguien guardara la configuración a
+	// mitad del cobro, dos líneas de la misma venta usarían tasas distintas.
+	const tasaDelNegocio = configuredTaxRate(companyId);
+
 	// Se valida TODO antes de escribir nada: o entra la venta completa, o no entra.
 	const items: SaleItem[] = [];
 	for (const line of products) {
@@ -1002,7 +1059,16 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 			name: product.name,
 			quantity,
 			price: product.price,
-			subtotal: round2(product.price * quantity)
+			subtotal: round2(product.price * quantity),
+			// Congelada acá, nunca releída del producto: la suya puede cambiar y
+			// la devolución tiene que usar la que se cobró (RN-12).
+			tax_rate: product.tax_rate ?? tasaDelNegocio,
+			// El impuesto de la línea, con su redondeo. Sin esto el desglose del
+			// documento (RF-21) saldría en cero: lo lee de acá, no lo recalcula.
+			tax_amount: lineTax(
+				round2(product.price * quantity),
+				product.tax_rate ?? tasaDelNegocio
+			)
 		});
 	}
 
@@ -1018,8 +1084,12 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 	 * en 0,01.
 	 */
 	const calculado = computeTotals(
-		items.map((i) => ({ price: i.price, quantity: i.quantity })),
-		configuredTaxRate(companyId)
+		items.map((i) => ({
+			price: i.price,
+			quantity: i.quantity,
+			taxRate: db.products.find((p) => p.id_product === i.id_product)?.tax_rate ?? null
+		})),
+		tasaDelNegocio
 	);
 	// Los nombres son los del API ('tax', no 'impuesto'): viajan al POS y ahí se
 	// vuelven palabra, igual que en el backend de verdad.
@@ -1093,7 +1163,11 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 		}
 	}
 
-	const items = requested.map((line: any) => {
+	// El tipo se escribe acá y no se deja inferir: `requested` viene del cuerpo
+	// de la petición, o sea `any`, y sin esto todo lo que sale de este `map`
+	// arrastra el `any` hasta el cálculo de los totales —que fue justo donde se
+	// coló un `unit_price` que no existe—.
+	const items: ReturnItem[] = requested.map((line: any) => {
 		const quantity = Math.trunc(Number(line?.quantity ?? 0));
 		const sold = sale.items.find((i) => i.id_product === Number(line?.id_product));
 		if (!sold) fail(400, 'not_sold_in_this_sale', { product_id: line?.id_product });
@@ -1118,12 +1192,27 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 		};
 	});
 
-	const netSubtotal = round2(items.reduce((acc: number, i: any) => acc + i.subtotal, 0));
-	// La tasa se deduce de la venta que se está devolviendo, no de la configurada
-	// hoy: si el negocio cambió el impuesto, lo que se reembolsa es lo que se
-	// cobró. Mismo criterio que `_sale_tax_rate` en crud_return.py.
-	const soldRate = sale.subtotal > 0 ? sale.tax / sale.subtotal : configuredTaxRate(companyId);
-	const total = round2(netSubtotal * (1 + soldRate));
+	// La tasa del ENCABEZADO de la venta, que desde F5 es solo el respaldo: sirve
+	// para las ventas anteriores a la migración 006, que llevan una sola tarifa y
+	// por eso el cociente la reconstruye exacta. Con tarifas mezcladas sería un
+	// PROMEDIO, y devolver una sola línea con el promedio reembolsa de más o de
+	// menos. Mismo criterio que `TaxRate.of_sale` en el backend.
+	const delEncabezado =
+		sale.subtotal > 0 ? sale.tax / sale.subtotal : configuredTaxRate(companyId);
+	// Cada línea con la tarifa que se le CONGELÓ al cobrar (RN-12).
+	const totales = computeTotals(
+		// `price` y no `unit_price`: así se llama el campo de una línea devuelta.
+		// Con el nombre equivocado, `lineTotal` recibía `undefined`, `round2` lo
+		// convertía en 0 y la devolución entera reembolsaba cero sin fallar.
+		items.map((i) => ({
+			price: i.price,
+			quantity: i.quantity,
+			taxRate: sale.items.find((v) => v.id_product === i.id_product)?.tax_rate ?? null
+		})),
+		delEncabezado
+	);
+	const netSubtotal = totales.subtotal;
+	const total = totales.total;
 
 	// Devolución completa = todas las líneas de la venta quedan en cero.
 	const isFull = sale.items.every((sold) => {
@@ -1140,6 +1229,10 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 		user_name: personName(Number(body?.user_id ?? 0)),
 		created_at: nowIso(),
 		reason: String(body?.reason ?? '').trim() || 'Sin motivo indicado',
+		// El desglose de lo reembolsado (T-509b). Con tarifas mezcladas el
+		// impuesto no se puede deducir del total, así que se guarda.
+		subtotal: netSubtotal,
+		tax: totales.tax,
 		total,
 		is_full: isFull,
 		items
@@ -1663,8 +1756,89 @@ route('PUT', '/settings/', ({ userId, body, companyId }) => {
 // Utilidad exclusiva del modo demo: devuelve todo al estado de fábrica.
 route('POST', '/mock/reset', ({ companyId }) => {
 	resetDb();
-	return { message: 'Datos de demostración reiniciados' };
+	// Código y no prosa, como los demás «sí» del simulado (T-802): nadie lo
+	// muestra hoy, pero una respuesta con una frase adentro es una frase que
+	// alguien acabará mostrando.
+	return { message: 'mock_reset' };
 });
+
+// ------------------------------------------------------------------- CABYS
+//
+// El catálogo de Hacienda, simulado. Son pocas entradas y con las tarifas
+// reales del spec —13 %, 2 % y 0 %—: alcanzan para clasificar el catálogo de
+// demostración y para que se vea el desglose de RF-21, que es lo que el modo
+// simulado tiene que poder enseñar.
+//
+// **Aquí `source` es siempre 'hacienda'.** El simulado no tiene red que se
+// caiga, así que la degradación de RNF-4 se prueba contra el backend de verdad;
+// lo que sí se respeta es el contrato, para que la pantalla no tenga dos formas
+// de leer la respuesta.
+const CABYS_DEMO = [
+	// Los del catálogo de demostración. **Códigos reales**, consultados a Hacienda
+	// el 2026-09-06: los de antes eran inventados y con eso el simulado enseñaba
+	// una tarifa que el catálogo de verdad no confirma —justo lo que Hacienda
+	// rechaza como «IVA incorrecto»—.
+	{ code: '2316100000100', description: 'Arroz blanco, fortificado', tax_rate: 0.01 },
+	// La harina de arroz al lado del arroz, y con la tarifa distinta, porque es
+	// el ejemplo entero de por qué la tarifa la define el código y no el nombre
+	// del producto: «arroz» no es una tarifa, `2316100000100` sí.
+	{ code: '2312000000300', description: 'Harina de arroz', tax_rate: 0.13 },
+	{ code: '0170102000400', description: 'Frijoles negros, secos', tax_rate: 0.01 },
+	{ code: '2163200000000', description: 'Aceite de semillas de girasol, refinado', tax_rate: 0.01 },
+	{ code: '2352001010000', description: 'Azúcar blanca de plantación', tax_rate: 0.01 },
+	{ code: '2399908000200', description: 'Sal refinada', tax_rate: 0.01 },
+	{ code: '2371000000200', description: 'Pasta sin huevo, sin cocer', tax_rate: 0.01 },
+	{ code: '2391102010200', description: 'Café tostado, sin descafeinar, molido', tax_rate: 0.01 },
+	{ code: '2211001030000', description: 'Leche líquida de vaca, entera', tax_rate: 0.01 },
+	{ code: '2225101010200', description: 'Queso tipo Turrialba fresco, en barra', tax_rate: 0.01 },
+	{ code: '2349002010700', description: 'Pan cuadrado, blanco o integral', tax_rate: 0.01 },
+	{ code: '2349001010100', description: 'Tortillas de harina de maíz, sin congelar', tax_rate: 0.01 },
+	{ code: '2349002010600', description: 'Bollo u otra presentación de pan dulce', tax_rate: 0.01 },
+	{ code: '3219301000000', description: 'Papel higiénico', tax_rate: 0.01 },
+	{ code: '2449003000100', description: 'Bebidas a base de agua mineral gaseadas', tax_rate: 0.13 },
+	{ code: '2441002020000', description: 'Agua natural embotellada', tax_rate: 0.13 },
+	{ code: '2449002000100', description: 'Bebidas a base de jugo de frutas', tax_rate: 0.13 },
+	{ code: '2431000000000', description: 'Cerveza de malta', tax_rate: 0.13 },
+	{ code: '2449002000200', description: 'Bebidas a base de té', tax_rate: 0.13 },
+	{ code: '2223001000200', description: 'Yogurt líquido', tax_rate: 0.13 },
+	{ code: '2223099020000', description: 'Crema cultivada', tax_rate: 0.13 },
+	{ code: '3532201060000', description: 'Detergentes en polvo', tax_rate: 0.13 },
+	{ code: '3532101010199', description: 'Jabón de tocador n.c.p., en barras', tax_rate: 0.13 },
+	{ code: '3532201010000', description: 'Blanqueador líquido', tax_rate: 0.13 },
+	{ code: '2342001009900', description: 'Galletas dulces con edulcorante', tax_rate: 0.13 },
+	{ code: '2314000990300', description: 'Bocadillos de maíz u otros cereales, tostados', tax_rate: 0.13 },
+	{ code: '2149500000200', description: 'Maní tostado, salado', tax_rate: 0.13 },
+	// Y dos que no vende una pulpería, pero sí una farmacia y una librería. Están
+	// para que el simulado pueda enseñar las cuatro tarifas —13, 1, 2 y 0— y para
+	// que las pruebas de punta a punta tengan con qué comprobar el desglose.
+	{ code: '3563704030201', description: 'Supresores de la tos y mucolíticos', tax_rate: 0.02 },
+	{ code: '3229200000000', description: 'Libros infantiles, impresos', tax_rate: 0 }
+];
+
+route('GET', '/cabys/buscar', ({ query }) => {
+	const texto = (query.get('q') ?? '').trim().toLowerCase();
+	const top = Math.min(Math.max(Number(query.get('top') ?? 20), 1), 50);
+	if (!texto) return { source: 'hacienda', cached_at: null, items: [] };
+	const encontrados = CABYS_DEMO.filter(
+		(c) => c.description.toLowerCase().includes(texto) || c.code.includes(texto)
+	);
+	return { source: 'hacienda', cached_at: null, items: encontrados.slice(0, top) };
+});
+
+route('GET', '/cabys/:codigo', ({ params }) => {
+	const codigo = decodeURIComponent(params[0]).trim();
+	// Las mismas tres razones que el dominio del backend, y en el mismo orden.
+	if (!codigo) fail(400, 'cabys_invalid_code', { value: codigo, reason: 'empty' });
+	if (!/^\d+$/.test(codigo))
+		fail(400, 'cabys_invalid_code', { value: codigo, reason: 'not_digits' });
+	if (codigo.length !== 13)
+		fail(400, 'cabys_invalid_code', { value: codigo, reason: 'bad_length' });
+
+	const encontrado = CABYS_DEMO.find((c) => c.code === codigo);
+	if (!encontrado) fail(404, 'cabys_not_found', { code: codigo });
+	return { source: 'hacienda', cached_at: null, items: [encontrado] };
+});
+
 
 // ------------------------------------------------------------------ despachador
 

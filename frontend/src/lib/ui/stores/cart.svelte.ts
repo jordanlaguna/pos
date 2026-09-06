@@ -199,6 +199,12 @@ class Cart {
 	 * al 4 %, mostrar 13 % en la pantalla de cobro y cobrar otra cosa es peor que
 	 * no mostrar nada. El importe que vale sigue siendo el que calcula el servidor
 	 * releyendo los precios.
+	 *
+	 * Desde F5 la configurada es solo el **respaldo**: cada línea trae la tarifa
+	 * de su producto y `computeTotals` cae a la del negocio únicamente donde no
+	 * la hay (RN-9, RN-10). Anticipar mal no es un detalle cosmético acá: el
+	 * servidor recalcula por línea y rechaza la venta si no cuadra, así que con
+	 * una sola tasa una venta con tarifas mezcladas ni siquiera se podía cobrar.
 	 */
 	get totals(): Totals {
 		return computeTotals(this.lines, taxRate());

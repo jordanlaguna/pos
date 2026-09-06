@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.domain.money import Money
+from app.domain.tax import TaxRate
 
 
 class ProductSnapshot(Protocol):
@@ -26,6 +27,14 @@ class ProductSnapshot(Protocol):
     name: str
     price: Money
     stock: int
+
+    #: La tarifa de ESTE producto (RN-9). `None` es «la configurada del
+    #: negocio», que es lo que tienen todos los productos anteriores a F5 y los
+    #: que nadie ha clasificado. El caso de uso la resuelve antes de calcular:
+    #: lo que se guarda en la línea es siempre una tarifa concreta, nunca un
+    #: nulo, porque la de la venta no puede depender de lo que esté configurado
+    #: el día que alguien devuelva (RN-12).
+    tax_rate: TaxRate | None
 
 
 class ProductRepository(Protocol):
@@ -133,6 +142,16 @@ class SaleRepository(Protocol):
         """Cuántas unidades de cada producto llevaba la venta."""
         ...
 
+    def sold_tax_rates(self, sale_id: int) -> dict[int, TaxRate]:
+        """La tarifa **congelada** de cada línea, para las que la tengan.
+
+        Solo las ventas posteriores a la migración 006 la traen. Para las
+        anteriores el diccionario viene vacío o incompleto y quien llama cae al
+        cociente del encabezado, que en ellas es exacto porque llevan una sola
+        tarifa (RN-12).
+        """
+        ...
+
     def sold_prices(self, sale_id: int) -> dict[int, Money]:
         """
         A qué precio se vendió cada producto **en esa venta**.
@@ -159,6 +178,10 @@ class ReturnRepository(Protocol):
         sale_id: int,
         user_id: int,
         reason: str,
+        #: Desde F5 se guarda el desglose y no solo el total: con tarifas
+        #: mezcladas el impuesto no se puede deducir del total.
+        subtotal: Money,
+        tax: Money,
         total: Money,
         created_at: datetime,
         lines: list,

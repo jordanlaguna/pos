@@ -40,7 +40,17 @@ PUERTOS = [
     ),
     (
         repositories.SaleRepository,
-        {"add", "get", "exists_with_number", "sold_quantities", "sold_prices", "in_window"},
+        {
+            "add",
+            "get",
+            "exists_with_number",
+            "sold_quantities",
+            "sold_prices",
+            # Desde F5: la tarifa congelada de cada línea, que es lo que
+            # impide que una devolución parcial use el promedio de la venta.
+            "sold_tax_rates",
+            "in_window",
+        },
     ),
     (repositories.ReturnRepository, {"returned_quantities", "add", "total_in_window"}),
     (repositories.SettingsRepository, {"tax_rate"}),
@@ -84,6 +94,8 @@ def test_ProductSnapshot_dice_que_necesita_la_venta_de_un_producto():
         "name",
         "price",
         "stock",
+        # Desde F5: la tarifa del producto, o `None` si usa la configurada.
+        "tax_rate",
     }
 
 

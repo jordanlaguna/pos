@@ -176,6 +176,8 @@
 	],
 	"api_category_inactive": "«{category}» está desactivada. Actívela o elija otra.",
 	"api_category_reorder_incomplete": "El orden llegó incompleto. Actualice la pantalla e inténtelo de nuevo.",
+	"api_cabys_invalid_code": "El código CABYS debe tener trece dígitos. Recibido: {value}.",
+	"api_cabys_not_found": "Hacienda no tiene ningún artículo con el código {code}.",
 
 	"api_person_identification_taken": "Ya hay una persona registrada con esa cédula.",
 	"api_email_taken": "Ya hay una cuenta con ese correo.",

@@ -55,6 +55,28 @@ def _parse(raw: str | None) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def tasa_declarada(data: dict) -> tuple[str, object] | None:
+    """Dónde y con qué valor viene la tasa, venga en la forma que venga.
+
+    Son dos: `tax.rate` desde T-113 y el `impuesto.tasa` de antes. Una fila
+    guardada con la versión anterior tiene que seguir entendiéndose; si no,
+    actualizar el sistema haría que el POS cobrara con la tasa de fábrica sin
+    decir nada.
+
+    Existe como función porque los dos sitios que la leen —el que **valida** al
+    guardar y el que **calcula** al cobrar— tienen que mirar el mismo campo. Ya
+    no lo hacían: la validación leía solo la forma vieja mientras el POS escribía
+    la nueva, así que una tasa fuera de rango no levantaba `tax_rate_out_of_range`
+    y se la tragaba el respaldo de `get_tax_rate`. El dueño configuraba 500 %, la
+    pantalla se lo mostraba y el servidor cobraba 13 %, sin un solo error.
+    """
+    for contenedor, campo in (("tax", "rate"), ("impuesto", "tasa")):
+        seccion = data.get(contenedor)
+        if isinstance(seccion, dict) and seccion.get(campo) is not None:
+            return f"{contenedor}.{campo}", seccion[campo]
+    return None
+
+
 def get_settings(db: Session) -> dict:
     row = _row(db)
     logo = None
@@ -81,13 +103,17 @@ def save_settings(
         raise api_error(400, "settings_too_large", max_bytes=MAX_DATA_BYTES)
 
     # Único campo que este backend lee por su cuenta (crud_return lo usa para
-    # calcular el reembolso), así que es el único que valida aquí.
-    tax = data.get("impuesto", {})
-    if isinstance(tax, dict) and "tasa" in tax:
+    # calcular el reembolso), así que es el único que valida aquí. Se busca con
+    # `tasa_declarada`, el mismo lector que usa `get_tax_rate`: si la validación
+    # mirara un campo y el cálculo otro, una tasa mala pasaría el control y se
+    # perdería después en el respaldo, en silencio.
+    declarada = tasa_declarada(data)
+    if declarada is not None:
+        _, valor = declarada
         try:
-            rate = Decimal(str(tax["tasa"]))
+            rate = Decimal(str(valor))
         except Exception:
-            raise api_error(400, "tax_rate_not_a_number", value=str(tax["tasa"])) from None
+            raise api_error(400, "tax_rate_not_a_number", value=str(valor)) from None
         if rate < 0 or rate > 1:
             raise api_error(400, "tax_rate_out_of_range", value=float(rate))
 
@@ -118,17 +144,14 @@ def get_tax_rate(db: Session) -> Decimal:
     fuera de rango se ignora en vez de propagarse a un cálculo de plata.
     """
     try:
-        data = _parse(_row(db).data)
-        # Las dos formas de la clave: `tax.rate` desde T-113 y el
-        # `impuesto.tasa` de antes. Una fila guardada con la versión anterior
-        # tiene que seguir entendiéndose; si no, actualizar el sistema haría que
-        # el POS cobrara con la tasa de fábrica sin decir nada.
-        value = data.get("tax", {}).get("rate")
-        if value is None:
-            value = data.get("impuesto", {}).get("tasa")
-        if value is None:
+        declarada = tasa_declarada(_parse(_row(db).data))
+        if declarada is None:
             return DEFAULT_TAX_RATE
-        rate = Decimal(str(value))
+        rate = Decimal(str(declarada[1]))
+        # El respaldo sigue acá porque una fila puede venir de antes de que
+        # `save_settings` validara las dos formas, o escrita a mano. Lo que ya no
+        # puede pasar es que este respaldo tape una tasa que el POS acaba de
+        # guardar: eso ahora se rechaza al guardarla.
         return rate if 0 <= rate <= 1 else DEFAULT_TAX_RATE
     except Exception:
         return DEFAULT_TAX_RATE
