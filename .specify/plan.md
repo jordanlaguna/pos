@@ -4,7 +4,7 @@
 > [spec.md](spec.md). Las tareas concretas y su orden están en
 > [task.md](task.md).
 >
-> Actualizado: 2026-09-06
+> Actualizado: 2026-09-11
 
 ---
 
@@ -37,13 +37,17 @@ cálculo de una venta sin levantar MySQL.
 ```
 backend/app/
 ├── domain/                 puro. No importa nada de fuera.
-│   ├── entities/           Sale, Product, CashSession, StockEntry
-│   ├── values/             Money, TaxRate, Barcode, Consecutive
-│   └── services/           reglas: totales, arqueo, validez de devolución
+│   ├── entities/           Sale, Product, CashSession, StockEntry,
+│   │                       Supplier, JournalEntry, Employee, PayrollRun (F10–F12)
+│   ├── values/             Money, TaxRate, Barcode, Consecutive, RateSet
+│   └── services/           reglas: totales, arqueo, validez de devolución,
+│                           promedio ponderado, asiento por evento, planilla
 ├── application/
-│   ├── use_cases/          CreateSale, CloseCashSession, RegisterStockEntry
+│   ├── use_cases/          CreateSale, CloseCashSession, RegisterStockEntry,
+│                           RegisterPurchase, ClosePeriod, PayRun
 │   └── ports/              SaleRepository, ProductRepository, Clock,
-│                           CabysCatalog, PasswordHasher, TokenIssuer
+│                           CabysCatalog, PasswordHasher, TokenIssuer,
+│                           Ledger, RateTable
 ├── infrastructure/
 │   ├── persistence/        modelos SQLAlchemy + repositorios (implementan puertos)
 │   ├── security/           jwt_handler, bcrypt
@@ -1377,6 +1381,9 @@ la cadena adentro; convertirlas después, no.
 | **F6** Preparación FE | Certificado y credenciales ATV cifrados **por ambiente**, sucursales, terminales, actividad, arranque del consecutivo | Se suben el `.p12` y las credenciales de los dos ambientes, se ve el estado de cada uno, se prueba la conexión, se pasa a producción con confirmación y bitácora, y no hay forma de leer de vuelta ni el archivo ni el PIN ni la contraseña |
 | **F7** Emisión | La ruta sigue pendiente; **el recorrido no depende de ella**: numeración, estados, consulta, contingencia y archivo | Una venta se emite, se ve pasar por sus estados hasta aceptada, y su XML firmado y la respuesta de Hacienda se pueden descargar |
 | **F8** Multi-idioma | Español, inglés y portugués; el backend deja de escribir texto | Los tres catálogos tienen las mismas claves y la build se cae si alguien escribe una cadena dentro de un componente |
+| **F10** Compras y cuentas por pagar ← *se ejecuta antes que F6* | Módulos por plan; proveedores; la compra como entrada con documento, condición de pago y crédito fiscal por línea; costo promedio; abonos y antigüedad | Una factura XML de un proveedor entra como compra a crédito, su IVA aparece en el reporte por tarifa, un abono en efectivo sale de la caja y el arqueo cuadra |
+| **F11** Contabilidad ← *se ejecuta antes que F6* | Catálogo por compañía desde plantilla, asientos automáticos en la misma transacción, periodos con cierre, libros y borrador del D-104 | La venta 3×1450 deja un asiento que balancea, el mes se cierra, y una escritura con fecha adentro responde con código |
+| **F12** Planilla | Empleados, tasas con vigencia, corridas congeladas, aguinaldo, vacaciones, liquidación, archivo para la CCSS y asiento de la corrida | Una corrida de dos empleados se paga, se cambia una tasa con vigencia futura y la boleta reimpresa da lo mismo |
 
 **F1 fue primero y no era opcional.** Todo lo que sigue toca dinero, existencias o
 aislamiento entre compañías, y sin pruebas que fijen el comportamiento actual no
@@ -1394,6 +1401,44 @@ que el **mecanismo** esté antes de F3, porque F3, F4, F5 y F6 agregan pantallas
 y cada una escrita con la cadena adentro hay que volver a abrirla. Llenar los
 catálogos de inglés y portugués puede esperar; escribir con `t('…')` desde el
 primer día, no.
+
+**El orden de ejecución es F10 → F11 → F6 → F7 → F12**, y no el de los
+números. La tabla va numerada porque los números no se mueven —F8 ya sentó el
+precedente: se ejecutó antes que F5 y se quedó en su casilla—; lo que manda es
+este párrafo.
+
+El primer borrador ponía los tres módulos después de F7, con el argumento de
+que la emisión es lo único legalmente obligatorio. El argumento es cierto y
+por eso mismo **no vende**: como todos los negocios están obligados, todos ya
+lo resolvieron de alguna forma antes de conocernos. Emitir no gana el trato,
+evita perderlo. Nadie está obligado a llevar su contabilidad en un programa, y
+ahí es donde el producto cobra más y donde el cliente se queda: los libros de
+tres años no se mudan de sistema.
+
+Lo que sí hay que mirar es **de qué depende cada cosa**, y ahí no hay
+conflicto: contabilidad necesita el IVA por tarifa (F5, hecho), el crédito
+fiscal y el costo del producto (F10). Nada de F6 ni de F7. La compra desde XML
+lee el comprobante **del proveedor**, que existe se emita o no, y el asiento
+referencia la venta por su `id`, no por su número, así que cuando F7 cambie la
+numeración (T-706) el libro no se entera.
+
+Entre los módulos el orden sigue siendo de dependencia: el crédito fiscal sale
+de las compras, así que F10 va antes que F11.
+
+**F12 se queda de última, y a propósito.** No comparte nada con el POS —ni
+productos, ni ventas, ni caja—, su soporte es estacional (todos necesitan el
+aguinaldo la misma semana de diciembre) y es lo único que ata el producto a un
+país. Adelantar contabilidad y adelantar planilla no son la misma apuesta.
+
+**Lo que decide cuánto cuesta postergar F6 y F7 es T-701**, no su número: vía
+proveedor autorizado, F7 es un adaptador detrás de `EmisorFE`; directo, son
+XAdES, el IdP de Hacienda y seguirle los cambios de esquema. Mientras esa
+decisión siga abierta, F7 no es una fase grande sino una de tamaño
+desconocido, y eso es lo que la manda al final.
+
+Y no hay F9: el número de tarea lleva la fase —T-5nn, T-6nn— y el 9 lo ocupa
+Transversal (T-9nn) desde F2. Saltarlo cuesta una línea; renumerar veinte
+tareas cerradas, no.
 
 ---
 
@@ -1414,3 +1459,886 @@ primer día, no.
 | El API de CABYS no responde | Caché local; la venta nunca depende de él |
 | Borrar los clones de referencia | Están en GitHub y el análisis quedó escrito en `progress.json` y en `backend/README.md` |
 | El impuesto por línea toca dinero ya verificado | Los invariantes de `progress.json` se recalculan y se documentan de nuevo |
+| Un mapeo incompleto detiene una venta, porque el asiento va en la misma transacción | La cuenta «por clasificar» (RN-59): el asiento siempre existe y balancea; lo que falta se ve en rojo en contabilidad, no en la caja |
+| Una tasa de la CCSS o un tramo de renta cambia y nadie lo siembra | Tablas con vigencia y `verified_at` visibles (RN-67); la pantalla de planilla avisa cuando la vigencia más reciente tiene más de seis meses; soporte actualiza para todas las compañías desde el panel |
+| Planilla ancla el producto a un país | Las fórmulas reciben las tablas por parámetro y no conocen ningún porcentaje; el país es una columna. Otro país es sembrar, no programar —aunque no se construya— |
+| El promedio ponderado con existencias negativas o con una compra anulada | Regla escrita y probada: existencia ≤ 0 → el costo es el de la compra; anular no deshace el promedio (RN-57) y la siguiente compra lo corrige. Está en la tabla de casos de `weighted_average_cost` |
+| El formato del archivo de la CCSS no se conoce hasta leer la especificación | T-1211 empieza por leer el material oficial, como T-702 con los XSD; el archivo sale de un adaptador con prueba contra un ejemplo real |
+| Cerrar un periodo por error, sin poder reabrir | La confirmación muestra el resumen del periodo y el saldo de «por clasificar» antes de cerrar; lo que quede mal se ajusta en el siguiente, que es lo que un contador hace de todos modos |
+| `sales.payment_method` es texto libre y el mapeo necesita un conjunto cerrado | T-1104 lo cierra a un catálogo de valores antes de mapear; un valor desconocido va a «por clasificar», no rompe la venta |
+
+---
+
+## 11. Módulos por plan (F10–F12)
+
+Compras, contabilidad y planilla se venden aparte, y el sistema ya tiene el
+lugar donde se dice qué se vende: `plans`. `factura_electronica` es una bandera
+del plan desde F2, y estos tres son tres banderas más. No hay tabla nueva ni
+interruptor por compañía (RN-51): dos sitios para la misma verdad —el plan
+dice una cosa y la compañía otra— es donde se separan, y el que mira soporte
+es el plan.
+
+```sql
+-- 008-modulos-por-plan.sql
+ALTER TABLE plans
+    ADD COLUMN purchases  TINYINT(1) NOT NULL DEFAULT 0,
+    ADD COLUMN accounting TINYINT(1) NOT NULL DEFAULT 0,
+    ADD COLUMN payroll    TINYINT(1) NOT NULL DEFAULT 0;
+```
+
+Las tres en inglés: la excepción de §3.9 es de las columnas que ya existen, no
+una licencia para las nuevas (T-601). `factura_electronica` se queda como está
+por la misma decisión.
+
+**Cómo se aplica.** Una dependencia `require_module("accounting")`, al lado de
+`get_current_user`, que lee el plan de la compañía **en cada petición**. No va
+en el token por la misma razón que el estado de la suscripción (§4.4): ahí
+quedaría congelado hasta el siguiente login, y el cliente que acaba de subir
+de plan tendría que salir y volver a entrar para ver lo que pagó. Se aplica a
+las **escrituras** de las rutas del módulo; las lecturas quedan libres (RN-50),
+porque lo que ya existe es de la compañía y tiene que poder consultarse y
+exportarse siempre. La respuesta es `403` con `module_not_in_plan` y
+`{"module": "accounting"}` —el token vale, lo que no vale es para esto—, igual
+que las dos puertas de soporte.
+
+**En el POS**, la carga que ya trae el estado de la suscripción trae también
+`modules: {purchases, accounting, payroll}`; el `+layout.server.ts` arma la
+navegación con eso, y cada `action` de un módulo pasa por `requireModule(...)`
+además de `requireAdmin`. Esconder la entrada del menú es cortesía; el
+servidor es el control.
+
+**En el panel de soporte**, el formulario de planes gana las tres casillas y
+el listado de compañías (RF-5) muestra los módulos de cada una. Cambiar el plan
+de una compañía ya queda en bitácora (RF-7); no hace falta nada nuevo.
+
+**En el simulado**, el plan de la primera compañía trae los tres módulos y el
+de la segunda ninguno: así la prueba de punta a punta tiene con qué comprobar
+el rechazo sin dar de alta nada.
+
+---
+
+## 12. Compras y cuentas por pagar (F10)
+
+### 12.1 La compra es la entrada de mercadería
+
+`stock_entries` ya es un documento y no un ajuste: guarda proveedor (como
+texto), número de factura, quién y cuándo, y se puede anular. Le faltan tres
+cosas —a quién de verdad, con qué condición de pago y con qué impuesto por
+línea— y con ellas es una compra (RN-52). Se extiende esa tabla en vez de crear
+`purchases` por tres razones:
+
+1. El lector de XML de Hacienda (`lib/server/import/hacienda.ts`) **ya produce
+   una entrada** a partir de la factura del proveedor, y el invariante «entrada
+   XML 79 800» la fija. Con una tabla nueva habría que mantener dos caminos que
+   hacen lo mismo.
+2. La anulación ya existe y recorre las líneas para revertir el stock. Una
+   compra anulada tiene que revertir lo mismo más la cuenta por pagar.
+3. Dos tablas son dos verdades: una entrada con compra y una compra sin
+   entrada son estados que no significan nada y que alguien tendría que
+   impedir.
+
+Una entrada con `supplier_id` nulo sigue siendo una entrada: las que ya
+existen, las de ajuste, las de un proveedor que no se quiso registrar. No
+generan cuenta por pagar ni crédito fiscal y el reporte de compras las deja
+fuera. La columna `supplier` de texto se conserva para leer el histórico; las
+compras nuevas la llenan con el nombre del proveedor por si el registro se
+desactiva.
+
+### 12.2 Modelo de datos
+
+```sql
+-- 009-compras.sql
+CREATE TABLE suppliers (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    company_id          INT          NOT NULL,
+    identification_type CHAR(2)      NULL,       -- 01/02/03/04, la lista de Hacienda (T-621)
+    identification      VARCHAR(30)  NULL,       -- NULL: proveedor informal
+    name                VARCHAR(160) NOT NULL,
+    email               VARCHAR(160) NULL,
+    phone               VARCHAR(30)  NULL,
+    payment_terms_days  INT          NOT NULL DEFAULT 0,   -- 0 = contado
+    is_active           TINYINT(1)   NOT NULL DEFAULT 1,
+    created_at          DATETIME     NOT NULL,
+    -- La misma identificación es el mismo proveedor: el XML llega con ella y es
+    -- como se lo reconoce sin preguntarle a nadie. NULL no choca con NULL.
+    UNIQUE KEY uq_suppliers_identification (company_id, identification),
+    INDEX idx_suppliers_name (company_id, name),
+    CONSTRAINT fk_suppliers_company FOREIGN KEY (company_id) REFERENCES companies (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+ALTER TABLE stock_entries
+    ADD COLUMN supplier_id   INT           NULL,             -- NULL: entrada, no compra (RN-52)
+    ADD COLUMN document_key  CHAR(50)      NULL,             -- clave de Hacienda, cuando hay XML
+    ADD COLUMN document_date DATE          NULL,
+    ADD COLUMN payment_terms VARCHAR(10)   NOT NULL DEFAULT 'cash',   -- 'cash' | 'credit'
+    ADD COLUMN due_date      DATE          NULL,
+    ADD COLUMN subtotal      DECIMAL(12,2) NOT NULL DEFAULT 0,
+    ADD COLUMN tax           DECIMAL(12,2) NOT NULL DEFAULT 0,
+    -- total_cost ya existe y pasa a valer subtotal + tax. El nombre se queda:
+    -- lo leen el lector de XML, la anulación y una prueba de caracterización.
+    ADD INDEX idx_stock_entries_supplier (company_id, supplier_id, status),
+    ADD INDEX idx_stock_entries_due (company_id, due_date),
+    ADD CONSTRAINT fk_stock_entries_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers (id);
+
+ALTER TABLE stock_entry_details
+    ADD COLUMN tax_rate   DECIMAL(5,2)  NOT NULL DEFAULT 0,    -- la del documento (RN-53)
+    ADD COLUMN tax_amount DECIMAL(12,2) NOT NULL DEFAULT 0;
+
+-- El producto no sabía cuánto costó. Promedio ponderado, a dos decimales como
+-- todo lo demás (RN-54).
+ALTER TABLE products
+    ADD COLUMN cost DECIMAL(12,2) NOT NULL DEFAULT 0;
+
+CREATE TABLE supplier_payments (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    company_id       INT           NOT NULL,
+    supplier_id      INT           NOT NULL,
+    entry_id         INT           NOT NULL,     -- el abono es a UNA compra (RN-55)
+    amount           DECIMAL(12,2) NOT NULL,
+    method           VARCHAR(20)   NOT NULL,     -- 'cash' | 'transfer' | 'other'
+    reference        VARCHAR(100)  NULL,         -- número de transferencia, cheque
+    cash_movement_id INT           NULL,         -- si salió de la caja (RN-56)
+    user_id          INT           NOT NULL,
+    paid_at          DATETIME      NOT NULL,     -- la pone el servidor
+    INDEX idx_supplier_payments_entry (entry_id),
+    INDEX idx_supplier_payments_supplier (company_id, supplier_id, paid_at),
+    CONSTRAINT fk_sp_company  FOREIGN KEY (company_id)       REFERENCES companies (id),
+    CONSTRAINT fk_sp_supplier FOREIGN KEY (supplier_id)      REFERENCES suppliers (id),
+    CONSTRAINT fk_sp_entry    FOREIGN KEY (entry_id)         REFERENCES stock_entries (id),
+    CONSTRAINT fk_sp_movement FOREIGN KEY (cash_movement_id) REFERENCES cash_movements (id),
+    CONSTRAINT fk_sp_user     FOREIGN KEY (user_id)          REFERENCES users (id_user)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+```
+
+El abono es **por compra** y no «a cuenta» a propósito: un abono a cuenta que
+se reparte entre facturas (PEPS de deudas) necesita una regla de reparto, y la
+regla de reparto es lo primero que un proveedor discute. Con el abono atado a
+un documento, el saldo de cada factura es un hecho y el del proveedor es una
+suma.
+
+### 12.3 Dominio y aplicación
+
+`domain/purchases.py`, puro, con su tabla de casos:
+
+| Función | Regla | Casos que la prueban |
+|---|---|---|
+| `weighted_average_cost(stock, cost, qty, unit_cost)` | RN-54; existencia ≤ 0 → `unit_cost` | 10 u a 100 + 10 u a 120 → 110; 0 u + 5 a 80 → 80; −3 u + 10 a 50 → 50; redondeo a 2 |
+| `purchase_totals(lines)` | RN-53: suma línea por línea, por tarifa | las mismas tablas de `sale_totals` (§6.3), con tarifas mezcladas |
+| `remaining_balance(total, payments)` | RN-55 | sin abonos → total; con abonos → resta; nunca negativo |
+| `apply_payment(balance, amount)` | RN-55: lanza `PaymentExceedsBalance` | 800 sobre 1 000 → 200; 1 001 sobre 1 000 → error |
+| `aging_bucket(due_date, today)` | RF-44 | 0–30, 31–60, 61–90, > 90; sin vencimiento → 0–30 |
+
+Puertos: `SupplierRepository`, `SupplierPaymentRepository`; `StockEntryRepository`
+gana los campos nuevos. Casos de uso:
+
+- `RegisterPurchase` **es** `RegisterStockEntry` con proveedor, documento y
+  condición: aplica el stock igual que hoy, actualiza `products.cost` con el
+  promedio, calcula el vencimiento desde `payment_terms_days` y deja la cuenta
+  por pagar implícita (saldo = total − abonos). Con condición de contado, el
+  pago se registra en el mismo acto como un abono por el total.
+- `PaySupplier`: comprueba el saldo; si el método es efectivo, exige un turno
+  de caja abierto en la terminal de la sesión y escribe el movimiento de salida
+  con motivo —«Pago a ‹proveedor›, factura ‹n›»— antes de guardar el abono
+  (RN-56). Sin turno abierto, `cash_session_required`.
+- `VoidPurchase`: rechaza si hay abonos (`purchase_has_payments`); si no,
+  revierte el stock como la anulación de hoy, marca `anulada`, y escribe en
+  bitácora. **No recalcula el costo promedio**: hacerlo exige rehacer todas las
+  compras posteriores del mismo producto en orden, y el promedio móvil no
+  guarda de dónde vino cada céntimo. La siguiente compra lo corrige sola; la
+  pantalla lo dice al anular.
+
+### 12.4 API y pantallas
+
+```
+GET  /suppliers                      lista, con saldo
+POST /suppliers · PUT /suppliers/{id}  admin
+POST /purchases                      admin · la vista previa confirmada
+POST /purchases/from-xml             admin · el BFF ya parseó: manda el
+                                     proveedor y las líneas con su impuesto
+GET  /purchases?supplier=&from=&to=  cualquiera con el módulo
+POST /purchases/{id}/void            admin · {reason}
+POST /purchases/{id}/payments        admin · {amount, method, reference}
+GET  /payables?supplier=             saldos por compra y antigüedad
+GET  /reports/purchases?from=&to=    base e impuesto por tarifa (RF-45)
+```
+
+Las rutas de entradas que ya existen siguen: una entrada sin proveedor es un
+`POST /purchases` sin `supplier_id`. En el POS, la pantalla de entradas de
+`/inventario` **es** la de compras: gana el selector de proveedor, el documento,
+la condición de pago y la tarifa por línea, y conserva la vista previa (§8,
+regla 6). Nuevas: `/compras/proveedores` y `/compras/cuentas-por-pagar`
+(saldos, antigüedad, abonar). El reporte de compras va con los demás, en
+`/dashboard`.
+
+El lector de XML pasa a extraer, además de las líneas: `Emisor` (tipo y número
+de identificación, nombre), `Clave`, `NumeroConsecutivo`, `FechaEmision`,
+`CondicionVenta` (`01` contado, `02` crédito) con `PlazoCredito`, y por línea
+`Impuesto/Tarifa` y `Impuesto/Monto`. Si el proveedor no existe, la vista
+previa lo muestra como «nuevo» y se crea al confirmar (RF-42).
+
+### 12.5 Códigos de error
+
+`supplier_inactive`, `purchase_has_payments`, `payment_exceeds_balance`,
+`cash_session_required`, `duplicate_supplier_document` —la regla de la factura
+duplicada que ya existe (índice `idx_stock_entries_document`) pasa a ser por
+proveedor: el mismo número de dos proveedores distintos es normal—. Cada uno
+en los cuatro lugares.
+
+### 12.6 Decisiones
+
+| Tema | Qué se decidió | Por qué | Estado |
+|---|---|---|---|
+| Compra vs. entrada | La compra es la entrada, extendida | §12.1: un solo camino, una sola anulación, el lector de XML ya está | tomada |
+| Costeo | Promedio ponderado móvil, en el producto | PEPS exige capas por lote y devoluciones que las deshacen; con 5 000 productos es donde se descuadra. Hacienda acepta los dos | tomada |
+| Abonos | Por compra, no a cuenta | El reparto es lo primero que se discute; atado al documento, el saldo es un hecho | tomada |
+| Efectivo | Sale de la caja abierta o no sale | RN-56: lo que no está en un turno no aparece en un arqueo | tomada |
+| Anular | Solo sin abonos; no deshace el promedio | Rehacer el promedio hacia atrás exige rehacer la historia; la siguiente compra lo corrige | tomada |
+| Devoluciones a proveedor | Fuera, con la compra preparada para recibirlas | Tres efectos a la vez (stock, saldo, crédito fiscal) y ningún caso real todavía | tomada |
+
+### 12.7 Costes medidos antes de empezar
+
+- `test_esquema.py`: dos tablas y tres `ALTER`, modelo y migración iguales.
+- `test_aislamiento.py`: nueve rutas nuevas que declarar y probar.
+- `test_error_codes.py`: cinco códigos, cuatro lugares cada uno.
+- `test_ports.py`: dos puertos nuevos y uno que cambia de firma.
+- `company_dump.py`: `suppliers` y `supplier_payments` **viajan**; se clasifican
+  en el mismo commit que las crea.
+- Cobertura: `domain/purchases.py` nace con su tabla de casos.
+- El simulado: nueve endpoints, proveedores y una compra a crédito en el seed,
+  `SEED_VERSION` sube.
+- Catálogo `purchases.json` en `messages/es/` **y** en `project.inlang/settings.json`.
+- El invariante «entrada XML 79 800» se conserva: el lector agrega campos, no
+  cambia cantidades. `test_characterization.py` lo vigila.
+
+---
+
+## 13. Contabilidad (F11)
+
+### 13.1 El asiento va en la misma transacción, y nunca falta
+
+Había dos formas de generar los asientos automáticos: **en la misma
+transacción** del evento, o como una **proyección** posterior que lee los
+eventos y escribe el libro. La proyección tiene una virtud real —se puede
+borrar y rehacer cuando se corrige el mapeo— y un defecto que la descarta:
+admite el estado «venta sin asiento», que es exactamente lo que un libro no
+puede tener. Un cajero que vende a las 11:59 y un contador que cierra el mes a
+las 12:00 no pueden depender de que una tarea de fondo haya corrido.
+
+La objeción a la transacción es que un mapeo incompleto detendría la venta, y
+eso viola RNF-4. La salida es que el mapeo **no pueda estar incompleto**: cada
+papel que un evento necesita y no tiene cuenta asignada va a una cuenta de
+sistema, **«por clasificar»** (RN-59). El asiento balancea siempre, existe
+siempre, y el contador ve en rojo un saldo que no debería existir. Corregirlo
+es un asiento de ajuste que mueve ese saldo a la cuenta correcta, y eso
+recupera lo bueno de la proyección sin su agujero.
+
+Otras cuatro decisiones de fondo:
+
+- **Empieza en una fecha** (RN-60). Las ventas anteriores no tienen costo
+  congelado; reconstruirlas sería inventar. Los saldos iniciales entran por un
+  asiento de apertura que el contador dicta.
+- **Periodos mensuales, sin reabrir** (RN-61). Reabrir es la puerta por donde
+  un balance ya entregado deja de coincidir con el libro. Lo que quedó mal se
+  ajusta en el siguiente, que es lo que un contador hace de todos modos.
+- **La retención y la comisión de tarjetas no se estiman al vender.** La venta
+  con tarjeta va a «tarjetas por cobrar» por su bruto; cuando el adquirente
+  liquida, el contador registra la comisión y la retención con el monto real.
+  Un porcentaje adivinado produce un número que después no coincide con el
+  banco, y conciliar dos números que nunca fueron iguales es peor que asentar
+  uno tarde.
+- **Exportación en CSV**, no en Excel: cualquier programa contable lo importa
+  y el POS no gana una dependencia.
+
+### 13.2 Modelo de datos
+
+```sql
+-- 010-contabilidad.sql
+CREATE TABLE accounts (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT          NOT NULL,
+    code       VARCHAR(20)  NOT NULL,     -- '1.1.01'; jerárquico por texto
+    name       VARCHAR(120) NOT NULL,
+    -- 'asset' | 'liability' | 'equity' | 'income' | 'cost' | 'expense'
+    kind       VARCHAR(10)  NOT NULL,
+    parent_id  INT          NULL,
+    is_system  TINYINT(1)   NOT NULL DEFAULT 0,   -- la usa el mapeo: no se borra (RN-64)
+    is_active  TINYINT(1)   NOT NULL DEFAULT 1,
+    UNIQUE KEY uq_accounts_code (company_id, code),
+    CONSTRAINT fk_accounts_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_accounts_parent  FOREIGN KEY (parent_id)  REFERENCES accounts (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- Qué cuenta usa cada papel de cada evento. Un evento tiene varios papeles: la
+-- venta en efectivo usa 'cash', 'sales_13', 'vat_payable', 'cogs' e 'inventory'.
+CREATE TABLE account_mappings (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT         NOT NULL,
+    -- 'sale' | 'return' | 'cash_close' | 'cash_movement' | 'purchase' |
+    -- 'supplier_payment' | 'payroll'
+    event      VARCHAR(40) NOT NULL,
+    -- 'cash', 'cards_receivable', 'sales_13', 'vat_payable', 'vat_credit',
+    -- 'inventory', 'cogs', 'payables', 'cash_over', 'cash_short', …
+    role       VARCHAR(40) NOT NULL,
+    account_id INT         NOT NULL,
+    UNIQUE KEY uq_account_mappings (company_id, event, role),
+    CONSTRAINT fk_am_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_am_account FOREIGN KEY (account_id) REFERENCES accounts (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE accounting_periods (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT         NOT NULL,
+    year       SMALLINT    NOT NULL,
+    month      TINYINT     NOT NULL,
+    status     VARCHAR(10) NOT NULL DEFAULT 'open',   -- 'open' | 'closed'
+    closed_at  DATETIME    NULL,
+    closed_by  INT         NULL,
+    UNIQUE KEY uq_accounting_periods (company_id, year, month),
+    CONSTRAINT fk_ap_company FOREIGN KEY (company_id) REFERENCES companies (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE journal_entries (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    company_id       INT          NOT NULL,
+    period_id        INT          NOT NULL,
+    entry_number     INT          NOT NULL,      -- correlativo por compañía, sin huecos
+    entry_date       DATE         NOT NULL,
+    -- 'auto' | 'manual' | 'adjustment' | 'opening'
+    kind             VARCHAR(12)  NOT NULL,
+    -- 'sale' | 'return' | 'cash_session' | 'cash_movement' | 'stock_entry' |
+    -- 'supplier_payment' | 'payroll_run'
+    source_type      VARCHAR(20)  NULL,
+    source_id        INT          NULL,
+    adjusts_entry_id INT          NULL,          -- el que corrige (RN-61)
+    description      VARCHAR(255) NOT NULL,
+    user_id          INT          NOT NULL,
+    created_at       DATETIME     NOT NULL,
+    UNIQUE KEY uq_journal_entries_number (company_id, entry_number),
+    -- Un evento, un asiento automático. La anulación de una venta no lo edita:
+    -- escribe uno de ajuste que lo revierte.
+    UNIQUE KEY uq_journal_entries_source (company_id, source_type, source_id, kind),
+    INDEX idx_journal_entries_period (period_id, entry_date),
+    CONSTRAINT fk_je_company FOREIGN KEY (company_id)       REFERENCES companies (id),
+    CONSTRAINT fk_je_period  FOREIGN KEY (period_id)        REFERENCES accounting_periods (id),
+    CONSTRAINT fk_je_adjusts FOREIGN KEY (adjusts_entry_id) REFERENCES journal_entries (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE journal_lines (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT           NOT NULL,
+    entry_id   INT           NOT NULL,
+    account_id INT           NOT NULL,
+    debit      DECIMAL(12,2) NOT NULL DEFAULT 0,
+    -- Una de las dos es 0. Lo vigila el dominio, no un CHECK (§5).
+    credit     DECIMAL(12,2) NOT NULL DEFAULT 0,
+    -- En las líneas de IVA, para el D-104 (RN-65).
+    tax_rate   DECIMAL(5,2)  NULL,
+    memo       VARCHAR(160)  NULL,
+    INDEX idx_journal_lines_entry (entry_id),
+    INDEX idx_journal_lines_account (company_id, account_id),
+    CONSTRAINT fk_jl_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_jl_entry   FOREIGN KEY (entry_id)   REFERENCES journal_entries (id),
+    CONSTRAINT fk_jl_account FOREIGN KEY (account_id) REFERENCES accounts (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- El costo se congela al vender (RN-63). NULL en las ventas anteriores a F11:
+-- esas no entran al libro (RN-60).
+ALTER TABLE sale_details
+    ADD COLUMN unit_cost DECIMAL(12,2) NULL;
+```
+
+La fecha de inicio, la plantilla elegida y cuándo se activó van en el JSON de
+`settings`, sección `accounting`, como el resto de la configuración de la
+compañía.
+
+### 13.3 Dominio y aplicación
+
+`domain/ledger.py`, puro. `JournalEntry` no se puede construir desbalanceado:
+el constructor suma y lanza `EntryNotBalanced` (RN-58). Las funciones que
+convierten evento en asiento reciben el evento, sus líneas y el mapeo, y
+devuelven el asiento; no saben de base ni de reloj.
+
+El caso que fija todo lo demás es el invariante de siempre. Venta 3 × 1 450 al
+13 %, en efectivo, con costo unitario ₡900:
+
+```
+subtotal 4 350,00 · IVA 565,50 · total 4 915,50
+
+D  Caja                        4 915,50
+   C  Ventas 13 %                          4 350,00
+   C  IVA por pagar 13 %                     565,50   (tax_rate 13)
+D  Costo de ventas             2 700,00
+   C  Inventario                           2 700,00
+                               ────────    ────────
+                               7 615,50    7 615,50
+```
+
+| Función | Qué asienta | Casos |
+|---|---|---|
+| `post_sale(sale, lines, mapping)` | caja / tarjetas por cobrar / clientes según `payment_method`; ventas por tarifa; IVA por tarifa; costo e inventario | el de arriba; tarjeta; tarifas mezcladas 13 + 2 + 0; línea sin costo (NULL → sin par costo/inventario); método desconocido → por clasificar |
+| `post_return(ret, lines, mapping)` | el inverso, con la tarifa de la línea (RN-12) | devolución parcial del ejemplo de §6.3 |
+| `post_cash_close(session, expected, counted, mapping)` | la diferencia a sobrante o faltante | 53 000 contra 53 277,00 → faltante 277,00; cuadrado → sin asiento |
+| `post_cash_movement(mov, mapping)` | entrada o salida contra por clasificar, salvo que sea de un abono | entrada 5 000; salida ligada a `supplier_payments` → no duplica |
+| `post_purchase(entry, lines, mapping)` | inventario; IVA crédito por tarifa; proveedores (crédito) o caja (contado) | compra a crédito 100 000 + 13 000; contado |
+| `post_supplier_payment(pay, mapping)` | proveedores contra caja o bancos | abono 50 000 en efectivo |
+| `trial_balance(lines)`, `income_statement`, `balance_sheet` | sumas por cuenta y por tipo | un periodo con los asientos de arriba: activo = pasivo + patrimonio + resultado |
+| `vat_draft(sales_by_rate, purchases_by_rate)` | débito − crédito por tarifa | 565,50 − 13 000 → saldo a favor |
+| `assert_open(period, date)` | RN-61 | fecha en cerrado → `PeriodClosed` |
+
+Puertos: `Ledger` (`post(entry)`), `AccountRepository`, `MappingRepository`,
+`PeriodRepository`, `EntryNumberSequence`. El puerto `Ledger` es lo que permite
+que `RegisterSale`, `RegisterReturn`, `CloseCashSession`, `RegisterCashMovement`,
+`RegisterPurchase` y `PaySupplier` **no sepan si contabilidad está activa**:
+con el módulo apagado el adaptador es nulo y las pruebas de caracterización
+siguen dando las mismas cifras; con el módulo activo, el adaptador escribe en
+la misma sesión de SQLAlchemy y el `commit` es uno solo.
+
+Casos de uso nuevos: `ActivateAccounting` (siembra catálogo y mapeo, crea el
+periodo de la fecha de inicio, escribe la apertura), `RecordManualEntry`,
+`Reclassify` (mueve un saldo de por clasificar con un asiento de ajuste),
+`ClosePeriod` (exige el anterior cerrado; deja el siguiente abierto; bitácora).
+
+### 13.4 API y pantallas
+
+```
+POST /accounting/activate     admin · {template, start_date, opening_lines}
+GET  /accounting/accounts · POST · PUT /{id}       admin escribe
+GET  /accounting/mappings · PUT                    admin
+GET  /accounting/entries?year=&month=&kind=        cualquiera con el módulo
+POST /accounting/entries                           admin · manual o de ajuste
+GET  /accounting/entries/{id}
+GET  /accounting/periods · POST /{y}/{m}/close     admin, con confirmación
+GET  /accounting/reports/{journal|ledger|trial-balance|income|balance}
+                                                   ?year=&month=[&format=csv]
+GET  /accounting/vat?year=&month=                  el borrador del D-104
+```
+
+Pantallas: `/contabilidad` (el periodo abierto, el saldo de por clasificar en
+rojo si no es cero, los últimos asientos), `/contabilidad/cuentas`,
+`/contabilidad/mapeo`, `/contabilidad/asientos` con el detalle y el manual,
+`/contabilidad/periodos` con el cierre, `/contabilidad/reportes` con los cinco
+y su CSV, `/contabilidad/iva`.
+
+### 13.5 Códigos de error
+
+`accounting_not_active`, `entry_not_balanced`, `period_closed`,
+`period_not_closeable` (el anterior sigue abierto), `account_in_use`,
+`account_is_system`, `invalid_opening_balance`.
+
+### 13.6 Decisiones
+
+| Tema | Qué se decidió | Por qué | Estado |
+|---|---|---|---|
+| Cuándo se asienta | En la misma transacción, con «por clasificar» | §13.1 | tomada |
+| Desde cuándo | Fecha de inicio y apertura; nada hacia atrás | RN-60 | tomada |
+| Periodos | Mensuales; cerrado no se reabre | RN-61 | tomada |
+| Tarjetas | Bruto a tarjetas por cobrar; retención y comisión al liquidar | El número adivinado no coincide con el banco | tomada |
+| Exportación | CSV | Sin dependencias; todo lo importa | tomada |
+| **Rol contador** | Hoy solo el administrador entra a contabilidad y compras. Un contador externo (RN-3 ya lo menciona) necesitaría leer libros y escribir asientos sin tocar catálogo ni usuarios: un rol nuevo, el cuarto | Es una decisión de producto —cuántos roles se venden— y toca `user_companies.rol`, `requireAdmin` y el panel | **pendiente** |
+
+### 13.7 Costes medidos antes de empezar
+
+- `test_esquema.py`: cinco tablas y un `ALTER`.
+- `test_aislamiento.py`: unas doce rutas.
+- `test_error_codes.py`: siete códigos.
+- `test_ports.py`: cinco puertos, y `Ledger` entra en la firma de seis casos de
+  uso existentes.
+- `company_dump.py`: las cinco tablas **viajan**.
+- `test_characterization.py`: `RegisterSale` llama al `Ledger`; con el
+  adaptador nulo las cifras no cambian, y esa es la prueba de que el enganche
+  no toca el dinero.
+- `sales.payment_method` es `VARCHAR(50)` libre: antes de mapear hay que
+  cerrarlo a un conjunto de valores (T-1104).
+- Cobertura: `domain/ledger.py` es el módulo de dominio más grande hasta ahora.
+- El simulado: doce endpoints y un libro en el seed.
+- Catálogo `accounting.json`, declarado.
+
+### 13.8 Datos de referencia
+
+Plantilla «comercio» que siembra `ActivateAccounting`. Es una plantilla de
+trabajo, no una norma: el contador de cada compañía la ajusta, y se **revisa
+con un contador antes de sembrarla** en producción.
+
+| Código | Cuenta | Tipo | Sistema |
+|---|---|---|---|
+| 1.1.01 | Caja | asset | sí |
+| 1.1.02 | Bancos | asset | sí |
+| 1.1.03 | Tarjetas por cobrar | asset | sí |
+| 1.1.04 | Clientes | asset | sí |
+| 1.1.05 | IVA crédito fiscal | asset | sí |
+| 1.1.06 | Retenciones a favor | asset | no |
+| 1.2.01 | Inventario | asset | sí |
+| 1.9.99 | Por clasificar | asset | sí |
+| 2.1.01 | Proveedores | liability | sí |
+| 2.1.02 | IVA por pagar | liability | sí |
+| 2.1.03 | Retenciones de renta por pagar | liability | sí |
+| 2.1.04 | CCSS por pagar | liability | sí |
+| 2.1.05 | Salarios por pagar | liability | sí |
+| 2.1.06 | Otras deducciones por pagar | liability | sí |
+| 3.1.01 | Capital | equity | sí |
+| 3.2.01 | Resultados acumulados | equity | sí |
+| 4.1.01 … 4.1.05 | Ventas 13 %, 4 %, 2 %, 1 %, 0 % y exentas | income | sí |
+| 4.2.01 | Devoluciones sobre ventas | income | sí |
+| 4.9.01 | Sobrantes de caja | income | sí |
+| 5.1.01 | Costo de ventas | cost | sí |
+| 6.1.01 | Salarios | expense | sí |
+| 6.1.02 | Cargas sociales patronales | expense | sí |
+| 6.1.03 | Aguinaldo | expense | sí |
+| 6.2.01 | Comisiones de tarjetas | expense | no |
+| 6.9.01 | Faltantes de caja | expense | sí |
+| 6.9.02 | Gastos generales | expense | no |
+
+Mapeo por omisión: `sale` → `cash` 1.1.01, `cards_receivable` 1.1.03,
+`receivable` 1.1.04, `sales_{tarifa}` 4.1.0n, `vat_payable` 2.1.02, `cogs`
+5.1.01, `inventory` 1.2.01; `return` → los mismos más `sales_returns` 4.2.01;
+`cash_close` → `cash_over` 4.9.01, `cash_short` 6.9.01; `purchase` →
+`inventory`, `vat_credit` 1.1.05, `payables` 2.1.01; `supplier_payment` →
+`payables`, `cash`, `bank` 1.1.02; `payroll` → 6.1.01, 6.1.02, 2.1.03, 2.1.04,
+2.1.05, 2.1.06. Todo papel sin fila cae en 1.9.99.
+
+---
+
+## 14. Planilla (F12)
+
+### 14.1 Lo que se congela y lo que se parametriza
+
+La corrida guarda **cada rubro con su base, su tasa y su monto**
+(`payroll_run_items`). Esa tabla **es** el congelamiento de RN-66: la boleta se
+reimprime leyéndola, nunca recalculando. Cambiar una tasa es insertar una fila
+con `valid_from` en `payroll_rates`; las corridas ya pagadas no la ven, y las
+que vengan la toman por fecha de corte.
+
+Las tasas son **globales por país**, no por compañía: son las mismas para
+todos los patronos, las siembra la plataforma y las actualiza soporte desde
+el panel para todas las compañías a la vez. Lo único que varía por compañía
+—la prima de riesgos del trabajo del INS, que depende de la actividad, y el
+aporte a la asociación solidarista— vive en el contrato o en la compañía, no
+en la tabla global. No llevan `company_id`, como `cabys_cache`, y hay que
+declararlas como excepción en `test_tenancy.py`.
+
+Las fórmulas del dominio **no conocen ningún porcentaje**: reciben un
+`RateSet` resuelto a una fecha y lo aplican. Las pruebas usan un juego de tasas
+inventado; así prueban la aritmética y no una cifra que vence.
+
+Decisiones que definen el alcance:
+
+- **Empleado ≠ usuario** (RN-72). `employees.user_id` es opcional.
+- **Renta con proyección mensual**: en una corrida quincenal el salario se
+  proyecta al mes, se calcula la retención mensual por tramos y se aplica la
+  mitad. Es la práctica del país y lo que la boleta tiene que mostrar.
+- **La quincena es la mitad del salario mensual**, sin importar si el mes tiene
+  28 o 31 días. Es lo que hacen los patronos y lo que el empleado espera; el
+  cálculo por día queda para las liquidaciones y las incapacidades.
+- **Incapacidades**: quién paga qué y desde qué día son **parámetros**
+  (`payroll_rates` con conceptos `sick_leave_employer_days`,
+  `sick_leave_employer_rate`…), porque cambian y difieren entre CCSS e INS.
+- **El aguinaldo es una corrida** de tipo `aguinaldo`: suma lo devengado de las
+  corridas pagadas del periodo y lo divide entre doce (RN-69); no lleva rubros
+  de CCSS ni renta, y la prueba lo comprueba explícitamente.
+- **La liquidación es una corrida** de tipo `settlement`, que nace al dar de
+  baja: sus rubros son preaviso, cesantía, vacaciones y aguinaldo
+  proporcionales, según la causa (RN-71).
+- **Archivo bancario de pago**: fuera. La corrida pagada muestra la lista de
+  IBAN y montos para copiar; el formato de cada banco es una tarea aparte
+  cuando haya un cliente que lo pida.
+
+### 14.2 Modelo de datos
+
+```sql
+-- 011-planilla.sql
+-- Globales, por país: sin company_id (como cabys_cache). Excepción en test_tenancy.
+CREATE TABLE payroll_rates (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    country     CHAR(2)      NOT NULL,      -- 'CR'
+    -- 'sem', 'ivm', 'banco_popular', 'asignaciones_familiares', 'imas', 'ina',
+    -- 'fcl', 'rop', 'sick_leave_employer_rate', …
+    concept     VARCHAR(40)  NOT NULL,
+    payer       VARCHAR(8)   NOT NULL,      -- 'employee' | 'employer' | 'rule'
+    -- 0.0550 = 5,50 %; o el número de días, según el concepto.
+    rate        DECIMAL(9,4) NOT NULL,
+    valid_from  DATE         NOT NULL,
+    valid_to    DATE         NULL,
+    source      VARCHAR(255) NOT NULL,      -- la norma o la URL
+    verified_at DATE         NOT NULL,      -- cuándo alguien lo comprobó
+    UNIQUE KEY uq_payroll_rates (country, concept, payer, valid_from)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE income_tax_brackets (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    country     CHAR(2)       NOT NULL,
+    valid_from  DATE          NOT NULL,
+    valid_to    DATE          NULL,
+    lower_bound DECIMAL(12,2) NOT NULL,
+    upper_bound DECIMAL(12,2) NULL,        -- NULL: el último tramo
+    rate        DECIMAL(5,4)  NOT NULL,
+    source      VARCHAR(255)  NOT NULL,
+    verified_at DATE          NOT NULL,
+    UNIQUE KEY uq_income_tax_brackets (country, valid_from, lower_bound)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE income_tax_credits (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    country     CHAR(2)       NOT NULL,
+    concept     VARCHAR(20)   NOT NULL,     -- 'child' | 'spouse'
+    valid_from  DATE          NOT NULL,
+    valid_to    DATE          NULL,
+    amount      DECIMAL(12,2) NOT NULL,     -- mensual
+    source      VARCHAR(255)  NOT NULL,
+    verified_at DATE          NOT NULL,
+    UNIQUE KEY uq_income_tax_credits (country, concept, valid_from)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE severance_table (              -- art. 29: días por año de antigüedad
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    country     CHAR(2)      NOT NULL,
+    valid_from  DATE         NOT NULL,
+    years_from  DECIMAL(4,2) NOT NULL,      -- 0.25 = tres meses
+    years_to    DECIMAL(4,2) NULL,
+    days        DECIMAL(5,2) NOT NULL,
+    source      VARCHAR(255) NOT NULL,
+    UNIQUE KEY uq_severance_table (country, valid_from, years_from)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- De acá en adelante, todo es de la compañía.
+CREATE TABLE employees (
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    company_id          INT          NOT NULL,
+    user_id             INT          NULL,               -- RN-72: opcional
+    identification_type CHAR(2)      NOT NULL,
+    identification      VARCHAR(30)  NOT NULL,
+    name                VARCHAR(160) NOT NULL,
+    insured_number      VARCHAR(20)  NULL,               -- número de asegurado CCSS
+    iban                VARCHAR(34)  NULL,
+    position            VARCHAR(80)  NULL,
+    hired_on            DATE         NOT NULL,
+    terminated_on       DATE         NULL,
+    -- 'resignation' | 'dismissal_with_cause' | 'dismissal_without_cause' |
+    -- 'mutual' | 'end_of_contract'
+    termination_cause   VARCHAR(30)  NULL,
+    dependent_children  TINYINT      NOT NULL DEFAULT 0, -- crédito fiscal
+    spouse_credit       TINYINT(1)   NOT NULL DEFAULT 0,
+    is_active           TINYINT(1)   NOT NULL DEFAULT 1,
+    UNIQUE KEY uq_employees_identification (company_id, identification),
+    CONSTRAINT fk_employees_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_employees_user    FOREIGN KEY (user_id)    REFERENCES users (id_user)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE employment_contracts (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    company_id       INT           NOT NULL,
+    employee_id      INT           NOT NULL,
+    valid_from       DATE          NOT NULL,
+    valid_to         DATE          NULL,      -- un aumento lo cierra y abre otro
+    base_salary      DECIMAL(12,2) NOT NULL,
+    pay_frequency    VARCHAR(10)   NOT NULL,   -- 'weekly'|'biweekly'|'monthly'
+    schedule         VARCHAR(10)   NOT NULL,   -- 'day' | 'mixed' | 'night'
+    salary_kind      VARCHAR(10)   NOT NULL,   -- 'monthly' | 'hourly'
+    solidarista_rate DECIMAL(5,4)  NULL,       -- aporte obrero, si hay
+    rt_rate          DECIMAL(5,4)  NULL,       -- prima de RT de la compañía
+    INDEX idx_employment_contracts_employee (employee_id, valid_from),
+    CONSTRAINT fk_ec_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
+    CONSTRAINT fk_ec_employee FOREIGN KEY (employee_id) REFERENCES employees (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE payroll_runs (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    company_id       INT         NOT NULL,
+    -- 'regular' | 'aguinaldo' | 'settlement' | 'adjustment'
+    kind             VARCHAR(12) NOT NULL,
+    period_from      DATE        NOT NULL,
+    period_to        DATE        NOT NULL,
+    pay_date         DATE        NOT NULL,
+    -- 'draft' | 'approved' | 'paid' (RN-68)
+    status           VARCHAR(10) NOT NULL DEFAULT 'draft',
+    adjusts_run_id   INT         NULL,
+    journal_entry_id INT         NULL,      -- RN-75, si hay contabilidad
+    created_by       INT         NOT NULL,
+    created_at       DATETIME    NOT NULL,
+    approved_by      INT         NULL,
+    approved_at      DATETIME    NULL,
+    paid_by          INT         NULL,
+    paid_at          DATETIME    NULL,
+    INDEX idx_payroll_runs_period (company_id, period_from, kind),
+    CONSTRAINT fk_pr_company FOREIGN KEY (company_id)     REFERENCES companies (id),
+    CONSTRAINT fk_pr_adjusts FOREIGN KEY (adjusts_run_id) REFERENCES payroll_runs (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE payroll_run_lines (               -- un empleado en una corrida
+    id                  INT AUTO_INCREMENT PRIMARY KEY,
+    company_id          INT           NOT NULL,
+    run_id              INT           NOT NULL,
+    employee_id         INT           NOT NULL,
+    contract_id         INT           NOT NULL,
+    gross               DECIMAL(12,2) NOT NULL,
+    employee_deductions DECIMAL(12,2) NOT NULL,
+    income_tax          DECIMAL(12,2) NOT NULL,
+    net                 DECIMAL(12,2) NOT NULL,
+    employer_charges    DECIMAL(12,2) NOT NULL,
+    UNIQUE KEY uq_payroll_run_lines (run_id, employee_id),
+    CONSTRAINT fk_prl_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
+    CONSTRAINT fk_prl_run      FOREIGN KEY (run_id)      REFERENCES payroll_runs (id),
+    CONSTRAINT fk_prl_employee FOREIGN KEY (employee_id) REFERENCES employees (id),
+    CONSTRAINT fk_prl_contract FOREIGN KEY (contract_id) REFERENCES employment_contracts (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- Los rubros SON las tasas congeladas (RN-66). La boleta se reimprime de acá.
+CREATE TABLE payroll_run_items (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT           NOT NULL,
+    line_id    INT           NOT NULL,
+    -- 'base', 'overtime', 'holiday', 'sem', 'ivm', 'income_tax',
+    -- 'solidarista', 'garnishment', …
+    concept    VARCHAR(40)   NOT NULL,
+    payer      VARCHAR(8)    NOT NULL,    -- 'earning' | 'employee' | 'employer'
+    base       DECIMAL(12,2) NOT NULL,
+    -- NULL en los montos fijos (una deducción de ₡20 000).
+    rate       DECIMAL(9,4)  NULL,
+    amount     DECIMAL(12,2) NOT NULL,
+    INDEX idx_payroll_run_items_line (line_id),
+    CONSTRAINT fk_pri_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_pri_line    FOREIGN KEY (line_id)    REFERENCES payroll_run_lines (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE payroll_novelties (               -- lo que cambia respecto del contrato
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    company_id  INT           NOT NULL,
+    run_id      INT           NOT NULL,
+    employee_id INT           NOT NULL,
+    -- 'overtime' | 'holiday' | 'sick_leave' | 'vacation' | 'deduction' | 'bonus'
+    kind        VARCHAR(20)   NOT NULL,
+    quantity    DECIMAL(8,2)  NOT NULL DEFAULT 0,   -- horas o días
+    amount      DECIMAL(12,2) NULL,                 -- deducciones y bonos fijos
+    memo        VARCHAR(160)  NULL,
+    INDEX idx_payroll_novelties_run (run_id, employee_id),
+    CONSTRAINT fk_pn_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
+    CONSTRAINT fk_pn_run      FOREIGN KEY (run_id)      REFERENCES payroll_runs (id),
+    CONSTRAINT fk_pn_employee FOREIGN KEY (employee_id) REFERENCES employees (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE vacation_movements (              -- el saldo es una suma (RN-70)
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    company_id  INT          NOT NULL,
+    employee_id INT          NOT NULL,
+    kind        VARCHAR(10)  NOT NULL,     -- 'accrual' | 'taken' | 'paid'
+    days        DECIMAL(6,2) NOT NULL,
+    on_date     DATE         NOT NULL,
+    run_id      INT          NULL,
+    INDEX idx_vacation_movements_employee (employee_id, on_date),
+    CONSTRAINT fk_vm_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
+    CONSTRAINT fk_vm_employee FOREIGN KEY (employee_id) REFERENCES employees (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+```
+
+### 14.3 Dominio y aplicación
+
+`domain/payroll.py`, puro. Todo recibe el `RateSet` resuelto a la fecha de
+corte; `rates_at(rates, date)` es la única función que mira fechas, y lanza
+`RatesMissing` si a esa fecha falta un concepto.
+
+| Función | Regla | Casos (con tasas inventadas) |
+|---|---|---|
+| `gross_pay(contract, period, novelties)` | base según periodicidad; horas extra a tiempo y medio; feriado de pago obligatorio doble | mensual 600 000 quincenal → 300 000; 4 h extra sobre 240 h/mes; un feriado trabajado |
+| `employee_deductions(gross, rates)` | cada rubro obrero: base × tasa, redondeo por rubro | tres rubros; la suma no se redondea dos veces |
+| `employer_charges(gross, rates, contract)` | cada rubro patronal + RT del contrato | idem, con prima 1 % |
+| `income_tax(monthly_gross, brackets, credits)` | tramos marginales, menos créditos, nunca negativo | bajo el piso → 0; en dos tramos; con dos hijos |
+| `projected_monthly(gross, frequency)` | quincenal × 2, semanal × 52 ÷ 12 | los tres |
+| `aguinaldo(earned)` | suma ÷ 12; sin cargas ni renta (RN-69) | doce meses iguales; siete meses; con horas extra |
+| `vacation_accrual(days_worked)` | dos semanas por cincuenta (art. 153) | 350 días → 14; 25 días → 1 |
+| `notice_days(seniority)` | art. 28 | 4 meses → 7 días; 8 meses → 15; 2 años → 30 |
+| `severance_days(seniority, table)` | art. 29, topada | 1 año; 8 años; 12 años → tope de 8 |
+| `settlement(cause, ...)` | RN-71 | renuncia: sin preaviso ni cesantía; despido sin causa: todo; con causa: proporcionales |
+| `sick_leave_split(days, daily, rules)` | quién paga qué día | 2 días; 10 días |
+
+Puertos: `RateTable`, `EmployeeRepository`, `PayrollRepository`,
+`PayslipRenderer`, `CcssFileWriter`, y el `Ledger` de F11. Casos de uso:
+`CreateRun`, `CalculateRun` (escribe líneas y rubros: el congelamiento),
+`ApproveRun`, `PayRun` (fecha del servidor, bitácora, `Ledger.post` si hay
+contabilidad), `AdjustRun`, `TerminateEmployee` (cierra el contrato y crea la
+corrida de liquidación en borrador), `ExportCcssFile`, `IncomeTaxSummary`.
+
+### 14.4 API y pantallas
+
+```
+GET  /payroll/employees · POST · PUT /{id} · POST /{id}/terminate      admin
+GET  /payroll/contracts?employee= · POST                              admin
+GET  /payroll/rates?on=                     lo vigente a una fecha, con su
+                                            fuente y su verified_at
+PUT  /support/payroll/rates                 soporte · inserta una fila con
+                                            vigencia; nunca edita la vigente
+GET  /payroll/runs · POST                   admin
+POST /payroll/runs/{id}/novelties · /calculate · /approve · /pay · /adjust
+GET  /payroll/runs/{id}                     líneas y rubros
+GET  /payroll/runs/{id}/payslips/{employee} la boleta
+GET  /payroll/vacations/{employee}          saldo y movimientos
+GET  /payroll/exports/ccss?year=&month=     el archivo (RF-62)
+GET  /payroll/exports/income-tax?year=&month=
+```
+
+Pantallas: `/planilla` (la corrida en curso y lo que vence: aguinaldo,
+tasas viejas), `/planilla/empleados` con contrato y baja, `/planilla/corridas`
+y `/planilla/corridas/{id}` con novedades, cálculo, aprobación, pago y
+boletas, `/planilla/vacaciones`, `/planilla/tasas` (solo lectura, con fecha y
+fuente). La boleta es la **cuarta plantilla de documento** —T-922 ya avisa que
+el PDF del backend no se cuenta—, con el idioma del documento (RN-29).
+
+### 14.5 Códigos de error
+
+`rates_missing_for_date`, `contract_missing`, `employee_terminated`,
+`run_not_editable`, `run_not_approved`, `run_already_paid`,
+`settlement_requires_termination`, `novelty_outside_period`,
+`vacation_balance_exceeded`.
+
+### 14.6 Decisiones
+
+| Tema | Qué se decidió | Por qué | Estado |
+|---|---|---|---|
+| Tasas | Globales por país, con vigencia; RT y solidarista en el contrato | Son las mismas para todos; lo que varía es poco y es de la compañía | tomada |
+| Congelamiento | Los rubros de la corrida, con base y tasa | La boleta se reimprime de datos, no de código | tomada |
+| Renta | Proyección mensual | Es la práctica y lo que la boleta muestra | tomada |
+| Quincena | Mitad del mensual | Lo que hacen los patronos y espera el empleado | tomada |
+| Aguinaldo y liquidación | Son corridas | Un solo modelo de estados, bitácora y asiento | tomada |
+| Archivo bancario | Fuera | Un formato por banco; sin cliente que lo pida | tomada |
+| Caja | La planilla no mueve la caja (RN-74) | Nómina y arqueo se descuadran juntos | tomada |
+| ¿Quién edita las tasas? | Soporte, para todos; la compañía las ve | Una tasa mal escrita por un cliente es un reclamo laboral; una fila con vigencia de soporte es un dato con fuente | tomada |
+
+### 14.7 Costes medidos antes de empezar
+
+- `test_esquema.py`: once tablas.
+- `test_tenancy.py`: cuatro tablas globales sin `TenantMixin`, declaradas como
+  excepción explícita, como `cabys_cache`.
+- `test_aislamiento.py`: unas quince rutas, y una bajo `/support`.
+- `test_error_codes.py`: nueve códigos.
+- `test_ports.py`: cinco puertos.
+- `company_dump.py`: siete tablas **viajan**; las cuatro globales, **no**.
+- Cobertura: `domain/payroll.py` supera a `ledger.py`; la tabla de casos es
+  larga a propósito.
+- El simulado: quince endpoints; dos empleados y un juego de tasas en el seed.
+- Catálogo `payroll.json`, declarado. La boleta como cuarta plantilla, en los
+  tres idiomas del documento.
+- El asiento de planilla necesita el mapeo `payroll` de §13.8 sembrado desde
+  F11, aunque no se use hasta acá.
+
+### 14.8 Datos de referencia
+
+**Nada de esta sección es una verdad del sistema: es lo que se siembra, con su
+fuente y su fecha, y se comprueba contra la fuente oficial antes de
+sembrarlo.** Las cifras concretas de porcentajes y tramos **no se escriben
+acá**: cambian con decreto y se copiarían viejas. Se toman de `ccss.sa.cr`
+(cuotas obrero-patronales), `hacienda.go.cr` (tramos y créditos del periodo
+fiscal vigente) y el decreto de salarios mínimos del MTSS, el día que se
+siembra, y esa fecha va en `verified_at`.
+
+| Concepto | Pagador | Tabla | Fuente |
+|---|---|---|---|
+| SEM, IVM, Banco Popular | obrero y patrono | `payroll_rates` | CCSS. El IVM trae aumentos programados: varias filas con `valid_from` |
+| Asignaciones Familiares, IMAS, INA, FCL, ROP, aporte patronal Banco Popular | patrono | `payroll_rates` | CCSS / Ley de Protección al Trabajador |
+| Riesgos del trabajo | patrono, por actividad | `employment_contracts.rt_rate` | INS, la póliza de cada compañía |
+| Total obrero ≈ 10,67 %, total patronal ≈ 26,67 % | — | — | **Aproximados, de referencia**: la prueba de la siembra suma los rubros y compara contra lo publicado ese día |
+| Tramos del impuesto al salario y créditos por hijo y cónyuge | obrero | `income_tax_brackets`, `income_tax_credits` | Hacienda, decreto del periodo fiscal; se renuevan cada año |
+| Preaviso | — | dominio (`notice_days`) | Código de Trabajo art. 28: 3–6 meses → 1 semana; 6–12 → 15 días; > 1 año → 1 mes |
+| Cesantía | — | `severance_table` | art. 29: 3–6 meses → 7 días; 6–12 → 14; 1 año → 19,5; 2 → 20; 3 → 20,5; 4 → 21; 5 → 21,24; 6 → 21,5; 7 a 9 → 22; 10 → 21,5; 11 → 21; 12 → 20,5; 13 o más → 20; **tope de 8 años**. Verificar el texto vigente antes de sembrar |
+| Aguinaldo | — | dominio | Ley 2412: 1 dic – 30 nov, ÷ 12, antes del 20 de diciembre, exento |
+| Vacaciones | — | dominio | art. 153: dos semanas por cincuenta trabajadas |
+| Horas extra y feriados | — | dominio | art. 139 (tiempo y medio) y arts. 148–149 (feriados de pago obligatorio, doble) |
+| Incapacidad por enfermedad | patrono los primeros días, CCSS después | `payroll_rates` (`rule`) | CCSS: el porcentaje y desde qué día se toman del reglamento vigente el día de sembrar |
+| Archivo de planilla para la CCSS | — | adaptador `CcssFileWriter` | La especificación del SICERE se lee **antes** de T-1211; el formato no se supone |

@@ -12,7 +12,7 @@
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-09-06",
+  "actualizado": "2026-09-12",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -23,7 +23,9 @@
       "categorias": "Dos niveles fijos: categoría y subcategoría.",
       "suscripcion": "Solo control de estado (activa, vencida, suspendida). El cobro se hace por fuera."
     },
-    "sin_decidir": "Si la emisión de comprobantes se implementa directo o vía proveedor autorizado. El diseño de F4 y F5 sirve para las dos rutas."
+    "modulos_por_plan": "Desde el 2026-09-11, tres módulos que un plan incluye o no: compras y cuentas por pagar (F10), contabilidad (F11) y planilla (F12). spec §2 «Módulos», §5.7–§5.9; plan §11–§14.",
+    "orden_de_ejecucion": "F10 → F11 → F6 → F7 → F12, decidido el 2026-09-12. No es el de los números y no hace falta que lo sea: F8 ya se ejecutó antes que F5 y se quedó en su casilla. El argumento está en plan §9.",
+    "sin_decidir": "Si la emisión de comprobantes se implementa directo o vía proveedor autorizado. El diseño de F4 y F5 sirve para las dos rutas. Y si hay un cuarto rol, contador, que lea libros y escriba asientos sin tocar catálogo ni usuarios (plan §13.6; bloquea T-1111)."
   },
   "entorno": {
     "$ver": "Comandos para levantar y trampas conocidas: CLAUDE.md. Detalle de despliegue: backend/README.md.",
@@ -1035,6 +1037,50 @@
       "porque": "No sobraban: estaban mal ubicados. El usuario de ATV es **por ambiente** —pruebas y producción son credenciales distintas— y vive en `fe_credentials`. La sucursal y la terminal ya las resuelve la sesión: `sucursal_actual()`, `terminal_actual()`, cada venta guarda su `terminal_id` y `/users/me` publica los dos códigos.",
       "el_hallazgo": "El campo de terminal estaba **roto por construcción**. Hay una sola fila de `settings` por compañía —lo garantiza `uq_settings_company`—, así que dos cajas del mismo negocio declaraban la misma terminal, y dos terminales con el mismo código producen consecutivos repetidos, que Hacienda rechaza. Es la misma familia del contador de dos dimensiones, en otro sitio.",
       "produccion_se_convierte": "`'produccion'` se lee como `'production'` en vez de caer al valor de fábrica. Descartarlo daría `'sandbox'`, y un negocio que ya emitía en producción pasaría a pruebas sin que nadie lo pidiera ni lo viera. La conversión vive en `mergeSettings` y no en una migración: la configuración se lee entera por ese camino, así que cada fila queda al día la primera vez que se abre."
+    },
+    {
+      "tema": "Módulos por plan (F10–F12)",
+      "decision": "Compras, contabilidad y planilla son tres banderas más en `plans` —`purchases`, `accounting`, `payroll`, en inglés—, como ya lo es `factura_electronica`. Se aplican en el servidor, por petición, solo a las escrituras: `module_not_in_plan`, 403. Apagar un módulo deja sus datos en solo lectura.",
+      "porque": "Un interruptor por compañía aparte del plan son dos sitios para la misma verdad. No va en el token por lo mismo que la suscripción: quedaría congelado hasta el siguiente login. Y lo que ya existe —libros, boletas— es el respaldo del cliente ante Hacienda y sus empleados: el plan decide qué se sigue escribiendo, no qué existió (RN-49 a RN-51)."
+    },
+    {
+      "tema": "La compra es la entrada de mercadería",
+      "decision": "`stock_entries` gana proveedor, documento, condición de pago y crédito fiscal por línea; no hay tabla `purchases`. Una entrada sin proveedor sigue siendo una entrada.",
+      "porque": "El lector de XML ya produce una entrada desde la factura del proveedor, la anulación ya recorre las líneas, y el invariante «entrada XML 79 800» lo fija. Dos tablas son dos verdades y dos caminos que hacen lo mismo (plan §12.1, RN-52)."
+    },
+    {
+      "tema": "Costeo de inventario",
+      "decision": "Promedio ponderado móvil en `products.cost` —la columna no existía—, recalculado al confirmar cada compra, y congelado en `sale_details.unit_cost` al vender desde F11. Anular una compra no deshace el promedio.",
+      "porque": "PEPS exige capas por lote que las devoluciones deshacen; con 5 000 productos es donde se descuadra, y Hacienda acepta los dos. Rehacer el promedio hacia atrás exige rehacer la historia del producto; la siguiente compra lo corrige sola (RN-54, RN-57, RN-63)."
+    },
+    {
+      "tema": "El asiento automático va en la misma transacción, con «por clasificar»",
+      "decision": "El servidor escribe el asiento en la misma transacción del evento, a través del puerto `Ledger` (adaptador nulo con el módulo apagado). Lo que no tiene cuenta en el mapeo va a una cuenta de sistema «por clasificar».",
+      "porque": "La proyección posterior admite el estado «venta sin asiento», que es lo que un libro no puede tener. Y la objeción a la transacción —un mapeo incompleto detendría la venta, contra RNF-4— se resuelve haciendo que el mapeo no pueda estar incompleto: el asiento siempre existe y balancea, y el error se ve en rojo donde lo mira el contador, no donde cobra el cajero (RN-59, plan §13.1)."
+    },
+    {
+      "tema": "La contabilidad empieza en una fecha y el periodo cerrado no se reabre",
+      "decision": "Se activa con fecha de inicio, plantilla y asiento de apertura; nada anterior se reconstruye. Los periodos son mensuales y lo cerrado se corrige con un asiento de ajuste en el siguiente.",
+      "porque": "Las ventas viejas no tienen costo congelado ni mapeo: rehacerlas sería inventar datos. Reabrir es la puerta por donde un balance ya entregado deja de coincidir con el libro (RN-60, RN-61)."
+    },
+    {
+      "tema": "La retención y la comisión de tarjetas no se estiman al vender",
+      "decision": "La venta con tarjeta va a «tarjetas por cobrar» por su bruto; la retención y la comisión se registran cuando el adquirente liquida, con el monto real.",
+      "porque": "Un porcentaje adivinado produce un número que después no coincide con el banco, y conciliar dos números que nunca fueron iguales es peor que asentar uno tarde (plan §13.1)."
+    },
+    {
+      "tema": "Planilla: empleado ≠ usuario, tasas por país con vigencia, la corrida congela",
+      "decision": "`employees` es una entidad propia con enlace opcional a `users`. Las tasas, tramos y tabla de cesantía son tablas globales por país con `valid_from`, `source` y `verified_at`, que actualiza soporte insertando filas. La corrida guarda cada rubro con base, tasa y monto, y la boleta se reimprime de ahí. Aguinaldo y liquidación son corridas.",
+      "porque": "La mayoría de los empleados no son usuarios. Una tasa en el código es un despliegue por decreto; una fila con vigencia es un dato con fuente, y las pruebas usan tasas inventadas para probar la aritmética y no una cifra que vence. Reimprimir la boleta de julio en diciembre tiene que dar lo mismo: es RN-12 sobre una superficie más grande (RN-66 a RN-68, RN-72). Las cifras concretas no se escribieron en ningún documento a propósito: se leen de la fuente el día de sembrar (plan §14.8)."
+    },
+    {
+      "tema": "Orden de ejecución: los módulos antes que la factura electrónica",
+      "decision": "**F10 → F11 → F6 → F7 → F12**, decidido con el usuario el 2026-09-12. Los números no se mueven: el orden vive en plan §9, como ya pasaba con F8.",
+      "porque": "El primer borrador, del día anterior, ponía los tres módulos después de F7 porque emitir es lo único legalmente obligatorio. El usuario preguntó si no convenía al revés, y tenía razón: el argumento es cierto y por eso mismo no vende. Como todos los negocios están obligados, todos ya lo resolvieron antes de conocernos —emitir no gana el trato, evita perderlo—, mientras que nadie está obligado a llevar la contabilidad en un programa, que es donde se cobra más y donde el cliente se queda pegado: los libros de tres años no se mudan de sistema.",
+      "no_hay_dependencia_tecnica": "Se verificó antes de reordenar: contabilidad necesita el IVA por tarifa (F5, hecho), el crédito fiscal y el costo del producto (F10). Nada de F6 ni de F7. La compra desde XML lee el comprobante DEL PROVEEDOR, que existe se emita o no, y el asiento referencia la venta por su id, no por su número, así que el cambio de numeración de T-706 no lo toca.",
+      "planilla_se_queda_de_ultima": "El usuario preguntó por «conta y planilla» como par y no son la misma apuesta. F12 no comparte nada con el POS, su soporte es estacional —todos con el aguinaldo la misma semana de diciembre— y es lo único que ata el producto a un país.",
+      "lo_que_de_verdad_pesa": "T-701, no el número de la fase: vía proveedor autorizado F7 es un adaptador detrás de EmisorFE; directo son XAdES, el IdP y seguirle los cambios de esquema. Mientras esa decisión siga abierta, F7 no es una fase grande sino una de tamaño desconocido, y eso es lo que la manda al final.",
+      "lo_que_arrastro": "T-916 se mudó de puerta: decía «antes de F6» y pasó a «antes de T-1001». La puerta nunca fue F6 sino la primera migración que se escriba, y ahora es la de F10 — con el caso agrandado, porque T-1001 le pone a `plans` tres columnas en inglés al lado de seis en español. No hay F9: el número de tarea lleva la fase y el 9 lo ocupa Transversal desde F2."
     }
   ],
   "invariantes_verificados": {
@@ -1869,6 +1915,30 @@
         "T-916 sigue abierta y es la puerta de T-601: `companies` gana `identification_type` al lado de `identificacion`."
       ],
       "lo_que_ensena": "**Un campo que nadie lee no es solo trabajo pendiente: puede estar mal y no haber forma de enterarse.** `settings.eInvoicing.terminal` llevaba meses guardándose y era imposible que funcionara —una fila de configuración por compañía, un código por terminal— pero como no lo consumía nadie, ninguna prueba podía fallar. Se habría descubierto en F7, como consecutivos repetidos y comprobantes rechazados. Por eso T-614 iba primero: el orden no era higiene, era la única forma de encontrarlo antes de construirle encima.\n\nY una sobre arreglar pruebas frágiles, que costó tres intentos. El primero supuso que reintentar F1 era inofensivo —apila un modal—; el segundo esperó a que el modal se desmontara pero seguía pulsando una sola vez, y abrir la caja recarga la página, así que la pulsación llegaba antes de que Svelte volviera a enganchar. La forma que funciona combina las dos: **reintentar, pero solo pulsar si no hay ningún modal abierto**. Cuando una acción no es idempotente, el reintento necesita una guardia, no menos reintentos."
+    },
+    {
+      "fecha": "2026-09-11",
+      "titulo": "Compras, contabilidad y planilla entran a .specify como módulos por plan",
+      "hecho": [
+        "El usuario preguntó por planilla y contabilidad —«los dos módulos que me hacen ruido en la cabeza»— y pidió que quedaran escritos en .specify.",
+        "spec.md: §2 «Módulos» (RN-49 a RN-51), compras sale de «no entra todavía» y entran cinco exclusiones nuevas en §4, §5.7 compras (RN-52 a RN-57), §5.8 contabilidad (RN-58 a RN-65), §5.9 planilla (RN-66 a RN-75), RF-39 a RF-64 en cuatro grupos, doce términos de glosario, §10 al día.",
+        "plan.md: filas F10–F12 en §9 con el párrafo del orden y del F9 que no existe, ocho riesgos en §10, y §11 módulos por plan, §12 compras, §13 contabilidad y §14 planilla con DDL (migraciones 008 a 011), dominio con tablas de casos, API, pantallas, códigos, decisiones con estado y costes medidos. El asiento de la venta 3×1450 con costo 900 —7 615,50 por lado— queda como el caso que fija el libro.",
+        "task.md: F10 (T-1001 a T-1016), F11 (T-1101 a T-1113) y F12 (T-1201 a T-1215), cada una con costes medidos, cada tarea con su verificación, y una decisión pendiente en F11: el rol contador.",
+        "Sin código. Las cifras de la CCSS y los tramos de renta no se escribieron en ningún documento: son datos con vigencia que se leen de la fuente el día de sembrar."
+      ],
+      "lo_que_ensena": "**El prerrequisito estaba escondido en el propio spec.** Compras llevaba meses en «no entra todavía» y nadie lo había puesto al lado de contabilidad: el débito fiscal existe desde F5 y el crédito fiscal sale de las compras, así que sin ellas el D-104 sale mal. Se encontró leyendo §4 antes de opinar, no diseñando. La regla que queda: antes de agregar un módulo, releer qué se excluyó y por qué, porque lo excluido suele ser el insumo.\n\nY una sobre método, que costó tokens. Para redactar tres módulos se lanzó un flujo de unos cuarenta agentes —lectores, nueve diseñadores, jueces, redactores, tres rondas de revisión— y el usuario lo detuvo: «No dispares muchos agentes porque consume muchos tokens». Tenía razón dos veces: por el costo, y porque el contexto ya tenía lo necesario —el spec entero, las convenciones de los cuatro documentos, las tablas reales— y lo que faltaba eran cuatro archivos de modelo. Redactar documentos de planeación es trabajo de un solo contexto; los agentes sirven para leer lo que no cabe o verificar contra el stack, no para pensar por uno. Quedó en memoria."
+    },
+    {
+      "fecha": "2026-09-12",
+      "titulo": "Los módulos se adelantan a la factura electrónica",
+      "hecho": [
+        "El orden de ejecución pasa a **F10 → F11 → F6 → F7 → F12**, escrito en plan §9 con su argumento, y referido desde spec §10 y desde el blockquote de F10 en task.md.",
+        "Los números NO se movieron. F8 era el precedente: se ejecutó antes que F5 y se quedó en su casilla, así que la tabla va numerada y el orden vive en el párrafo.",
+        "Se verificó que no hay dependencia técnica: lo que contabilidad necesita sale de F5 y F10, no de F6 ni de F7.",
+        "T-916 se mudó de puerta, de «antes de F6» a «antes de T-1001», y el blockquote de «La puerta de la fase» de F6 ahora explica que llegará abierta o cerrada.",
+        "Planilla se queda de última, separada del par que traía la pregunta."
+      ],
+      "lo_que_ensena": "**Un argumento correcto puede llevar a la prioridad equivocada.** «La factura electrónica es lo único legalmente obligatorio» es verdad, y de ahí saqué que iba primero. El usuario preguntó si no era al revés y el argumento se dio vuelta solo: justamente porque es obligatoria, todos los prospectos ya la resolvieron antes de conocernos. Lo obligatorio no diferencia; evita perder. Lo que gana ventas es lo que nadie está obligado a tener.\n\nLa segunda lección es de forma: **antes de discutir el orden había que comprobar si existía la dependencia**, y no existía. Media discusión de prioridades se resuelve mirando qué necesita de qué, y eso se lee en el modelo de datos —el asiento referencia la venta por `id`, no por su número— en vez de argumentarse.\n\nY una sobre pares: la pregunta vino con «conta y planilla» juntas, como si fueran una. Separarlas era parte de la respuesta."
     }
   ],
   "$reparto": {

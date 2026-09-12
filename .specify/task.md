@@ -8,7 +8,7 @@
 > importe para quien retome va a `progress.json`; este archivo es la lista de
 > trabajo, no el registro histórico.
 >
-> Actualizado: 2026-09-06
+> Actualizado: 2026-09-11
 
 ---
 
@@ -1380,13 +1380,17 @@ no aparezca a mitad de camino como en F5—:
 
 ### La puerta de la fase
 
-> **Antes de T-601 hay que decidir T-916** (su casilla está en «Pendientes»).
+> **T-916 ya no es puerta de F6: se mudó a T-1001** con el reordenamiento del
+> 2026-09-12 (plan §9). La razón no cambió, cambió cuál es la primera
+> migración: **no** era que T-608 tocara las tablas con columnas en español,
+> sino que quien escribe la primera migración se lleva el rename, porque es lo
+> que plan §3.9 llama «se paga una vez». Al ejecutarse F10 antes, esa primera
+> migración es la suya.
 >
-> Y la razón no es la que parece: **no** es que T-608 toque las tablas con
-> columnas en español, sino que **T-601 escribe la primera migración de la
-> fase**, y el rename, si se hace, viaja en ella. Eso es lo que plan §3.9 llama
-> «se paga una vez». Decidirlo después de T-601 significa dos migraciones y
-> perder el argumento entero.
+> Para F6 esto significa que **la puerta ya estará abierta o cerrada** cuando
+> llegue: si el rename se hizo en T-1001, T-601 y T-621 escriben sobre columnas
+> ya en inglés; si se decidió no hacerlo, se escriben sobre la mezcla y no hay
+> nada que volver a discutir.
 
 ### Las cuatro decisiones — resueltas el 2026-09-06
 
@@ -2404,6 +2408,502 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ---
 
+## F10 · Compras y cuentas por pagar
+
+> **Qué deja.** El mecanismo de módulos por plan (RN-49 a RN-51, RF-39 y
+> RF-40) y el primer módulo: proveedores, la compra como entrada de mercadería
+> con documento, condición de pago y crédito fiscal por línea, el costo
+> promedio del producto, abonos y antigüedad de saldos (RN-52 a RN-57, RF-41 a
+> RF-46). Plan §11 y §12.
+>
+> **De qué depende.** De F2 (compañías y planes) y de nada más. **Es la
+> siguiente fase que se ejecuta**, antes que F6 y F7 (plan §9): emitir es
+> obligatorio y por eso mismo todos los prospectos ya lo resolvieron, mientras
+> que nadie está obligado a llevar su contabilidad en un programa. Es
+> prerrequisito de F11: el crédito fiscal sale de acá.
+>
+> **Va primero aunque el número diga otra cosa.** Los números no se mueven —F8
+> ya se ejecutó antes que F5 y se quedó en su casilla—; el orden de ejecución
+> vive en plan §9. Y no hay F9: el número de tarea lleva la fase y el 9 lo
+> ocupa Transversal (T-9nn) desde F2.
+>
+> **La puerta de la fase: T-916 se decide antes de T-1001.** Es la puerta que
+> F6 tenía, y se muda acá con el orden, por la misma razón que allá: **T-1001
+> escribe la primera migración de la era** y el rename, si se hace, viaja en
+> ella (plan §3.9, «se paga una vez»). Acá además el caso es más visible que
+> en F6: `plans` recibe `purchases`, `accounting` y `payroll` en inglés al
+> lado de `nombre`, `precio_mensual` y `max_*` en español. O se renombra en
+> esa migración, o esa mezcla queda escrita.
+
+**Costes medidos antes de empezar** —plan §12.7—:
+
+- `test_esquema.py`: dos tablas y tres `ALTER` en una migración (`009`), más
+  la `008` de los módulos.
+- `test_aislamiento.py`: nueve rutas nuevas que declarar y probar.
+- `test_error_codes.py`: seis códigos (uno de módulos, cinco de compras),
+  cuatro lugares cada uno.
+- `company_dump.py`: `suppliers` y `supplier_payments` viajan; se clasifican en
+  el commit que las crea o `pytest` se cae.
+- El invariante «entrada XML 79 800» se conserva: el lector agrega campos, no
+  cambia cantidades.
+
+### Módulos por plan
+
+- [ ] **T-1001** Migración `008-modulos-por-plan.sql`: `purchases`, `accounting`
+      y `payroll` en `plans`, en inglés, y el modelo con `Boolean` y
+      `server_default` como ya está `factura_electronica`. RN-51.
+
+      **Verificación:** `test_esquema.py` en verde; un plan anterior a la
+      migración lee `0` en las tres columnas.
+
+- [ ] **T-1002** `require_module(name)` al lado de `get_current_user`: lee el
+      plan de la compañía **en cada petición** (plan §11, misma razón que la
+      suscripción) y se aplica solo a las escrituras. Código
+      `module_not_in_plan` con `{module}` en los cuatro lugares. RN-49, RN-50,
+      RF-40.
+
+      **Verificación:** `tests/test_modulos.py`: con un plan sin `accounting`,
+      `POST /accounting/entries` responde 403 con el código y `GET
+      /accounting/entries` responde 200; con el módulo, la escritura entra.
+      `test_error_codes.py` ve el código levantado.
+
+- [ ] **T-1003** Panel de soporte: las tres casillas en el formulario de planes
+      y la columna de módulos en el listado de compañías. RF-39.
+
+      **Verificación:** prueba de punta a punta del panel: marcar `accounting`
+      en el plan de la compañía de prueba y verla en el listado; el cambio de
+      plan ya escribe en `audit_log` (RF-7) y la fila está.
+
+- [ ] **T-1004** POS: `modules` viaja con el estado de la suscripción,
+      `+layout.server.ts` arma la navegación con eso y `requireModule` en
+      `lib/server/auth.ts` protege las `actions`. El simulado pone las
+      banderas en los planes del seed —compañía 1 con los tres, compañía 2 sin
+      ninguno— y `SEED_VERSION` sube. RF-40.
+
+      **Verificación:** punta a punta: la segunda compañía no ve «Compras» en
+      el menú y un `POST` directo a una de sus acciones responde el código; la
+      primera lo ve y entra.
+
+### Base de datos
+
+- [ ] **T-1005** Migración `009-compras.sql` (plan §12.2) y sus modelos:
+      `suppliers`, `supplier_payments`, las columnas de `stock_entries` y
+      `stock_entry_details`, y `products.cost`. `company_dump.py`: las dos
+      tablas viajan. RN-52, RN-54.
+
+      **Verificación:** `test_esquema.py`; `test_respaldo_compania.py` exporta
+      y restaura una compañía con proveedores y abonos y cuenta lo mismo de
+      los dos lados.
+
+### Dominio
+
+- [ ] **T-1006** `domain/purchases.py` con la tabla de casos de plan §12.3:
+      `weighted_average_cost`, `purchase_totals`, `remaining_balance`,
+      `apply_payment`, `aging_bucket`. RN-53, RN-54, RN-55.
+
+      **Verificación:** `pytest tests/domain/test_purchases.py` con los casos
+      numéricos del plan —10 a 100 + 10 a 120 → 110; existencia −3 + 10 a 50 →
+      50; 1 001 sobre 1 000 → `PaymentExceedsBalance`—; cobertura 100 %.
+
+### Backend
+
+- [ ] **T-1007** Proveedores: `SupplierRepository` y las rutas
+      `GET/POST/PUT /suppliers`; se desactivan, no se borran, y comprarle a
+      uno inactivo responde `supplier_inactive`. RF-41.
+
+      **Verificación:** `test_aislamiento.py` con las tres rutas; la compra a
+      un proveedor inactivo responde el código.
+
+- [ ] **T-1008** El lector de XML (`lib/server/import/hacienda.ts`) extrae
+      además `Emisor` (tipo, número, nombre), `Clave`, `NumeroConsecutivo`,
+      `FechaEmision`, `CondicionVenta` con `PlazoCredito`, y por línea
+      `Impuesto/Tarifa` y `Impuesto/Monto`. RF-42, RN-53.
+
+      **Verificación:** los comprobantes de ejemplo de `docs/hacienda/`
+      producen proveedor, condición y tarifa por línea; el invariante 79 800
+      sigue igual en `test_characterization.py`.
+
+- [ ] **T-1009** `RegisterPurchase`: aplica el stock como hoy, actualiza
+      `products.cost` con el promedio, calcula `due_date` desde la condición,
+      y de contado registra el abono por el total en el mismo acto. La factura
+      duplicada pasa a ser **por proveedor** (`duplicate_supplier_document`).
+      RN-52, RN-54, RN-57.
+
+      **Verificación:** compra a crédito de 10 u a 120 sobre 10 u a 100 deja
+      `products.cost` en 110, el saldo igual al total y `due_date` = fecha +
+      plazo; repetir el mismo documento del mismo proveedor responde el
+      código; el mismo número de **otro** proveedor entra.
+
+- [ ] **T-1010** `PaySupplier`: comprueba el saldo (`payment_exceeds_balance`);
+      en efectivo exige turno abierto en la terminal de la sesión
+      (`cash_session_required`) y escribe el `cash_movements` de salida
+      **antes** de guardar el abono. RN-55, RN-56, RF-44.
+
+      **Verificación:** abono en efectivo con caja abierta → el efectivo
+      esperado del arqueo baja exactamente ese monto; sin caja → código; abono
+      mayor al saldo → código y nada escrito.
+
+- [ ] **T-1011** `VoidPurchase`: solo sin abonos (`purchase_has_payments`),
+      revierte el stock como la anulación de hoy, marca `anulada` y escribe en
+      bitácora. **No toca `products.cost`**, y la pantalla lo dice. RF-46,
+      RN-57.
+
+      **Verificación:** anular con abonos → código; sin abonos → el stock
+      vuelve, hay fila en `audit_log` y `products.cost` es el mismo de antes.
+
+- [ ] **T-1012** Cuentas por pagar y reporte: `GET /payables` (saldo por compra
+      y por proveedor, antigüedad) y `GET /reports/purchases` (base e impuesto
+      **por tarifa**). RF-44, RF-45.
+
+      **Verificación:** con una compra al 13 % y otra al 1 %, el reporte da dos
+      bases y dos impuestos separados; una compra vencida hace 45 días cae en
+      31–60.
+
+### Frontend
+
+- [ ] **T-1013** La pantalla de entradas gana proveedor, documento, condición y
+      tarifa por línea, con el aviso de RN-53 cuando la del documento difiere
+      de la del producto, y conserva la vista previa (§8, regla 6). RF-42,
+      RF-43.
+
+      **Verificación:** punta a punta: cargar un XML de ejemplo, ver el
+      proveedor marcado «nuevo», la tarifa por línea y el aviso en la línea que
+      difiere; confirmar; el stock sube y el proveedor existe.
+
+- [ ] **T-1014** `/compras/proveedores` y `/compras/cuentas-por-pagar`: saldos,
+      antigüedad y abonar con método y referencia. RF-41, RF-44.
+
+      **Verificación:** punta a punta: abonar en efectivo con la caja abierta y
+      ver el movimiento de salida en `/caja` con el motivo armado.
+
+- [ ] **T-1015** Simulado y catálogos: los nueve endpoints con contrato
+      idéntico, proveedores y una compra a crédito en el seed,
+      `messages/es/purchases.json` **declarado en
+      `project.inlang/settings.json`**, y los seis códigos en `API_CODES` y en
+      `errors.json`.
+
+      **Verificación:** `npm test` (`loose-text`, `catalogs` y
+      `messages.test.ts` comparan las listas de códigos); `npm run check` en
+      0/0.
+
+### Verificación — sin esto la fase no está terminada
+
+- [ ] **T-1016** Punta a punta con el navegador, en una compañía que la prueba
+      da de alta: XML de proveedor → compra a crédito → el reporte por tarifa
+      muestra su IVA → abono en efectivo → el arqueo cuadra → una segunda
+      compra sin abonos se anula. Y en la compañía sin el módulo, el menú no
+      lo muestra y el `POST` responde el código.
+
+      **Verificación:** la prueba de Playwright pasa contra el simulado y, a
+      mano, contra el stack real; `pytest`, `npm test` y `npm run check` en
+      verde.
+
+---
+
+## F11 · Contabilidad
+
+> **Qué deja.** Partida doble por compañía: catálogo desde plantilla, asientos
+> automáticos **en la misma transacción** con «por clasificar» para que nada
+> se detenga, asientos manuales y de ajuste, periodos con cierre inmutable,
+> libro diario, mayor, balance de comprobación, estado de resultados, balance
+> general y el borrador del D-104 (RN-58 a RN-65, RF-47 a RF-54). Plan §13.
+>
+> **De qué depende.** De F10: el crédito fiscal y el costo del producto salen
+> de ahí. Funciona sin F12 y recibe su asiento cuando exista.
+
+**Costes medidos antes de empezar** —plan §13.7—:
+
+- `test_esquema.py`: cinco tablas y un `ALTER` (`010`).
+- `test_ports.py`: `Ledger` entra en la firma de **seis** casos de uso que ya
+  existen; `test_characterization.py` es la prueba de que el enganche no toca
+  el dinero.
+- `test_aislamiento.py`: unas doce rutas. `test_error_codes.py`: siete
+  códigos. `company_dump.py`: las cinco tablas viajan.
+- `sales.payment_method` es texto libre y el mapeo necesita un conjunto
+  cerrado: T-1104 va antes que el enganche.
+- `domain/ledger.py` es el módulo de dominio más grande hasta ahora, y la
+  cobertura al 100 % es obligatoria.
+
+### Decisiones que hay que tomar antes de empezar
+
+| | Qué hay que decidir | Qué espera |
+|---|---|---|
+| Rol contador | Hoy solo el administrador entra a contabilidad y compras. Un contador externo (RN-3 ya lo describe) necesita leer los libros y escribir asientos **sin** tocar catálogo, precios ni usuarios. ¿Cuarto rol o el administrador se lo presta? Toca `user_companies.rol`, `requireAdmin` y el panel. Plan §13.6 | T-1111 (quién ve las pantallas). Lo anterior no depende de esto |
+
+### Base de datos
+
+- [ ] **T-1101** Migración `010-contabilidad.sql` (plan §13.2) y sus modelos:
+      `accounts`, `account_mappings`, `accounting_periods`, `journal_entries`,
+      `journal_lines` y `sale_details.unit_cost`. `company_dump.py`: las cinco
+      viajan. RN-58, RN-61, RN-63.
+
+      **Verificación:** `test_esquema.py`; exportar y restaurar una compañía
+      con un libro deja el mismo balance de comprobación.
+
+### Dominio
+
+- [ ] **T-1102** `domain/ledger.py`: `JournalEntry` que **no se construye
+      desbalanceado**; `post_sale`, `post_return`, `post_cash_close`,
+      `post_cash_movement`, `post_purchase`, `post_supplier_payment`;
+      `assert_open`. La tabla de casos de plan §13.3, con las cifras de los
+      invariantes. RN-58, RN-59, RN-62.
+
+      **Verificación:** la venta 3 × 1 450 con costo 900 da el asiento de
+      §13.3 —7 615,50 por lado—; construir uno desbalanceado lanza
+      `EntryNotBalanced`; un método de pago sin cuenta cae en por clasificar;
+      el cierre 53 000 contra 53 277,00 asienta un faltante de 277,00;
+      cobertura 100 %.
+
+- [ ] **T-1103** Reportes en el dominio: `trial_balance`, `income_statement`,
+      `balance_sheet`, `vat_draft`. RF-53, RF-54, RN-65.
+
+      **Verificación:** con los asientos de la tabla, activo = pasivo +
+      patrimonio + resultado; el `vat_draft` del ejemplo da saldo a favor de
+      12 434,50 (565,50 − 13 000).
+
+### Backend
+
+- [ ] **T-1104** `sales.payment_method` deja de ser texto libre: un conjunto
+      cerrado de valores admitidos —los que hoy existen, **sin renombrar lo
+      guardado**— sobre el que se define el mapeo; un valor fuera del conjunto
+      se rechaza al vender.
+
+      **Verificación:** `POST /sales` con un método desconocido responde
+      código; los reportes de métodos de pago dan lo mismo que antes.
+
+- [ ] **T-1105** Puerto `Ledger` con adaptador nulo y adaptador SQLAlchemy en
+      **la misma sesión**; enganche en `RegisterSale`, `RegisterReturn`,
+      `CloseCashSession`, movimientos de caja, `RegisterPurchase` y
+      `PaySupplier`. RN-59, RF-50.
+
+      **Verificación:** con el módulo apagado, `test_characterization.py` da
+      las mismas cifras; con el módulo activo, una venta deja un
+      `journal_entries` con `source_type = 'sale'` y el índice único impide el
+      segundo; sin la cuenta `cash` en el mapeo, la línea va a 1.9.99 **y la
+      venta se confirma**.
+
+- [ ] **T-1106** `unit_cost` congelado en `sale_details` al vender, desde
+      `products.cost`; `NULL` si el producto no tiene costo. RN-63.
+
+      **Verificación:** vender, comprar más caro, y la línea vendida conserva
+      su costo; `post_sale` de una línea sin costo no asienta el par costo /
+      inventario.
+
+- [ ] **T-1107** `ActivateAccounting`: la plantilla de plan §13.8, el mapeo por
+      omisión completo, el periodo de la fecha de inicio y el asiento de
+      apertura; `accounting` en `settings`. RF-47, RN-60.
+
+      **Verificación:** activar deja todas las cuentas de sistema y **ninguna
+      fila del mapeo falta**; una apertura desbalanceada responde
+      `invalid_opening_balance`; activar dos veces responde código.
+
+- [ ] **T-1108** Catálogo y mapeo: rutas, `account_is_system`,
+      `account_in_use`, y `Reclassify`. RF-48, RF-49, RN-64.
+
+      **Verificación:** borrar 1.1.01 → código; borrar una cuenta nueva sin
+      movimientos → se va; reclasificar deja 1.9.99 en cero con un asiento
+      `adjustment` que referencia al original.
+
+- [ ] **T-1109** Asientos manuales y de ajuste; periodos y `ClosePeriod` con
+      confirmación y bitácora; `period_closed`, `period_not_closeable`. RF-51,
+      RF-52, RN-61.
+
+      **Verificación:** cerrar agosto con julio abierto → código; cerrar julio
+      y luego un manual con fecha en julio → `period_closed`; `audit_log`
+      tiene el cierre con quién y cuándo.
+
+- [ ] **T-1110** Rutas de los cinco reportes y del D-104, con `format=csv`.
+      RF-53, RF-54.
+
+      **Verificación:** el CSV del diario abre y suma lo mismo que la pantalla;
+      el D-104 del mes da el débito por tarifa **igual** al desglose de ventas
+      por tarifa (RF-21) y el crédito **igual** al reporte de compras (RF-45).
+
+### Frontend
+
+- [ ] **T-1111** Pantallas de `/contabilidad` (plan §13.4): el resumen con por
+      clasificar en rojo, activación, cuentas, mapeo, asientos, periodos,
+      reportes e IVA. Quién las ve depende de la decisión del rol contador.
+
+      **Verificación:** punta a punta: activar, vender, abrir el asiento desde
+      la venta, cerrar el mes con el resumen a la vista.
+
+- [ ] **T-1112** Simulado y catálogos: doce endpoints con contrato idéntico, un
+      libro en el seed, `messages/es/accounting.json` declarado, y los siete
+      códigos en los cuatro lugares.
+
+      **Verificación:** `npm test`; `npm run check` en 0/0.
+
+### Verificación — sin esto la fase no está terminada
+
+- [ ] **T-1113** Punta a punta en una compañía que la prueba da de alta:
+      activar contabilidad, vender 3 × 1 450 en efectivo y ver el asiento que
+      balancea, comprar a crédito, abonar, cerrar caja con faltante, cerrar el
+      mes, intentar un asiento en el mes cerrado → código; el D-104 del mes
+      cuadra con los dos reportes.
+
+      **Verificación:** Playwright contra el simulado y, a mano, contra el
+      stack real; `pytest`, `npm test` y `npm run check` en verde.
+
+---
+
+## F12 · Planilla
+
+> **Qué deja.** Nómina costarricense: empleados y contratos, tasas con
+> vigencia y país, corridas que **congelan** lo que usaron, horas extra,
+> incapacidades, vacaciones, aguinaldo, liquidación, boleta, archivo para la
+> CCSS, resumen de renta retenida y el asiento de la corrida (RN-66 a RN-75,
+> RF-55 a RF-64). Plan §14.
+>
+> **De qué depende.** De F11 **solo para el asiento** (T-1206 con el `Ledger`);
+> todo lo demás no. De **T-922**, en Transversal: la boleta es la cuarta
+> plantilla de documento y hoy el PDF del backend no se cuenta.
+>
+> **Lo que no se supone.** Las cifras de la CCSS, los tramos de renta y el
+> formato del archivo del SICERE **se leen de la fuente el día que se
+> siembran** (plan §14.8), no de este documento ni del recuerdo de nadie.
+
+**Costes medidos antes de empezar** —plan §14.7—:
+
+- `test_esquema.py`: once tablas (`011`).
+- `test_tenancy.py`: cuatro tablas globales **sin** `TenantMixin`, declaradas
+  como excepción explícita como `cabys_cache`, o el guardián tumba `pytest`.
+- `test_aislamiento.py`: unas quince rutas y una bajo `/support`.
+  `test_error_codes.py`: nueve códigos. `company_dump.py`: siete viajan,
+  cuatro no.
+- `domain/payroll.py` supera a `ledger.py`; las pruebas usan un juego de tasas
+  **inventado**, para probar la aritmética y no una cifra que vence.
+- La boleta como cuarta plantilla, en los tres idiomas del documento.
+
+### Base de datos
+
+- [ ] **T-1201** Migración `011-planilla.sql` (plan §14.2) y sus modelos: las
+      cuatro tablas globales por país y las siete de la compañía;
+      `test_tenancy.py` con las excepciones; `company_dump.py` con la
+      clasificación. RN-67, RN-72.
+
+      **Verificación:** `test_esquema.py`; una consulta a `payroll_rates` sin
+      compañía en la sesión funciona y una a `employees` falla cerrado;
+      exportar y restaurar una compañía con corridas cuenta lo mismo.
+
+### Dominio
+
+- [ ] **T-1202** `domain/payroll.py`, primera mitad: `rates_at`, `gross_pay`
+      (horas extra, feriados), `employee_deductions`, `employer_charges`,
+      `projected_monthly`, `income_tax`. RN-66, RN-67, RN-73.
+
+      **Verificación:** la tabla de casos de plan §14.3 con tasas inventadas;
+      `rates_at` a una fecha sin `ivm` lanza `RatesMissing`; la quincena de
+      600 000 es 300 000; cobertura 100 %.
+
+- [ ] **T-1203** Segunda mitad: `aguinaldo`, `vacation_accrual`, `notice_days`,
+      `severance_days`, `settlement`, `sick_leave_split`. RN-69, RN-70, RN-71.
+
+      **Verificación:** doce meses de 500 000 → aguinaldo 500 000 sin rubros
+      de CCSS ni renta; 12 años de antigüedad → los días de 8; renuncia → sin
+      preaviso ni cesantía y con proporcionales; 350 días trabajados → 14 de
+      vacaciones.
+
+### Backend
+
+- [ ] **T-1204** Siembra de tasas por país: `seed_payroll_rates.py` con fuente,
+      `valid_from` y `verified_at`, **leyendo las cifras de la fuente el día
+      de correrlo**; `GET /payroll/rates?on=`; `PUT /support/payroll/rates`,
+      que inserta una fila con vigencia y nunca edita la vigente. RF-56,
+      RN-67.
+
+      **Verificación:** la prueba de la siembra suma los rubros obreros y
+      patronales y los compara con los totales publicados ese día, que guarda
+      con su fecha; intentar cambiar una fila vigente → rechazado; con
+      `verified_at` de más de seis meses, `GET` lo marca y la pantalla avisa.
+
+- [ ] **T-1205** Empleados y contratos: rutas, enlace opcional a `users`, baja
+      con fecha y causa (`employee_terminated`), y un aumento que cierra el
+      contrato y abre otro. RF-55, RN-72.
+
+      **Verificación:** `test_aislamiento.py`; dar de baja crea la corrida de
+      liquidación en borrador; una novedad para un empleado dado de baja
+      responde el código.
+
+- [ ] **T-1206** Corridas: `CreateRun`, novedades (`novelty_outside_period`),
+      `CalculateRun` que escribe líneas y rubros —el congelamiento—,
+      `ApproveRun`, `PayRun` con fecha del servidor, bitácora y `Ledger.post`
+      si contabilidad está activa. RF-57, RN-66, RN-68, RN-75.
+
+      **Verificación:** pagar; insertar una tasa nueva con `valid_from` de
+      ayer; `GET` de la corrida pagada → los rubros **no** cambian; una corrida
+      nueva → sí; editar la pagada → `run_already_paid`; con contabilidad
+      activa, `journal_entry_id` apunta a un asiento que balancea entre
+      6.1.01, 6.1.02, 2.1.03, 2.1.04, 2.1.05 y 2.1.06.
+
+- [ ] **T-1207** Boleta: la cuarta plantilla de documento, en el idioma del
+      documento (RN-29), armada **desde los rubros congelados**. RF-58, RN-66.
+
+      **Verificación:** la boleta de una corrida pagada antes de un cambio de
+      tasa muestra la tasa vieja; T-922 cuenta cuatro documentos.
+
+- [ ] **T-1208** Aguinaldo como corrida `aguinaldo`: suma lo devengado de las
+      pagadas del 1 de diciembre al 30 de noviembre y divide entre doce, sin
+      rubros de CCSS ni renta. RF-59, RN-69.
+
+      **Verificación:** doce corridas de 500 000 → 500 000 exacto; los rubros
+      de la línea son todos `earning`.
+
+- [ ] **T-1209** Vacaciones: acumulación al pagar cada corrida, disfrute como
+      novedad, saldo por empleado (`vacation_balance_exceeded`). RF-60, RN-70.
+
+      **Verificación:** 350 días trabajados → 14; disfrutar 20 → código; el
+      saldo es la suma de `vacation_movements`, no una columna.
+
+- [ ] **T-1210** Liquidación: `TerminateEmployee` deja una corrida `settlement`
+      con preaviso, cesantía, vacaciones y aguinaldo proporcionales según la
+      causa; `settlement_requires_termination`. RF-61, RN-71.
+
+      **Verificación:** los tres casos de `settlement` (renuncia, despido sin
+      causa, con causa) dan los rubros que dice la tabla; sin baja → código.
+
+- [ ] **T-1211** Archivo para la CCSS y resumen de renta retenida. **Empieza
+      por leer la especificación oficial del SICERE** y guardarla en
+      `docs/ccss/`, como los XSD en `docs/hacienda/`; el archivo sale de un
+      adaptador `CcssFileWriter` con prueba contra un ejemplo real. RF-62.
+
+      **Verificación:** el archivo del mes valida contra el ejemplo del
+      material; la renta retenida del mes es la suma de los rubros
+      `income_tax` de las corridas pagadas del mes.
+
+- [ ] **T-1212** Corrida de ajuste sobre una pagada, que la referencia y no la
+      toca. RF-63, RN-68.
+
+      **Verificación:** el ajuste tiene `adjusts_run_id`; la boleta de la
+      original no cambia; el asiento del ajuste es solo la diferencia.
+
+### Frontend
+
+- [ ] **T-1213** Pantallas de `/planilla` (plan §14.4), con el aviso de tasas
+      viejas en el resumen. RF-55 a RF-63.
+
+      **Verificación:** punta a punta: alta de empleado, contrato, corrida,
+      novedad de 4 horas extra, calcular, aprobar, pagar, imprimir la boleta.
+
+- [ ] **T-1214** Simulado y catálogos: quince endpoints con contrato idéntico,
+      dos empleados y un juego de tasas en el seed, `messages/es/payroll.json`
+      declarado, y los nueve códigos en los cuatro lugares.
+
+      **Verificación:** `npm test`; `npm run check` en 0/0.
+
+### Verificación — sin esto la fase no está terminada
+
+- [ ] **T-1215** Punta a punta en una compañía que la prueba da de alta: dos
+      empleados (mensual y quincenal), una corrida pagada; una tasa nueva con
+      vigencia futura; reimprimir → igual; la corrida siguiente → distinta;
+      aguinaldo; baja con liquidación; archivo de la CCSS; y con contabilidad
+      activa, el asiento.
+
+      **Verificación:** Playwright contra el simulado y, a mano, contra el
+      stack real; `pytest`, `npm test` y `npm run check` en verde.
+
+---
+
 ## Transversal
 
 - [x] **T-901** ~~Llevar las pruebas de punta a punta al repositorio.~~ Absorbida
@@ -2584,11 +3084,17 @@ y el guardián que los vigila.
 
 **Salieron de cerrar los tres, el 2026-09-05:**
 
-- [ ] **T-916** *(antes de F6)* Reabrir T-913 si se hace el ABM de sucursales y
-      terminales (T-608): son de las tablas con columnas en español y F6 ya va a
-      escribir su migración. Incluye subir `FORMATO` en `company_dump.py` y darle
-      un lector de compatibilidad para los respaldos anteriores, sin el cual el
-      rename los deja inservibles en silencio.
+- [ ] **T-916** *(antes de T-1001)* Reabrir T-913 si se hace el ABM de
+      sucursales y terminales (T-608): son de las tablas con columnas en
+      español. Incluye subir `FORMATO` en `company_dump.py` y darle un lector
+      de compatibilidad para los respaldos anteriores, sin el cual el rename
+      los deja inservibles en silencio.
+
+      **Decía «antes de F6» y pasó a «antes de T-1001» el 2026-09-12**, con el
+      reordenamiento: la puerta no era F6 sino **la primera migración que se
+      escriba**, y ahora esa es la de F10. El caso además creció: T-1001 le
+      pone a `plans` tres columnas en inglés al lado de seis en español, así
+      que la mezcla ya no es solo la de `branches` y `terminals`.
 - [ ] **T-917** El guardián de texto suelto **no lee el `<script>` de un
       `.svelte`**: `revisar()` recorre solo el marcado y `revisarTs()` solo abre
       archivos `.ts`. La consecuencia es que los sumideros de `toasts.*` son casi

@@ -4,7 +4,7 @@
 > construye. El cómo está en [plan.md](plan.md) y el trabajo concreto en
 > [task.md](task.md).
 >
-> Actualizado: 2026-09-06 · Estado: vigente
+> Actualizado: 2026-09-11 · Estado: vigente
 
 ---
 
@@ -81,6 +81,28 @@ gratis para siempre es lo peor que le puede pasar al negocio.
 un cliente se le pide a su administrador, o se le crea una membresía de verdad
 —que se ve en la lista de usuarios y no depende de que nadie se acuerde—.
 
+### Módulos
+
+Compras, contabilidad y planilla no son parte del POS: son **módulos** que un
+plan incluye o no, como ya pasa con la factura electrónica
+(`plans.factura_electronica`). Un abarrotes que solo quiere cobrar no tiene por
+qué ver un libro mayor, y el producto tiene que poder cobrarlos aparte.
+
+**RN-49.** Un módulo se activa **por plan** y se aplica **en el servidor**. Una
+compañía cuyo plan no incluye el módulo recibe un código —no un redirect— en
+cualquier escritura de sus rutas; la navegación del POS lo esconde, pero
+esconderlo no es control de acceso (§8, regla 3).
+
+**RN-50.** Apagar un módulo **no borra nada**: lo deja en solo lectura. Los
+libros de una compañía que bajó de plan siguen siendo su respaldo ante Hacienda
+y las boletas de una planilla siguen siendo la prueba de lo pagado; el plan
+decide qué se puede seguir escribiendo, no qué existió. Lo que se lee y se
+exporta, se lee y se exporta siempre.
+
+**RN-51.** El plan dice qué módulos incluye; quién lo cambia es soporte, y el
+cambio ya queda en bitácora (RF-7). No hay un interruptor por compañía aparte
+del plan: dos sitios para la misma verdad es donde se separan.
+
 ---
 
 ## 3. Actores
@@ -133,6 +155,14 @@ una compañía no puede terminar en la factura de otra.
   ambiente, y la elección del ambiente en el que se trabaja.
 - Sucursales y terminales, con su numeración, **continuando la que el negocio ya
   traía** si viene de otro sistema.
+- **Compras y cuentas por pagar** (F10, módulo por plan): proveedores, la
+  compra desde el XML de Hacienda con su impuesto por línea, condición de
+  pago, abonos y saldos.
+- **Contabilidad** (F11, módulo por plan): partida doble con asientos
+  automáticos desde lo que el POS ya registra, periodos, libros y borrador
+  del D-104.
+- **Planilla** (F12, módulo por plan): empleados, corridas con las tasas
+  congeladas, aguinaldo, vacaciones, liquidación y el archivo para la CCSS.
 - Lo ya construido: ventas, caja, devoluciones, inventario y entradas,
   clientes, usuarios, reportes, configuración, tres plantillas de documento.
 
@@ -146,7 +176,15 @@ una compañía no puede terminar en la factura de otra.
 - Categorías de más de dos niveles.
 - Aplicación móvil.
 - Múltiples bodegas por compañía.
-- Compras y cuentas por pagar.
+- Devoluciones a proveedor y notas de crédito recibidas. F10 deja la compra
+  con su documento, que es lo que una nota de crédito necesita referenciar.
+- Compras de servicios y gastos sin mercadería. Van como asiento manual en
+  contabilidad hasta que haya un caso que pida más.
+- Activos fijos y depreciación, conciliación bancaria, presupuestos y
+  consolidación entre las compañías de un afiliado.
+- Planilla de servicios profesionales, pago de planilla desde la caja del
+  POS, y planilla de otro país: las tasas se modelan por país (RN-67), pero
+  solo se siembra Costa Rica.
 
 ### Nunca
 
@@ -454,6 +492,155 @@ agradecimiento del tiquete, la leyenda legal—: un texto que se manda de fábri
 en español sale en español en la factura de una compañía brasileña. Se siembran
 al dar de alta la compañía, que es cuando se conoce su idioma (RF-6).
 
+### 5.7 Compras y cuentas por pagar
+
+Hoy una entrada de mercadería sabe qué entró, cuánto costó y quién la cargó
+(`stock_entries`), y hasta guarda el nombre del proveedor y el número de su
+factura como texto. Lo que no sabe es lo que un negocio necesita al final del
+mes: **a quién le debe, cuánto y desde cuándo**, y cuánto IVA pagó en esas
+compras. Sin eso no hay crédito fiscal, y sin crédito fiscal el D-104 sale mal
+y el estado de resultados no tiene lado de costos. Por eso compras deja de
+estar en «no entra todavía»: es el prerrequisito de contabilidad.
+
+**RN-52.** Una compra **es** una entrada de mercadería que sabe tres cosas
+más: a quién se le compró, con qué documento y en qué condición de pago. Una
+entrada sin proveedor sigue siendo una entrada —las que ya existen, las de
+ajuste— y no genera cuenta por pagar ni crédito fiscal.
+
+**RN-53.** El impuesto de una compra es **el que dice el documento del
+proveedor**, línea por línea. No se recalcula desde la tarifa del producto: el
+crédito fiscal es lo que se pagó, no lo que se habría cobrado. Cuando la tarifa
+del documento difiere de la del producto se avisa, como hace RN-11 con el
+catálogo, porque suele ser un CABYS mal asignado de un lado o del otro.
+
+**RN-54.** El costo de un producto es el **promedio ponderado móvil** de sus
+compras, recalculado al confirmar cada una. Con 10 unidades a ₡100 en
+existencia, comprar 10 a ₡120 deja el costo en ₡110; con existencias en cero o
+negativas, el costo pasa a ser el de la compra. Hoy el producto no tiene costo:
+la columna nace acá.
+
+**RN-55.** Un abono se aplica a **una compra** y no supera su saldo. El saldo
+de un proveedor es la suma de los saldos de sus compras, no un número aparte
+que haya que mantener cuadrado.
+
+**RN-56.** Un pago en efectivo a un proveedor **sale de la caja abierta** y
+queda como movimiento de caja. Sin caja abierta no hay pago en efectivo: se
+paga por transferencia o se abre la caja. Es la regla 5 de §8 vista desde la
+salida de plata: lo que no está en ningún turno no aparece en ningún arqueo.
+
+**RN-57.** Una compra confirmada **no se edita**. Se anula con motivo y
+bitácora mientras no tenga abonos, y la anulación revierte las existencias y
+la cuenta por pagar. El costo promedio **no se deshace**: recalcularlo hacia
+atrás exige rehacer todas las compras posteriores del producto, y la siguiente
+compra lo corrige sola. Está explicado en plan.md §12.
+
+### 5.8 Contabilidad
+
+El POS ya sabe todo lo que un asiento necesita: cuánto se vendió y con qué
+impuesto por tarifa, cómo se pagó, qué se devolvió, cuánto faltó o sobró al
+cerrar la caja, qué entró y a quién se le debe. Hoy eso sale del sistema como
+un reporte y el contador lo vuelve a escribir. Contabilidad es que **el evento
+se convierta en asiento solo**, por un mapeo, y que el libro exista adentro.
+La partida doble es universal; la plantilla de cuentas y las declaraciones son
+de Costa Rica y viven como datos.
+
+**RN-58.** Todo asiento **balancea**: la suma de débitos es igual a la de
+créditos, a dos decimales, y se comprueba en el dominio antes de guardarlo. Un
+asiento que no cuadra no es un asiento con error: no existe.
+
+**RN-59.** Los asientos automáticos los genera **el servidor, en la misma
+transacción** del evento que los origina. Si el asiento no se puede escribir,
+la venta no se confirma. Y para que eso nunca pase por un mapeo incompleto, lo
+que no tiene cuenta asignada va a **«por clasificar»**: el asiento siempre
+balancea y siempre existe; el error se ve en rojo en la pantalla del contador,
+no detiene al cajero (RNF-4).
+
+**RN-60.** La contabilidad **empieza en una fecha**, elegida al activarla, con
+un asiento de apertura de saldos iniciales. Lo anterior no se reconstruye: las
+ventas viejas no tienen costo congelado ni mapeo, y rehacerlas sería inventar
+datos.
+
+**RN-61.** Un periodo cerrado es **inmutable**. Nada se escribe con fecha
+dentro de un periodo cerrado; lo que hay que corregir se corrige con un asiento
+de ajuste en el periodo abierto, que referencia al que corrige. Cerrar queda en
+bitácora y no se deshace.
+
+**RN-62.** Un asiento usa las cuentas del mapeo **vigente al momento del
+evento** y las guarda. Cambiar el mapeo afecta lo que venga, nunca lo que ya
+está en el libro. Es RN-12 aplicada a las cuentas.
+
+**RN-63.** El costo de ventas de una línea es el costo promedio del producto
+**al momento de venderse**, congelado en la línea. Vender hoy 3 unidades con
+costo ₡110 y comprar mañana a ₡150 no cambia el costo de lo que ya se vendió.
+
+**RN-64.** Las cuentas que el mapeo necesita son **de sistema**: no se borran
+ni se desactivan. El resto se desactiva si tiene movimientos y se borra solo si
+nunca los tuvo.
+
+**RN-65.** El IVA se lleva **por tarifa**, como ya se cobra (RN-10): el débito
+fiscal sale de las ventas por tarifa y el crédito fiscal de las compras por
+tarifa (RN-53). El borrador del D-104 es una consulta sobre eso, no un cálculo
+aparte que pueda discrepar.
+
+Lo que el POS **no** hace es adivinar: una venta con tarjeta va a «tarjetas por
+cobrar» por su monto bruto, y la retención y la comisión del adquirente se
+registran cuando el banco las liquida, porque es entonces cuando se saben.
+Estimarlas al vender es asentar un número que después no coincide.
+
+### 5.9 Planilla
+
+Planilla no es una pantalla más del POS: no toca productos, ventas ni caja.
+Comparte la compañía, los usuarios y la suscripción, y tiene su propio reloj
+—la CCSS, Hacienda y el Código de Trabajo cambian las reglas con fecha— y su
+propio modo de fallar: un error en una venta se devuelve; un error en una
+boleta es un reclamo laboral del cliente. Por eso todo lo que sigue gira
+alrededor de una idea: **una corrida es reproducible**.
+
+**RN-66.** La planilla se calcula **en el servidor** con las tasas vigentes a
+la fecha de corte, y la corrida **las congela**: reimprimir la boleta de julio
+en diciembre da lo mismo aunque las tasas hayan cambiado. Es RN-12 sobre una
+superficie más grande.
+
+**RN-67.** Las tasas, los tramos y los topes son **datos con vigencia y país**,
+nunca constantes del código. Una tasa nueva es una fila con fecha, no un
+despliegue. Se siembran con fuente y fecha, y la pantalla dice de cuándo son.
+El país existe para no cerrar la puerta (F8 ya habla portugués), no para
+construir otro: solo se siembra Costa Rica.
+
+**RN-68.** Una corrida pasa por **borrador → aprobada → pagada**. Pagada no se
+edita: se corrige con una corrida de ajuste que referencia a la original. Pagar
+queda en bitácora, con quién y cuándo.
+
+**RN-69.** El aguinaldo se calcula sobre lo devengado del 1 de diciembre al 30
+de noviembre, entre doce, y **no lleva cargas ni renta**. Es la exención que
+más se olvida; el dominio la conoce y la prueba.
+
+**RN-70.** Las vacaciones se **acumulan** por tiempo trabajado y el saldo es
+visible por empleado. Se pagan al salario del momento del disfrute, no al de
+cuando se ganaron.
+
+**RN-71.** La liquidación **depende de la causa**: preaviso y cesantía solo
+cuando la ley los debe; vacaciones y aguinaldo proporcionales, siempre. La
+tabla de cesantía es un dato con vigencia (RN-67), y la causa queda escrita.
+
+**RN-72.** Un empleado **no es un usuario**. Existe aparte y puede enlazarse a
+uno: la cajera es las dos cosas, el bodeguero suele ser solo empleado. Un ex
+empleado no se borra: se da de baja con fecha y causa, que es lo que la
+liquidación y la planilla de la CCSS necesitan.
+
+**RN-73.** El impuesto al salario se retiene **por tramos mensuales** sobre el
+salario del mes —proyectado cuando la corrida es quincenal o semanal— menos los
+créditos fiscales. Los tramos y los créditos son datos con vigencia.
+
+**RN-74.** La planilla **no mueve la caja del POS**. Se paga por transferencia
+o se marca pagada; lo que salga de la gaveta para pagarla se anota como retiro
+con motivo, como hoy. Mezclar la nómina con el arqueo es la forma más rápida de
+que ninguno de los dos cuadre.
+
+**RN-75.** Con contabilidad activa, pagar una corrida **genera su asiento**:
+gasto de salarios, gasto de cargas patronales, retenciones por pagar a la CCSS
+y a Hacienda, y salarios por pagar. Sin contabilidad, no pasa nada más.
+
 ## 6. Requisitos funcionales
 
 ### Multiempresa
@@ -544,6 +731,80 @@ al dar de alta la compañía, que es cuando se conoce su idioma (RF-6).
 - **RF-36** Reintentar a mano un documento detenido, después de arreglar lo que
   lo detuvo.
 
+### Módulos por plan
+
+- **RF-39** Soporte ve y edita qué módulos incluye cada plan, y el listado de
+  compañías (RF-5) muestra los de cada una.
+- **RF-40** El POS muestra en la navegación solo los módulos del plan, y toda
+  escritura de un módulo fuera del plan responde con el código
+  `module_not_in_plan`. Las lecturas siguen (RN-50).
+
+### Compras y cuentas por pagar
+
+- **RF-41** Proveedores: alta y edición con tipo y número de identificación de
+  Hacienda, correo, teléfono y condición de pago habitual. Se desactivan, no
+  se borran.
+- **RF-42** Registrar una compra desde el XML de Hacienda —proveedor,
+  documento, condición de pago y líneas con su impuesto salen del archivo, y
+  el proveedor se crea si no existe—, desde Excel o a mano, con vista previa
+  antes de confirmar (§8, regla 6).
+- **RF-43** Aviso cuando la tarifa de una línea del documento difiere de la del
+  producto. RN-53.
+- **RF-44** Cuentas por pagar: saldo por proveedor y por compra, abonos con
+  método y fecha del servidor, y antigüedad de saldos (0–30, 31–60, 61–90, más
+  de 90 días).
+- **RF-45** Reporte de compras por periodo con base e impuesto **por tarifa**:
+  el crédito fiscal del mes.
+- **RF-46** Anular una compra sin abonos, con motivo y bitácora. RN-57.
+
+### Contabilidad
+
+- **RF-47** Activar contabilidad: elegir la plantilla de catálogo, la fecha de
+  inicio y los saldos iniciales. Siembra el catálogo y el mapeo por omisión y
+  escribe el asiento de apertura. RN-60.
+- **RF-48** Catálogo de cuentas: ver, crear, renombrar, desactivar; las de
+  sistema se distinguen. RN-64.
+- **RF-49** Mapeo evento → cuentas, editable, con lo que falta en rojo y el
+  saldo de «por clasificar» a la vista.
+- **RF-50** Asientos automáticos por venta —según su método de pago—,
+  devolución, cierre de caja con su diferencia, movimiento de caja, compra y
+  abono a proveedor. Cada asiento enlaza al documento que lo originó.
+- **RF-51** Asientos manuales y de ajuste, con quién y cuándo; los de ajuste
+  referencian al asiento que corrigen. RN-61.
+- **RF-52** Cerrar el mes, con el resumen del periodo a la vista, confirmación
+  y bitácora. El siguiente queda abierto.
+- **RF-53** Libro diario, mayor por cuenta, balance de comprobación, estado de
+  resultados y balance general por periodo, exportables a CSV.
+- **RF-54** Borrador del D-104: base e impuesto por tarifa de ventas y compras
+  del mes, y el saldo a pagar o a favor. RN-65.
+
+### Planilla
+
+- **RF-55** Empleados: alta con datos de la CCSS y cuenta bancaria, contrato
+  (salario, jornada, periodicidad), enlace opcional a un usuario, y baja con
+  fecha y causa. RN-72.
+- **RF-56** Tablas de tasas, tramos y créditos con vigencia, visibles para la
+  compañía con su fecha y fuente. Las actualiza soporte para todos; la compañía
+  solo edita lo que es suyo: la póliza de riesgos del trabajo y el aporte a la
+  asociación solidarista. RN-67.
+- **RF-57** Corrida: crear por periodo, cargar novedades —horas extra,
+  incapacidades, vacaciones disfrutadas, deducciones—, calcular, ver por
+  empleado el bruto, cada rubro obrero, la renta, el neto y el costo patronal,
+  aprobar y pagar. RN-66, RN-68.
+- **RF-58** Boleta de pago imprimible por empleado, con la plantilla de
+  documento de la compañía.
+- **RF-59** Aguinaldo: corrida especial con el cálculo por empleado y lo
+  devengado que lo respalda. RN-69.
+- **RF-60** Vacaciones: saldo por empleado y registro de días disfrutados o
+  pagados. RN-70.
+- **RF-61** Liquidación al dar de baja: desglose por rubro según la causa, e
+  impresión. RN-71.
+- **RF-62** Archivo de la planilla del mes para la CCSS y resumen de renta
+  retenida, insumo de la declaración mensual.
+- **RF-63** Corrida de ajuste sobre una pagada. RN-68.
+- **RF-64** Asiento de la corrida pagada cuando contabilidad está activa.
+  RN-75.
+
 ---
 
 ## 7. Requisitos no funcionales
@@ -615,6 +876,18 @@ Y tres que se adoptaron el 2026-08-16, con el mismo rango:
 | **Soporte** | Rol sin compañía que administra la plataforma. |
 | **Entrar como** | Que soporte tome la vista de una compañía, con bitácora. |
 | **BFF** | El servidor de SvelteKit, que habla con FastAPI. El navegador nunca lo hace. |
+| **Módulo** | Compras, contabilidad o planilla: lo que un plan incluye o no. Se aplica en el servidor. |
+| **Proveedor** | A quién se le compra. Con identificación de Hacienda, porque su factura la lleva. |
+| **Cuenta por pagar** | El saldo de una compra a crédito: total menos abonos. |
+| **Asiento** | Un movimiento contable: líneas al débito y al crédito que suman igual. |
+| **Mapeo** | Qué cuentas usa cada evento del POS al convertirse en asiento. |
+| **Por clasificar** | La cuenta a la que va lo que no tiene cuenta en el mapeo. Su saldo es una alerta. |
+| **Periodo** | Un mes contable. Abierto se escribe; cerrado, no. |
+| **Corrida** | Un cálculo de planilla para un periodo, con las tasas que usó congeladas. |
+| **Novedad** | Lo que cambia una corrida respecto del contrato: horas extra, incapacidad, deducción. |
+| **Boleta** | El comprobante de pago que recibe el empleado. |
+| **SICERE** | El sistema de la CCSS donde se presenta la planilla. |
+| **D-104** | La declaración mensual del IVA. |
 
 ---
 
@@ -625,8 +898,18 @@ con arqueo, devoluciones con reposición, inventario, entradas por manual/Excel/
 XML de Hacienda, clientes, usuarios, reportes, configuración con moneda,
 impuesto, marca y tres plantillas de documento.
 
-**Por construir**: lo marcado **RF-22 a RF-26 y RF-29 a RF-38**. De RF-1 a
-RF-21 y RF-27 y RF-28 ya están construidos —F2 a F5 y F8—; el detalle de qué
-cerró cada fase está en `progress.json`.
+**Por construir**: lo marcado **RF-22 a RF-26 y RF-29 a RF-38** (F6 y F7), y
+los tres módulos por plan, **RF-39 a RF-64** (F10 a F12). De RF-1 a RF-21 y
+RF-27 y RF-28 ya están construidos —F2 a F5 y F8—; el detalle de qué cerró
+cada fase está en `progress.json`.
+
+Compras salió de «no entra todavía» el 2026-09-11, no porque cambiara de
+prioridad sino porque es **prerrequisito de contabilidad**: el débito fiscal
+del IVA ya existe desde F5 y el crédito fiscal sale de las compras.
+
+El **orden de ejecución** es F10 → F11 → F6 → F7 → F12, que no es el de los
+números; está argumentado en [plan.md §9](plan.md). Emitir es obligatorio y
+por eso mismo todos los prospectos ya lo resolvieron antes de conocernos:
+gana ventas lo que nadie está obligado a tener.
 
 **Deuda conocida**: en `progress.json` → `pendientes`.
