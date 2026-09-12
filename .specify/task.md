@@ -2560,24 +2560,47 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ### Base de datos
 
-- [ ] **T-1005** Migración `009-compras.sql` (plan §12.2) y sus modelos:
+- [x] **T-1005** Migración `009-compras.sql` (plan §12.2) y sus modelos:
       `suppliers`, `supplier_payments`, las columnas de `stock_entries` y
       `stock_entry_details`, y `products.cost`. `company_dump.py`: las dos
       tablas viajan. RN-52, RN-54.
 
-      **Verificación:** `test_esquema.py`; `test_respaldo_compania.py` exporta
-      y restaura una compañía con proveedores y abonos y cuenta lo mismo de
-      los dos lados.
+      **Hecho el 2026-09-12.** En `company_dump.py` el orden importa y no es
+      alfabético: `suppliers` va **antes** de `stock_entries` —una entrada
+      puede referenciar uno— y `supplier_payments` al final de todo, porque
+      referencia la compra y el movimiento de caja.
 
-### Dominio
+      Dos cosas que el guardián de esquema corrigió: `server_default="0"`
+      emite `'0'` **con comillas** y hay que escribir `server_default=text("0")`
+      para que diga lo mismo que la migración; y `is_active` tiene que ser
+      `Boolean` y no `Integer` para dar `TINYINT(1)`.
 
-- [ ] **T-1006** `domain/purchases.py` con la tabla de casos de plan §12.3:
+      **Verificación:** `test_esquema.py` en verde, y la migración se corrió
+      contra el MySQL de la pila de pruebas —no solo se leyó—, así que el SQL
+      está comprobado además del modelo.
+
+- [x] **T-1006** `domain/purchases.py` con la tabla de casos de plan §12.3:
       `weighted_average_cost`, `purchase_totals`, `remaining_balance`,
       `apply_payment`, `aging_bucket`. RN-53, RN-54, RN-55.
 
-      **Verificación:** `pytest tests/domain/test_purchases.py` con los casos
-      numéricos del plan —10 a 100 + 10 a 120 → 110; existencia −3 + 10 a 50 →
-      50; 1 001 sobre 1 000 → `PaymentExceedsBalance`—; cobertura 100 %.
+      **Hecho el 2026-09-12.** `purchase_totals` devuelve además el desglose
+      **por tarifa**, ordenado, que es el crédito fiscal del D-104 (RF-45): sin
+      ordenarlo, el orden lo decidiría en qué fila del documento apareció cada
+      tarifa y el reporte del mes saldría distinto cada vez.
+
+      `remaining_balance` nunca devuelve negativo aunque `apply_payment` ya lo
+      impida: es la red por si una fila vieja trae un abono de más, que se
+      sumaría al saldo del proveedor y le rebajaría lo que sí debe en otra
+      factura.
+
+      **Verificación:** `pytest tests/domain/test_purchases.py`, 31 pruebas,
+      cobertura 100 %. Los casos numéricos del plan dan: 10 a 100 + 10 a 120 →
+      110; existencia −3 + 10 a 50 → 50; 1 001 sobre 1 000 →
+      `PaymentExceedsBalance`; y un documento con 13 %, 1 % y exento desglosa
+      en tres tarifas sin promediarlas.
+
+### Dominio
+
 
 ### Backend
 

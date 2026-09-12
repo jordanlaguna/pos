@@ -250,6 +250,21 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   `docker compose -f docker-compose.test.yml up -d --build` o `pytest` seguirá
   probando el código de la última construcción. El síntoma engaña: la prueba
   nueva falla señalando lo que uno acaba de escribir.
+- **Y ese `--build` no toca la base: `create_all` crea tablas, no las altera.**
+  Reconstruye `fastapi` y deja `db` corriendo con el esquema que ya tenía, así
+  que una migración que agrega columnas **no llega** y salen decenas de
+  `Unknown column 'products.cost' in 'field list'` por toda la batería. La
+  salida no es tumbar la pila: se le aplica la migración, que además comprueba
+  el SQL contra MySQL de verdad —`create_all` no lo haría—:
+
+  ```bash
+  docker compose -f docker-compose.test.yml exec -T db \
+      sh -c 'mysql -uroot -ptest posdb_test' < migrations/00N-loquesea.sql
+  ```
+
+  Y si el modelo nuevo no se importa en `app/main.py`, SQLAlchemy no conoce la
+  tabla: una foránea hacia ella falla con «could not find table … with which to
+  generate a foreign key», en un 500 de un endpoint que no tiene nada que ver.
 - **El estado del modo simulado se guarda en `.data/mock-db.json`.** Un archivo
   de una versión anterior del seed sobrevive al cambio, así que al tocar el seed
   hay que subir `SEED_VERSION` en `mock/db.ts`; si no, la prueba de punta a punta

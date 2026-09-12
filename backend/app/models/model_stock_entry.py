@@ -1,4 +1,15 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import (
+    CHAR,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    text,
+)
 
 from app.database.database import Base
 from app.utils.tenancy import TenantMixin
@@ -21,6 +32,9 @@ class StockEntry(TenantMixin, Base):
     __table_args__ = (
         Index("idx_stock_entries_created", "created_at"),
         Index("idx_stock_entries_document", "document_number"),
+        # Las dos de F10: el estado de cuenta de un proveedor y lo que vence.
+        Index("idx_stock_entries_supplier", "company_id", "supplier_id", "status"),
+        Index("idx_stock_entries_due", "company_id", "due_date"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -36,7 +50,29 @@ class StockEntry(TenantMixin, Base):
     notes = Column(String(255), nullable=True)
     # 'aplicada' | 'anulada'
     status = Column(String(20), nullable=False, default="aplicada")
+    # Subtotal + impuesto. Existe desde antes de F10 y conserva su significado.
     total_cost = Column(Numeric(12, 2), nullable=False, default=0)
+
+    # ------------------------------------------------------- compra (F10)
+    #
+    # Lo que convierte una entrada en una compra (RN-52). En nulo sigue siendo
+    # una entrada —las que ya existen, las de ajuste— y no genera cuenta por
+    # pagar ni crédito fiscal. `supplier` (texto) se conserva para leer el
+    # histórico y para que una compra recuerde el nombre aunque el proveedor se
+    # desactive.
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    #: La clave de 50 dígitos del comprobante del proveedor, cuando vino de un
+    #: XML. `document_number` sigue siendo el consecutivo.
+    document_key = Column(CHAR(50), nullable=True)
+    #: La fecha del documento, que no es la de carga: una factura del día 28 se
+    #: puede estar cargando el 3 del mes siguiente, y el IVA es del 28.
+    document_date = Column(Date, nullable=True)
+    #: 'cash' | 'credit'
+    payment_terms = Column(String(10), nullable=False, default="cash", server_default="cash")
+    due_date = Column(Date, nullable=True)
+    #: Sin impuesto, y el impuesto, los dos del documento del proveedor (RN-53).
+    subtotal = Column(Numeric(12, 2), nullable=False, default=0, server_default=text("0"))
+    tax = Column(Numeric(12, 2), nullable=False, default=0, server_default=text("0"))
 
 
 class StockEntryDetail(TenantMixin, Base):
@@ -53,3 +89,9 @@ class StockEntryDetail(TenantMixin, Base):
     # Lo que costó comprarla. No es el precio de venta del producto.
     unit_cost = Column(Numeric(10, 2), nullable=False, default=0)
     subtotal = Column(Numeric(12, 2), nullable=False, default=0)
+
+    # El impuesto de la línea, **tal como lo dice el documento del proveedor**
+    # (RN-53): es el crédito fiscal. No se recalcula desde la tarifa del
+    # producto, porque lo que se acredita es lo que se pagó.
+    tax_rate = Column(Numeric(5, 2), nullable=False, default=0, server_default=text("0"))
+    tax_amount = Column(Numeric(12, 2), nullable=False, default=0, server_default=text("0"))

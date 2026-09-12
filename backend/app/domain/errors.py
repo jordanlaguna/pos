@@ -173,6 +173,19 @@ class DuplicateDocument(DomainError):
         self.document_number = document_number
 
 
+class PaymentExceedsBalance(DomainError):
+    """Se quiso abonar más de lo que se debe de esa compra (RN-55).
+
+    No se ajusta al saldo en silencio: o es un dedo de más, o el abono va a otra
+    factura, y las dos las arregla una persona.
+    """
+
+    def __init__(self, balance: str, requested: str) -> None:
+        super().__init__(f"el saldo es {balance} y se quieren abonar {requested}")
+        self.balance = balance
+        self.requested = requested
+
+
 class BarcodeTaken(DomainError):
     """Se quiso crear un producto con un código que ya existe."""
 

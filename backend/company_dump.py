@@ -66,6 +66,7 @@ import app.models.model_sale_details  # noqa: F401
 import app.models.model_sales  # noqa: F401
 import app.models.model_settings  # noqa: F401
 import app.models.model_stock_entry  # noqa: F401
+import app.models.model_supplier  # noqa: F401
 import app.models.model_user  # noqa: F401
 
 FORMATO = 1
@@ -88,8 +89,14 @@ TABLAS_DE_COMPANIA = [
     "return_details",
     "cash_sessions",
     "cash_movements",
+    # Los proveedores van **antes** que las entradas: desde F10 una entrada
+    # puede referenciar a uno, y el orden de esta lista es el de inserción.
+    "suppliers",
     "stock_entries",
     "stock_entry_details",
+    # Y los abonos al final de todo: referencian la compra y el movimiento de
+    # caja, que para entonces ya están.
+    "supplier_payments",
     "settings",
     "audit_log",
 ]

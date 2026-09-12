@@ -26,6 +26,7 @@ from app.models.model_sale_details import SaleDetail  # noqa: F401
 from app.models.model_sales import Sale  # noqa: F401
 from app.models.model_settings import Settings  # noqa: F401
 from app.models.model_stock_entry import StockEntry, StockEntryDetail  # noqa: F401
+from app.models.model_supplier import Supplier, SupplierPayment  # noqa: F401
 from app.models.model_user import User  # noqa: F401
 from app.router import (
     auth_routes,

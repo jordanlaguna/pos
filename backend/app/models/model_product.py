@@ -8,6 +8,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    text,
 )
 
 from app.database.database import Base
@@ -22,6 +23,16 @@ class Product(TenantMixin, Base):
     description = Column(String(255), nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
     stock = Column(Integer, nullable=False)
+
+    # Lo que cuesta, que no es lo que vale (F10, RN-54). Promedio ponderado
+    # móvil, recalculado al confirmar cada compra: con 10 unidades a ₡100 en
+    # existencia, comprar 10 a ₡120 lo deja en ₡110.
+    #
+    # Nace en cero para todo lo que ya existe, y eso es lo cierto: de esos
+    # productos no se sabe cuánto costaron. La primera compra lo establece. El
+    # costo de ventas de F11 usa el congelado en la línea (RN-63), así que un
+    # cero de hoy no se cuela en un asiento de mañana.
+    cost = Column(Numeric(12, 2), nullable=False, default=0, server_default=text("0"))
     # `index=True` es redundante —`uq_products_company_barcode` ya responde
     # `WHERE company_id = ? AND barcode = ?` por su prefijo izquierdo, y toda
     # lectura del escáner lleva la compañía porque se la pone el filtro de
