@@ -16,7 +16,7 @@
 import type { CheckoutRejection } from '$lib/application/checkout';
 import type { Errors, ValidationError } from '$lib/application/validation';
 import type { CartRejection } from '$lib/domain/cart';
-import type { ImportFailure, ImportNote, Subscription } from '$lib/domain/types';
+import type { ImportFailure, ImportNote, ModuleName, Subscription } from '$lib/domain/types';
 import { m } from '$lib/paraglide/messages.js';
 import { formatDate } from './format';
 
@@ -773,6 +773,29 @@ export function companyStateLabel(state: string): string {
 }
 
 /**
+ * El nombre de un módulo, para el panel y la navegación (RF-39, RF-40).
+ *
+ * El backend lo manda en inglés —es el nombre de la columna— y acá se vuelve el
+ * de la pantalla. `never` en el `default` es lo que hace que agregar un módulo
+ * a `MODULES` sin su rótulo **no compile**, en vez de sacar «payroll» en medio
+ * de una frase en español.
+ */
+export function moduleLabel(module: ModuleName): string {
+	switch (module) {
+		case 'purchases':
+			return m.module_purchases();
+		case 'accounting':
+			return m.module_accounting();
+		case 'payroll':
+			return m.module_payroll();
+		default: {
+			const nunca: never = module;
+			return nunca;
+		}
+	}
+}
+
+/**
  * El aviso de suscripción que ve el cliente (RF-11, T-308).
  *
  * Recibe el estado ya evaluado por el backend —los días, la gracia y el código
@@ -833,6 +856,8 @@ export function auditActionLabel(accion: string): string {
 			return m.admin_action_alta_compania();
 		case 'suscripcion':
 			return m.admin_action_suscripcion();
+		case 'plan_modulos':
+			return m.admin_action_plan_modulos();
 		case 'entrar_como':
 			return m.admin_action_entrar_como();
 		default:

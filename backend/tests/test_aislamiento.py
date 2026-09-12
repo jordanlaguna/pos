@@ -559,6 +559,10 @@ FUERA_DE_LA_BATERIA = {
     # exige 403 con el token de un administrador (T-302).
     "/support/me": "panel de soporte; el 403 al token de compañía está en test_soporte.py",
     "/support/plans": "panel de soporte; ídem",
+    "/support/plans/{plan_id}/modules": (
+        "panel de soporte; ídem. Y además no es de una compañía: edita el "
+        "catálogo de planes, que es común a todas (T-1003)."
+    ),
     "/support/companies": "panel de soporte; ídem, y cruzar compañías es su función",
     "/support/companies/{company_id}": "panel de soporte; ídem",
     "/support/companies/{company_id}/subscription": "panel de soporte; ídem",

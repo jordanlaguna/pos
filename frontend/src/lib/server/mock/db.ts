@@ -49,6 +49,10 @@ export interface MockPlan {
 	max_terminales: number;
 	max_usuarios: number;
 	factura_electronica: boolean;
+	/** Los módulos que incluye (RN-49). Los tres siempre, también apagados. */
+	purchases: boolean;
+	accounting: boolean;
+	payroll: boolean;
 }
 
 /** Una línea de la bitácora (RF-9). */
@@ -193,7 +197,7 @@ const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
 // Tres quedan sin clasificar **a propósito** —yogurt, natilla y maní—: es el
 // estado en que llega un catálogo heredado, y sin él la asignación en lote no
 // tiene nada que hacer y el aviso de «sin clasificar» del carrito no se ve nunca.
-const SEED_VERSION = 7;
+const SEED_VERSION = 8;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -401,7 +405,12 @@ const PLAN_SEED: MockPlan[] = [
 		max_sucursales: 1,
 		max_terminales: 1,
 		max_usuarios: 3,
-		factura_electronica: false
+		// El plan de la segunda compañía del demo: sin ningún módulo. Es lo que
+		// permite comprobar el rechazo de RN-49 sin dar de alta nada (T-1004).
+		factura_electronica: false,
+		purchases: false,
+		accounting: false,
+		payroll: false
 	},
 	{
 		id: 2,
@@ -410,7 +419,11 @@ const PLAN_SEED: MockPlan[] = [
 		max_sucursales: 1,
 		max_terminales: 3,
 		max_usuarios: 10,
-		factura_electronica: false
+		factura_electronica: false,
+		// El de la primera: con los tres, para poder recorrerlos en el demo.
+		purchases: true,
+		accounting: true,
+		payroll: true
 	},
 	{
 		id: 3,
@@ -419,7 +432,10 @@ const PLAN_SEED: MockPlan[] = [
 		max_sucursales: 5,
 		max_terminales: 15,
 		max_usuarios: 40,
-		factura_electronica: true
+		factura_electronica: true,
+		purchases: true,
+		accounting: true,
+		payroll: true
 	}
 ];
 

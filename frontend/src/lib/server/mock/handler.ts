@@ -20,7 +20,7 @@ import {
 	lineTax,
 	round2
 } from '$lib/domain/money';
-import { COMPANY_STATES } from '$lib/domain/types';
+import { COMPANY_STATES, MODULES as MODULOS } from '$lib/domain/types';
 import type {
 	CashMovement,
 	CashSession,
@@ -292,6 +292,15 @@ const MINUTOS_DE_VISITA = 30;
  */
 const ESTADOS_DE_SUSCRIPCION: readonly string[] = COMPANY_STATES;
 
+/**
+ * Los módulos que incluye un plan (RN-49). Sin plan, ninguno: falla cerrado,
+ * igual que `crud_membership.modulos_de`.
+ */
+function modulosDelPlan(planId: number | undefined): Record<string, boolean> {
+	const plan = planId == null ? undefined : getRoot().plans.find((p) => p.id === planId);
+	return Object.fromEntries(MODULOS.map((nombre) => [nombre, plan?.[nombre] === true]));
+}
+
 /** Anota en la bitácora. Igual que `crud_membership.registrar` (RF-9). */
 function registrar(
 	userId: number,
@@ -502,6 +511,9 @@ route('GET', '/users/me', ({ userId, companyId, token }) => {
 		companies_available: suplantada
 			? 0
 			: opcionesDe(user.id_user).filter((o) => o.puede_entrar).length,
+		// Los módulos del plan (RF-40). Igual que `crud_membership.modulos_de`:
+		// se leen acá, en cada petición, y no viajan en el token.
+		modules: modulosDelPlan(empresa?.plan_id),
 		locale: user.locale || empresa?.locale || 'es',
 		user_locale: user.locale ?? null,
 		company_locale: empresa?.locale || 'es',
@@ -2085,6 +2097,50 @@ route('GET', '/support/me', ({ token }) => {
 });
 
 route('GET', '/support/plans', () => getRoot().plans);
+
+/**
+ * Los módulos de un plan (RF-39, T-1003).
+ *
+ * Los tres llegan siempre, no un parche: una casilla sin marcar no viaja en el
+ * formulario, así que con un parche «la desmarcó» y «no la tocó» se verían igual.
+ *
+ * Alcanza a todas las compañías del plan, y por eso la bitácora anota cuántas
+ * son —igual que `crud_support.cambiar_modulos`—.
+ */
+route('PUT', '/support/plans/:id/modules', ({ params, body, token }) => {
+	const soporte = usuarioDelToken(token);
+	const planId = Number(params[0]);
+	const plan = getRoot().plans.find((p) => p.id === planId);
+	if (!plan) fail(404, 'plan_not_found', { plan_id: planId });
+
+	const partes: string[] = [];
+	for (const nombre of MODULOS) {
+		const pedido = Boolean(body?.[nombre]);
+		if (plan[nombre] !== pedido) {
+			partes.push(`${nombre} ${plan[nombre] ? 'sí' : 'no'} → ${pedido ? 'sí' : 'no'}`);
+		}
+		plan[nombre] = pedido;
+	}
+
+	/*
+	 * Se registra **siempre**, también cuando no cambió nada, igual que
+	 * `cambiar_suscripcion`: haber abierto el panel y pulsado guardar es un hecho,
+	 * y saber quién estuvo tocando los planes es justo para lo que sirve.
+	 */
+	const alcanzadas = getRoot().companies.filter((c) => c.plan_id === plan.id).length;
+	registrar(
+		soporte.id_user,
+		// Sin compañía: el cambio es del catálogo, no de un cliente.
+		null,
+		'plan_modulos',
+		partes.length > 0
+			? `${plan.nombre}: ${partes.join(', ')} (${alcanzadas} compañías)`
+			: `${plan.nombre}: sin cambios`
+	);
+	persist();
+
+	return plan;
+});
 
 route('GET', '/support/companies', () =>
 	getRoot()

@@ -2,7 +2,15 @@ import type { Cookies } from '@sveltejs/kit';
 import { error, redirect } from '@sveltejs/kit';
 import { api, ApiError } from './api';
 import { SESSION_COOKIE, SUPPORT_COOKIE } from './config';
-import type { PendingSession, Role, SessionUser, Subscription, SupportUser } from '$lib/domain/types';
+import type {
+	ModuleName,
+	Modules,
+	PendingSession,
+	Role,
+	SessionUser,
+	Subscription,
+	SupportUser
+} from '$lib/domain/types';
 
 /**
  * Sesión del POS.
@@ -206,6 +214,7 @@ export async function resolveUser(token: string | null): Promise<SessionUser | n
 			branch_code?: string | null;
 			terminal_code?: string | null;
 			companies_available?: number;
+			modules?: Partial<Modules> | null;
 			locale?: string;
 			user_locale?: string | null;
 			company_locale?: string;
@@ -225,6 +234,16 @@ export async function resolveUser(token: string | null): Promise<SessionUser | n
 			branch_code: me.branch_code ?? null,
 			terminal_code: me.terminal_code ?? null,
 			companies_available: me.companies_available ?? 1,
+			/*
+			 * Lo que no venga queda apagado. Falla cerrado: contra un backend que
+			 * todavía no manda el campo, la navegación no ofrece módulos que el
+			 * servidor va a rechazar igual.
+			 */
+			modules: {
+				purchases: me.modules?.purchases === true,
+				accounting: me.modules?.accounting === true,
+				payroll: me.modules?.payroll === true
+			},
 			locale: me.locale ?? 'es',
 			user_locale: me.user_locale ?? null,
 			company_locale: me.company_locale ?? 'es',
@@ -294,6 +313,35 @@ export function requireSoporte(locals: App.Locals, pathname = '/'): SupportUser 
 
 	const target = pathname && pathname !== '/' ? `?redirectTo=${encodeURIComponent(pathname)}` : '';
 	redirect(303, `/login${target}`);
+}
+
+/**
+ * Exige que el plan incluya este módulo (RF-40, RN-49, T-1004).
+ *
+ * Es el mismo control que `require_module` aplica en el backend, adelantado a la
+ * carga de la pantalla y a la acción. No es duplicación inútil: el backend
+ * impide el daño y esto impide el viaje —un formulario que se llena para que lo
+ * rechace el servidor al enviarlo es peor que no ofrecerlo—.
+ *
+ * **No reemplaza al del servidor.** Esconder el menú es cortesía; el control es
+ * `require_module`, que es el que ve un `curl`.
+ *
+ * En un `load` se pasa el `pathname` y en una acción no hace falta: lo que
+ * cambia es solo el 403 que se arma, no la regla.
+ */
+export function requireModule(
+	locals: App.Locals,
+	module: ModuleName,
+	pathname = '/'
+): SessionUser {
+	const user = requireUser(locals, pathname);
+	if (!user.modules[module]) error(403, { code: 'module_not_in_plan', module });
+	return user;
+}
+
+/** ¿Tiene esta sesión el módulo? Para armar la navegación, que no lanza. */
+export function hasModule(user: SessionUser | null, module: ModuleName): boolean {
+	return user?.modules?.[module] === true;
 }
 
 /**

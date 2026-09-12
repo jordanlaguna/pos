@@ -21,6 +21,14 @@ declare global {
 			 * decirle al dueño qué tiene que arreglar.
 			 */
 			state?: string;
+			/**
+			 * El otro dato con dueño: cuál módulo pidió el plan y no tiene
+			 * (`module_not_in_plan`, RN-49). Va aparte de `state` y no en un saco
+			 * genérico porque son dos códigos distintos y cada frase necesita lo
+			 * suyo; un `datos?: Record<string, unknown>` haría que agregar un
+			 * código nuevo no obligue a pensar en qué acompaña a su frase.
+			 */
+			module?: string;
 		}
 		interface Locals {
 			/** JWT emitido por FastAPI, leído de la cookie httpOnly. */

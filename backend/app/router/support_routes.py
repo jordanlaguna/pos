@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.limits import hay_lugar
 from app.domain.locale import DEFAULT_LOCALE, effective_locale, normalize_locale
+from app.domain.modules import Modules
 from app.domain.subscription import ESTADOS
 from app.models.model_user import User
 from app.schemas.schemas_support import (
@@ -35,6 +36,7 @@ from app.schemas.schemas_support import (
     ImpersonateResponse,
     NewCompany,
     NewCompanyResponse,
+    PlanModulesUpdate,
     PlanOut,
     SubscriptionUpdate,
     SupportMe,
@@ -63,6 +65,9 @@ def _plan_out(plan) -> PlanOut | None:
         max_terminales=plan.max_terminales,
         max_usuarios=plan.max_usuarios,
         factura_electronica=bool(plan.factura_electronica),
+        **Modules(
+            purchases=plan.purchases, accounting=plan.accounting, payroll=plan.payroll
+        ).as_dict(),
     )
 
 
@@ -106,10 +111,49 @@ def catalogo_de_planes(db: Session = Depends(get_db), soporte: User = Depends(re
     """El catálogo de planes, para el formulario de alta.
 
     No hay endpoint para crearlos: un plan es una decisión comercial —qué se
-    cobra y qué se deja hacer— y se escribe en la base. Cuando haga falta
-    administrarlos desde acá será su propia tarea, con su pantalla.
+    cobra y qué se deja hacer— y se escribe en la base. Lo único que sí se edita
+    desde acá son sus **módulos** (RF-39), que son la parte que se vende y se
+    deja de vender sin tocar precios ni límites.
     """
     return [_plan_out(p) for p in crud_company.planes(db)]
+
+
+@router.put("/plans/{plan_id}/modules", response_model=PlanOut)
+def cambiar_modulos_del_plan(
+    plan_id: int,
+    datos: PlanModulesUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    soporte: User = Depends(require_soporte),
+):
+    """Qué módulos incluye un plan (RF-39, T-1003).
+
+    **Alcanza a todos los clientes de ese plan**, y por eso la bitácora anota
+    cuántos son: apagar contabilidad en «Comercio» se la apaga a los catorce
+    negocios que están ahí, y dentro de seis meses la única forma de entender
+    qué pasó ese día es que el número esté escrito.
+
+    Surte efecto en el siguiente clic de cada uno, sin que nadie vuelva a entrar:
+    el plan se lee en cada petición que escribe (`require_module`) y no viaja en
+    el token, igual que el estado de la suscripción.
+    """
+    plan = crud_company.plan_por_id(db, plan_id)
+    if plan is None:
+        raise api_error(404, "plan_not_found", plan_id=plan_id)
+
+    detalle = crud_support.cambiar_modulos(db, plan, Modules(**datos.model_dump()))
+    crud_membership.registrar(
+        db,
+        user_id=soporte.id_user,
+        # Sin compañía: el cambio es del catálogo y no de un cliente. La bitácora
+        # lo admite —`company_id` es nulo cuando la acción no es sobre ninguna—.
+        company_id=None,
+        accion="plan_modulos",
+        detalle=detalle,
+        ip=_ip(request),
+    )
+    db.commit()
+    return _plan_out(plan)
 
 
 @router.get("/companies", response_model=list[CompanyOut])

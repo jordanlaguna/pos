@@ -491,6 +491,88 @@ class TestLaSuscripcion:
 
 
 # --------------------------------------------------------------------------
+# T-1003 · Los módulos de un plan (RF-39, RN-49)
+# --------------------------------------------------------------------------
+
+
+class TestLosModulosDelPlan:
+    def test_un_plan_nace_sin_ningun_modulo(self, soporte: Api, plan_id: int):
+        plan = next(p for p in soporte.ok("GET", "/support/plans") if p["id"] == plan_id)
+        # Apagados por omisión: un plan que ya existe es uno que alguien compró
+        # sin estos módulos.
+        assert (plan["purchases"], plan["accounting"], plan["payroll"]) == (False, False, False)
+
+    def test_se_encienden_y_se_apagan(self, soporte: Api, plan_id: int):
+        encendido = soporte.ok(
+            "PUT",
+            f"/support/plans/{plan_id}/modules",
+            {"purchases": True, "accounting": True, "payroll": False},
+        )
+        assert (encendido["purchases"], encendido["accounting"], encendido["payroll"]) == (
+            True,
+            True,
+            False,
+        )
+
+        # Y se apagan: el plan es el catálogo, no un interruptor de una sola vía.
+        apagado = soporte.ok(
+            "PUT",
+            f"/support/plans/{plan_id}/modules",
+            {"purchases": False, "accounting": False, "payroll": False},
+        )
+        assert apagado["purchases"] is False
+        assert apagado["accounting"] is False
+
+    def test_el_cambio_queda_en_bitacora_con_cuantas_companias_alcanza(
+        self, soporte: Api, plan_id: int
+    ):
+        soporte.ok(
+            "PUT",
+            f"/support/plans/{plan_id}/modules",
+            {"purchases": True, "accounting": False, "payroll": False},
+        )
+        lineas = soporte.ok("GET", "/support/audit?accion=plan_modulos&limite=10")["lineas"]
+        assert lineas, "el cambio de módulos tiene que quedar registrado"
+
+        # El detalle trae el antes, el después y a cuántos alcanza: sin el
+        # número, dentro de seis meses no hay forma de entender qué pasó ese día.
+        detalle = lineas[0]["detalle"]
+        assert "purchases no → sí" in detalle
+        assert "compañías" in detalle
+
+    def test_guardar_sin_cambiar_nada_se_registra_y_lo_dice(self, soporte: Api, plan_id: int):
+        apagar = {"purchases": False, "accounting": False, "payroll": False}
+        soporte.ok("PUT", f"/support/plans/{plan_id}/modules", apagar)
+        soporte.ok("PUT", f"/support/plans/{plan_id}/modules", apagar)
+
+        # Se registra igual que `cambiar_suscripcion`: haber abierto el panel y
+        # pulsado guardar es un hecho, y saber quién anduvo tocando los planes es
+        # para lo que sirve la bitácora. Lo que no hace es fingir un cambio.
+        detalle = soporte.ok("GET", "/support/audit?accion=plan_modulos&limite=1")["lineas"][0]
+        assert detalle["detalle"].endswith("sin cambios")
+
+    def test_un_plan_que_no_existe_es_404(self, soporte: Api):
+        estado, cuerpo = soporte.call(
+            "PUT",
+            "/support/plans/999999/modules",
+            {"purchases": True, "accounting": False, "payroll": False},
+        )
+        assert estado == 404
+        assert cuerpo["detail"]["code"] == "plan_not_found"
+
+    def test_el_administrador_de_una_compania_no_los_toca(self, api: Api, plan_id: int):
+        # Es la puerta de RN-4 en su segundo sentido: el token vale, y no vale
+        # para esto. 403 y no un redirect.
+        estado, cuerpo = api.call(
+            "PUT",
+            f"/support/plans/{plan_id}/modules",
+            {"purchases": True, "accounting": True, "payroll": True},
+        )
+        assert estado == 403
+        assert cuerpo["detail"]["code"] == "support_only"
+
+
+# --------------------------------------------------------------------------
 # T-306 · Entrar como (RF-8, RN-4)
 # --------------------------------------------------------------------------
 

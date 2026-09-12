@@ -71,7 +71,7 @@
 		localStorage.setItem('ventasys-menu', collapsed ? 'collapsed' : 'expanded');
 	}
 
-	const groups = $derived(visibleGroups(data.user.role));
+	const groups = $derived(visibleGroups(data.user.role, data.user.modules));
 	const currentTitle = $derived(titleFor(page.url.pathname));
 
 	/*

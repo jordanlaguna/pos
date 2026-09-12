@@ -9,6 +9,7 @@
 	"admin_nav": "Menu do painel",
 	"admin_nav_companies": "Empresas",
 	"admin_nav_audit": "Registro de atividade",
+	"admin_nav_plans": "Planos",
 	"admin_logout": "Sair",
 	"admin_back": "Voltar",
 
@@ -31,6 +32,7 @@
 	"admin_col_client": "Cliente",
 	"admin_col_company": "Negócio",
 	"admin_col_plan": "Plano",
+	"admin_col_modules": "Módulos",
 	"admin_col_state": "Estado",
 	"admin_col_expires": "Vence",
 	"admin_col_usage": "Uso",
@@ -39,6 +41,7 @@
 	"admin_open": "Abrir",
 	"admin_no_expiry": "Sem data",
 	"admin_no_plan": "Sem plano",
+	"admin_modules_none": "Nenhum",
 
 	"$comentario_uso": "Quantos dos que o plano permite já estão em uso. Com o plano sem teto não se diz «0 de -1»: diz-se quantos há e nada mais.",
 
@@ -133,6 +136,12 @@
 	"admin_subscription_derived": "O estado gravado diz «{guardado}» e a data já passou, então hoje se comporta como «{efectivo}».",
 	"admin_subscription_save": "Salvar a assinatura",
 	"admin_subscription_saved": "Assinatura atualizada.",
+	"admin_plans_title": "Planos",
+	"admin_plans_intro": "O que cada plano inclui. Os módulos são vendidos separadamente do ponto de venda.",
+	"admin_plans_warning": "Ligar ou desligar um módulo alcança todas as empresas desse plano, no próximo clique delas. Para dar a apenas uma, mude o plano dela na ficha.",
+	"admin_plan_limits": "{sucursales} filiais · {terminales} caixas · {usuarios} usuários",
+	"admin_plan_modules_save": "Salvar os módulos",
+	"admin_plan_modules_saved": "Módulos do plano atualizados.",
 	"admin_languages_title": "Idiomas",
 	"admin_company_not_found": "Não encontramos essa empresa.",
 
@@ -175,6 +184,7 @@
 	"admin_action_idioma_compania": "Mudou o idioma da empresa",
 	"admin_action_alta_compania": "Cadastrou a empresa",
 	"admin_action_suscripcion": "Mudou a assinatura",
+	"admin_action_plan_modulos": "Mudou os módulos de um plano",
 	"admin_action_entrar_como": "Entrou como a empresa",
 
 	"$comentario_avisos": "Os avisos de assinatura que o cliente vê no POS (RF-11). O da tolerância e o de somente leitura são os que custam dinheiro, então dizem o que ainda se pode fazer e não só o que aconteceu.",

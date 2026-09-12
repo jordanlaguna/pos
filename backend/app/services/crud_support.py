@@ -28,6 +28,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.domain.limits import cupo
+from app.domain.modules import MODULES, Modules
 from app.domain.subscription import Suscripcion, evaluar
 from app.models.model_company import AuditLog, Company, Plan, Terminal, UserCompany
 from app.models.model_person import Person
@@ -231,6 +232,39 @@ def cambiar_suscripcion(
         company.plan_id = plan.id
 
     return ", ".join(partes) if partes else "sin cambios"
+
+
+# --------------------------------------------------------------------------
+# Los módulos de un plan (T-1003, RF-39)
+# --------------------------------------------------------------------------
+
+
+def cambiar_modulos(db: Session, plan: Plan, modulos: Modules) -> str:
+    """Aplica los módulos del plan y devuelve el detalle para la bitácora.
+
+    El detalle trae el antes, el después y **a cuántas compañías alcanza**, que
+    es lo que lo distingue de cambiarle el plan a un cliente: acá se toca el
+    catálogo y el efecto es de todos los que están en él.
+
+    Sin cambios no miente: dice «sin cambios» en vez de inventar una línea, igual
+    que `cambiar_suscripcion`.
+    """
+    partes = [
+        f"{nombre} {'sí' if getattr(plan, nombre) else 'no'} → "
+        f"{'sí' if modulos.includes(nombre) else 'no'}"
+        for nombre in MODULES
+        if bool(getattr(plan, nombre)) != modulos.includes(nombre)
+    ]
+    for nombre in MODULES:
+        setattr(plan, nombre, modulos.includes(nombre))
+
+    if not partes:
+        return f"{plan.nombre}: sin cambios"
+
+    alcanzadas = (
+        sin_filtro(db.query(func.count(Company.id)).filter(Company.plan_id == plan.id))
+    ).scalar() or 0
+    return f"{plan.nombre}: {', '.join(partes)} ({alcanzadas} compañías)"
 
 
 # --------------------------------------------------------------------------

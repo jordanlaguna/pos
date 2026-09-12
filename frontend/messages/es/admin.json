@@ -9,6 +9,7 @@
 	"admin_nav": "Menú del panel",
 	"admin_nav_companies": "Compañías",
 	"admin_nav_audit": "Bitácora",
+	"admin_nav_plans": "Planes",
 	"admin_logout": "Cerrar sesión",
 	"admin_back": "Volver",
 
@@ -31,6 +32,7 @@
 	"admin_col_client": "Cliente",
 	"admin_col_company": "Negocio",
 	"admin_col_plan": "Plan",
+	"admin_col_modules": "Módulos",
 	"admin_col_state": "Estado",
 	"admin_col_expires": "Vence",
 	"admin_col_usage": "Uso",
@@ -39,6 +41,7 @@
 	"admin_open": "Abrir",
 	"admin_no_expiry": "Sin fecha",
 	"admin_no_plan": "Sin plan",
+	"admin_modules_none": "Ninguno",
 
 	"$comentario_uso": "Cuántos de los que permite el plan lleva usados. Con el plan sin techo no se dice «0 de -1»: se dice cuántos hay y nada más.",
 
@@ -133,6 +136,12 @@
 	"admin_subscription_derived": "El estado guardado dice «{guardado}» y la fecha ya pasó, así que hoy se comporta como «{efectivo}».",
 	"admin_subscription_save": "Guardar la suscripción",
 	"admin_subscription_saved": "Suscripción actualizada.",
+	"admin_plans_title": "Planes",
+	"admin_plans_intro": "Qué incluye cada plan. Los módulos se venden aparte del punto de venta.",
+	"admin_plans_warning": "Encender o apagar un módulo alcanza a todas las compañías de ese plan, en su siguiente clic. Para dárselo a una sola, cámbiele el plan desde su ficha.",
+	"admin_plan_limits": "{sucursales} sucursales · {terminales} cajas · {usuarios} usuarios",
+	"admin_plan_modules_save": "Guardar los módulos",
+	"admin_plan_modules_saved": "Módulos del plan actualizados.",
 	"admin_languages_title": "Idiomas",
 	"admin_company_not_found": "No encontramos esa compañía.",
 
@@ -175,6 +184,7 @@
 	"admin_action_idioma_compania": "Cambió el idioma de la compañía",
 	"admin_action_alta_compania": "Dio de alta la compañía",
 	"admin_action_suscripcion": "Cambió la suscripción",
+	"admin_action_plan_modulos": "Cambió los módulos de un plan",
 	"admin_action_entrar_como": "Entró como la compañía",
 
 	"$comentario_avisos": "Los avisos de suscripción que ve el cliente en el POS (RF-11). El de la gracia y el de solo lectura son los que cuestan plata, así que dicen qué se puede hacer todavía y no solo qué pasó.",

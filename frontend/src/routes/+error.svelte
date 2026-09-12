@@ -29,6 +29,8 @@
 				return m.api_impersonation_read_only();
 			case 'subscription_read_only':
 				return m.api_subscription_read_only({ state: page.error?.state ?? '' });
+			case 'module_not_in_plan':
+				return m.api_module_not_in_plan({ module: page.error?.module ?? '' });
 			case 'company_not_found':
 				return m.api_company_not_found();
 			default:
@@ -50,6 +52,9 @@
 				return { href: '/admin', label: m.error_go_to_panel(), icon: 'bolt' as const };
 			case 'subscription_read_only':
 			case 'impersonation_read_only':
+			// Al tablero y no a ventas: quien choca con un módulo que su plan no
+			// incluye es el administrador, y el tablero es de donde venía.
+			case 'module_not_in_plan':
 				return { href: '/dashboard', label: m.error_go_to_dashboard(), icon: 'chart' as const };
 			default:
 				return { href: '/ventas', label: m.error_go_to_sales(), icon: 'cart' as const };

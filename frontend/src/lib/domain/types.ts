@@ -116,6 +116,15 @@ export interface SessionUser {
 	/** Cuántas compañías tiene disponibles; con una sola no se ofrece cambiar. */
 	companies_available: number;
 	/**
+	 * Los módulos que incluye el plan (RF-40, RN-49).
+	 *
+	 * Se releen en cada petición junto con el resto de la sesión, así que una
+	 * compañía que sube de plan lo ve en su siguiente clic. **Sirven para armar
+	 * la navegación, no para autorizar**: quien manda es `require_module` en el
+	 * servidor, que es el que ve un `curl`.
+	 */
+	modules: Modules;
+	/**
 	 * Los dos idiomas, que no son el mismo (RN-28, RN-29).
 	 *
 	 * `locale` es el de la pantalla —el efectivo, ya resuelto— y está acá para que
@@ -162,7 +171,25 @@ export interface SupportUser {
 }
 
 /** Un plan: lo que el sistema deja hacer, no una lista de precios. */
-export interface Plan {
+/**
+ * Los módulos que un plan incluye o no (RN-49, F10 a F12).
+ *
+ * Las tres claves están siempre, también en `false`: una clave ausente y una en
+ * `false` no se leen igual, y la navegación tiene que poder distinguir «no lo
+ * tiene» de «no vino el dato».
+ */
+export interface Modules {
+	purchases: boolean;
+	accounting: boolean;
+	payroll: boolean;
+}
+
+/** Los nombres de los módulos, para recorrerlos sin escribirlos tres veces. */
+export const MODULES = ['purchases', 'accounting', 'payroll'] as const;
+
+export type ModuleName = (typeof MODULES)[number];
+
+export interface Plan extends Modules {
 	id: number;
 	nombre: string;
 	precio_mensual: number;

@@ -21,6 +21,7 @@
 	 */
 	const SECCIONES = $derived([
 		{ href: '/admin', label: m.admin_nav_companies(), icon: 'users' as const },
+		{ href: '/admin/planes', label: m.admin_nav_plans(), icon: 'tag' as const },
 		{ href: '/admin/bitacora', label: m.admin_nav_audit(), icon: 'clock' as const }
 	]);
 

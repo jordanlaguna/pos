@@ -2500,22 +2500,63 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       lecturas pasan con el plan vacío, y una lectura que consultara el plan
       hace fallar la prueba. `test_error_codes.py` ve el código levantado.
 
-- [ ] **T-1003** Panel de soporte: las tres casillas en el formulario de planes
+- [x] **T-1003** Panel de soporte: las tres casillas en el formulario de planes
       y la columna de módulos en el listado de compañías. RF-39.
 
-      **Verificación:** prueba de punta a punta del panel: marcar `accounting`
-      en el plan de la compañía de prueba y verla en el listado; el cambio de
-      plan ya escribe en `audit_log` (RF-7) y la fila está.
+      **Hecho el 2026-09-12.** Hizo falta un endpoint que no existía —había
+      `GET /support/plans` y nada para editarlos—: `PUT
+      /support/plans/{id}/modules`, con los tres módulos siempre y no un
+      parche, porque una casilla sin marcar no viaja en el formulario y
+      «la desmarcó» sería indistinguible de «no la tocó». Pantalla nueva
+      `/admin/planes`.
 
-- [ ] **T-1004** POS: `modules` viaja con el estado de la suscripción,
+      **Alcanza a todos los clientes del plan**, así que la bitácora anota
+      cuántos son: apagar contabilidad en «Comercio» se la apaga a los catorce
+      negocios que están ahí. Para dárselo a uno solo se le cambia el plan, que
+      es el camino que ya existía.
+
+      **Verificación:** `test_soporte.py::TestLosModulosDelPlan`, 6 pruebas: un
+      plan nace sin módulos, se encienden y se apagan, el detalle de la bitácora
+      trae el antes, el después y a cuántas compañías alcanza, un plan que no
+      existe es 404 y el administrador de una compañía recibe 403. Los dos
+      guardianes que saltaron —`test_aislamiento` y `test_suscripcion`— llevan
+      la ruta declarada con su motivo.
+
+- [ ] **T-1003b** *(salió de T-1004)* **RN-49 dice que la navegación esconde el
+      módulo que el plan no incluye, y el código hace lo contrario a propósito.**
+
+      `navigation.ts` ya tenía la regla escrita para los roles: lo que no se
+      puede abrir **se muestra con candado, no desaparece**, porque esconderlo
+      hizo creer a un cajero que el sistema no tenía inventario. Para un módulo
+      vale lo mismo y una razón más: un «Contabilidad 🔒» en el menú es lo único
+      que le dice al dueño que el producto la tiene, y es gratis. Escondiéndolo,
+      lo que se quiere vender es invisible justo para quien lo compraría.
+
+      Se implementó con candado. **Falta decidir si RN-49 se corrige** —la
+      frase «la navegación del POS lo esconde»— o si se mantiene y se cambia el
+      código. Lo demás de RN-49 no está en discusión: el 403 del servidor es
+      igual en los dos casos.
+
+- [x] **T-1004** POS: `modules` viaja con el estado de la suscripción,
       `+layout.server.ts` arma la navegación con eso y `requireModule` en
       `lib/server/auth.ts` protege las `actions`. El simulado pone las
       banderas en los planes del seed —compañía 1 con los tres, compañía 2 sin
       ninguno— y `SEED_VERSION` sube. RF-40.
 
-      **Verificación:** punta a punta: la segunda compañía no ve «Compras» en
-      el menú y un `POST` directo a una de sus acciones responde el código; la
-      primera lo ve y entra.
+      **Hecho el 2026-09-12.** `modules` viaja en `/users/me`, que es donde el
+      POS ya pregunta en cada petición: una compañía que sube de plan lo ve en
+      su siguiente clic, sin volver a entrar. `requireModule` y `hasModule` en
+      `lib/server/auth.ts`, `visibleGroups` recibe los módulos, `app.d.ts` gana
+      `module` al lado de `state` y `+error.svelte` arma la frase. Lo que no
+      venga queda apagado: falla cerrado contra un backend que todavía no mande
+      el campo. `SEED_VERSION` a 8.
+
+      **La entrada del menú llega con T-1014**, que es la que crea `/compras`.
+      El mecanismo está y probado; lo que falta es un ítem que marcar.
+
+      **Verificación:** `npm run check` en 0/0 y 550 pruebas del POS en verde.
+      La de punta a punta con las dos compañías del demo va con T-1016, que es
+      cuando hay una pantalla que abrir.
 
 ### Base de datos
 

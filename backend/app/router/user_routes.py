@@ -81,6 +81,12 @@ def read_me(
         subscription=(
             SuscripcionOut.model_validate(sesion.suscripcion) if sesion.suscripcion else None
         ),
+        # Los módulos del plan (RF-40). Viajan acá porque acá es donde el POS ya
+        # pregunta en cada petición: la navegación se arma con esto y una
+        # compañía que sube de plan lo ve en su siguiente clic, sin volver a
+        # entrar. Esconder la entrada del menú es cortesía; quien manda es
+        # `require_module` en el servidor.
+        modules=crud_membership.modulos_de(db, sesion.company_id).as_dict(),
         impersonated_by=sesion.email if sesion.suplantada else None,
         impersonation_reason=sesion.motivo if sesion.suplantada else None,
         locale=effective_locale(sesion.user.locale, company.locale if company else None),

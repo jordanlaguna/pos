@@ -190,6 +190,7 @@ SIN_SESION: dict[str, str] = {
     ),
     "support_routes.py:alta_de_compania": "panel de soporte: `require_soporte`",
     "support_routes.py:cambiar_suscripcion": "panel de soporte: `require_soporte`",
+    "support_routes.py:cambiar_modulos_del_plan": "panel de soporte: `require_soporte`",
     "support_routes.py:entrar_como": "panel de soporte: `require_soporte`",
 }
 

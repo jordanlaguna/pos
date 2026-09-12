@@ -1,5 +1,5 @@
 import type { IconName } from '$lib/ui/components/Icon.svelte';
-import type { Role } from '$lib/domain/types';
+import type { ModuleName, Modules, Role } from '$lib/domain/types';
 import { m } from '$lib/paraglide/messages.js';
 
 export interface NavItem {
@@ -8,6 +8,13 @@ export interface NavItem {
 	icon: IconName;
 	/** Roles que pueden verlo. Sin la lista, lo ve cualquier sesión iniciada. */
 	roles?: Role[];
+	/**
+	 * Módulo del plan al que pertenece (RN-49). Sin él, no depende de ninguno.
+	 *
+	 * Se trata **igual que un rol que falta**: la sección se ve con candado, no
+	 * desaparece. Ver `visibleGroups`.
+	 */
+	module?: ModuleName;
 	/** Tecla rápida mostrada en el menú (se maneja en el layout). */
 	shortcut?: string;
 }
@@ -64,21 +71,31 @@ export interface ResolvedItem extends NavItem {
 }
 
 /**
- * Menú para un rol.
+ * Menú para un rol y para los módulos que incluye el plan.
  *
- * Las secciones que el rol no puede abrir se muestran igual, atenuadas y con
+ * Las secciones que no se pueden abrir se muestran igual, atenuadas y con
  * candado, en vez de desaparecer. Ocultarlas hacía que un cajero creyera que el
  * sistema no tiene inventario ni reportes, en lugar de entender que le falta
  * permiso; pasó de verdad. No es un dato sensible —el control de acceso está en
  * el servidor, no en el menú— y ahorra la pregunta de «¿dónde está X?».
+ *
+ * **Un módulo que el plan no incluye se trata igual** (RN-49), por la misma
+ * razón y por una más: un «Contabilidad 🔒» en el menú es lo único que le dice
+ * al dueño que el producto la tiene. Escondiéndola, el módulo que se quiere
+ * vender es invisible justo para quien lo compraría.
  */
-export function visibleGroups(role: Role): (NavGroup & { items: ResolvedItem[] })[] {
+export function visibleGroups(
+	role: Role,
+	modules?: Modules | null
+): (NavGroup & { items: ResolvedItem[] })[] {
 	return nav()
 		.map((group) => ({
 			...group,
 			items: group.items.map((item) => ({
 				...item,
-				locked: Boolean(item.roles && !item.roles.includes(role))
+				locked:
+					Boolean(item.roles && !item.roles.includes(role)) ||
+					Boolean(item.module && modules?.[item.module] !== true)
 			}))
 		}))
 		.filter((group) => group.items.length > 0);

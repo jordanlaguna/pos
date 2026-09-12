@@ -1,5 +1,8 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"module_purchases": "Compras",
+	"module_accounting": "Contabilidade",
+	"module_payroll": "Folha de pagamento",
 	"common_cancel": "Cancelar",
 	"common_close": "Fechar",
 	"common_subtotal": "Subtotal",

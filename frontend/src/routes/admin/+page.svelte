@@ -4,12 +4,24 @@
 	import EmptyState from '$lib/ui/components/EmptyState.svelte';
 	import { formatAmount } from '$lib/domain/money';
 	import { formatDate } from '$lib/ui/format';
-	import { companyStateLabel } from '$lib/ui/messages';
+	import { companyStateLabel, moduleLabel } from '$lib/ui/messages';
 	import { m } from '$lib/paraglide/messages.js';
-	import type { Subscription, SupportCompany } from '$lib/domain/types';
+	import { MODULES, type Subscription, type SupportCompany } from '$lib/domain/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	/**
+	 * Los módulos que incluye el plan de una compañía (RF-39).
+	 *
+	 * Se listan solo los encendidos: la columna existe para ver de un vistazo
+	 * quién tiene qué, y tres etiquetas apagadas en cada fila sería ruido en
+	 * todas las filas para informar de algo que es lo normal.
+	 */
+	function modulos(c: SupportCompany): string[] {
+		if (!c.plan) return [];
+		return MODULES.filter((nombre) => c.plan![nombre]).map((nombre) => moduleLabel(nombre));
+	}
 
 	/**
 	 * El color del estado. Es lo único que se mira al abrir la pantalla, así que
@@ -86,6 +98,7 @@
 					<th>{m.admin_col_client()}</th>
 					<th>{m.admin_col_company()}</th>
 					<th>{m.admin_col_plan()}</th>
+					<th>{m.admin_col_modules()}</th>
 					<th>{m.admin_col_state()}</th>
 					<th>{m.admin_col_expires()}</th>
 					<th>{m.admin_col_usage()}</th>
@@ -109,6 +122,17 @@
 						</td>
 						<td class="text-xs text-[var(--text-muted)]">
 							{c.plan ? c.plan.nombre : m.admin_no_plan()}
+						</td>
+						<td class="text-xs">
+							{#if modulos(c).length === 0}
+								<span class="text-[var(--text-subtle)]">{m.admin_modules_none()}</span>
+							{:else}
+								<div class="flex flex-wrap gap-1">
+									{#each modulos(c) as nombre (nombre)}
+										<span class="badge bg-[var(--info-bg)] text-[var(--info)]">{nombre}</span>
+									{/each}
+								</div>
+							{/if}
 						</td>
 						<td>
 							<span class="badge {tono(c.suscripcion)}">

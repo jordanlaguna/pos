@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.schemas_support import SuscripcionOut
 
@@ -54,6 +54,14 @@ class CurrentUser(BaseModel):
     #: Cuántas compañías tiene disponibles. Si es una sola, el POS ni siquiera
     #: muestra la opción de cambiar (RN-25).
     companies_available: int = 1
+
+    #: Los módulos que incluye el plan de esta compañía (RF-40, RN-49). Las tres
+    #: claves están siempre, también las apagadas: una clave ausente y una en
+    #: `false` no se leen igual del otro lado.
+    #:
+    #: Vacío por omisión, que es «ninguno». Falla cerrado, igual que todo lo
+    #: demás de esta respuesta.
+    modules: dict[str, bool] = Field(default_factory=dict)
 
     #: Idioma de la pantalla y idioma del **documento**, que no son el mismo
     #: (RN-29, T-811). El primero está además en el token, porque tiene que estar

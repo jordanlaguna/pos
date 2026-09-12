@@ -9,6 +9,7 @@
 	"admin_nav": "Panel menu",
 	"admin_nav_companies": "Companies",
 	"admin_nav_audit": "Audit log",
+	"admin_nav_plans": "Plans",
 	"admin_logout": "Sign out",
 	"admin_back": "Back",
 
@@ -31,6 +32,7 @@
 	"admin_col_client": "Customer",
 	"admin_col_company": "Business",
 	"admin_col_plan": "Plan",
+	"admin_col_modules": "Modules",
 	"admin_col_state": "Status",
 	"admin_col_expires": "Expires",
 	"admin_col_usage": "Usage",
@@ -39,6 +41,7 @@
 	"admin_open": "Open",
 	"admin_no_expiry": "No date",
 	"admin_no_plan": "No plan",
+	"admin_modules_none": "None",
 
 	"$comentario_uso": "How much of what the plan allows is already in use. With an uncapped plan it does not say «0 of -1»: it says how many there are and nothing else.",
 
@@ -133,6 +136,12 @@
 	"admin_subscription_derived": "The stored status says «{guardado}» and the date has passed, so today it behaves as «{efectivo}».",
 	"admin_subscription_save": "Save the subscription",
 	"admin_subscription_saved": "Subscription updated.",
+	"admin_plans_title": "Plans",
+	"admin_plans_intro": "What each plan includes. Modules are sold separately from the point of sale.",
+	"admin_plans_warning": "Turning a module on or off reaches every company on that plan, on their next click. To give it to just one, change that company's plan from its page.",
+	"admin_plan_limits": "{sucursales} branches · {terminales} registers · {usuarios} users",
+	"admin_plan_modules_save": "Save modules",
+	"admin_plan_modules_saved": "Plan modules updated.",
 	"admin_languages_title": "Languages",
 	"admin_company_not_found": "We could not find that company.",
 
@@ -175,6 +184,7 @@
 	"admin_action_idioma_compania": "Changed the company language",
 	"admin_action_alta_compania": "Created the company",
 	"admin_action_suscripcion": "Changed the subscription",
+	"admin_action_plan_modulos": "Changed a plan's modules",
 	"admin_action_entrar_como": "Entered as the company",
 
 	"$comentario_avisos": "The subscription notices the customer sees in the POS (RF-11). The grace one and the read-only one are the ones that cost money, so they say what can still be done and not just what happened.",
