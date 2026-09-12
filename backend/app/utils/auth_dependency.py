@@ -317,6 +317,41 @@ def require_admin(sesion: Sesion = Depends(get_current_user)) -> Sesion:
     return sesion
 
 
+def require_module(module: str):
+    """Exige que el plan de la compañía incluya este módulo (RN-49, RF-40).
+
+    Se aplica **solo a lo que escribe**, y esa es la mitad que importa de RN-50:
+    apagar un módulo no borra nada, lo deja en solo lectura. Los libros de una
+    compañía que bajó de plan siguen siendo su respaldo ante Hacienda y las
+    boletas de una planilla, la prueba de lo pagado; el plan decide qué se puede
+    seguir escribiendo, no qué existió. Por eso un `GET` pasa sin siquiera
+    consultar el plan, y de paso no le cuesta una consulta a cada lectura.
+
+    El «no» es **403 con código**, no un redirect: el token vale y la sesión es
+    buena, lo que no está comprado es esto. Es la misma forma que las dos
+    puertas de soporte y que el bloqueo por vencimiento.
+
+    Se declara al lado de `require_admin` en la ruta, no en lugar de él: que el
+    plan incluya contabilidad no dice quién de la compañía puede escribir en
+    ella.
+    """
+
+    def dependencia(
+        request: Request,
+        sesion: Sesion = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> Sesion:
+        if request.method not in METODOS_QUE_ESCRIBEN:
+            return sesion
+
+        modulos = crud_membership.modulos_de(db, sesion.company_id)
+        if not modulos.includes(module):
+            raise api_error(403, "module_not_in_plan", module=module)
+        return sesion
+
+    return dependencia
+
+
 def require_soporte(
     payload: dict = Depends(payload_del_token),
     db: Session = Depends(get_db),

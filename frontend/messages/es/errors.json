@@ -64,6 +64,18 @@
 	"api_company_already_exists": "Ya existe la compañía {compania} del afiliado {afiliado}.",
 	"api_invalid_company_state": "«{state}» no es un estado de suscripción.",
 	"api_support_cannot_be_member": "{email} es una cuenta de soporte y no puede pertenecer a una compañía.",
+	"api_module_not_in_plan": [
+		{
+			"declarations": ["input module"],
+			"selectors": ["module"],
+			"match": {
+				"module=purchases": "Su plan no incluye Compras. Puede consultar lo que ya tiene, no agregar.",
+				"module=accounting": "Su plan no incluye Contabilidad. Puede consultar lo que ya tiene, no agregar.",
+				"module=payroll": "Su plan no incluye Planilla. Puede consultar lo que ya tiene, no agregar.",
+				"module=*": "Su plan no incluye este módulo. Puede consultar lo que ya tiene, no agregar."
+			}
+		}
+	],
 
 	"api_cash_read_not_yours": "Solo puede consultar su propia caja.",
 	"api_cash_open_not_yours": "Solo puede abrir su propia caja.",

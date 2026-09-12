@@ -2427,13 +2427,23 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 > vive en plan §9. Y no hay F9: el número de tarea lleva la fase y el 9 lo
 > ocupa Transversal (T-9nn) desde F2.
 >
-> **La puerta de la fase: T-916 se decide antes de T-1001.** Es la puerta que
-> F6 tenía, y se muda acá con el orden, por la misma razón que allá: **T-1001
-> escribe la primera migración de la era** y el rename, si se hace, viaja en
-> ella (plan §3.9, «se paga una vez»). Acá además el caso es más visible que
-> en F6: `plans` recibe `purchases`, `accounting` y `payroll` en inglés al
-> lado de `nombre`, `precio_mensual` y `max_*` en español. O se renombra en
-> esa migración, o esa mezcla queda escrita.
+> **La puerta de la fase: T-916, decidida el 2026-09-12.** Se mantiene el
+> español; T-913 sigue vigente y T-916 vuelve a apuntar a F6/T-608.
+>
+> El motivo para renombrar nunca fue la migración sino **el trabajo que abre
+> esos archivos**, y ese trabajo es el ABM de sucursales y terminales (T-608),
+> que está en F6. F10 abre `plans`, no `branches` ni `terminals`: renombrar
+> solo `plans` daría lo peor de las dos —se paga parte del costo, se rompen los
+> respaldos ya entregados y la mezcla queda igual—. El argumento fuerte de
+> plan §3.9 tampoco cambió: `company_dump.py` exporta **por nombre de
+> columna** y su `FORMATO = 1` no se entera de un rename, así que todo respaldo
+> en manos de un cliente quedaría inservible en silencio.
+>
+> Que `plans` termine con `purchases`, `accounting` y `payroll` en inglés al
+> lado de `nombre` y `max_*` en español **no es un defecto**: es lo que §3.9
+> manda —«esta excepción es de las columnas que ya existen, no una licencia
+> para las nuevas»—, y es lo mismo que hace T-621 con
+> `companies.identification_type`.
 
 **Costes medidos antes de empezar** —plan §12.7—:
 
@@ -2449,23 +2459,46 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ### Módulos por plan
 
-- [ ] **T-1001** Migración `008-modulos-por-plan.sql`: `purchases`, `accounting`
+- [x] **T-1001** Migración `008-modulos-por-plan.sql`: `purchases`, `accounting`
       y `payroll` en `plans`, en inglés, y el modelo con `Boolean` y
       `server_default` como ya está `factura_electronica`. RN-51.
 
-      **Verificación:** `test_esquema.py` en verde; un plan anterior a la
-      migración lee `0` en las tres columnas.
+      **Hecho el 2026-09-12.** `TINYINT(1) NOT NULL DEFAULT 0` las tres, igual
+      que `factura_electronica`, y la migración entró a la lista `MIGRACIONES`
+      de `test_esquema.py` —sin eso el guardián compara contra un esquema que
+      ya no es el de nadie—. Apagadas por omisión a propósito: un plan que ya
+      existe es uno que alguien compró sin estos módulos.
 
-- [ ] **T-1002** `require_module(name)` al lado de `get_current_user`: lee el
+      **Verificación:** `test_esquema.py`, 12 pruebas en verde: el modelo y la
+      migración declaran lo mismo.
+
+- [x] **T-1002** `require_module(name)` al lado de `get_current_user`: lee el
       plan de la compañía **en cada petición** (plan §11, misma razón que la
       suscripción) y se aplica solo a las escrituras. Código
       `module_not_in_plan` con `{module}` en los cuatro lugares. RN-49, RN-50,
       RF-40.
 
-      **Verificación:** `tests/test_modulos.py`: con un plan sin `accounting`,
-      `POST /accounting/entries` responde 403 con el código y `GET
-      /accounting/entries` responde 200; con el módulo, la escritura entra.
-      `test_error_codes.py` ve el código levantado.
+      **Hecho el 2026-09-12.** La regla quedó en `domain/modules.py` —qué
+      módulos existen y qué significa que un plan incluya uno—, la consulta en
+      `crud_membership.modulos_de` y la aplicación en la dependencia. Un `GET`
+      **ni siquiera consulta el plan**: pasa antes del `if`, que es RN-50 y de
+      paso no le cuesta una consulta a cada lectura.
+
+      Un nombre de módulo que no existe —`require_module("purchase")`, en
+      singular— **revienta con `UnknownModule`** en vez de dar 403: es un error
+      de quien escribe la ruta, y un 403 lo disfrazaría de problema del plan
+      del cliente y mandaría a soporte a mirar la suscripción equivocada.
+
+      Los cuatro lugares del código se hicieron acá y no en T-1015: los tres
+      catálogos van con variante por módulo —interpolar daría «Su plan no
+      incluye accounting»— y `messages.test.ts` compara las dos listas de
+      códigos, así que dejarlo para después tumbaba `npm test`.
+
+      **Verificación:** `tests/test_modulos.py`, 24 pruebas. La primera ruta que
+      usa la dependencia llega en T-1007, así que se prueba directa: las cuatro
+      escrituras responden 403 con el código y el módulo como dato, las tres
+      lecturas pasan con el plan vacío, y una lectura que consultara el plan
+      hace fallar la prueba. `test_error_codes.py` ve el código levantado.
 
 - [ ] **T-1003** Panel de soporte: las tres casillas en el formulario de planes
       y la columna de módulos en el listado de compañías. RF-39.
@@ -2579,8 +2612,11 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 - [ ] **T-1015** Simulado y catálogos: los nueve endpoints con contrato
       idéntico, proveedores y una compra a crédito en el seed,
       `messages/es/purchases.json` **declarado en
-      `project.inlang/settings.json`**, y los seis códigos en `API_CODES` y en
-      `errors.json`.
+      `project.inlang/settings.json`**, y los cinco códigos de compras en
+      `API_CODES` y en `errors.json`.
+
+      `module_not_in_plan` ya está —entró con T-1002, porque
+      `messages.test.ts` compara las dos listas y no se podía diferir—.
 
       **Verificación:** `npm test` (`loose-text`, `catalogs` y
       `messages.test.ts` comparan las listas de códigos); `npm run check` en
@@ -3090,11 +3126,16 @@ y el guardián que los vigila.
       de compatibilidad para los respaldos anteriores, sin el cual el rename
       los deja inservibles en silencio.
 
-      **Decía «antes de F6» y pasó a «antes de T-1001» el 2026-09-12**, con el
-      reordenamiento: la puerta no era F6 sino **la primera migración que se
-      escriba**, y ahora esa es la de F10. El caso además creció: T-1001 le
-      pone a `plans` tres columnas en inglés al lado de seis en español, así
-      que la mezcla ya no es solo la de `branches` y `terminals`.
+      **Volvió a apuntar a F6 el 2026-09-12, después de mirarla de cerca.** Con
+      el reordenamiento pasó un día a ser la puerta de T-1001, con el argumento
+      de que el rename viaja en la primera migración que se escriba. Es verdad
+      a medias: lo que decide no es cuál migración va primero sino **qué
+      trabajo abre esos archivos**, y ese es T-608 —el ABM de sucursales y
+      terminales—, que sigue en F6. F10 no las toca.
+
+      Renombrar solo `plans` en la 008 sería lo peor de las dos opciones: se
+      paga parte del costo, se rompen los respaldos ya entregados y la mezcla
+      queda igual en las otras cuatro tablas.
 - [ ] **T-917** El guardián de texto suelto **no lee el `<script>` de un
       `.svelte`**: `revisar()` recorre solo el marcado y `revisarTs()` solo abre
       archivos `.ts`. La consecuencia es que los sumideros de `toasts.*` son casi

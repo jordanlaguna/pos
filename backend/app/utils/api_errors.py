@@ -65,6 +65,11 @@ CODES: frozenset[str] = frozenset(
         "company_already_exists",
         "invalid_company_state",
         "support_cannot_be_member",
+        # ------------------------------------------ módulos por plan (F10, RN-49)
+        # `module` es 'purchases', 'accounting' o 'payroll'. El POS arma «Su plan
+        # no incluye Contabilidad». Solo lo levantan las escrituras: un módulo
+        # apagado deja lo que ya existe en solo lectura (RN-50).
+        "module_not_in_plan",
         # ----------------------------------------------------------- caja
         # Cuatro códigos para la misma regla —la caja es de quien la abrió—
         # porque son cuatro frases distintas: consultar, abrir, mover, cerrar.

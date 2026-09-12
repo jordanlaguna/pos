@@ -36,7 +36,13 @@ from app.utils.tenancy import TenantMixin
 
 class Plan(Base):
     """Los límites que se venden. Un plan no es una lista de precios sino lo que
-    el sistema deja hacer: cuántas sucursales, cuántas cajas, cuánta gente."""
+    el sistema deja hacer: cuántas sucursales, cuántas cajas, cuánta gente.
+
+    Y **qué módulos incluye** (T-1001, RN-49 a RN-51). Compras, contabilidad y
+    planilla se venden aparte, y el sitio donde se dice qué se vende es este:
+    un interruptor por compañía además del plan serían dos verdades sobre lo
+    mismo. `factura_electronica` ya era una de estas banderas desde la 002.
+    """
 
     __tablename__ = "plans"
 
@@ -54,6 +60,16 @@ class Plan(Base):
     factura_electronica = Column(
         Boolean, nullable=False, default=False, server_default=text("0")
     )
+
+    # Los tres módulos de F10 a F12 (migración 008). En **inglés**, al lado de
+    # las columnas en español que vienen de la 002: esa excepción es de las que
+    # ya existen y no una licencia para las nuevas (plan §3.9, T-913).
+    #
+    # Apagados por omisión, y no es un detalle: un plan que ya existe es uno que
+    # alguien compró sin estos módulos. Encenderlos es trabajo de soporte.
+    purchases = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    accounting = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    payroll = Column(Boolean, nullable=False, default=False, server_default=text("0"))
 
 
 class Company(Base):

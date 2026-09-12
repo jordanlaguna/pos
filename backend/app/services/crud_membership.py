@@ -13,8 +13,9 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.domain.modules import MODULES, Modules
 from app.domain.subscription import evaluar, motivo_de_bloqueo
-from app.models.model_company import AuditLog, Branch, Company, Terminal, UserCompany
+from app.models.model_company import AuditLog, Branch, Company, Plan, Terminal, UserCompany
 from app.utils import clock
 from app.utils.tenancy import sin_filtro
 
@@ -107,6 +108,28 @@ def sucursal_y_terminal(db: Session, company_id: int) -> tuple[int | None, int |
 def compania(db: Session, company_id: int) -> Company | None:
     """La compañía por su id, sin pasar por el filtro (es la raíz, no se filtra)."""
     return sin_filtro(db.query(Company).filter(Company.id == company_id)).first()
+
+
+def modulos_de(db: Session, company_id: int) -> Modules:
+    """Los módulos que incluye el plan de esta compañía (RN-49).
+
+    Se lee **en cada petición que escribe** y no se guarda en el token, por la
+    misma razón que el estado de la suscripción (plan §4.4): en el token
+    quedaría congelado hasta el siguiente login, y el cliente que acaba de subir
+    de plan tendría que salir y volver a entrar para usar lo que ya pagó.
+
+    Una compañía sin plan —o sin compañía— no incluye nada. Falla cerrado.
+    """
+    fila = (
+        sin_filtro(
+            db.query(*(getattr(Plan, nombre) for nombre in MODULES))
+            .join(Company, Company.plan_id == Plan.id)
+            .filter(Company.id == company_id)
+        )
+    ).first()
+    if fila is None:
+        return Modules()
+    return Modules(**{nombre: bool(valor) for nombre, valor in zip(MODULES, fila)})
 
 
 def codigos(

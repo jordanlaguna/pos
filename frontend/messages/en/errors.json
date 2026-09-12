@@ -64,6 +64,18 @@
 	"api_company_already_exists": "Company {compania} of affiliate {afiliado} already exists.",
 	"api_invalid_company_state": "«{state}» is not a subscription status.",
 	"api_support_cannot_be_member": "{email} is a support account and cannot belong to a company.",
+	"api_module_not_in_plan": [
+		{
+			"declarations": ["input module"],
+			"selectors": ["module"],
+			"match": {
+				"module=purchases": "Your plan does not include Purchasing. You can view what you already have, but not add to it.",
+				"module=accounting": "Your plan does not include Accounting. You can view what you already have, but not add to it.",
+				"module=payroll": "Your plan does not include Payroll. You can view what you already have, but not add to it.",
+				"module=*": "Your plan does not include this module. You can view what you already have, but not add to it."
+			}
+		}
+	],
 
 	"api_cash_read_not_yours": "You can only view your own register.",
 	"api_cash_open_not_yours": "You can only open your own register.",

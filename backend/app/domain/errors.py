@@ -48,6 +48,20 @@ class InvalidTaxRate(DomainError):
         self.value = value
 
 
+class UnknownModule(DomainError):
+    """Un módulo que no existe (RN-49).
+
+    No es un «no» del negocio sino un error de quien escribe el código: un
+    `require_module("purchase")` en singular. Por eso revienta en vez de
+    contestar que el plan no lo incluye, que se leería como un problema del
+    cliente.
+    """
+
+    def __init__(self, module: object) -> None:
+        super().__init__(f"módulo desconocido: {module!r}")
+        self.module = module
+
+
 class InvalidBarcode(DomainError):
     """Un código de barras vacío o con caracteres que un lector no produce."""
 

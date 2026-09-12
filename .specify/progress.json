@@ -1939,6 +1939,17 @@
         "Planilla se queda de última, separada del par que traía la pregunta."
       ],
       "lo_que_ensena": "**Un argumento correcto puede llevar a la prioridad equivocada.** «La factura electrónica es lo único legalmente obligatorio» es verdad, y de ahí saqué que iba primero. El usuario preguntó si no era al revés y el argumento se dio vuelta solo: justamente porque es obligatoria, todos los prospectos ya la resolvieron antes de conocernos. Lo obligatorio no diferencia; evita perder. Lo que gana ventas es lo que nadie está obligado a tener.\n\nLa segunda lección es de forma: **antes de discutir el orden había que comprobar si existía la dependencia**, y no existía. Media discusión de prioridades se resuelve mirando qué necesita de qué, y eso se lee en el modelo de datos —el asiento referencia la venta por `id`, no por su número— en vez de argumentarse.\n\nY una sobre pares: la pregunta vino con «conta y planilla» juntas, como si fueran una. Separarlas era parte de la respuesta."
+    },
+    {
+      "fecha": "2026-09-12",
+      "titulo": "Arranca F10: los módulos son una bandera del plan, aplicada en el servidor",
+      "hecho": [
+        "T-916 decidida: se mantiene el español y vuelve a apuntar a F6/T-608. El motivo para renombrar nunca fue cuál migración va primero sino qué trabajo abre esos archivos, y ese es el ABM de sucursales y terminales, que sigue en F6.",
+        "T-1001: migración `008-modulos-por-plan.sql` con `purchases`, `accounting` y `payroll` en `plans`, apagadas por omisión, y el modelo diciendo lo mismo. La migración entró a `MIGRACIONES` en `test_esquema.py`.",
+        "T-1002: `domain/modules.py` con la regla, `crud_membership.modulos_de` con la consulta y `require_module` con la aplicación. El código `module_not_in_plan` en los cuatro lugares, con variante por módulo en los tres catálogos.",
+        "Verde: 816 pruebas del backend con cobertura 100 % en dominio y aplicación, 550 del POS con 100 %, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**La mitad de un permiso es qué NO bloquea.** RN-50 dice que apagar un módulo no borra nada: lo deja en solo lectura. Escrito como código, eso es que `require_module` devuelve antes de consultar el plan cuando el método no escribe — y el efecto secundario es que ninguna lectura paga la consulta. La regla bien puesta salió más barata que la mal puesta, que es lo contrario de lo que uno espera al agregar un control de acceso.\n\nY una sobre el orden de las tareas. El código de error estaba planeado para T-1015, con el resto del simulado y los catálogos, pero `messages.test.ts` compara la lista de `api_errors.py` contra la de `API_CODES`: agregar uno en el backend y diferir el POS deja `npm test` rojo entre las dos tareas. Cuando dos guardianes se miran entre sí, lo que cruza de un lado al otro no se puede planear por separado.\n\nY una tercera, sobre el mal disfrazado de «no». Un `require_module(\"purchase\")` en singular podía contestar 403 —el plan no incluye ese módulo, literalmente cierto— y mandar a soporte a revisar la suscripción del cliente. Revienta con `UnknownModule`. Cuando un error del programador tiene la misma forma que un estado del negocio, hay que romper la forma a propósito."
     }
   ],
   "$reparto": {

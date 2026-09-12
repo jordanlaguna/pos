@@ -231,6 +231,8 @@ export const API_CODES = [
 	'company_already_exists',
 	'invalid_company_state',
 	'support_cannot_be_member',
+	// módulos por plan (F10)
+	'module_not_in_plan',
 	// caja
 	'cash_read_not_yours',
 	'cash_open_not_yours',
@@ -476,6 +478,11 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_invalid_company_state({ state: texto(d.state) });
 		case 'support_cannot_be_member':
 			return m.api_support_cannot_be_member({ email: texto(d.email) });
+		case 'module_not_in_plan':
+			// El nombre del módulo viaja en inglés —es el de la columna— y la
+			// frase lo nombra en el idioma de quien mira, con una variante por
+			// módulo. Interpolarlo daría «Su plan no incluye accounting».
+			return m.api_module_not_in_plan({ module: texto(d.module) });
 
 		// --------------------------------------------------------------- caja
 		case 'cash_read_not_yours':
