@@ -655,6 +655,29 @@ export interface Payables {
 	suppliers: PayableSupplier[];
 }
 
+/**
+ * El crédito fiscal de un periodo, por tarifa (F10, RF-45).
+ *
+ * Es la mitad de compras del D-104. Agrupa por la tarifa **del documento del
+ * proveedor** y no por la del producto: lo que se acredita es lo que se pagó
+ * (RN-53), y el periodo es el de la **fecha de la factura**, no el de su carga.
+ */
+export interface PurchaseRateLine {
+	/** En porcentaje, como lo dice el documento: 13 y no 0,13. */
+	tax_rate: number;
+	base: number;
+	tax: number;
+}
+
+export interface PurchasesReport {
+	date_from: string;
+	date_to: string;
+	subtotal: number;
+	tax: number;
+	total: number;
+	by_rate: PurchaseRateLine[];
+}
+
 /** Producto del catálogo con el que se emparejó una línea del archivo. */
 export interface MatchedProduct {
 	id_product: number;

@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { api, apiSafe } from '$lib/server/api';
-import { requireAdmin } from '$lib/server/auth';
+import { requireAdmin, requireModule } from '$lib/server/auth';
 import { parseHaciendaXml } from '$lib/server/import/hacienda';
 import { ImportError } from '$lib/server/import/errors';
 import { parseSpreadsheet } from '$lib/server/import/spreadsheet';
@@ -148,6 +148,12 @@ export const actions: Actions = {
 		// Sin proveedor esto sigue siendo una entrada y nada de lo de abajo se
 		// usa: no genera cuenta por pagar ni crédito fiscal (RN-52).
 		let supplierId = Number(form.get('supplier_id') ?? 0) || null;
+		// Con proveedor esto es una compra y exige el módulo; sin él es la
+		// entrada de siempre y no. Es la misma condición que el endpoint del
+		// backend, y por lo mismo: este formulario escribe dos cosas distintas.
+		if (supplierId || form.get('new_supplier')) {
+			requireModule(locals, 'purchases', url.pathname);
+		}
 		const documentKey = String(form.get('document_key') ?? '').trim() || null;
 		const documentDate = String(form.get('document_date') ?? '').trim() || null;
 		const paymentTerms = form.get('payment_terms') === 'credit' ? 'credit' : 'cash';

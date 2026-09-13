@@ -19,6 +19,7 @@
 	"nav_expand_menu": "Expandir menú",
 	"nav_collapse_menu": "Colapsar menú",
 	"nav_locked": "{section}: solo para administradores. Pídale a un administrador que le cambie el rol.",
+	"nav_locked_module": "{section} no está en su plan. Consulte con soporte para activarlo.",
 	"nav_company": "Compañía",
 	"nav_branch_terminal": "Sucursal {branch} · Caja {terminal}",
 	"nav_switch_company": "Cambiar de compañía",

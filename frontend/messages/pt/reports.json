@@ -1,22 +1,17 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-
 	"$comentario": "Relatórios: a tela do painel e os dois gráficos que só se usam lá.",
-
 	"reports_title": "Relatórios",
 	"reports_description": "Desempenho do negócio no período selecionado.",
 	"reports_module_missing": "Os relatórios não estão disponíveis.",
 	"reports_module_missing_hint": "O backend não expõe {endpoint}. Atualize o FastAPI de {folder} e reinicie-o.",
-
 	"reports_preset_today": "Hoje",
 	"reports_preset_days": "{days} dias",
 	"reports_preset_month": "Mês atual",
 	"reports_from": "De",
 	"reports_to": "Até",
-
 	"$comentario_statcard": "`StatCard` é compartilhada, mas o seu único rótulo próprio compara com o período anterior, o que só faz sentido em relatórios.",
 	"reports_vs_previous": "vs. período anterior",
-
 	"reports_net_sales": "Vendas líquidas",
 	"reports_invoices_issued": "Faturas emitidas",
 	"reports_average_ticket": "Ticket médio",
@@ -24,7 +19,6 @@
 	"reports_returns": "Devoluções",
 	"reports_returns_deducted": "Descontadas das vendas líquidas",
 	"reports_no_returns": "Sem devoluções",
-
 	"reports_sales_by_day": "Vendas por dia",
 	"reports_top_products": "Produtos mais vendidos",
 	"reports_top_products_hint": "Por valor faturado no período",
@@ -37,7 +31,6 @@
 	"reports_breakdown": "Detalhe",
 	"reports_units_short": "{units} un vendidas",
 	"reports_payment_share": "{count} vendas · {percent} % do total",
-
 	"reports_stock_alerts": "Alertas de estoque",
 	"reports_stock_threshold": "Produtos com {threshold} unidades ou menos",
 	"reports_go_to_inventory": "Ir para o estoque",
@@ -49,7 +42,6 @@
 	"reports_low_stock": "Estoque baixo",
 	"reports_inventory_ok": "Todo o estoque está em ordem",
 	"reports_inventory_ok_hint": "Nenhum produto está abaixo do limite.",
-
 	"$comentario_graficos": "Os gráficos. O rótulo do eixo e o cabeçalho da tabela equivalente são os mesmos dados vistos de duas formas: quem usa leitor de tela chega pela tabela.",
 	"chart_show_chart": "Gráfico",
 	"chart_show_table": "Tabela",
@@ -61,5 +53,12 @@
 	"chart_col_total": "Total",
 	"chart_no_data": "Sem dados",
 	"chart_no_data_hint": "Não há dados no período selecionado.",
-	"chart_col_concept": "Item"
+	"chart_col_concept": "Item",
+	"reports_purchases": "Compras do período",
+	"reports_purchases_hint": "Base e imposto por alíquota: o crédito fiscal, pela data de cada nota.",
+	"reports_go_to_payables": "Ver contas a pagar",
+	"reports_col_rate": "Alíquota",
+	"reports_col_base": "Base",
+	"reports_col_tax": "Imposto",
+	"reports_rate_percent": "{rate} %"
 }

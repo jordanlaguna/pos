@@ -109,6 +109,15 @@
       "catalogo": "El catálogo CABYS se consulta proxeado desde FastAPI y se cachea en `cabys_cache`, global para todas las compañías. Sin internet responde desde la caché y lo dice en `source`, con la fecha: degrada con aviso y nunca bloquea (RNF-4). Se busca desde la ficha del producto y se asigna en lote para catálogos ya cargados.",
       "redes": "Doce pruebas contra MySQL fijan el caso de aceptación —2 %, 13 % y 0 % en la misma venta— y una de punta a punta lo vende, lo imprime y lo devuelve. Las líneas suman exactamente el impuesto del encabezado, que es la igualdad que valida Hacienda.",
       "fase": "F5, terminada el 2026-09-05 (T-501 a T-511)."
+    },
+    "compras": {
+      "estado": "listo",
+      "detalle": "Una compra ES una entrada de mercadería con proveedor, documento y condición de pago (RN-52): un solo camino, una sola anulación y el lector de XML que ya existía. El impuesto se guarda tal como lo dice el documento del proveedor —es el crédito fiscal, y lo que se acredita es lo que se pagó (RN-53)—, y el costo del producto pasa a ser el promedio ponderado móvil de sus compras (RN-54).",
+      "cuentas_por_pagar": "El saldo no se guarda en ninguna parte: el de una compra es su total menos sus abonos y el de un proveedor es la suma de los de sus compras (RN-55). Por eso anular revierte la cuenta por pagar sin escribir nada —basta con que /payables filtre por estado— y por eso no hay un número que mantener cuadrado. Cuatro tramos de antigüedad, siempre los cuatro.",
+      "el_efectivo": "Un abono en efectivo sale de la caja abierta o no sale (RN-56), y la salida se escribe ANTES que el abono porque el abono la apunta, las dos en una transacción. Lo mismo vale para una compra de contado pagada en efectivo: si no hay turno abierto no entra ni la mercadería, porque la compra y el pago son el mismo hecho.",
+      "modulos": "Compras es el primer módulo que se activa por plan (RN-49). Se aplica en el servidor —403 con código, nunca un redirect— y solo a lo que escribe: bajar de plan deja lo anterior en solo lectura (RN-50). En el menú se ve CON CANDADO y no desaparece, que es lo único que le dice al dueño que el producto lo tiene.",
+      "redes": "982 pruebas del backend con cobertura 100 % en dominio y aplicación, 580 del POS y 54 de punta a punta. Dos de ellas recorren F10 entera en una compañía que la prueba da de alta: XML del proveedor, compra a crédito, el IVA en el reporte por tarifa, abono en efectivo, el arqueo cuadrado y la anulación.",
+      "fase": "F10, terminada el 2026-09-12 (T-1001 a T-1016, más T-1003b y T-1011b)."
     }
   },
   "defectos_corregidos": [
@@ -421,6 +430,18 @@
       "sintoma": "Una compra con fecha de documento 2026-09-10 aparecía como «09/09/2026» en el detalle, y su vencimiento a 30 días como «09/10/2026». Lo mismo le pasaba desde antes al aviso de vencimiento de la suscripción, que lee `vence_el` —también `YYYY-MM-DD`—.",
       "causa": "`toDate()` en `$lib/ui/format.ts` hacía `new Date(value)`. Para una cadena ISO **sin hora** la especificación manda interpretarla como UTC, así que en un huso negativo el `Intl.DateTimeFormat` local la muestra el día anterior. Con hora no pasa: ahí sí hay un instante que convertir.",
       "arreglo": "`toDate()` reconoce el patrón `YYYY-MM-DD` y lo construye como medianoche **local** (`${value}T00:00:00`). Dos pruebas nuevas en `format.test.ts`: una por el caso y otra de contraprueba con hora, para que el arreglo no se convierta en «nunca se convierte» y rompa la hora de una venta."
+    },
+    {
+      "defecto": "El candado del menú culpaba al rol cuando la causa era el plan",
+      "sintoma": "Un administrador de una compañía cuyo plan no incluye Compras veía «Compras: solo para administradores. Pídale a un administrador que le cambie el rol». Lo mandaba a resolver algo que ya tenía resuelto, y era justo el mensaje que tenía que servir para vender el módulo.",
+      "causa": "`visibleGroups` devolvía un solo booleano `locked` para las dos razones —rol y módulo—, así que el layout no tenía con qué distinguirlas y usaba la única frase que existía.",
+      "arreglo": "`ResolvedItem` gana `lockedBy: 'role' | 'module'`, con el rol ganando cuando faltan los dos —cambiar de plan no le serviría a quien además no tiene el rol—. Frase nueva `nav_locked_module` en los tres idiomas, y `navigation.test.ts` con las dos razones y el empate."
+    },
+    {
+      "defecto": "`requireModule` existía en el POS desde T-1004 y no lo llamaba ninguna pantalla",
+      "sintoma": "Contra el simulado, una compañía en plan Básico —sin ningún módulo— daba de alta proveedores sin problema. El backend sí lo rechazaba, así que la misma acción se comportaba distinto según contra qué corriera: la clase de divergencia que hace que una prueba de punta a punta pase y la instalación de verdad falle.",
+      "causa": "Dos huecos a la vez. En el POS, las `actions` de escritura no llamaban a `requireModule`, que se había creado en T-1004 sin destino. En el simulado, las rutas de proveedores, abonos y compra no comprobaban el plan.",
+      "arreglo": "Las tres acciones de escritura del POS llaman a `requireModule` —la de entradas solo cuando la carga trae proveedor, porque ese formulario escribe dos cosas distintas—, y el simulado gana `exigirModulo()`, aplicado a las mismas cuatro rutas que `require_module` en el backend."
     }
   ],
   "decisiones": [
@@ -2045,6 +2066,18 @@
         "Verde: 982 pruebas del backend con cobertura 100 %, 574 del POS, 52 de punta a punta —cuatro nuevas de compras—, `npm run check` en 0/0."
       ],
       "lo_que_ensena": "**El simulado no es un paso al final: es la condición para verificar una pantalla.** El plan lo había juntado todo en una tarea, T-1015, y esa tarea nunca pudo hacerse entera porque cada pantalla la necesitaba antes: los códigos tuvieron que entrar con T-1002 —`messages.test.ts` compara las dos listas y sin ellos no compila—, los proveedores con T-1013 y los abonos con T-1014. Lo que quedó al final no era trabajo sino una casilla. Cuando una tarea existe solo para agrupar lo que otras van a necesitar antes, no es una tarea: es un recordatorio, y conviene escribirlo como tal —una línea en cada tarea que lo necesite— en vez de como un pendiente que da la falsa sensación de que algo se puede diferir."
+    },
+    {
+      "fecha": "2026-09-12",
+      "titulo": "F10 cerrada: de la factura del proveedor al arqueo cuadrado",
+      "hecho": [
+        "T-1016: dos pruebas de punta a punta en una compañía que la prueba da de alta. La primera recorre XML → compra a crédito → reporte por tarifa → abono en efectivo → arqueo → anulación; la segunda comprueba las dos mitades de RN-50 con el módulo apagado.",
+        "T-1003b decidida con el usuario: el módulo que el plan no incluye se ve CON CANDADO, y se corrigió RN-49, que decía que la navegación lo esconde.",
+        "El reporte de compras por tarifa entró en `/dashboard`: lo pedía plan §12.4 y la verificación de T-1016, pero no tenía tarea propia.",
+        "Dos defectos que destapó la prueba: el candado del menú decía «pídale a un administrador que le cambie el rol» a un administrador, y `requireModule` existía desde T-1004 sin que lo usara nadie.",
+        "**F10 terminada**: dieciséis tareas más dos que aparecieron. Verde: 982 pruebas del backend con cobertura 100 %, 580 del POS, 54 de punta a punta, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Una prueba de punta a punta que no sale de la compañía del demo no prueba la regla, prueba el demo.** Las dos cosas que se rompieron acá solo se ven desde una compañía nueva: el candado del menú —porque el administrador del demo tiene todos los módulos y nunca lo ve— y el hueco de `requireModule` —porque nadie había escrito nunca sin el módulo—. Dar de alta la compañía dentro de la prueba cuesta veinte líneas y paga dos veces: aísla el estado, que era la lección de T-310, y además pone al código en el caso que nadie ejercita a mano. El corolario incómodo es que `requireModule` llevaba desde T-1004 sin llamarse y ninguna prueba lo notó, porque las pruebas de módulos eran de la dependencia y no de las pantallas: una función exportada y sin usar no la caza la cobertura si tiene su propia prueba unitaria."
     }
   ],
   "$reparto": {

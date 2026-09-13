@@ -1,22 +1,17 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-
 	"$comentario": "Reportes: la pantalla de dashboard y los dos gráficos que solo se usan ahí.",
-
 	"reports_title": "Reportes",
 	"reports_description": "Rendimiento del negocio en el periodo seleccionado.",
 	"reports_module_missing": "Los reportes no están disponibles.",
 	"reports_module_missing_hint": "El backend no expone {endpoint}. Actualice el FastAPI de {folder} y reinícielo.",
-
 	"reports_preset_today": "Hoy",
 	"reports_preset_days": "{days} días",
 	"reports_preset_month": "Mes actual",
 	"reports_from": "Desde",
 	"reports_to": "Hasta",
-
 	"$comentario_statcard": "`StatCard` es compartida, pero su único rótulo propio compara con el periodo anterior, que solo tiene sentido en reportes.",
 	"reports_vs_previous": "vs. periodo anterior",
-
 	"reports_net_sales": "Ventas netas",
 	"reports_invoices_issued": "Facturas emitidas",
 	"reports_average_ticket": "Ticket promedio",
@@ -24,7 +19,6 @@
 	"reports_returns": "Devoluciones",
 	"reports_returns_deducted": "Descontadas de las ventas netas",
 	"reports_no_returns": "Sin devoluciones",
-
 	"reports_sales_by_day": "Ventas por día",
 	"reports_top_products": "Productos más vendidos",
 	"reports_top_products_hint": "Por monto facturado en el periodo",
@@ -37,7 +31,6 @@
 	"reports_breakdown": "Detalle",
 	"reports_units_short": "{units} u vendidas",
 	"reports_payment_share": "{count} ventas · {percent} % del total",
-
 	"reports_stock_alerts": "Alertas de inventario",
 	"reports_stock_threshold": "Productos con {threshold} unidades o menos",
 	"reports_go_to_inventory": "Ir a inventario",
@@ -49,7 +42,6 @@
 	"reports_low_stock": "Stock bajo",
 	"reports_inventory_ok": "Todo el inventario está en orden",
 	"reports_inventory_ok_hint": "Ningún producto está por debajo del umbral.",
-
 	"$comentario_graficos": "Los gráficos. El rótulo del eje y el encabezado de la tabla equivalente son los mismos datos vistos de dos formas: quien usa lector de pantalla llega por la tabla.",
 	"chart_show_chart": "Gráfico",
 	"chart_show_table": "Tabla",
@@ -61,5 +53,12 @@
 	"chart_col_total": "Total",
 	"chart_no_data": "Sin datos",
 	"chart_no_data_hint": "No hay datos en el periodo seleccionado.",
-	"chart_col_concept": "Concepto"
+	"chart_col_concept": "Concepto",
+	"reports_purchases": "Compras del periodo",
+	"reports_purchases_hint": "Base e impuesto por tarifa: el crédito fiscal, por la fecha de cada factura.",
+	"reports_go_to_payables": "Ver cuentas por pagar",
+	"reports_col_rate": "Tarifa",
+	"reports_col_base": "Base",
+	"reports_col_tax": "Impuesto",
+	"reports_rate_percent": "{rate} %"
 }

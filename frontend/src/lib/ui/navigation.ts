@@ -78,6 +78,27 @@ export function nav(): NavGroup[] {
 /** Ítem del menú resuelto para un rol: los que no puede abrir van bloqueados. */
 export interface ResolvedItem extends NavItem {
 	locked: boolean;
+	/**
+	 * **Por qué** está bloqueado, para poder decirlo bien.
+	 *
+	 * No es un detalle: las dos razones se arreglan de maneras opuestas —una
+	 * pidiendo un cambio de rol, la otra subiendo de plan— y con un solo
+	 * booleano el menú le decía a un administrador «solo para administradores»,
+	 * mandándolo a resolver algo que ya tenía resuelto. Lo destapó T-1016.
+	 */
+	lockedBy?: 'role' | 'module';
+}
+
+/**
+ * Un grupo ya resuelto.
+ *
+ * Es un tipo propio y no `NavGroup & { items: ResolvedItem[] }`: en esa
+ * intersección `items` queda como `NavItem[] & ResolvedItem[]`, y quien lo
+ * recorre recibe un `NavItem` sin `locked`.
+ */
+export interface ResolvedGroup {
+	title: string;
+	items: ResolvedItem[];
 }
 
 /**
@@ -94,19 +115,21 @@ export interface ResolvedItem extends NavItem {
  * al dueño que el producto la tiene. Escondiéndola, el módulo que se quiere
  * vender es invisible justo para quien lo compraría.
  */
-export function visibleGroups(
-	role: Role,
-	modules?: Modules | null
-): (NavGroup & { items: ResolvedItem[] })[] {
+export function visibleGroups(role: Role, modules?: Modules | null): ResolvedGroup[] {
 	return nav()
 		.map((group) => ({
 			...group,
-			items: group.items.map((item) => ({
-				...item,
-				locked:
-					Boolean(item.roles && !item.roles.includes(role)) ||
-					Boolean(item.module && modules?.[item.module] !== true)
-			}))
+			items: group.items.map((item) => {
+				// El rol primero: si además le falta el rol, cambiar de plan no le
+				// serviría de nada, así que esa es la que hay que decirle.
+				const porRol = Boolean(item.roles && !item.roles.includes(role));
+				const porModulo = Boolean(item.module && modules?.[item.module] !== true);
+				return {
+					...item,
+					locked: porRol || porModulo,
+					lockedBy: porRol ? ('role' as const) : porModulo ? ('module' as const) : undefined
+				};
+			})
 		}))
 		.filter((group) => group.items.length > 0);
 }

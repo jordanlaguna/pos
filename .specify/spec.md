@@ -90,8 +90,12 @@ qué ver un libro mayor, y el producto tiene que poder cobrarlos aparte.
 
 **RN-49.** Un módulo se activa **por plan** y se aplica **en el servidor**. Una
 compañía cuyo plan no incluye el módulo recibe un código —no un redirect— en
-cualquier escritura de sus rutas; la navegación del POS lo esconde, pero
-esconderlo no es control de acceso (§8, regla 3).
+cualquier escritura de sus rutas. En la navegación del POS **se muestra con
+candado, no se esconde**: es la misma regla que ya rige para lo que un rol no
+puede abrir, y acá vale por una razón más —un «Compras 🔒» es lo único que le
+dice al dueño que el producto tiene ese módulo, y escondiéndolo lo que se
+quiere vender queda invisible justo para quien lo compraría—. Que se vea no es
+un permiso: el control de acceso está en el servidor (§8, regla 3).
 
 **RN-50.** Apagar un módulo **no borra nada**: lo deja en solo lectura. Los
 libros de una compañía que bajó de plan siguen siendo su respaldo ante Hacienda

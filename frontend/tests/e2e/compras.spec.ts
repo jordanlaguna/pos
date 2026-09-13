@@ -165,7 +165,10 @@ test.describe('Compras', () => {
 		await entrar(page);
 		await page.goto('/inventario/entradas/nueva');
 
-		await page.getByRole('button', { name: /archivo/i }).first().click();
+		// La pestaña solo vive en el cliente: hay que esperar a que hidrate.
+		await clicHasta(page.getByRole('button', { name: /archivo/i }).first(), () =>
+			expect(page.locator('input[type="file"]')).toBeVisible({ timeout: 1000 })
+		);
 		await page
 			.locator('input[type="file"]')
 			.setInputFiles('tests/fixtures/factura-proveedor-v43.xml');

@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { api, apiSafe } from '$lib/server/api';
-import { requireAdmin } from '$lib/server/auth';
+import { requireAdmin, requireModule } from '$lib/server/auth';
 import { formError, Validator } from '$lib/application/validation';
 import type { Supplier } from '$lib/domain/types';
 import { F } from '$lib/ui/fields';
@@ -29,6 +29,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 export const actions: Actions = {
 	guardar: async ({ request, locals, url }) => {
 		requireAdmin(locals, url.pathname);
+		// Y el módulo, porque esto escribe (RN-49). El backend lo exige igual;
+		// esto impide que se ofrezca, que es lo que RN-2 pide para el bloqueo por
+		// suscripción y vale igual acá: enterarse después de llenar la ficha es
+		// la peor manera de enterarse.
+		requireModule(locals, 'purchases', url.pathname);
 		const form = await request.formData();
 		const v = new Validator(form);
 

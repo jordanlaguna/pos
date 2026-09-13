@@ -220,6 +220,51 @@
 		/>
 	</div>
 
+	{#if data.purchases && data.purchases.by_rate.length}
+		<!-- El crédito fiscal del periodo (RF-45). Solo aparece si hubo compras:
+		     una tabla vacía en el tablero de un negocio que no compra por acá no
+		     dice nada, y el módulo puede ni estar en el plan. -->
+		<section class="card p-4">
+			<header class="mb-3 flex items-center justify-between gap-3">
+				<div>
+					<h2 class="text-sm font-bold text-[var(--text)]">{m.reports_purchases()}</h2>
+					<p class="mt-0.5 text-xs text-[var(--text-subtle)]">{m.reports_purchases_hint()}</p>
+				</div>
+				<a href="/compras/cuentas-por-pagar" class="text-xs font-semibold text-[var(--accent)] hover:underline">
+					{m.reports_go_to_payables()}
+				</a>
+			</header>
+
+			<div class="table-wrap">
+				<table class="data-table">
+					<thead>
+						<tr>
+							<th scope="col">{m.reports_col_rate()}</th>
+							<th scope="col" class="num">{m.reports_col_base()}</th>
+							<th scope="col" class="num">{m.reports_col_tax()}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each data.purchases.by_rate as fila (fila.tax_rate)}
+							<tr>
+								<td class="tabular-nums">{m.reports_rate_percent({ rate: fila.tax_rate })}</td>
+								<td class="num tabular-nums">{formatMoney(fila.base)}</td>
+								<td class="num tabular-nums">{formatMoney(fila.tax)}</td>
+							</tr>
+						{/each}
+					</tbody>
+					<tfoot>
+						<tr>
+							<td class="font-semibold">{m.reports_total()}</td>
+							<td class="num font-semibold tabular-nums">{formatMoney(data.purchases.subtotal)}</td>
+							<td class="num font-bold tabular-nums">{formatMoney(data.purchases.tax)}</td>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+		</section>
+	{/if}
+
 	<!-- Alertas de stock: estado, con icono y etiqueta, nunca solo color. -->
 	<section class="card p-4">
 		<header class="mb-3 flex items-center justify-between gap-3">

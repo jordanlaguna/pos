@@ -19,6 +19,7 @@
 	"nav_expand_menu": "Expandir menu",
 	"nav_collapse_menu": "Recolher menu",
 	"nav_locked": "{section}: só para administradores. Peça a um administrador para mudar o seu perfil.",
+	"nav_locked_module": "{section} não está no seu plano. Fale com o suporte para ativá-lo.",
 	"nav_company": "Empresa",
 	"nav_branch_terminal": "Filial {branch} · Caixa {terminal}",
 	"nav_switch_company": "Trocar de empresa",

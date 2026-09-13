@@ -19,6 +19,7 @@
 	"nav_expand_menu": "Expand menu",
 	"nav_collapse_menu": "Collapse menu",
 	"nav_locked": "{section}: administrators only. Ask an administrator to change your role.",
+	"nav_locked_module": "{section} is not in your plan. Contact support to enable it.",
 	"nav_company": "Company",
 	"nav_branch_terminal": "Branch {branch} · Register {terminal}",
 	"nav_switch_company": "Switch company",

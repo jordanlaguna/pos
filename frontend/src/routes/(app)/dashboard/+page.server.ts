@@ -5,6 +5,7 @@ import { toDateInput } from '$lib/ui/format';
 import type {
 	LowStockProduct,
 	PaymentBreakdown,
+	PurchasesReport,
 	ReportSummary,
 	SalesByDay,
 	TopProduct
@@ -35,19 +36,25 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const query = { from, to };
 
-	const [summary, topProducts, salesByDay, byPaymentMethod, lowStock] = await Promise.all([
-		apiSafe<ReportSummary | null>('/reports/summary', null, { token, query }),
-		apiSafe<TopProduct[]>('/reports/top_products', [], {
-			token,
-			query: { ...query, limit: 8 }
-		}),
-		apiSafe<SalesByDay[]>('/reports/sales_by_day', [], { token, query }),
-		apiSafe<PaymentBreakdown[]>('/reports/by_payment_method', [], { token, query }),
-		apiSafe<LowStockProduct[]>('/reports/low_stock', [], {
-			token,
-			query: { threshold: LOW_STOCK_THRESHOLD }
-		})
-	]);
+	const [summary, topProducts, salesByDay, byPaymentMethod, lowStock, purchases] =
+		await Promise.all([
+			apiSafe<ReportSummary | null>('/reports/summary', null, { token, query }),
+			apiSafe<TopProduct[]>('/reports/top_products', [], {
+				token,
+				query: { ...query, limit: 8 }
+			}),
+			apiSafe<SalesByDay[]>('/reports/sales_by_day', [], { token, query }),
+			apiSafe<PaymentBreakdown[]>('/reports/by_payment_method', [], { token, query }),
+			apiSafe<LowStockProduct[]>('/reports/low_stock', [], {
+				token,
+				query: { threshold: LOW_STOCK_THRESHOLD }
+			}),
+			// El crédito fiscal del periodo (RF-45). Va con los demás reportes y no
+			// bajo /compras porque quien lo mira está conciliando impuestos, no
+			// revisando lo que compró. `apiSafe` porque un backend sin F10 no tiene
+			// la ruta y el tablero tiene que abrir igual.
+			apiSafe<PurchasesReport | null>('/reports/purchases', null, { token, query })
+		]);
 
 	return {
 		range: { from, to },
@@ -56,6 +63,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		salesByDay,
 		byPaymentMethod,
 		lowStock,
+		purchases,
 		lowStockThreshold: LOW_STOCK_THRESHOLD,
 		/** Sin summary el backend no tiene el patch de reportes aplicado. */
 		reportsAvailable: summary !== null

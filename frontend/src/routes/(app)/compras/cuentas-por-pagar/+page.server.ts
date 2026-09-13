@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { api, apiSafe } from '$lib/server/api';
-import { requireAdmin } from '$lib/server/auth';
+import { requireAdmin, requireModule } from '$lib/server/auth';
 import { formError, Validator } from '$lib/application/validation';
 import type { Payables } from '$lib/domain/types';
 import { F } from '$lib/ui/fields';
@@ -25,6 +25,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 export const actions: Actions = {
 	abonar: async ({ request, locals, url }) => {
 		requireAdmin(locals, url.pathname);
+		requireModule(locals, 'purchases', url.pathname);
 		const form = await request.formData();
 		const v = new Validator(form);
 

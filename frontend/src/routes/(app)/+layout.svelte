@@ -230,7 +230,9 @@
 										class="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-subtle)] opacity-60 {collapsed
 											? 'justify-center px-0'
 											: ''}"
-										title={m.nav_locked({ section: item.label })}
+										title={item.lockedBy === 'module'
+										? m.nav_locked_module({ section: item.label })
+										: m.nav_locked({ section: item.label })}
 									>
 										<Icon name={item.icon} size={18} class="shrink-0" />
 										{#if !collapsed}

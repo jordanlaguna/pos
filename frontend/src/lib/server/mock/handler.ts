@@ -302,6 +302,20 @@ function modulosDelPlan(planId: number | undefined): Record<string, boolean> {
 	return Object.fromEntries(MODULOS.map((nombre) => [nombre, plan?.[nombre] === true]));
 }
 
+/**
+ * Exige que el plan de la compañía incluya el módulo (RN-49), igual que
+ * `require_module` en el backend.
+ *
+ * **Solo se llama desde lo que escribe**, que es la mitad que importa de RN-50:
+ * apagar un módulo no borra nada, lo deja en solo lectura. Un `GET` no pasa por
+ * acá ni le cuesta una consulta.
+ */
+function exigirModulo(companyId: number, module: string): void {
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	if (modulosDelPlan(empresa?.plan_id)[module] !== true)
+		fail(403, 'module_not_in_plan', { module });
+}
+
 /** Anota en la bitácora. Igual que `crud_membership.registrar` (RF-9). */
 function registrar(
 	userId: number,
@@ -1556,6 +1570,7 @@ route('GET', '/suppliers', ({ companyId, query }) => {
 
 route('POST', '/suppliers', ({ body, companyId }) => {
 	const db = getDb(companyId);
+	exigirModulo(companyId, 'purchases');
 	validarIdentificacion(body);
 
 	const identificacion = String(body?.identification ?? '').trim() || null;
@@ -1590,6 +1605,7 @@ route('POST', '/suppliers', ({ body, companyId }) => {
 
 route('PUT', '/suppliers/:id', ({ params, body, companyId }) => {
 	const db = getDb(companyId);
+	exigirModulo(companyId, 'purchases');
 	const proveedor = (db.suppliers ?? []).find((p) => p.id === Number(params[0]));
 	if (!proveedor) fail(404, 'supplier_not_found', { supplier_id: Number(params[0]) });
 	validarIdentificacion(body);
@@ -1730,6 +1746,7 @@ function abonar(
 
 route('POST', '/purchases/:id/payments', ({ params, body, companyId, userId }) => {
 	const db = getDb(companyId);
+	exigirModulo(companyId, 'purchases');
 	const compra = db.stock_entries.find((e) => e.id === Number(params[0]));
 	// Una entrada sin proveedor no genera cuenta por pagar (RN-52), así que
 	// desde cuentas por pagar no existe: el mismo criterio del backend.
@@ -1890,6 +1907,10 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	// Con `supplier_id` esto es una compra (RN-52): abre cuenta por pagar y
 	// crédito fiscal. Sin él es la entrada de siempre y nada de esto se usa.
 	const supplierId = Number(body?.supplier_id ?? 0) || null;
+	// Solo si trae proveedor: una entrada de mercadería no es una compra y no
+	// necesita el módulo. Es lo mismo que hace el endpoint del backend, y por lo
+	// mismo: este endpoint escribe dos cosas distintas según su cuerpo.
+	if (supplierId) exigirModulo(companyId, 'purchases');
 	const proveedor = supplierId
 		? (db.suppliers ?? []).find((p) => p.id === supplierId)
 		: undefined;

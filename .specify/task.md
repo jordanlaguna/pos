@@ -2522,7 +2522,7 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       guardianes que saltaron —`test_aislamiento` y `test_suscripcion`— llevan
       la ruta declarada con su motivo.
 
-- [ ] **T-1003b** *(salió de T-1004)* **RN-49 dice que la navegación esconde el
+- [x] **T-1003b** *(salió de T-1004)* **RN-49 dice que la navegación esconde el
       módulo que el plan no incluye, y el código hace lo contrario a propósito.**
 
       `navigation.ts` ya tenía la regla escrita para los roles: lo que no se
@@ -2532,10 +2532,16 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       que le dice al dueño que el producto la tiene, y es gratis. Escondiéndolo,
       lo que se quiere vender es invisible justo para quien lo compraría.
 
-      Se implementó con candado. **Falta decidir si RN-49 se corrige** —la
-      frase «la navegación del POS lo esconde»— o si se mantiene y se cambia el
-      código. Lo demás de RN-49 no está en discusión: el 403 del servidor es
-      igual en los dos casos.
+      **Decidido con el usuario el 2026-09-12: se queda con candado y se
+      corrigió RN-49.** La frase «la navegación del POS lo esconde» pasó a decir
+      que se muestra con candado, con su porqué. Lo demás de RN-49 no estaba en
+      discusión: el 403 del servidor es igual en los dos casos.
+
+      Lo que cuesta, y hay que saberlo: el menú enseña algo que no se puede
+      usar, así que alguien va a hacer clic y toparse con el 403. Se aceptó a
+      cambio de que el módulo se pueda descubrir desde dentro del producto. Si
+      esa fricción molesta, la salida es una pantalla que explique el módulo en
+      vez de esconderlo —se planteó y se descartó por ahora—.
 
 - [x] **T-1004** POS: `modules` viaja con el estado de la suscripción,
       `+layout.server.ts` arma la navegación con eso y `requireModule` en
@@ -2976,11 +2982,36 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ### Verificación — sin esto la fase no está terminada
 
-- [ ] **T-1016** Punta a punta con el navegador, en una compañía que la prueba
+- [x] **T-1016** Punta a punta con el navegador, en una compañía que la prueba
       da de alta: XML de proveedor → compra a crédito → el reporte por tarifa
       muestra su IVA → abono en efectivo → el arqueo cuadra → una segunda
-      compra sin abonos se anula. Y en la compañía sin el módulo, el menú no
-      lo muestra y el `POST` responde el código.
+      compra sin abonos se anula. Y en la compañía sin el módulo, el menú lo
+      muestra **con candado** —T-1003b, decidido— y la escritura rebota.
+
+      `tests/e2e/compras-cierre.spec.ts`, dos pruebas. La primera recorre los
+      cinco pasos en una compañía propia con el catálogo vacío, que es lo que
+      hace comprobables las cifras: 24 × 1 200 = 28 800 de base, 3 744 de
+      impuesto al 13 %, 32 544 de saldo, 20 000 abonados y el arqueo en 30 000.
+      La segunda comprueba las dos mitades de RN-50: la pantalla **abre** sin el
+      módulo y el alta rebota.
+
+      **Hizo falta una pantalla que ninguna tarea creaba:** el reporte de
+      compras por tarifa en `/dashboard`. Plan §12.4 lo dice —«va con los demás,
+      en `/dashboard`»— y la verificación de esta tarea lo exige, pero no tenía
+      tarea propia. Entró acá, con sus claves en los tres catálogos.
+
+      **Y destapó dos defectos reales**, los dos anotados aparte:
+
+      1. **El candado del menú decía algo falso.** A un administrador sin el
+         módulo le decía «solo para administradores. Pídale a un administrador
+         que le cambie el rol»: lo mandaba a resolver algo que ya tenía
+         resuelto, cuando lo que le faltaba era el plan. Peor todavía, era justo
+         el mensaje que tenía que vender el módulo.
+      2. **`requireModule` existía desde T-1004 y no lo usaba nadie.** Las tres
+         acciones de escritura del POS lo llaman ahora, y el simulado ganó su
+         `exigirModulo()`: sin él una compañía en plan Básico creaba proveedores
+         contra el simulado mientras el backend los rechazaba, que es la clase
+         de divergencia que hace que una prueba de punta a punta mienta.
 
       **Verificación:** la prueba de Playwright pasa contra el simulado y, a
       mano, contra el stack real; `pytest`, `npm test` y `npm run check` en
