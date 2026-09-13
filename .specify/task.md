@@ -1397,17 +1397,15 @@ no aparezca a mitad de camino como en F5—:
 
 ### La puerta de la fase
 
-> **T-916 ya no es puerta de F6: se mudó a T-1001** con el reordenamiento del
-> 2026-09-12 (plan §9). La razón no cambió, cambió cuál es la primera
-> migración: **no** era que T-608 tocara las tablas con columnas en español,
-> sino que quien escribe la primera migración se lleva el rename, porque es lo
-> que plan §3.9 llama «se paga una vez». Al ejecutarse F10 antes, esa primera
-> migración es la suya.
+> **No hay puerta: T-916 se cerró el 2026-09-13 y el español se queda.** Era la
+> única condición que T-913 había dejado para reabrirse —«si F6 toca esas
+> tablas»—, F6 las toca, y aun así la respuesta es no. El porqué está en T-916,
+> y lo importante para esta fase es lo que se sigue: **T-601 y T-621 escriben
+> sobre la mezcla**, `identification_type` queda al lado de `identificacion`, y
+> eso no es una deuda anotada sino el estado final.
 >
-> Para F6 esto significa que **la puerta ya estará abierta o cerrada** cuando
-> llegue: si el rename se hizo en T-1001, T-601 y T-621 escriben sobre columnas
-> ya en inglés; si se decidió no hacerlo, se escriben sobre la mezcla y no hay
-> nada que volver a discutir.
+> Lo que sí sigue vigente es la otra mitad: las columnas **nuevas** van todas en
+> inglés. La excepción es de las que ya existen, no una licencia (plan §3.9).
 
 ### Las cuatro decisiones — resueltas el 2026-09-06
 
@@ -3679,22 +3677,40 @@ y el guardián que los vigila.
 
 **Salieron de cerrar los tres, el 2026-09-05:**
 
-- [ ] **T-916** *(antes de T-1001)* Reabrir T-913 si se hace el ABM de
-      sucursales y terminales (T-608): son de las tablas con columnas en
-      español. Incluye subir `FORMATO` en `company_dump.py` y darle un lector
-      de compatibilidad para los respaldos anteriores, sin el cual el rename
-      los deja inservibles en silencio.
+- [x] **T-916** ~~*(antes de T-1001)* Reabrir T-913 si se hace el ABM de
+      sucursales y terminales (T-608)~~ — **cerrada el 2026-09-13: no se hace.
+      El español se queda, y esta vez para siempre.**
 
-      **Volvió a apuntar a F6 el 2026-09-12, después de mirarla de cerca.** Con
-      el reordenamiento pasó un día a ser la puerta de T-1001, con el argumento
-      de que el rename viaja en la primera migración que se escriba. Es verdad
-      a medias: lo que decide no es cuál migración va primero sino **qué
-      trabajo abre esos archivos**, y ese es T-608 —el ABM de sucursales y
-      terminales—, que sigue en F6. F10 no las toca.
+      Era la única condición que T-913 había dejado escrita para reabrirse
+      —«si F6 toca esas tablas»—, y F6 las toca. Se cumplió la condición y aun
+      así la respuesta es no, por tres razones y ninguna es la comodidad:
 
-      Renombrar solo `plans` en la 008 sería lo peor de las dos opciones: se
-      paga parte del costo, se rompen los respaldos ya entregados y la mezcla
-      queda igual en las otras cuatro tablas.
+      1. **Ningún argumento de plan §3.9 se debilitó y uno se reforzó.** Siguen
+         siendo 58 archivos, ~890 menciones y trece claves JSON publicadas que
+         hay que mover en cinco frentes sin compilador común. Y desde entonces
+         se entregaron más respaldos, que es justo lo que el rename rompe en
+         silencio.
+      2. **La mezcla ya está escrita, y escribirla no dolió.** La migración 011
+         puso `identification_type` al lado de `identificacion` en `companies` y
+         en `clients`. Lo que se temía era que esa vecindad fuera una herida
+         abierta; con dos columnas nuevas puestas, se ve que es una cicatriz:
+         fea de leer, inerte. El costo de convivir con ella es un párrafo de
+         documentación, no un defecto que muerda.
+      3. **Reabrirla tiene su propio costo y ya se pagó tres veces.** T-913 →
+         T-916 → T-1001 → otra vez F6: cada vuelta consumió una sesión en
+         volver a medir lo mismo para llegar al mismo sitio. Una decisión que
+         se reabre en cada fase no es una decisión pendiente, es un impuesto.
+
+      **Qué haría falta para volver a abrirla**, y se escribe para que no vuelva
+      a abrirse por menos: que el rename deje de romper respaldos —o sea, que
+      `company_dump.py` versione el esquema *antes* y por otro motivo—, o que
+      una de esas columnas empiece a salir en un contrato nuevo hacia afuera.
+      Ninguna de las dos está prevista.
+
+      **Lo que sí queda vigente** es la otra mitad de T-913, que nunca estuvo en
+      discusión: plan §3.9 dice que la excepción es de **las columnas que ya
+      existen y no una licencia para las nuevas**. Las de F6 van todas en
+      inglés, y `test_esquema.py` lo comprueba tabla por tabla.
 - [ ] **T-917** El guardián de texto suelto **no lee el `<script>` de un
       `.svelte`**: `revisar()` recorre solo el marcado y `revisarTs()` solo abre
       archivos `.ts`. La consecuencia es que los sumideros de `toasts.*` son casi

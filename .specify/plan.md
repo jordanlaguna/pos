@@ -658,15 +658,28 @@ migración 002 y son la única excepción: F4 no las siguió y usó `sort_order`
 - No compra nada funcional. Es consistencia, y se pagaría con el presupuesto de
   riesgo justo antes de F5, que toca todo el cálculo de impuestos.
 
-**Lo que haría cambiar la decisión**: F5 no toca estas tablas, pero **F6 sí**
-—T-608 construye el ABM de sucursales y terminales, que son de las afectadas—.
-Si se corrige, el sitio es ahí: se paga una vez, con el trabajo que de todos
-modos abre esos archivos, y con la migración que F6 ya va a escribir. En ese caso
-hace falta además subir `FORMATO` en `company_dump.py` y darle un lector de
-compatibilidad para los respaldos anteriores.
+**La condición de reapertura se cumplió, y la respuesta siguió siendo no**
+(T-916, cerrada el 2026-09-13). Esta sección decía que F6 tocaría esas tablas
+—T-608 construye el ABM de sucursales y terminales— y que ahí se pagaría una
+vez. F6 llegó, las toca, y la decisión se confirma en vez de revertirse:
+
+- Ningún argumento de arriba se debilitó, y el de los respaldos se **reforzó**:
+  desde 2026-09-05 se entregaron más, y son justo lo que el rename rompe en
+  silencio.
+- La mezcla dejó de ser hipotética: la migración 011 puso `identification_type`
+  al lado de `identificacion`. Con las columnas nuevas ya escritas se ve que esa
+  vecindad es una cicatriz y no una herida — fea de leer, inerte.
+- Y reabrirla tiene costo propio, ya pagado tres veces (T-913 → T-916 → T-1001 →
+  F6). Una decisión que se reabre en cada fase no es una decisión pendiente.
+
+**Qué la reabriría de verdad**, escrito para que no vuelva a abrirse por menos:
+que `company_dump.py` versione el esquema por otro motivo —con lo que el rename
+dejaría de romper respaldos—, o que una de esas columnas empiece a salir en un
+contrato nuevo hacia afuera. Ninguna de las dos está prevista.
 
 Mientras tanto, la regla de código en inglés **sigue vigente para todo lo demás**:
 esta excepción es de las columnas que ya existen, no una licencia para las nuevas.
+F6 estrena dos tablas y las dos van enteras en inglés.
 
 ---
 
@@ -1114,10 +1127,11 @@ la lleva dentro de su nombre. Un campo editable deja que el negocio la haga
 discrepar de su propio certificado, y ahí no se rechaza un comprobante: se
 rechazan todos.
 
-**Y esto le pone precio a T-916.** `companies` es de las tablas con columnas en
-español, así que agregarle `identification_type` deja `identificacion` e
-`identification_type` **una al lado de la otra en la misma tabla**. O se renombra
-en la misma migración, o esa mezcla queda escrita.
+**Y esa mezcla quedó escrita** (T-916, cerrada el 2026-09-13). `companies` es de
+las tablas con columnas en español, así que `identification_type` vive al lado de
+`identificacion` en la misma tabla, y lo mismo pasa en `clients`. Era el precio
+que T-916 ponía sobre la mesa; se decidió pagarlo y no renombrar. §3.9 tiene el
+porqué y qué haría falta para volver a discutirlo.
 
 #### La certificación previa en sandbox se avisa, no se impide (decidido el 2026-09-06)
 

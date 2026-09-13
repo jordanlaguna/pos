@@ -1212,6 +1212,14 @@
       "decision": "Al crear un periodo al vuelo, el adaptador rechaza la escritura si hay algún periodo posterior ya cerrado.",
       "porque": "RN-61 prohíbe escribir **dentro** de un periodo cerrado, y eso dejaba un agujero: un mes sin un solo asiento no tiene fila, así que nacía abierto. Cerrado enero, una factura con fecha en diciembre entraba sin problema y cambiaba un balance ya entregado.",
       "fecha": "2026-09-13"
+    },
+    {
+      "tema": "Las columnas en español se quedan, y T-916 se cierra (no se reabre más)",
+      "decision": "T-916 queda cerrada como «no se hace». Las diecisiete columnas en español de `companies`, `plans`, `user_companies`, `branches` y `terminals` se quedan como están, y la mezcla con las nuevas en inglés —`identification_type` al lado de `identificacion`— es el estado final y no una deuda anotada.",
+      "porque": "Era la única condición que T-913 había dejado escrita para reabrirse: «si F6 toca esas tablas». F6 las toca —T-608 es el ABM de sucursales y terminales— así que la condición se cumplió, y aun así la respuesta es no.\n\nNingún argumento de plan §3.9 se debilitó y el de los respaldos se reforzó: `company_dump.py` exporta por nombre de columna y su `FORMATO` no cambia con un rename, así que todo respaldo ya entregado quedaría inservible en silencio — y desde septiembre hay más entregados, no menos.\n\nLo nuevo es que la mezcla dejó de ser hipotética: la migración 011 la escribió en dos tablas. Con las columnas puestas se ve que esa vecindad es una cicatriz y no una herida: fea de leer, inerte, y su costo es un párrafo de documentación.\n\nY reabrirla tiene costo propio, ya pagado tres veces (T-913 → T-916 → T-1001 → otra vez F6). Cada vuelta consumió una sesión en volver a medir lo mismo para llegar al mismo sitio. Una decisión que se reabre en cada fase no es una decisión pendiente, es un impuesto.",
+      "que_la_reabriria": "Escrito para que no se reabra por menos: que `company_dump.py` versione el esquema por otro motivo —con lo que el rename dejaría de romper respaldos—, o que una de esas columnas empiece a salir en un contrato nuevo hacia afuera. Ninguna está prevista.",
+      "sigue_vigente": "La otra mitad de T-913, que nunca estuvo en discusión: la excepción es de las columnas que ya existen, **no una licencia para las nuevas**. F6 estrena `fe_credentials` y `fe_sequences` y las dos van enteras en inglés; `test_esquema.py` compara modelo y migración tabla por tabla.",
+      "fecha": "2026-09-13"
     }
   ],
   "invariantes_verificados": {
