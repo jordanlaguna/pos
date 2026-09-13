@@ -1968,11 +1968,18 @@ D  Costo de ventas             2 700,00
 | `post_return(ret, lines, mapping)` | el inverso, con la tarifa de la línea (RN-12) | devolución parcial del ejemplo de §6.3 |
 | `post_cash_close(session, expected, counted, mapping)` | la diferencia a sobrante o faltante | 53 000 contra 53 277,00 → faltante 277,00; cuadrado → sin asiento |
 | `post_cash_movement(mov, mapping)` | entrada o salida contra por clasificar, salvo que sea de un abono | entrada 5 000; salida ligada a `supplier_payments` → no duplica |
-| `post_purchase(entry, lines, mapping)` | inventario; IVA crédito por tarifa; proveedores (crédito) o caja (contado) | compra a crédito 100 000 + 13 000; contado |
+| `post_purchase(entry, lines, mapping)` | inventario; IVA crédito por tarifa; **siempre** proveedores | compra a crédito 100 000 + 13 000; contado |
 | `post_supplier_payment(pay, mapping)` | proveedores contra caja o bancos | abono 50 000 en efectivo |
 | `trial_balance(lines)`, `income_statement`, `balance_sheet` | sumas por cuenta y por tipo | un periodo con los asientos de arriba: activo = pasivo + patrimonio + resultado |
 | `vat_draft(sales_by_rate, purchases_by_rate)` | débito − crédito por tarifa | 565,50 − 13 000 → saldo a favor |
 | `assert_open(period, date)` | RN-61 | fecha en cerrado → `PeriodClosed` |
+
+La compra va **siempre** contra proveedores, también la de contado. Decía «caja
+(contado)» y eso contaba la plata dos veces: desde F10 una compra de contado con
+método de pago crea su propio abono, y el abono asienta proveedores contra caja.
+Cargando siempre el pasivo, la de contado queda —sumando las dos— en inventario
+e IVA contra caja; y la de contado **sin** método de pago queda debiendo, que
+también es correcto, porque nadie registró que se pagara (T-1102, 2026-09-12).
 
 Puertos: `Ledger` (`post(entry)`), `AccountRepository`, `MappingRepository`,
 `PeriodRepository`, `EntryNumberSequence`. El puerto `Ledger` es lo que permite
@@ -2013,6 +2020,12 @@ y su CSV, `/contabilidad/iva`.
 `accounting_not_active`, `entry_not_balanced`, `period_closed`,
 `period_not_closeable` (el anterior sigue abierto), `account_in_use`,
 `account_is_system`, `invalid_opening_balance`.
+
+Y un octavo que apareció al escribir el dominio: `invalid_entry_line`, para la
+línea que trae débito y crédito a la vez, la que viene en negativo y el asiento
+sin líneas. No es «no balancea» —un asiento con esas tres cosas puede cuadrar
+perfectamente— y un asiento manual lo provoca escribiendo, así que necesita su
+propia respuesta (T-1102, 2026-09-12).
 
 ### 13.6 Decisiones
 

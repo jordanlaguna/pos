@@ -325,3 +325,53 @@ class CategoryNeedsSubcategory(DomainError):
         )
         self.category_id = category_id
         self.children = children
+
+
+# -------------------------------------------------------------- contabilidad
+
+class EntryNotBalanced(DomainError):
+    """Un asiento cuyos débitos no igualan a sus créditos (RN-58).
+
+    No es un asiento con un error: **no es un asiento**. Por eso lo levanta el
+    constructor y no una comprobación aparte que alguien pueda olvidar llamar.
+
+    Que llegue hasta una respuesta HTTP significa que un asiento automático se
+    armó mal, y eso es un defecto del programa, no del usuario. Tiene código
+    igual —y viaja con las dos sumas— porque un asiento **manual** sí lo puede
+    provocar escribiendo, y ahí quien lo escribió necesita ver por cuánto.
+    """
+
+    def __init__(self, debits: str, credits: str) -> None:
+        super().__init__(f"el asiento no balancea: {debits} contra {credits}")
+        self.debits = debits
+        self.credits = credits
+
+
+class InvalidEntryLine(DomainError):
+    """Una línea de asiento que no es ni un débito ni un crédito.
+
+    Con código y no con frase, como `InvalidMovement` y `InvalidPayment`.
+
+    La regla de las dos columnas —una de las dos es cero— se vigila acá y no con
+    un CHECK en la base (plan §5): así se escribe una vez, con su prueba, y vale
+    igual para el asiento automático y para el que alguien teclea.
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        #: Qué está mal: 'both_sides', 'negative' o 'empty'.
+        self.code = code
+
+
+class PeriodClosed(DomainError):
+    """Se quiso escribir con fecha dentro de un periodo cerrado (RN-61).
+
+    Cerrado es inmutable, y no se reabre: reabrir es la puerta por donde un
+    balance ya entregado deja de coincidir con el libro. Lo que haya que
+    corregir se corrige con un asiento de ajuste en el periodo abierto.
+    """
+
+    def __init__(self, year: int, month: int) -> None:
+        super().__init__(f"el periodo {year}-{month:02d} está cerrado")
+        self.year = year
+        self.month = month
