@@ -24,6 +24,19 @@ const IDIOMAS = [
 	{ code: 'pt', menu: 'Vendas', cantidad: 'Qtd.', contado: 'Cliente avulso' }
 ];
 
+/**
+ * El selector de idioma que la persona **ve**.
+ *
+ * Hay dos en el árbol —uno en la barra de arriba para pantalla ancha y otro en
+ * el cajón del menú para pantalla chica— y solo uno está visible a la vez. Se
+ * busca por eso y no por su `id`: el control ya se mudó una vez (2026-09-12,
+ * del pie del menú a la barra) y un `id` en la prueba hace que mudarlo cueste
+ * una ronda de fallos que no tienen nada que ver con el idioma.
+ */
+function selectorDeIdioma(page: Page) {
+	return page.locator('select[name="locale"]:visible').first();
+}
+
 async function entrar(page: Page, quien: typeof CARLOS) {
 	await page.goto('/login');
 	await page.locator('input[name="email"]').fill(quien.email);
@@ -35,10 +48,10 @@ async function entrar(page: Page, quien: typeof CARLOS) {
 /** Deja la pantalla de esta persona en el idioma pedido. */
 async function ponerIdioma(page: Page, locale: string) {
 	await page.goto('/ventas');
-	if ((await page.locator('#nav-idioma').inputValue()) !== locale) {
-		await page.locator('#nav-idioma').selectOption(locale);
-		await page.locator('form[action="/idioma"] button[type="submit"]').click();
-		await expect(page.locator('#nav-idioma')).toHaveValue(locale);
+	if ((await selectorDeIdioma(page).inputValue()) !== locale) {
+		await selectorDeIdioma(page).selectOption(locale);
+		await page.locator('form[action="/idioma"]:visible button[type="submit"]').click();
+		await expect(selectorDeIdioma(page)).toHaveValue(locale);
 	}
 }
 

@@ -167,8 +167,103 @@
 		></button>
 	{/if}
 
+	<!--
+		Compañía, sucursal y caja (T-211).
+
+		Con una sola compañía es información de fondo; con varias es lo que evita
+		cobrarle una venta al negocio equivocado.
+
+		Se define una vez y se usa en dos sitios —la barra de arriba en pantalla
+		ancha, el cajón del menú en pantalla chica— porque son el mismo dato y no
+		dos. Dos copias del mismo bloque es como una se queda sin el arreglo que
+		recibió la otra.
+	-->
+	{#snippet identidad(forma: 'inline' | 'block')}
+		{#if data.user.company_name}
+			<div class={forma === 'inline' ? 'flex items-center gap-2' : 'pb-2'}>
+				<span class="text-[var(--text-subtle)]" aria-hidden="true">
+					<Icon name="home" size={14} />
+				</span>
+				<div class="min-w-0">
+					<p class="truncate text-xs font-medium text-[var(--text)]">
+						{data.user.company_name}
+					</p>
+					{#if data.user.branch_code && data.user.terminal_code}
+						<p class="truncate text-[10px] leading-tight text-[var(--text-subtle)]">
+							{m.nav_branch_terminal({
+								branch: data.user.branch_code,
+								terminal: data.user.terminal_code
+							})}
+						</p>
+					{/if}
+				</div>
+				{#if data.user.companies_available > 1}
+					<!--
+						Solo aparece cuando hay a dónde ir (RN-25). Ofrecerle «cambiar de
+						compañía» a quien tiene una sola es prometer algo que no existe.
+					-->
+					<a
+						href="/compania"
+						class="shrink-0 rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"
+						title={m.nav_switch_company()}
+						aria-label={m.nav_switch_company()}
+					>
+						<Icon name="refresh" size={13} />
+					</a>
+				{/if}
+			</div>
+		{/if}
+	{/snippet}
+
+	<!--
+		El idioma de esta persona (T-810, RN-28).
+
+		Va en la barra y no en Configuración porque es de quien está sentado en la
+		caja, no del negocio: un local costarricense puede contratar a una cajera
+		nicaragüense que prefiera otra cosa, y no tiene por qué pedirle permiso al
+		administrador para leer su pantalla.
+
+		Es un formulario de verdad, con su botón: así funciona sin JavaScript,
+		igual que el resto del POS. «El de la compañía» no es lo mismo que elegir
+		español —hereda, y sigue al negocio si cambia—.
+	-->
+	{#snippet idioma(donde: 'header' | 'nav')}
+		<form
+			method="POST"
+			action="/idioma"
+			class={donde === 'header' ? 'flex items-center gap-1' : 'mt-2 flex items-center gap-1'}
+		>
+			<input type="hidden" name="redirectTo" value={page.url.pathname} />
+			<label class="sr-only" for="nav-idioma-{donde}">{m.nav_language()}</label>
+			<!--
+				Sin `value` ni `bind:`, con `selected` en cada opción: el select queda
+				**sin controlar** a propósito.
+
+				Con `value={…}`, Svelte lo reinicia al hidratar, y eso se come la
+				elección de quien alcanzó a tocarlo antes —que en una caja lenta es lo
+				normal—. Se descubrió con la prueba de punta a punta: elegía «el de la
+				compañía», el valor volvía a «inglés» solo, y el formulario mandaba el
+				idioma que ya estaba puesto.
+			-->
+			<select
+				id="nav-idioma-{donde}"
+				name="locale"
+				class="input h-8 min-w-0 py-0 text-xs {donde === 'header' ? 'w-36' : 'flex-1'}"
+			>
+				{#each IDIOMAS as opcion (opcion.value)}
+					<option value={opcion.value} selected={opcion.value === idiomaElegido}>
+						{opcion.label}
+					</option>
+				{/each}
+			</select>
+			<button type="submit" class="btn btn-ghost h-8 px-2" aria-label={m.nav_language_apply()}>
+				<Icon name="check" size={14} />
+			</button>
+		</form>
+	{/snippet}
+
 	<nav
-		class="no-print fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface-raised)] transition-[width,transform] duration-200 lg:static lg:translate-x-0
+		class="no-print fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--border)] bg-[var(--surface-raised)] transition-[width,transform] duration-200 lg:relative lg:translate-x-0
 			{collapsed ? 'w-[4.5rem]' : 'w-60'}
 			{mobileOpen ? 'translate-x-0' : '-translate-x-full'}"
 		aria-label={m.nav_main()}
@@ -196,15 +291,30 @@
 					<p class="truncate text-[10px] text-[var(--text-subtle)]">{m.nav_tagline()}</p>
 				</div>
 			{/if}
-			<button
-				type="button"
-				class="hidden shrink-0 rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--text)] lg:block"
-				onclick={toggleMenu}
-				aria-label={collapsed ? m.nav_expand_menu() : m.nav_collapse_menu()}
-			>
-				<Icon name="menu" size={16} />
-			</button>
 		</div>
+
+		<!--
+			El tirador de plegar, **montado sobre el borde** y no dentro del
+			encabezado.
+
+			Queda en el mismo punto de la pantalla esté plegado o no —lo lleva el
+			borde, que es lo único que se mueve—, así que el gesto de volver a
+			abrirlo se hace sin buscar. Metido adentro, al plegarse se corría con el
+			menú y había que ir a encontrarlo entre los iconos.
+
+			`-right-3` lo deja a caballo del borde: mitad adentro, mitad afuera. Es
+			lo que lo hace leerse como un asa del panel y no como un botón más de la
+			lista.
+		-->
+		<button
+			type="button"
+			class="absolute top-11 -right-3.5 z-10 hidden h-7 w-7 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-subtle)] shadow-sm transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] lg:grid"
+			onclick={toggleMenu}
+			aria-label={collapsed ? m.nav_expand_menu() : m.nav_collapse_menu()}
+			title={collapsed ? m.nav_expand_menu() : m.nav_collapse_menu()}
+		>
+			<Icon name={collapsed ? 'panelopen' : 'panelclose'} size={15} strokeWidth={1.6} />
+		</button>
 
 		<div class="flex-1 overflow-y-auto py-3">
 			{#each groups as group (group.title)}
@@ -276,97 +386,13 @@
 		</div>
 
 		<div class="shrink-0 border-t border-[var(--border)] p-2">
-			<!--
-				En qué compañía y en qué caja se está trabajando (T-211).
-				Con una sola compañía es información de fondo; con varias es lo que
-				evita cobrarle una venta al negocio equivocado, y por eso va pegado al
-				usuario y no escondido en Configuración.
-			-->
-			{#if !collapsed && data.user.company_name}
-				<div class="px-2 pt-1 pb-2">
-					<p class="truncate text-[10px] tracking-wide text-[var(--text-subtle)] uppercase">
-						{m.nav_company()}
-					</p>
-					<p class="truncate text-xs font-medium text-[var(--text)]">
-						{data.user.company_name}
-					</p>
-					{#if data.user.branch_code && data.user.terminal_code}
-						<p class="truncate text-[10px] text-[var(--text-subtle)]">
-							{m.nav_branch_terminal({
-								branch: data.user.branch_code,
-								terminal: data.user.terminal_code
-							})}
-						</p>
-					{/if}
-					{#if data.user.companies_available > 1}
-						<!--
-							Solo aparece cuando hay a dónde ir (RN-25). Ofrecerle «cambiar
-							de compañía» a quien tiene una sola es prometer algo que no
-							existe.
-						-->
-						<a
-							href="/compania"
-							class="mt-1.5 inline-flex items-center gap-1 text-[10px] text-[var(--accent-text)] hover:underline"
-						>
-							<Icon name="refresh" size={11} />
-							{m.nav_switch_company()}
-						</a>
-					{/if}
-				</div>
-			{/if}
-
 			{#if !collapsed}
-				<!--
-					El idioma de esta persona (T-810, RN-28).
-
-					Va en el menú y no en Configuración porque es de quien está sentado
-					en la caja, no del negocio: un local costarricense puede contratar a
-					una cajera nicaragüense que prefiera otra cosa, y no tiene por qué
-					pedirle permiso al administrador para leer su pantalla.
-
-					Es un formulario de verdad, con su botón: así funciona sin
-					JavaScript, igual que el resto del POS. «El de la compañía» no es lo
-					mismo que elegir español —hereda, y sigue al negocio si cambia—.
-				-->
-				<form
-					method="POST"
-					action="/idioma"
-					class="mt-2 border-t border-[var(--border)] px-2 pt-2"
-				>
-					<input type="hidden" name="redirectTo" value={page.url.pathname} />
-					<label
-						class="block text-[10px] font-semibold tracking-wide text-[var(--text-subtle)] uppercase"
-						for="nav-idioma"
-					>
-						{m.nav_language()}
-					</label>
-					<div class="mt-1 flex items-center gap-1">
-						<!--
-							Sin `value` ni `bind:`, con `selected` en cada opción: el select
-							queda **sin controlar** a propósito.
-
-							Con `value={…}`, Svelte lo reinicia al hidratar, y eso se come la
-							elección de quien alcanzó a tocarlo antes —que en una caja lenta
-							es lo normal—. Se descubrió con la prueba de punta a punta:
-							elegía «el de la compañía», el valor volvía a «inglés» solo, y el
-							formulario mandaba el idioma que ya estaba puesto.
-						-->
-						<select id="nav-idioma" name="locale" class="input h-8 min-w-0 flex-1 py-0 text-xs">
-							{#each IDIOMAS as opcion (opcion.value)}
-								<option value={opcion.value} selected={opcion.value === idiomaElegido}>
-									{opcion.label}
-								</option>
-							{/each}
-						</select>
-						<button
-							type="submit"
-							class="btn btn-ghost h-8 px-2"
-							aria-label={m.nav_language_apply()}
-						>
-							<Icon name="check" size={14} />
-						</button>
-					</div>
-				</form>
+				<!-- En pantalla chica el cajón es el único sitio donde caben: arriba
+				     la barra no da para más que el título y los dos botones. -->
+				<div class="px-2 pb-2 md:hidden">
+					{@render identidad('block')}
+					{@render idioma('nav')}
+				</div>
 			{/if}
 
 			<div
@@ -413,6 +439,21 @@
 			</button>
 
 			<h1 class="flex-1 truncate text-sm font-bold text-[var(--text)]">{currentTitle}</h1>
+
+			<!--
+				La identidad y el idioma viven acá y no al pie del menú (2026-09-12).
+
+				Dos razones. La barra tenía el título y un botón de tema en todo lo
+				ancho, y el pie del menú acumulaba compañía, caja, idioma y usuario
+				uno encima de otro. Y la segunda, que es la que importa: **en qué
+				compañía y en qué caja se está trabajando es lo que hay que ver sin
+				buscar** (T-211), y al pie del menú desaparecía con el menú plegado.
+				Acá está siempre.
+			-->
+			<div class="hidden items-center gap-3 md:flex">
+				{@render identidad('inline')}
+				{@render idioma('header')}
+			</div>
 
 			{#if data.demo}
 				<span

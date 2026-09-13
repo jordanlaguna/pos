@@ -39,8 +39,13 @@ test.describe('elegir compañía', () => {
 	test('cada compañía muestra la suya en el menú', async ({ page }) => {
 		await autenticar(page);
 		await elegirCompania(page, CON_DATOS);
-		await expect(page.getByText(CON_DATOS).first()).toBeVisible();
-		await expect(page.getByText(/Sucursal 001 · Caja 00001/)).toBeVisible();
+		// `:visible`: el bloque de compañía está dos veces en el árbol —la barra
+		// de arriba en pantalla ancha, el cajón del menú en pantalla chica— y solo
+		// uno se ve. Sin esto, `.first()` agarra el del cajón, que está oculto.
+		await expect(page.getByText(CON_DATOS).locator('visible=true').first()).toBeVisible();
+		await expect(
+			page.getByText(/Sucursal 001 · Caja 00001/).locator('visible=true').first()
+		).toBeVisible();
 	});
 });
 

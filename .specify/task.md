@@ -3572,6 +3572,42 @@ y el guardián que los vigila.
       archivo ya tenía `elegirHasta` escrito para esto y esa llamada no lo usaba.
       Vale para el barrido: buscar `selectOption` y `click` sueltos después de un
       `goto`, no solo el patrón «enviar y navegar».
+- [x] **T-923** El tirador de plegar el menú se monta **sobre el borde**, y la
+      compañía y el idioma suben a la barra de arriba. Pedido por el usuario el
+      2026-09-12, con capturas de referencia.
+
+      Dos cosas, y las dos por la misma razón: lo que hay que ver sin buscar no
+      puede vivir donde desaparece.
+
+      1. **El tirador.** Estaba dentro del encabezado del menú, así que al
+         plegarse se corría con él y había que ir a encontrarlo entre los
+         iconos. Ahora va a caballo del borde —`-right-3.5` sobre un `nav` que
+         pasó de `lg:static` a `lg:relative`, porque un `static` no ancla un
+         `absolute`— y queda en el mismo punto de la pantalla en los dos
+         estados. El icono lleva **flecha**: señala hacia dónde va a ir, no
+         dónde está, así que son dos —`panelclose` y `panelopen`—.
+
+      2. **La compañía, la caja y el idioma** pasaron del pie del menú a la
+         barra. Al pie desaparecían con el menú plegado, y T-211 dice que en qué
+         compañía y en qué caja se trabaja es lo que evita cobrarle una venta al
+         negocio equivocado. De paso la barra dejó de ser un título y un botón
+         de tema en todo lo ancho.
+
+      **Se definen una vez, con `{#snippet}`, y se usan en dos sitios**: la barra
+      en pantalla ancha y el cajón del menú en pantalla chica, donde arriba no
+      caben. Dos copias del mismo bloque es como una se queda sin el arreglo que
+      recibió la otra.
+
+      **Lo que costó, y que vale para la próxima:** duplicar un bloque por
+      responsividad rompe toda prueba que diga `getByText(...).first()`, porque
+      la copia oculta suele ir primero en el árbol. Cuatro pruebas cayeron por
+      eso y ninguna tenía que ver con el menú. Las tres afectadas ahora piden
+      **la copia visible**, que además es lo que la prueba quiere decir: el
+      selector de idioma ya se mudó una vez y un `#id` en la prueba hace que
+      mudarlo cueste una ronda de fallos ajenos al cambio.
+
+      **Verificación:** 580 del POS, 54 de punta a punta, `npm run check` 0/0.
+
 - [x] **T-919** `tests/test_esquema.py` compara **índices y restricciones, no
       columnas**. El defecto 19 fue justo de columnas —cinco con un tipo en el
       modelo y otro en la migración— y se verificó a mano una vez, en F2. Al

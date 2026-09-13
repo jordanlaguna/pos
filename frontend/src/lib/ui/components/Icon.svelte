@@ -57,6 +57,15 @@
 		palette:
 			'M12 2a10 10 0 1 0 0 20c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1-.24-.27-.39-.62-.39-1 0-.83.67-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.42-4.03-8-9-8ZM6.5 12a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM9.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM14.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM17.5 12a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z',
 		bolt: 'M13 2 3 14h9l-1 8 10-12h-9l1-8Z',
+		// El tirador del menú: un panel con su columna y **una flecha adentro**.
+		//
+		// El panel dice qué se pliega —más de lo que decía el `menu` de tres
+		// rayas, que es el gesto de abrir un menú y no el de encoger el que ya
+		// está a la vista— y la flecha dice hacia dónde va. Son dos porque
+		// apunta a lo que va a pasar, no a lo que hay: con el menú abierto
+		// señala a la izquierda, que es hacia donde se va a ir.
+		panelclose: 'M20 4H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1ZM9 4v16M17 9l-3 3 3 3',
+		panelopen: 'M20 4H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1ZM9 4v16M14 9l3 3-3 3',
 		// Compras (F10). El camión es lo que distingue «lo que entra» de `box`,
 		// que ya es el inventario: una compra es mercadería en camino, no en
 		// estante.

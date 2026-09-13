@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 /**
  * El idioma de la sesión llega hasta la pantalla (T-809).
@@ -21,6 +21,19 @@ const clave = 'input[name="password"]';
 const CARLOS = { email: 'carlos@ventasys.cr', password: 'cajero123' };
 const CAJERO_ES = { email: 'cajero@ventasys.cr', password: 'cajero123' };
 
+/**
+ * El selector de idioma que la persona **ve**.
+ *
+ * Hay dos en el árbol —uno en la barra de arriba para pantalla ancha y otro en
+ * el cajón del menú para pantalla chica— y solo uno está visible a la vez. Se
+ * busca por eso y no por su `id`: el control ya se mudó una vez (2026-09-12,
+ * del pie del menú a la barra) y un `id` en la prueba hace que mudarlo cueste
+ * una ronda de fallos que no tienen nada que ver con el idioma.
+ */
+function selectorDeIdioma(page: Page) {
+	return page.locator('select[name="locale"]:visible').first();
+}
+
 async function entrar(page: import('@playwright/test').Page, quien: typeof CARLOS) {
 	await page.goto('/login');
 	await page.locator(correo).fill(quien.email);
@@ -34,10 +47,10 @@ async function entrar(page: import('@playwright/test').Page, quien: typeof CARLO
 /** Deja el idioma de Carlos en inglés, venga como venga. */
 async function asegurarIngles(page: import('@playwright/test').Page) {
 	await entrar(page, CARLOS);
-	if ((await page.locator('#nav-idioma').inputValue()) !== 'en') {
-		await page.locator('#nav-idioma').selectOption('en');
+	if ((await selectorDeIdioma(page).inputValue()) !== 'en') {
+		await selectorDeIdioma(page).selectOption('en');
 		await page.getByRole('button', { name: /cambiar el idioma|change the language/i }).click();
-		await expect(page.locator('#nav-idioma')).toHaveValue('en');
+		await expect(selectorDeIdioma(page)).toHaveValue('en');
 	}
 }
 
@@ -111,17 +124,17 @@ test.describe('el selector del menú', () => {
 		await entrar(page, CARLOS);
 
 		// De inglés a heredar el de la compañía, que es español.
-		await page.locator('#nav-idioma').selectOption('auto');
+		await selectorDeIdioma(page).selectOption('auto');
 		await page.getByRole('button', { name: /cambiar el idioma|change the language/i }).click();
 		await expect(page.getByRole('link', { name: 'Ventas' })).toBeVisible();
 		await expect(page.locator('html')).toHaveAttribute('lang', 'es');
 
 		// Y de vuelta. El selector muestra lo que eligió la persona, no lo
 		// efectivo: después de «auto» tiene que estar en «auto».
-		await expect(page.locator('#nav-idioma')).toHaveValue('auto');
-		await page.locator('#nav-idioma').selectOption('en');
+		await expect(selectorDeIdioma(page)).toHaveValue('auto');
+		await selectorDeIdioma(page).selectOption('en');
 		await page.getByRole('button', { name: /cambiar el idioma|change the language/i }).click();
 		await expect(page.getByRole('link', { name: 'Sales' })).toBeVisible();
-		await expect(page.locator('#nav-idioma')).toHaveValue('en');
+		await expect(selectorDeIdioma(page)).toHaveValue('en');
 	});
 });

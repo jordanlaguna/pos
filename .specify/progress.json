@@ -2078,6 +2078,17 @@
         "**F10 terminada**: dieciséis tareas más dos que aparecieron. Verde: 982 pruebas del backend con cobertura 100 %, 580 del POS, 54 de punta a punta, `npm run check` en 0/0."
       ],
       "lo_que_ensena": "**Una prueba de punta a punta que no sale de la compañía del demo no prueba la regla, prueba el demo.** Las dos cosas que se rompieron acá solo se ven desde una compañía nueva: el candado del menú —porque el administrador del demo tiene todos los módulos y nunca lo ve— y el hueco de `requireModule` —porque nadie había escrito nunca sin el módulo—. Dar de alta la compañía dentro de la prueba cuesta veinte líneas y paga dos veces: aísla el estado, que era la lección de T-310, y además pone al código en el caso que nadie ejercita a mano. El corolario incómodo es que `requireModule` llevaba desde T-1004 sin llamarse y ninguna prueba lo notó, porque las pruebas de módulos eran de la dependencia y no de las pantallas: una función exportada y sin usar no la caza la cobertura si tiene su propia prueba unitaria."
+    },
+    {
+      "fecha": "2026-09-12",
+      "titulo": "El tirador del menú va sobre el borde, y la identidad sube a la barra",
+      "hecho": [
+        "T-923, pedida por el usuario con capturas: el botón de plegar el menú pasa del encabezado al borde, con flecha que señala hacia dónde va a ir (`panelclose` / `panelopen`).",
+        "Compañía, sucursal, caja e idioma pasan del pie del menú a la barra de arriba. Se definen una vez con `{#snippet}` y se usan en dos sitios: la barra en pantalla ancha, el cajón en pantalla chica.",
+        "Cuatro pruebas de punta a punta cayeron por la duplicación responsiva y se corrigieron pidiendo la copia visible.",
+        "Verde: 580 del POS, 54 de punta a punta, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Duplicar un bloque por responsividad rompe toda prueba que diga `.first()`.** La copia oculta suele ir primero en el árbol —el menú se renderiza antes que la barra—, así que `getByText(X).first()` pasa a resolver a un elemento con `display:none` y la prueba falla diciendo «no es visible» sobre algo que sí está en pantalla. Cayeron cuatro, ninguna del menú: una de cambio de compañía y tres de idiomas. La corrección no es poner `.nth(1)` —que es igual de frágil al revés— sino pedir **la copia visible**, que además es lo que la prueba quiere decir. Lo mismo con los `#id`: el selector de idioma se mudó una vez y las pruebas lo apuntaban por `id`; ahora lo buscan por `select[name=\"locale\"]:visible`, que sobrevive a la próxima mudanza."
     }
   ],
   "$reparto": {
