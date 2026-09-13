@@ -100,6 +100,30 @@ services:
       retries: 30
       start_period: 3s
 
+  # Monta el motor `transit`, que en modo -dev no viene montado.
+  #
+  # Va acá y no en una prueba porque la pila tiene que bastarse sola: el Vault
+  # de pruebas es en memoria, así que cada reinicio lo deja sin motor, y una
+  # batería que dependiera de que otra prueba lo montara primero fallaría según
+  # el orden en que corran. En la pila de trabajo esto es un paso del README,
+  # porque ahí Vault persiste y se hace una sola vez.
+  vault-init:
+    image: hashicorp/vault:1.20
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: test-root-token
+    entrypoint:
+      - sh
+      - -c
+      # El 400 «path is already in use» es el estado que se quería, así que se
+      # deja pasar: esto corre otra vez en cada `up`.
+      - "vault secrets enable transit || true"
+    depends_on:
+      vault:
+        condition: service_healthy
+    networks:
+      - test-net
+
   fastapi:
     build:
       context: .
@@ -138,6 +162,8 @@ services:
       # Vault que no responde es una falla de verdad y no el estado normal.
       vault:
         condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
     networks:
       - test-net
 

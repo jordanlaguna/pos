@@ -276,6 +276,19 @@ CODES: frozenset[str] = frozenset(
         "tax_rate_not_a_number",
         "tax_rate_out_of_range",
         "settings_save_failed",
+        # ------------------------------------------- factura electrónica (F6)
+        # `reason` dice cuál de los cuatro motivos —`bad_pin`, `not_a_p12`,
+        # `no_private_key`, `no_certificate`— porque lo que hay que hacer es
+        # distinto en cada uno: volver a escribir el PIN, o ir a buscar el
+        # archivo correcto.
+        "invalid_certificate",
+        "certificate_too_large",
+        "invalid_environment",
+        "atv_user_required",
+        # Vault sellado, caído o sin el motor montado. Va con 503 y no con 500:
+        # 503 dice «reintentá», que es exactamente el caso de alguien que
+        # reinició la VM y no abrió Vault.
+        "signing_unavailable",
     }
 )
 

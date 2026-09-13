@@ -482,3 +482,132 @@ class FakeDocumentSigner:
     def forget_key(self, *, company_id: int, environment: str) -> None:
         # Quitar lo que no está no es un error: es el estado que se pedía.
         self.llaves.pop((company_id, environment), None)
+
+
+@dataclass
+class FilaDeCredenciales:
+    """Una fila de `fe_credentials`, con las dos mitades separadas.
+
+    Nace **vacía de las dos**: es como está un ambiente que nunca se configuró,
+    y lo que importa probar es justamente que cada mitad se pueda llenar sin
+    tocar la otra.
+    """
+
+    environment: str
+    certificate_pem: str | None = None
+    certificate_name: str | None = None
+    expires_at: datetime | None = None
+    cert_uploaded_at: datetime | None = None
+    cert_uploaded_by: int | None = None
+    key_custody: str | None = None
+    atv_user: str | None = None
+    atv_password_encrypted: str | None = None
+    atv_updated_at: datetime | None = None
+    atv_updated_by: int | None = None
+    atv_verified_at: datetime | None = None
+
+
+class FakeFeCredentialsRepository:
+    """Las credenciales de Hacienda, en memoria (T-603)."""
+
+    def __init__(self, filas: list[FilaDeCredenciales] | None = None) -> None:
+        self.filas = {f.environment: f for f in (filas or [])}
+
+    def _fila(self, environment: str) -> FilaDeCredenciales:
+        if environment not in self.filas:
+            self.filas[environment] = FilaDeCredenciales(environment=environment)
+        return self.filas[environment]
+
+    def get(self, environment: str) -> FilaDeCredenciales | None:
+        return self.filas.get(environment)
+
+    def all(self) -> list[FilaDeCredenciales]:
+        return list(self.filas.values())
+
+    def save_certificate(
+        self,
+        *,
+        environment: str,
+        certificate_pem: str,
+        certificate_name: str,
+        expires_at: datetime,
+        uploaded_at: datetime,
+        uploaded_by: int,
+    ) -> None:
+        fila = self._fila(environment)
+        fila.certificate_pem = certificate_pem
+        fila.certificate_name = certificate_name
+        fila.expires_at = expires_at
+        fila.cert_uploaded_at = uploaded_at
+        fila.cert_uploaded_by = uploaded_by
+        fila.key_custody = "vault"
+
+    def clear_certificate(self, *, environment: str) -> None:
+        fila = self._fila(environment)
+        fila.certificate_pem = None
+        fila.certificate_name = None
+        fila.expires_at = None
+        fila.cert_uploaded_at = None
+        fila.cert_uploaded_by = None
+        fila.key_custody = None
+
+    def save_atv(
+        self,
+        *,
+        environment: str,
+        user: str,
+        password_encrypted: str,
+        updated_at: datetime,
+        updated_by: int,
+    ) -> None:
+        fila = self._fila(environment)
+        fila.atv_user = user
+        fila.atv_password_encrypted = password_encrypted
+        fila.atv_updated_at = updated_at
+        fila.atv_updated_by = updated_by
+        # Cambiar la contraseña invalida la verificación anterior: son otras
+        # credenciales. Sin esto la pantalla seguiría diciendo «verificadas el 3
+        # de septiembre» sobre algo que se cambió hoy y que nadie probó.
+        fila.atv_verified_at = None
+
+    def mark_verified(self, *, environment: str, at: datetime) -> None:
+        self._fila(environment).atv_verified_at = at
+
+
+@dataclass
+class CertificadoLeido:
+    certificate_pem: str
+    private_key_der: bytes
+    subject: str
+    expires_at: datetime
+
+
+class FakeCertificateReader:
+    """Abre un `.p12` de mentira (T-603).
+
+    El formato es `b"P12|<pin>|<sujeto>|<iso del vencimiento>"`, y la llave que
+    devuelve es de verdad porque el firmante la va a usar. Lo que replica es lo
+    único que le importa al caso de uso: **que el PIN tiene que coincidir**.
+    """
+
+    def __init__(self, private_key_der: bytes, *, pin: str = "1234") -> None:
+        self.private_key_der = private_key_der
+        self.pin = pin
+        self.leidos = 0
+
+    def read(self, p12: bytes, pin: str):
+        from app.application.ports.signing import InvalidCertificate
+
+        self.leidos += 1
+        if not p12.startswith(b"P12|"):
+            raise InvalidCertificate("not_a_p12")
+        if pin != self.pin:
+            raise InvalidCertificate("bad_pin")
+
+        _, _, sujeto, vence = p12.decode("utf-8").split("|")
+        return CertificadoLeido(
+            certificate_pem="-----BEGIN CERTIFICATE-----\nfingido\n-----END CERTIFICATE-----",
+            private_key_der=self.private_key_der,
+            subject=sujeto,
+            expires_at=datetime.fromisoformat(vence),
+        )

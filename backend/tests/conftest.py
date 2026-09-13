@@ -249,6 +249,29 @@ class Api:
         except ValueError:
             return r.status_code, r.text
 
+    def multipart(
+        self, path: str, *, files: dict, data: dict | None = None
+    ) -> tuple[int, Any]:
+        """Un `POST` con archivo. Es lo que hace el navegador al subir el `.p12`.
+
+        No pone `Content-Type`: lo arma `requests` con el límite del multipart,
+        y escribirlo a mano deja un cuerpo que FastAPI no sabe partir.
+        """
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        r = self.http.post(
+            f"{self.base}{path}",
+            files=files,
+            data=data or {},
+            headers=headers,
+            timeout=TIMEOUT,
+        )
+        try:
+            return r.status_code, r.json()
+        except ValueError:
+            return r.status_code, r.text
+
     def ok(self, method: str, path: str, body: Any = None) -> Any:
         """Igual, pero exige que haya salido bien. Para los pasos de preparación."""
         estado, cuerpo = self.call(method, path, body)

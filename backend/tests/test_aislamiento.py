@@ -745,6 +745,14 @@ FUERA_DE_LA_BATERIA = {
     "/accounting/reports/ledger": "suma el libro de la compañía de la sesión",
     "/accounting/vat": "cruza los reportes de la compañía de la sesión",
     "/reports/sales_by_rate": "el espejo de /reports/purchases; mismo filtro escrito a mano",
+    # F6. No llevan id —siempre hablan de la compañía de la sesión— así que la
+    # forma de esta batería no aplica. El aislamiento de verdad se prueba en
+    # `test_credenciales_fe_http.py`, que las recorre con DOS compañías: lo que
+    # se filtraría si el filtro automático fallara acá es de dónde sale la
+    # firma de un cliente.
+    "/fe": "sin id; el aislamiento se prueba en test_credenciales_fe_http.py",
+    "/fe/{ambiente}/certificate": "idem",
+    "/fe/{ambiente}/atv": "idem",
 }
 
 

@@ -23,6 +23,7 @@ firma. Con el documento entero, el adaptador tendría que poder descifrar algo.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 
@@ -76,4 +77,51 @@ class DocumentSigner(Protocol):
         Quitar una llave que no está **no es un error** — es el estado que se
         pedía.
         """
+        ...
+
+
+class InvalidCertificate(Exception):
+    """El `.p12` no se pudo abrir, o no trae lo que hace falta.
+
+    Lleva un código y no una frase, como el resto del proyecto: quien arma el
+    texto es el POS (RN-30). Los motivos son cuatro y se distinguen porque lo
+    que tiene que hacer la persona es distinto en cada uno:
+
+    * `bad_pin` — el PIN no abre el archivo. Volver a escribirlo.
+    * `not_a_p12` — subió otra cosa: el `.cer` que ATV manda al lado, un ZIP.
+    * `no_private_key` — es un `.p12` pero solo con la parte pública. Pasa al
+      exportar desde el navegador sin marcar «incluir la llave privada».
+    * `no_certificate` — trae la llave y no el certificado. Sin él no hay
+      `KeyInfo` que meter en el XML.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"el certificado no sirve: {reason}")
+        self.reason = reason
+
+
+class ParsedCertificate(Protocol):
+    """Lo que sale de abrir un `.p12`, y nada más.
+
+    **No lleva el `.p12` ni el PIN**: existen durante la petición que los trajo
+    y no vuelven a existir. Lo que sigue viaje es la parte pública —que va en
+    cada XML firmado— y la privada, que va derecho a Vault y no se guarda.
+    """
+
+    #: La parte pública, en PEM. Se guarda en la base sin cifrar.
+    certificate_pem: str
+    #: La privada en PKCS#8 DER, lista para importar a Vault. No se guarda.
+    private_key_der: bytes
+    #: Cómo llamarlo en la pantalla. Sale del `subject` del certificado y no del
+    #: nombre del archivo: el archivo se llama como quiso quien lo bajó.
+    subject: str
+    #: El `notAfter`, con hora.
+    expires_at: datetime
+
+
+class CertificateReader(Protocol):
+    """Abre un `.p12` con su PIN. Es lo único que sabe de PKCS#12."""
+
+    def read(self, p12: bytes, pin: str) -> ParsedCertificate:
+        """Lo de adentro, o `InvalidCertificate` con su motivo."""
         ...
