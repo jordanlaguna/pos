@@ -20,7 +20,7 @@ import {
 	lineTax,
 	round2
 } from '$lib/domain/money';
-import { COMPANY_STATES, MODULES as MODULOS } from '$lib/domain/types';
+import { COMPANY_STATES, MODULES as MODULOS, PAYMENT_METHODS } from '$lib/domain/types';
 import type {
 	CashMovement,
 	CashSession,
@@ -1058,6 +1058,12 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 	if (db.sales.some((s) => s.sale_number === saleNumber))
 		fail(400, 'duplicate_sale_number', { sale_number: saleNumber });
 
+	// T-1104: el método de pago es un conjunto cerrado, y se comprueba antes de
+	// tocar nada, como en `RegisterSale`: no depende de nada que haya que leer.
+	const paymentMethod = String(body?.payment_method ?? '');
+	if (!(PAYMENT_METHODS as readonly string[]).includes(paymentMethod))
+		fail(400, 'invalid_sale_payment_method', { method: paymentMethod });
+
 	const products = Array.isArray(body?.products) ? body.products : [];
 	if (!products.length) fail(400, 'empty_sale');
 
@@ -1147,7 +1153,7 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 		subtotal: calculado.subtotal,
 		tax: calculado.tax,
 		total: calculado.total,
-		payment_method: String(body?.payment_method ?? 'Efectivo'),
+		payment_method: paymentMethod,
 		cash_received: cashReceived,
 		// El vuelto ni se recibe: se calcula. Así no puede venir negativo.
 		change_given: changeDue(cashReceived, calculado.total),

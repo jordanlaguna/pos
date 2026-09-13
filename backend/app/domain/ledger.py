@@ -45,6 +45,7 @@ from datetime import date
 
 from .errors import EntryNotBalanced, InvalidEntryLine, PeriodClosed
 from .money import Money
+from .sale import CASH_METHOD
 from .tax import TaxRate
 
 # --------------------------------------------------------------- vocabulario
@@ -139,15 +140,15 @@ UNCLASSIFIED = "unclassified"
 
 #: A qué papel va el cobro de una venta, según su método de pago.
 #:
-#: Los valores son los cuatro que el POS ofrece y que ya están guardados en
-#: `sales.payment_method`; **no se renombran** (T-1104). Están en español porque
-#: nacieron como la etiqueta que veía el cajero, y hoy son los valores de un
-#: conjunto cerrado: cambiarlos obligaría a reescribir el historial.
+#: Los valores son los cuatro de `PAYMENT_METHODS`, el conjunto cerrado que
+#: define `domain/sale.py` (T-1104). Que estén los cuatro lo comprueba una
+#: prueba: si alguien agrega un método y olvida su papel, todas las ventas
+#: cobradas con él se irían a «por clasificar» sin que nada avisara.
 #:
-#: Un método que no esté acá —una venta vieja, una fila escrita a mano— no
-#: detiene nada: cae en «por clasificar», que es justo para lo que está.
+#: Un método que no esté acá —una venta anterior a T-1104, una fila escrita a
+#: mano— no detiene nada: cae en «por clasificar», que es justo para lo que está.
 METHOD_ROLES: dict[str, str] = {
-    "Efectivo": CASH,
+    CASH_METHOD: CASH,
     "Tarjeta de crédito": CARDS_RECEIVABLE,
     # SINPE Móvil y la transferencia entran igual: al banco. No son la gaveta, y
     # por eso el arqueo tampoco las cuenta (`expected_amount`).

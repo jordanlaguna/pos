@@ -93,6 +93,11 @@ CODES: frozenset[str] = frozenset(
         "duplicate_sale_number",
         "empty_sale",
         "invalid_sale_line",
+        # `method` es el valor que llegó. Desde T-1104 el método de pago de una
+        # venta es un conjunto cerrado: con texto libre, un «Efectvo» con dedo de
+        # más entraba sin avisar, no sumaba al efectivo esperado del arqueo y
+        # aparecía como una fila propia en el reporte de métodos de pago.
+        "invalid_sale_payment_method",
         "product_not_found",
         "product_without_price",
         "insufficient_stock",

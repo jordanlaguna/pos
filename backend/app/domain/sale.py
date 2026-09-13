@@ -16,10 +16,47 @@ from .errors import (
     InsufficientPayment,
     InsufficientStock,
     InvalidQuantity,
+    InvalidSalePaymentMethod,
     TotalsMismatch,
 )
 from .money import Money
 from .tax import TaxRate
+
+#: Con qué se paga una venta. **Un conjunto cerrado** desde T-1104: antes era
+#: texto libre y la base aceptaba cualquier cosa.
+#:
+#: Están en español y así se quedan. Nacieron como la etiqueta que veía el
+#: cajero y hoy son los valores guardados en `sales.payment_method` de todas las
+#: instalaciones; renombrarlos obligaría a reescribir el historial de cada
+#: cliente, y a que el reporte de métodos de pago partiera en dos el mismo
+#: efectivo. Lo que se ve en pantalla ya no sale de acá: lo arma el POS con su
+#: catálogo, en el idioma de quien mira.
+#:
+#: Cerrarlo es lo que permite mapearlos a cuentas (F11): un «Efectvo» con dedo de
+#: más no se puede asentar, y con texto libre entraba sin que nada avisara.
+PAYMENT_METHODS: tuple[str, ...] = (
+    "Efectivo",
+    "Tarjeta de crédito",
+    "Transferencia bancaria",
+    "Pago móvil",
+)
+
+#: El único que pone plata en la gaveta, y por eso el único que cuenta el arqueo
+#: (`expected_amount`). Vive acá y no en el caso de uso porque también lo
+#: necesita el libro.
+CASH_METHOD: str = "Efectivo"
+
+
+def check_payment_method(method: str) -> None:
+    """El método tiene que ser uno de los cuatro (T-1104).
+
+    Se comprueba al vender y no al leer: una venta con un método inventado ya
+    ensució el arqueo —no suma al efectivo esperado pero tampoco es tarjeta— y
+    el reporte de métodos de pago, donde aparece como una fila propia. Rechazarla
+    al entrar es lo único que la mantiene fuera.
+    """
+    if method not in PAYMENT_METHODS:
+        raise InvalidSalePaymentMethod(method)
 
 
 @dataclass(frozen=True)

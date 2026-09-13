@@ -41,6 +41,7 @@ from app.domain.sale import (
     change_due,
     check_declared_totals,
     check_payment,
+    check_payment_method,
     check_stock,
     sale_totals,
 )
@@ -122,6 +123,10 @@ class RegisterSale:
         # venta, no del transporte.
         if self._sales.exists_with_number(request.sale_number):
             raise DuplicateSaleNumber(request.sale_number)
+
+        # Antes de tocar la base: el método es un conjunto cerrado (T-1104) y no
+        # depende de nada que haya que ir a leer.
+        check_payment_method(request.payment_method)
 
         for pedida in request.lines:
             if not pedida.product_id or pedida.quantity <= 0:

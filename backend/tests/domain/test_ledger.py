@@ -56,7 +56,9 @@ from app.domain.ledger import (
     post_supplier_payment,
     sales_role,
 )
+from app.domain.ledger import METHOD_ROLES
 from app.domain.money import Money
+from app.domain.sale import PAYMENT_METHODS
 from app.domain.tax import TaxRate
 
 TRECE = TaxRate.percent(13)
@@ -604,6 +606,12 @@ class TestElMapeo:
         # 'receivable' —la venta a crédito— todavía no tiene cuenta en este
         # mapeo, y por eso caería en 1.9.99.
         assert not MAPEO.is_mapped(SALE, RECEIVABLE)
+
+    def test_los_cuatro_metodos_de_pago_tienen_papel(self):
+        # Sin esta prueba, agregar un método a `PAYMENT_METHODS` y olvidar su
+        # papel mandaría todas las ventas cobradas con él a «por clasificar», y
+        # el sistema no se quejaría: para eso está 1.9.99.
+        assert set(PAYMENT_METHODS) == set(METHOD_ROLES)
 
     def test_el_papel_de_venta_lleva_la_tarifa_adentro(self):
         assert sales_role(TRECE) == "sales_13"

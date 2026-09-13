@@ -205,6 +205,23 @@ class InvalidPayment(DomainError):
         self.code = code
 
 
+class InvalidSalePaymentMethod(DomainError):
+    """Se quiso cobrar con un método que no está en la lista (T-1104).
+
+    Lleva el valor y no un código, al revés que `InvalidPayment`, porque acá lo
+    útil es **cuál** llegó: el caso real no es un método inventado sino uno mal
+    escrito —un cliente viejo, una integración— y verlo ahorra el viaje a la base.
+
+    Con texto libre esa venta entraba y quedaba como una fila propia en el
+    reporte de métodos de pago, sin sumar al efectivo esperado del arqueo ni ser
+    tarjeta. Y desde F11 no se podría asentar: no hay cuenta para «Efectvo».
+    """
+
+    def __init__(self, method: str) -> None:
+        super().__init__(f"método de pago no admitido: {method!r}")
+        self.method = method
+
+
 class BarcodeTaken(DomainError):
     """Se quiso crear un producto con un código que ya existe."""
 

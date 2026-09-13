@@ -252,6 +252,7 @@ export const API_CODES = [
 	'duplicate_sale_number',
 	'empty_sale',
 	'invalid_sale_line',
+	'invalid_sale_payment_method',
 	'product_not_found',
 	'product_without_price',
 	'insufficient_stock',
@@ -535,6 +536,8 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_empty_sale();
 		case 'invalid_sale_line':
 			return m.api_invalid_sale_line({ product: producto(d) });
+		case 'invalid_sale_payment_method':
+			return m.api_invalid_sale_payment_method({ method: texto(d.method) });
 		case 'product_not_found':
 			return m.api_product_not_found({ product: producto(d) });
 		case 'product_without_price':

@@ -95,6 +95,7 @@
 	"api_duplicate_sale_number": "Já existe uma venda com o número {sale_number}.",
 	"api_empty_sale": "A venda tem que ter pelo menos um produto.",
 	"api_invalid_sale_line": "A quantidade de {product} não é válida.",
+	"api_invalid_sale_payment_method": "“{method}” não é um método de pagamento do sistema.",
 	"api_product_not_found": "Não encontramos o produto {product}.",
 	"api_product_without_price": "O produto {product} não tem preço definido.",
 	"api_insufficient_stock": "Não há estoque suficiente de {product}: restam {available} e foram pedidos {requested}.",

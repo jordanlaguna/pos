@@ -24,10 +24,15 @@ from app.domain.cash import CashCount, check_movement, check_opening, difference
 from app.domain.errors import DomainError
 from app.domain.money import Money
 
-#: El único método de pago que pasa por la gaveta. Tarjeta y transferencia no
-#: ponen un colón adentro: sumarlas haría que todo turno con datáfono cerrara
-#: con un faltante igual a lo cobrado con tarjeta.
-CASH_METHOD = "Efectivo"
+# El único método de pago que pasa por la gaveta. Tarjeta y transferencia no
+# ponen un colón adentro: sumarlas haría que todo turno con datáfono cerrara con
+# un faltante igual a lo cobrado con tarjeta.
+#
+# Vive en el dominio desde T-1104, junto al conjunto cerrado de métodos. Estaba
+# escrito acá y otra vez en el POS, y desde F11 hacía falta en un tercer sitio
+# —el libro—: tres copias de una cadena que tiene que ser idéntica en las tres.
+# Se reexporta para no tocar a quien ya lo importaba de este módulo.
+from app.domain.sale import CASH_METHOD  # noqa: F401
 
 
 class SessionAlreadyOpen(DomainError):

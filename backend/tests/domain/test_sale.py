@@ -5,16 +5,20 @@ from app.domain.errors import (
     InsufficientPayment,
     InsufficientStock,
     InvalidQuantity,
+    InvalidSalePaymentMethod,
     TotalsMismatch,
 )
 from app.domain.money import Money
 from app.domain.sale import (
+    CASH_METHOD,
+    PAYMENT_METHODS,
     TOTALS_TOLERANCE,
     SaleLine,
     Totals,
     change_due,
     check_declared_totals,
     check_payment,
+    check_payment_method,
     check_stock,
     is_payment_enough,
     sale_totals,
@@ -151,3 +155,36 @@ class TestExistencias:
         with pytest.raises(InsufficientStock) as e:
             check_stock(product_id=7, available=2, requested=5)
         assert (e.value.product_id, e.value.available, e.value.requested) == (7, 2, 5)
+
+
+class TestMetodoDePago:
+    """T-1104: era texto libre y ahora es un conjunto cerrado."""
+
+    @pytest.mark.parametrize("metodo", PAYMENT_METHODS)
+    def test_los_cuatro_pasan(self, metodo):
+        check_payment_method(metodo)
+
+    def test_uno_inventado_no(self):
+        with pytest.raises(InvalidSalePaymentMethod) as e:
+            check_payment_method("Bitcoin")
+        assert e.value.method == "Bitcoin"
+
+    def test_uno_mal_escrito_tampoco(self):
+        # El caso real no es un método inventado: es un dedo de más. Con texto
+        # libre entraba, no sumaba al efectivo esperado y aparecía como una fila
+        # propia en el reporte de métodos de pago.
+        with pytest.raises(InvalidSalePaymentMethod):
+            check_payment_method("Efectvo")
+
+    def test_la_diferencia_de_mayusculas_cuenta(self):
+        # El arqueo compara contra `CASH_METHOD` con `==`, así que un 'efectivo'
+        # en minúscula se escaparía del efectivo esperado del turno.
+        with pytest.raises(InvalidSalePaymentMethod):
+            check_payment_method("efectivo")
+
+    def test_el_efectivo_es_uno_de_ellos(self):
+        assert CASH_METHOD in PAYMENT_METHODS
+
+    def test_no_se_admite_el_vacio(self):
+        with pytest.raises(InvalidSalePaymentMethod):
+            check_payment_method("")

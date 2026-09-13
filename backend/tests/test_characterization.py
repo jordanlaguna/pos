@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.domain.sale import PAYMENT_METHODS
+
 from .conftest import Api, cerrar_caja_abierta, entrar, marca_unica
 
 pytestmark = pytest.mark.characterization
@@ -196,6 +198,33 @@ class TestLaPlataLaCalculaElServidor:
         }
         cuerpo.update(cambios)
         return cuerpo
+
+    def test_un_metodo_de_pago_inventado_no_entra(self, api: Api, producto):
+        # T-1104. Con texto libre entraba: no sumaba al efectivo esperado del
+        # arqueo, no era tarjeta, y aparecía como una fila propia en el reporte
+        # de métodos de pago. Desde F11 además no habría cuenta para asentarlo.
+        p = producto("Metodo", 1450, 10)
+        antes = len(api.ok("GET", "/sales/sales_list"))
+
+        estado, cuerpo = api.call(
+            "POST", "/sales/add_sale", self._cuerpo(api, p, payment_method="Efectvo")
+        )
+
+        assert estado == 400, f"se aceptó un método inventado: {cuerpo}"
+        assert cuerpo["detail"]["code"] == "invalid_sale_payment_method"
+        assert cuerpo["detail"]["method"] == "Efectvo"
+        assert len(api.ok("GET", "/sales/sales_list")) == antes
+        assert api.ok("GET", f"/products/product/{p['barcode']}")["stock"] == 10
+
+    def test_los_cuatro_metodos_admitidos_entran(self, api: Api, producto):
+        # La otra mitad: cerrar el conjunto no puede dejar afuera lo que el POS
+        # ya ofrece. Si esta falla, se rompió el cobro con tarjeta.
+        p = producto("Metodos", 1000, 40)
+        for metodo in PAYMENT_METHODS:
+            estado, cuerpo = api.call(
+                "POST", "/sales/add_sale", self._cuerpo(api, p, payment_method=metodo)
+            )
+            assert estado == 200, f"{metodo} no entró: {cuerpo}"
 
     def test_un_total_alterado_no_entra(self, api: Api, producto):
         p = producto("Alterado", 1450, 10)

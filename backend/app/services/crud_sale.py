@@ -24,6 +24,7 @@ from app.domain.errors import (
     InsufficientPayment,
     InsufficientStock,
     InvalidQuantity,
+    InvalidSalePaymentMethod,
     TotalsMismatch,
 )
 from app.domain.money import Money
@@ -73,6 +74,10 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
         raise api_error(400, "duplicate_sale_number", sale_number=e.sale_number) from None
     except EmptySale:
         raise api_error(400, "empty_sale") from None
+    except InvalidSalePaymentMethod as e:
+        # Va el valor que llegó: el caso real no es un método inventado sino uno
+        # mal escrito, y verlo ahorra el viaje a la base.
+        raise api_error(400, "invalid_sale_payment_method", method=e.method) from None
     except InvalidQuantity:
         # El dominio rechaza el valor pero no dice qué línea venía mal: eso lo
         # sabe la interfaz, que es la que conoce el orden en que llegaron.
