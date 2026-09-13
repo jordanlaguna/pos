@@ -13,16 +13,20 @@ from datetime import date, datetime
 import pytest
 
 from app.application.use_cases.accounting import (
+    AccountNotFound,
     ActivateAccounting,
     ActivationRequest,
     AlreadyActive,
+    JournalEntryNotFound,
     OpeningLine,
+    Reclassify,
+    ReclassifyRequest,
     UnknownAccountCode,
     UnknownTemplate,
 )
 from app.domain.chart import CHART, COMMERCE, default_mapping
-from app.domain.errors import EntryNotBalanced
-from app.domain.ledger import OPENING
+from app.domain.errors import EntryNotBalanced, NothingToReclassify
+from app.domain.ledger import OPENING, Line
 from app.domain.money import Money
 from app.infrastructure.clock import FixedClock
 
@@ -334,6 +338,123 @@ class TestLaApertura:
         )
 
         assert mundo.diario.asientos[0].description == OPENING
+
+
+class AsientosFalsos:
+    """Los asientos ya escritos, para leerlos."""
+
+    def __init__(self, lineas: dict[int, list[Line]] | None = None) -> None:
+        self.lineas = dict(lineas or {})
+
+    def get(self, entry_id: int):
+        return FilaDeAsiento(entry_id) if entry_id in self.lineas else None
+
+    def lines_of(self, entry_id: int) -> list[Line]:
+        return list(self.lineas.get(entry_id, []))
+
+
+@dataclass
+class FilaDeAsiento:
+    id: int
+
+
+class TestReclasificar:
+    """Lo que saca de «por clasificar» lo que cayó ahí (RF-49, RN-59)."""
+
+    POR_CLASIFICAR = 8
+    GASTOS = 30
+
+    def _mundo(self, lineas=None):
+        cuentas = CuentasFalsas(
+            [
+                FilaDeCuenta(self.POR_CLASIFICAR, "1.9.99", "Por clasificar", "asset", None, True),
+                FilaDeCuenta(self.GASTOS, "6.9.02", "Gastos generales", "expense", None, False),
+            ]
+        )
+        entradas = AsientosFalsos(
+            lineas
+            if lineas is not None
+            else {
+                7: [
+                    Line.debit_of(1, Money(5000), memo="cash"),
+                    Line.credit_of(self.POR_CLASIFICAR, Money(5000), memo="counterpart"),
+                ]
+            }
+        )
+        diario, uow = DiarioFalso(), FakeUnitOfWork()
+        caso = Reclassify(
+            entries=entradas,
+            accounts=cuentas,
+            journal=diario,
+            uow=uow,
+            clock=FixedClock(AHORA),
+        )
+        return caso, diario, uow, cuentas
+
+    def test_escribe_un_ajuste_que_referencia_al_original(self):
+        caso, diario, _, _ = self._mundo()
+        id_ajuste = caso(
+            ReclassifyRequest(entry_id=7, to_account_id=self.GASTOS, user_id=ADMIN)
+        )
+
+        assert id_ajuste == 1
+        ajuste = diario.asientos[0]
+        assert ajuste.adjusts_entry_id == 7
+        assert ajuste.entry_date == AHORA.date()
+
+    def test_confirma_la_transaccion(self):
+        caso, _, uow, _ = self._mundo()
+        caso(ReclassifyRequest(entry_id=7, to_account_id=self.GASTOS, user_id=ADMIN))
+
+        assert uow.committed
+
+    def test_un_asiento_que_no_existe(self):
+        caso, _, _, _ = self._mundo()
+
+        with pytest.raises(JournalEntryNotFound):
+            caso(ReclassifyRequest(entry_id=99, to_account_id=self.GASTOS, user_id=ADMIN))
+
+    def test_una_cuenta_que_no_existe(self):
+        caso, _, _, _ = self._mundo()
+
+        with pytest.raises(AccountNotFound):
+            caso(ReclassifyRequest(entry_id=7, to_account_id=555, user_id=ADMIN))
+
+    def test_una_cuenta_inactiva_se_trata_como_inexistente(self):
+        # No se ofrece para escribir, y mandar un saldo ahí solo cambiaría un
+        # problema por otro: quedaría escondido en una cuenta que no se muestra.
+        caso, _, _, cuentas = self._mundo()
+        cuentas.por_codigo("6.9.02").is_active = False
+
+        with pytest.raises(AccountNotFound):
+            caso(ReclassifyRequest(entry_id=7, to_account_id=self.GASTOS, user_id=ADMIN))
+
+    def test_un_asiento_que_no_tiene_nada_por_clasificar(self):
+        # Pasa de verdad: dos personas mirando la misma pantalla y una
+        # reclasifica primero.
+        caso, _, uow, _ = self._mundo(
+            {7: [Line.debit_of(1, Money(10)), Line.credit_of(2, Money(10))]}
+        )
+
+        with pytest.raises(NothingToReclassify):
+            caso(ReclassifyRequest(entry_id=7, to_account_id=self.GASTOS, user_id=ADMIN))
+        assert not uow.committed
+
+    def test_sin_la_cuenta_por_clasificar_en_el_catalogo(self):
+        # No debería pasar —RN-64 lo impide— pero si pasara, no hay a dónde ir.
+        cuentas = CuentasFalsas(
+            [FilaDeCuenta(self.GASTOS, "6.9.02", "Gastos", "expense", None, False)]
+        )
+        caso = Reclassify(
+            entries=AsientosFalsos({7: [Line.debit_of(1, Money(10)), Line.credit_of(2, Money(10))]}),
+            accounts=cuentas,
+            journal=DiarioFalso(),
+            uow=FakeUnitOfWork(),
+            clock=FixedClock(AHORA),
+        )
+
+        with pytest.raises(AccountNotFound):
+            caso(ReclassifyRequest(entry_id=7, to_account_id=self.GASTOS, user_id=ADMIN))
 
 
 class TestLoQueNoSePuede:

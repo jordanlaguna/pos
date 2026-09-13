@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .errors import AccountInUse, AccountIsSystem
 from .ledger import (
     BANK,
     CARDS_RECEIVABLE,
@@ -51,6 +52,12 @@ from .tax import TaxRate
 #: taller o la de un restaurante no cambie ninguna firma.
 COMMERCE = "commerce"
 TEMPLATES: tuple[str, ...] = (COMMERCE,)
+
+#: La cuenta donde cae lo que el mapeo no sabe clasificar (RN-59). **No es
+#: configurable**: es la pieza de la que depende que un asiento automático nunca
+#: se quede sin dónde caer, así que la activación la siembra siempre y RN-64
+#: impide borrarla.
+UNCLASSIFIED_CODE = "1.9.99"
 
 
 @dataclass(frozen=True)
@@ -191,3 +198,34 @@ UNMAPPED_ON_PURPOSE: dict[str, tuple[str, ...]] = {
     # Un método de pago que no está en la lista: una venta anterior a T-1104.
     SALE: (UNCLASSIFIED,),
 }
+
+
+# ------------------------------------------------------- qué se le puede hacer
+
+
+def check_deletable(code: str, *, is_system: bool, lines: int) -> None:
+    """Si esa cuenta se puede borrar (RN-64).
+
+    La regla completa es: **de sistema, nunca; con movimientos, tampoco**. Las
+    dos razones son distintas y por eso son dos códigos: la primera dice «esta
+    cuenta la necesita el programa» y la segunda, «esta cuenta tiene historia».
+
+    Lo que sí se puede con las dos es renombrarlas, porque el mapeo apunta al id
+    y no al nombre; y con la segunda, desactivarla.
+    """
+    if is_system:
+        raise AccountIsSystem(code)
+    if lines:
+        raise AccountInUse(code, lines)
+
+
+def check_deactivatable(code: str, *, is_system: bool) -> None:
+    """Si esa cuenta se puede desactivar (RN-64).
+
+    Una cuenta de sistema desactivada es peor que una borrada: la fila sigue ahí,
+    el mapeo la sigue apuntando, y el asiento se escribe contra una cuenta que la
+    pantalla ya no ofrece. El problema aparecería semanas después, al buscar por
+    qué el catálogo no cuadra con los asientos.
+    """
+    if is_system:
+        raise AccountIsSystem(code)

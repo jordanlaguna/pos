@@ -10,7 +10,10 @@ permite que `RegisterSale` no sepa que la contabilidad existe.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Protocol
+
+from app.domain.ledger import Line
 
 
 class AccountSnapshot(Protocol):
@@ -70,6 +73,24 @@ class PeriodRepository(Protocol):
 
     def create(self, year: int, month: int) -> PeriodSnapshot:
         """Crea el mes, abierto."""
+        ...
+
+
+class JournalSnapshot(Protocol):
+    id: int
+    entry_date: date
+    kind: str
+
+
+class JournalRepository(Protocol):
+    def get(self, entry_id: int) -> JournalSnapshot | None: ...
+
+    def lines_of(self, entry_id: int) -> list[Line]:
+        """Las líneas del asiento, ya como valores del dominio.
+
+        Devuelve `Line` y no filas de SQLAlchemy porque quien las usa es una
+        función pura —la reclasificación—, y darle filas la ataría a la base.
+        """
         ...
 
 

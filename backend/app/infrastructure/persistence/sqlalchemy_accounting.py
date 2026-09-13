@@ -12,9 +12,15 @@ from __future__ import annotations
 
 import json
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.domain.money import Money
+from app.domain.ledger import Line
+from app.domain.tax import TaxRate
 from app.models.model_accounting import Account, AccountingPeriod, AccountMapping
+from app.models.model_accounting import JournalEntry as FilaDeAsiento
+from app.models.model_accounting import JournalLine as FilaDeLinea
 from app.models.model_settings import Settings
 from app.utils.tenancy import compania_actual
 
@@ -52,6 +58,42 @@ class SqlAlchemyAccountRepository:
         self._db.add(cuenta)
         self._db.flush()
         return cuenta.id
+
+    def lines_for(self, account_id: int) -> int:
+        """Cuántas líneas de asiento tocan esa cuenta.
+
+        El `company_id` va escrito a mano: `func.count` envuelve la consulta en
+        una subconsulta donde el filtro automático no entra (plan §3.3), y sin él
+        una cuenta sin movimiento propio se vería en uso por los asientos de otra
+        compañía —y no se podría borrar nunca—.
+        """
+        return int(
+            self._db.query(func.count(FilaDeLinea.id))
+            .filter(
+                FilaDeLinea.account_id == account_id,
+                FilaDeLinea.company_id == compania_actual(),
+            )
+            .scalar()
+            or 0
+        )
+
+    def update(self, cuenta: Account, *, name: str | None, is_active: bool | None) -> Account:
+        """Renombrar y activar o desactivar. El código **no** se cambia.
+
+        El código es lo que el contador usa para referirse a la cuenta en papel y
+        lo que ordena el catálogo; cambiarlo dejaría los reportes ya impresos
+        hablando de otra cuenta. Se borra y se crea, que es lo que de verdad pasó.
+        """
+        if name is not None:
+            cuenta.name = name
+        if is_active is not None:
+            cuenta.is_active = is_active
+        self._db.flush()
+        return cuenta
+
+    def delete(self, cuenta: Account) -> None:
+        self._db.delete(cuenta)
+        self._db.flush()
 
 
 class SqlAlchemyMappingRepository:
@@ -146,3 +188,39 @@ class SqlAlchemyAccountingSettings:
         datos[self.SECCION] = config
         fila.data = json.dumps(datos, ensure_ascii=False)
         self._db.flush()
+
+
+class SqlAlchemyJournalRepository:
+    """Los asientos, para leerlos.
+
+    Devuelve `Line` del dominio y no filas de SQLAlchemy porque quien las usa es
+    una función pura —la reclasificación—, y darle filas la ataría a la base.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def get(self, entry_id: int) -> FilaDeAsiento | None:
+        return self._db.query(FilaDeAsiento).filter(FilaDeAsiento.id == entry_id).first()
+
+    def lines_of(self, entry_id: int) -> list[Line]:
+        filas = (
+            self._db.query(FilaDeLinea)
+            .filter(FilaDeLinea.entry_id == entry_id)
+            .order_by(FilaDeLinea.id)
+            .all()
+        )
+        return [
+            Line(
+                account_id=fila.account_id,
+                debit=Money(fila.debit),
+                credit=Money(fila.credit),
+                # De porcentaje a tasa: en la base va 13 y el dominio trabaja con
+                # 0,13, igual que en todo el resto del sistema.
+                tax_rate=(
+                    None if fila.tax_rate is None else TaxRate(fila.tax_rate / 100)
+                ),
+                memo=fila.memo,
+            )
+            for fila in filas
+        ]

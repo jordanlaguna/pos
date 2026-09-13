@@ -198,6 +198,211 @@ class TestElCuerpoMalFormado:
         assert estado == 422
 
 
+def activar(cliente: Api) -> dict:
+    """Activa la contabilidad de esa compañía y devuelve la respuesta."""
+    return cliente.ok(
+        "POST",
+        "/accounting/activate",
+        {"template": "commerce", "start_date": INICIO},
+    )
+
+
+def cuenta_por_codigo(cliente: Api, codigo: str) -> dict:
+    return next(c for c in cliente.ok("GET", "/accounting/accounts") if c["code"] == codigo)
+
+
+class TestElCatalogo:
+    """RF-48 y RN-64: qué se le puede hacer a una cuenta."""
+
+    @pytest.fixture(scope="class")
+    def cliente(self, api: Api) -> Api:
+        cliente = compania_propia(api, "catalogo", modulos="accounting")
+        activar(cliente)
+        return cliente
+
+    def test_el_catalogo_sale_ordenado_por_codigo(self, cliente: Api):
+        codigos = [c["code"] for c in cliente.ok("GET", "/accounting/accounts")]
+
+        assert codigos == sorted(codigos)
+        assert len(codigos) == len(CHART)
+
+    def test_una_cuenta_del_contador_se_crea_y_no_es_de_sistema(self, cliente: Api):
+        # Si el usuario pudiera marcarlas de sistema, se estaría dando una cuenta
+        # que después no puede borrar.
+        nueva = cliente.ok(
+            "POST",
+            "/accounting/accounts",
+            {"code": "6.9.03", "name": "Papelería", "kind": "expense"},
+        )
+
+        assert nueva["is_system"] is False
+        assert nueva["is_active"] is True
+
+    def test_dos_cuentas_con_el_mismo_codigo_no(self, cliente: Api):
+        cliente.ok(
+            "POST",
+            "/accounting/accounts",
+            {"code": "6.9.04", "name": "Limpieza", "kind": "expense"},
+        )
+        estado, cuerpo = cliente.call(
+            "POST",
+            "/accounting/accounts",
+            {"code": "6.9.04", "name": "Otra", "kind": "expense"},
+        )
+
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] == "account_code_taken"
+
+    def test_borrar_una_de_sistema_responde_codigo(self, cliente: Api):
+        # La verificación de T-1108: borrar 1.1.01 → código.
+        caja = cuenta_por_codigo(cliente, "1.1.01")
+        estado, cuerpo = cliente.call("DELETE", f"/accounting/accounts/{caja['id']}")
+
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] == "account_is_system"
+
+    def test_desactivar_una_de_sistema_tampoco(self, cliente: Api):
+        # Es peor que borrarla: el mapeo la seguiría apuntando y el asiento se
+        # escribiría contra una cuenta que la pantalla ya no ofrece.
+        caja = cuenta_por_codigo(cliente, "1.1.01")
+        estado, cuerpo = cliente.call(
+            "PUT", f"/accounting/accounts/{caja['id']}", {"is_active": False}
+        )
+
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] == "account_is_system"
+
+    def test_pero_renombrarla_sí(self, cliente: Api):
+        # El mapeo apunta al id, no al nombre.
+        caja = cuenta_por_codigo(cliente, "1.1.01")
+        renombrada = cliente.ok(
+            "PUT", f"/accounting/accounts/{caja['id']}", {"name": "Caja general"}
+        )
+
+        assert renombrada["name"] == "Caja general"
+        assert renombrada["is_system"] is True
+
+    def test_una_cuenta_nueva_sin_movimientos_se_va(self, cliente: Api):
+        nueva = cliente.ok(
+            "POST",
+            "/accounting/accounts",
+            {"code": "6.9.05", "name": "Efímera", "kind": "expense"},
+        )
+        cliente.ok("DELETE", f"/accounting/accounts/{nueva['id']}")
+
+        assert all(
+            c["id"] != nueva["id"] for c in cliente.ok("GET", "/accounting/accounts")
+        )
+
+    def test_una_cuenta_que_no_existe(self, cliente: Api):
+        estado, cuerpo = cliente.call("DELETE", "/accounting/accounts/999999")
+
+        assert estado == 404, cuerpo
+        assert cuerpo["detail"]["code"] == "account_not_found"
+
+
+class TestElMapeo:
+    @pytest.fixture(scope="class")
+    def cliente(self, api: Api) -> Api:
+        cliente = compania_propia(api, "mapeo", modulos="accounting")
+        activar(cliente)
+        return cliente
+
+    def test_lista_todos_los_papeles_con_su_cuenta(self, cliente: Api):
+        filas = cliente.ok("GET", "/accounting/mappings")["mappings"]
+        puestos = [f for f in filas if not f["unmapped_on_purpose"]]
+
+        assert len(puestos) == len(default_mapping())
+        assert all(f["account_id"] is not None for f in puestos)
+
+    def test_los_que_caen_en_por_clasificar_a_proposito_van_marcados(self, cliente: Api):
+        # No se pintan en rojo: no están mal, es que el sistema no sabe.
+        filas = cliente.ok("GET", "/accounting/mappings")["mappings"]
+        sueltos = [f for f in filas if f["unmapped_on_purpose"]]
+
+        assert {(f["event"], f["role"]) for f in sueltos} == {
+            ("cash_movement", "counterpart"),
+            ("supplier_payment", "unclassified"),
+            ("sale", "unclassified"),
+        }
+        assert all(f["account_id"] is None for f in sueltos)
+
+    def test_cambiar_una_cuenta_del_mapeo(self, cliente: Api):
+        bancos = cuenta_por_codigo(cliente, "1.1.02")
+        filas = cliente.ok(
+            "PUT",
+            "/accounting/mappings",
+            {"mappings": [{"event": "sale", "role": "cash", "account_id": bancos["id"]}]},
+        )["mappings"]
+
+        fila = next(f for f in filas if (f["event"], f["role"]) == ("sale", "cash"))
+        assert fila["account_id"] == bancos["id"]
+
+    def test_contra_una_cuenta_que_no_existe(self, cliente: Api):
+        estado, cuerpo = cliente.call(
+            "PUT",
+            "/accounting/mappings",
+            {"mappings": [{"event": "sale", "role": "cash", "account_id": 999999}]},
+        )
+
+        assert estado == 404, cuerpo
+        assert cuerpo["detail"]["code"] == "account_not_found"
+
+
+class TestNoSeVeElLibroAjeno:
+    """Dos compañías con contabilidad, cada una con la suya (RNF-1).
+
+    No usa la compañía B de `test_aislamiento.py` a propósito: activarle la
+    contabilidad le cambiaría el mundo a toda esa batería.
+    """
+
+    @pytest.fixture(scope="class")
+    def dos(self, api: Api) -> tuple[Api, Api]:
+        una = compania_propia(api, "libro-a", modulos="accounting")
+        otra = compania_propia(api, "libro-b", modulos="accounting")
+        activar(una)
+        activar(otra)
+        return una, otra
+
+    def test_no_se_puede_borrar_una_cuenta_de_la_otra(self, dos):
+        una, otra = dos
+        ajena = cuenta_por_codigo(otra, "6.9.02")
+
+        estado, _ = una.call("DELETE", f"/accounting/accounts/{ajena['id']}")
+
+        # 404 y no 403: un 403 confirmaría que la cuenta existe.
+        assert estado == 404
+
+    def test_ni_renombrarla(self, dos):
+        una, otra = dos
+        ajena = cuenta_por_codigo(otra, "6.9.02")
+
+        estado, _ = una.call(
+            "PUT", f"/accounting/accounts/{ajena['id']}", {"name": "Secuestrada"}
+        )
+
+        assert estado == 404
+
+    def test_ni_reclasificar_un_asiento_suyo(self, dos):
+        una, otra = dos
+        # El asiento de apertura de la otra no existe —no dictó saldos— así que
+        # se usa cualquier id: lo que importa es que no se pueda entrar.
+        propia = cuenta_por_codigo(una, "6.9.02")
+
+        estado, _ = una.call(
+            "POST", "/accounting/entries/999999/reclassify", {"account_id": propia["id"]}
+        )
+
+        assert estado == 404
+
+    def test_cada_una_ve_su_propio_catalogo_completo(self, dos):
+        # La contraprueba: sin esto, un 404 en todo también pasaría el examen.
+        una, otra = dos
+
+        assert len(una.ok("GET", "/accounting/accounts")) == len(CHART)
+        assert len(otra.ok("GET", "/accounting/accounts")) == len(CHART)
+
+
 class TestSinElModuloEnElPlan:
     @pytest.fixture(scope="class")
     def sin_modulo(self, api: Api) -> Api:

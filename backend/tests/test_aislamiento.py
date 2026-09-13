@@ -717,6 +717,16 @@ FUERA_DE_LA_BATERIA = {
     # `test_contabilidad.py` de punta a punta con dos compañías.
     "/accounting": "opera sobre la compañía de la sesión",
     "/accounting/activate": "siembra en la compañía de la sesión",
+    "/accounting/accounts": "el catálogo de la compañía de la sesión; crea en ella",
+    "/accounting/mappings": "el mapeo de la compañía de la sesión; escribe en ella",
+    # Las dos que sí reciben un id ajeno **no** entran en `RUTAS_POR_ID` y es a
+    # propósito: para probarlas haría falta activarle la contabilidad a la
+    # compañía B de esta batería, y desde entonces cada venta suya dejaría
+    # asiento. Eso le cambia el mundo a las demás pruebas, que es justo lo que
+    # `CLAUDE.md` dice que no se hace. Están probadas en
+    # `test_contabilidad.py::TestNoSeVeElLibroAjeno`, con dos compañías propias.
+    "/accounting/accounts/{account_id}": "probado en test_contabilidad.py",
+    "/accounting/entries/{entry_id}/reclassify": "probado en test_contabilidad.py",
 }
 
 

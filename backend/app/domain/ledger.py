@@ -128,6 +128,11 @@ SALES_RETURNS = "sales_returns"
 #: Prefijo de los papeles de venta por tarifa: 'sales_13', 'sales_1', 'sales_0'.
 SALES = "sales"
 
+#: El código de descripción de un ajuste que mueve un saldo de «por clasificar»
+#: a su cuenta. Como el resto de las descripciones automáticas, es un código y no
+#: una frase: el POS arma la oración (RN-30).
+RECLASSIFY = "reclassify"
+
 #: La contrapartida de un movimiento de gaveta. **Queda sin mapear a propósito**
 #: y por eso cae en 1.9.99: el sistema sabe que entraron ₡5 000, no de dónde
 #: salieron. Quien lo sabe es quien los metió, y lo dice reclasificando.
@@ -417,6 +422,7 @@ def _entry(
     *,
     source_type: str | None = None,
     source_id: int | None = None,
+    adjusts_entry_id: int | None = None,
 ) -> JournalEntry | None:
     """El asiento, o `None` si no quedó ninguna línea que escribir."""
     if not lines:
@@ -428,6 +434,7 @@ def _entry(
         description=description,
         source_type=source_type,
         source_id=source_id,
+        adjusts_entry_id=adjusts_entry_id,
     )
 
 
@@ -719,6 +726,51 @@ def post_supplier_payment(
         lineas,
         source_type=SOURCE_SUPPLIER_PAYMENT,
         source_id=pay.id,
+    )
+
+
+def post_reclassification(
+    *,
+    source_entry_id: int,
+    lines: Sequence[Line],
+    to_account: int,
+    unclassified: int,
+    on: date,
+    description: str = "",
+) -> JournalEntry | None:
+    """Saca de «por clasificar» lo que cayó ahí y lo pone donde va (RN-59).
+
+        antes:  D  Por clasificar   5 000,00
+        ajuste: D  Gastos generales 5 000,00
+                   C  Por clasificar            5 000,00
+
+    Es un asiento de **ajuste**, con `adjusts_entry_id` apuntando al original, y
+    **con la fecha de hoy y no la del original**. Las dos cosas son RN-61: el
+    asiento que quedó mal no se toca —pudo quedar en un periodo ya cerrado y
+    entregado— y lo que se corrige se corrige en el periodo abierto.
+
+    Cada línea se invierte del lado en que estaba, así que el saldo de 1.9.99
+    para ese asiento queda exactamente en cero. Eso es lo que hace que la
+    pantalla del contador pueda decir «no queda nada por clasificar» mirando un
+    saldo y no llevando una lista aparte de lo ya resuelto.
+    """
+    movimientos: list[Line] = []
+    for linea in lines:
+        if linea.account_id != unclassified:
+            continue
+        if linea.debit.is_positive:
+            movimientos.append(Line.debit_of(to_account, linea.debit, memo=linea.memo))
+            movimientos.append(Line.credit_of(unclassified, linea.debit, memo=linea.memo))
+        else:
+            movimientos.append(Line.debit_of(unclassified, linea.credit, memo=linea.memo))
+            movimientos.append(Line.credit_of(to_account, linea.credit, memo=linea.memo))
+
+    return _entry(
+        ADJUSTMENT,
+        on,
+        description or RECLASSIFY,
+        movimientos,
+        adjusts_entry_id=source_entry_id,
     )
 
 

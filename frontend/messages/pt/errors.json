@@ -228,5 +228,12 @@
 	"api_product_unknown": "(não identificado)",
 	"api_accounting_already_active": "A contabilidade já está ativada.",
 	"api_invalid_opening_balance": "Os saldos iniciais não batem: {debits} em débitos contra {credits} em créditos.",
-	"api_accounting_failed": "Não foi possível ativar a contabilidade. Nada ficou pela metade."
+	"api_accounting_failed": "Não foi possível ativar a contabilidade. Nada ficou pela metade.",
+	"api_account_not_found": "Essa conta não existe.",
+	"api_account_code_taken": "Já existe uma conta com o código {code}.",
+	"api_account_is_system": "A conta {code} é de sistema: o mapeamento precisa dela. Pode ser renomeada, não apagada nem desativada.",
+	"api_account_in_use": "A conta {code} tem {lines} linha(s) de lançamento. Desative-a em vez de apagá-la.",
+	"api_journal_entry_not_found": "Esse lançamento não existe.",
+	"api_nothing_to_reclassify": "Esse lançamento já não tem nada por classificar.",
+	"api_period_closed": "O período {month}/{year} está fechado. O que houver para corrigir vai por um lançamento de ajuste no período aberto."
 }

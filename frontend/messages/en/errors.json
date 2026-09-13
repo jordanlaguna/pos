@@ -228,5 +228,12 @@
 	"api_product_unknown": "(unidentified)",
 	"api_accounting_already_active": "Accounting is already active.",
 	"api_invalid_opening_balance": "The opening balances do not match: {debits} in debits against {credits} in credits.",
-	"api_accounting_failed": "Accounting could not be activated. Nothing was left half done."
+	"api_accounting_failed": "Accounting could not be activated. Nothing was left half done.",
+	"api_account_not_found": "That account does not exist.",
+	"api_account_code_taken": "There is already an account with code {code}.",
+	"api_account_is_system": "Account {code} is a system account: the mapping needs it. It can be renamed, not deleted or deactivated.",
+	"api_account_in_use": "Account {code} has {lines} journal line(s). Deactivate it instead of deleting it.",
+	"api_journal_entry_not_found": "That journal entry does not exist.",
+	"api_nothing_to_reclassify": "That entry has nothing left to reclassify.",
+	"api_period_closed": "Period {month}/{year} is closed. Anything to correct goes through an adjusting entry in the open period."
 }

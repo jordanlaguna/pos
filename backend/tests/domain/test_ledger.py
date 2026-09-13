@@ -13,6 +13,7 @@ import pytest
 
 from app.domain.errors import EntryNotBalanced, InvalidEntryLine, PeriodClosed
 from app.domain.ledger import (
+    ADJUSTMENT,
     AUTO,
     BANK,
     CARDS_RECEIVABLE,
@@ -28,6 +29,7 @@ from app.domain.ledger import (
     PAYABLES,
     PURCHASE,
     RECEIVABLE,
+    RECLASSIFY,
     RETURN,
     SALE,
     SALES_RETURNS,
@@ -51,6 +53,7 @@ from app.domain.ledger import (
     post_cash_close,
     post_cash_movement,
     post_purchase,
+    post_reclassification,
     post_return,
     post_sale,
     post_supplier_payment,
@@ -626,6 +629,102 @@ class TestElMapeo:
         # en 'sales_1E+1': todas las ventas al 10 % a «por clasificar», sin que
         # nada avise.
         assert sales_role(TaxRate.percent(10)) == "sales_10"
+
+
+# ------------------------------------------------------------- reclasificar
+
+
+class TestLaReclasificacion:
+    """Lo que saca de «por clasificar» lo que cayó ahí (RF-49)."""
+
+    def _entrada_de_5000(self) -> JournalEntry:
+        return post_cash_movement(
+            DrawerMovement(id=1, date=date(2026, 8, 20), type="entrada", amount=Money(5000)),
+            MAPEO,
+        )
+
+    def test_deja_por_clasificar_en_cero_y_el_monto_donde_va(self):
+        ajuste = post_reclassification(
+            source_entry_id=7,
+            lines=self._entrada_de_5000().lines,
+            to_account=692,
+            unclassified=POR_CLASIFICAR,
+            on=HOY,
+        )
+
+        # La entrada había acreditado 1.9.99; el ajuste lo debita y acredita la
+        # cuenta buena. Sumando los dos asientos, 1.9.99 queda en cero.
+        assert debitos(ajuste) == {POR_CLASIFICAR: Money(5000)}
+        assert creditos(ajuste) == {692: Money(5000)}
+
+    def test_del_otro_lado_tambien(self):
+        # Una salida debita «por clasificar»; el ajuste tiene que acreditarla.
+        salida = post_cash_movement(
+            DrawerMovement(id=2, date=HOY, type="salida", amount=Money(3000)), MAPEO
+        )
+        ajuste = post_reclassification(
+            source_entry_id=8,
+            lines=salida.lines,
+            to_account=692,
+            unclassified=POR_CLASIFICAR,
+            on=HOY,
+        )
+
+        assert debitos(ajuste) == {692: Money(3000)}
+        assert creditos(ajuste) == {POR_CLASIFICAR: Money(3000)}
+
+    def test_es_de_ajuste_y_referencia_al_original(self):
+        # RN-61: el asiento que quedó mal no se toca. Pudo quedar en un periodo
+        # ya cerrado y entregado.
+        ajuste = post_reclassification(
+            source_entry_id=7,
+            lines=self._entrada_de_5000().lines,
+            to_account=692,
+            unclassified=POR_CLASIFICAR,
+            on=HOY,
+        )
+
+        assert ajuste.kind == ADJUSTMENT
+        assert ajuste.adjusts_entry_id == 7
+        assert ajuste.description == RECLASSIFY
+
+    def test_va_con_la_fecha_de_hoy_y_no_con_la_del_original(self):
+        # El original es del 20 de agosto; el ajuste, de hoy. Es lo que permite
+        # corregir algo de un mes ya cerrado.
+        ajuste = post_reclassification(
+            source_entry_id=7,
+            lines=self._entrada_de_5000().lines,
+            to_account=692,
+            unclassified=POR_CLASIFICAR,
+            on=HOY,
+        )
+
+        assert ajuste.entry_date == HOY
+
+    def test_las_lineas_que_no_estaban_por_clasificar_no_se_tocan(self):
+        venta = post_sale(*venta_del_invariante(), MAPEO)
+        ajuste = post_reclassification(
+            source_entry_id=9,
+            lines=venta.lines,
+            to_account=692,
+            unclassified=POR_CLASIFICAR,
+            on=HOY,
+        )
+
+        # Ninguna de las cinco líneas de esa venta cayó en 1.9.99.
+        assert ajuste is None
+
+    def test_quien_reclasifica_puede_poner_su_frase(self):
+        ajuste = post_reclassification(
+            source_entry_id=7,
+            lines=self._entrada_de_5000().lines,
+            to_account=692,
+            unclassified=POR_CLASIFICAR,
+            on=HOY,
+            description="Devolución de un adelanto",
+        )
+
+        assert ajuste.description == "Devolución de un adelanto"
 
 
 # ------------------------------------------------------------------ periodos

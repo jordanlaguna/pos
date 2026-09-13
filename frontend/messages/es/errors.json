@@ -228,5 +228,12 @@
 	"api_product_unknown": "sin identificar",
 	"api_accounting_already_active": "La contabilidad ya está activada.",
 	"api_invalid_opening_balance": "Los saldos iniciales no cuadran: {debits} en débitos contra {credits} en créditos.",
-	"api_accounting_failed": "No se pudo activar la contabilidad. No quedó nada a medias."
+	"api_accounting_failed": "No se pudo activar la contabilidad. No quedó nada a medias.",
+	"api_account_not_found": "Esa cuenta no existe.",
+	"api_account_code_taken": "Ya hay una cuenta con el código {code}.",
+	"api_account_is_system": "La cuenta {code} es de sistema: el mapeo la necesita. Se puede renombrar, no borrar ni desactivar.",
+	"api_account_in_use": "La cuenta {code} tiene {lines} línea(s) de asiento. Desactívela en vez de borrarla.",
+	"api_journal_entry_not_found": "Ese asiento no existe.",
+	"api_nothing_to_reclassify": "Ese asiento ya no tiene nada por clasificar.",
+	"api_period_closed": "El periodo {month}/{year} está cerrado. Lo que haya que corregir va por un asiento de ajuste en el periodo abierto."
 }

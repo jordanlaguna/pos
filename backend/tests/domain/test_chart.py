@@ -20,8 +20,11 @@ from app.domain.chart import (
     SALES_ACCOUNTS,
     TEMPLATES,
     UNMAPPED_ON_PURPOSE,
+    check_deactivatable,
+    check_deletable,
     default_mapping,
 )
+from app.domain.errors import AccountInUse, AccountIsSystem
 from app.domain.ledger import (
     ACCOUNT_KINDS,
     AccountMap,
@@ -186,6 +189,41 @@ class TestNingunPapelSeQuedaSinCuenta:
         )
 
         assert sin_clasificar(asiento) == []
+
+
+class TestQueSeLePuedeHacerAUnaCuenta:
+    """RN-64, la regla que protege al mapeo de la buena voluntad de nadie."""
+
+    def test_una_cuenta_nueva_sin_movimientos_se_borra(self):
+        check_deletable("6.9.03", is_system=False, lines=0)
+
+    def test_una_de_sistema_no(self):
+        # Sin ella, el papel que la usaba se queda sin dónde caer y su saldo se
+        # va a «por clasificar» sin que nadie lo haya decidido.
+        with pytest.raises(AccountIsSystem) as fallo:
+            check_deletable("1.1.01", is_system=True, lines=0)
+        assert fallo.value.code == "1.1.01"
+
+    def test_una_con_movimientos_tampoco(self):
+        with pytest.raises(AccountInUse) as fallo:
+            check_deletable("6.9.03", is_system=False, lines=12)
+        assert (fallo.value.code, fallo.value.lines) == ("6.9.03", 12)
+
+    def test_de_sistema_manda_sobre_tener_movimientos(self):
+        # Las dos razones aplican a la vez en la práctica —una cuenta de sistema
+        # con movimiento— y la que hay que decir es la primera: desactivarla
+        # tampoco se puede, así que «desactívela» sería un mal consejo.
+        with pytest.raises(AccountIsSystem):
+            check_deletable("1.1.01", is_system=True, lines=12)
+
+    def test_una_de_sistema_tampoco_se_desactiva(self):
+        # Es peor que borrarla: la fila sigue, el mapeo la sigue apuntando, y el
+        # asiento se escribe contra una cuenta que la pantalla ya no ofrece.
+        with pytest.raises(AccountIsSystem):
+            check_deactivatable("1.1.01", is_system=True)
+
+    def test_una_del_contador_sí(self):
+        check_deactivatable("6.9.03", is_system=False)
 
 
 class TestLoQueCaeEnPorClasificarAProposito:

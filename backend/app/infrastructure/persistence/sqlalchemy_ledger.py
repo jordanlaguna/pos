@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from app.application.ports.clock import Clock
 from app.application.ports.ledger import AccountingNotActive
+from app.domain.chart import UNCLASSIFIED_CODE
 from app.domain.ledger import (
     OPEN,
     AccountMap,
@@ -56,12 +57,6 @@ from app.models.model_accounting import Account, AccountingPeriod, AccountMappin
 from app.models.model_accounting import JournalEntry as FilaDeAsiento
 from app.models.model_accounting import JournalLine as FilaDeLinea
 from app.utils.tenancy import compania_actual
-
-#: La cuenta donde cae lo que el mapeo no sabe clasificar (RN-59). El código es
-#: el de la plantilla de plan §13.8 y **no** es configurable: es la pieza de la
-#: que depende que un asiento automático nunca se quede sin dónde caer, así que
-#: `ActivateAccounting` la siembra siempre y RN-64 impide borrarla.
-UNCLASSIFIED_CODE = "1.9.99"
 
 
 class SqlAlchemyLedger:

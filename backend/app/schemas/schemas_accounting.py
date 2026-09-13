@@ -9,6 +9,7 @@ prueba.
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -80,3 +81,84 @@ class Activated(AccountingStatus):
     accounts_created: int = 0
     mappings_created: int = 0
     opening_entry_id: int | None = None
+
+
+# ---------------------------------------------------------------- el catálogo
+
+
+class Account(BaseModel):
+    id: int
+    code: str
+    name: str
+    kind: str
+    parent_id: int | None = None
+    is_system: bool
+    is_active: bool
+
+
+class AccountIn(BaseModel):
+    code: str
+    name: str
+    #: Uno de los seis. Acá sí lo comprueba Pydantic: no es una regla de negocio
+    #: sino el conjunto de valores que la columna admite, y de este tipo salen
+    #: los tres estados financieros.
+    kind: Literal["asset", "liability", "equity", "income", "cost", "expense"]
+    parent_id: int | None = None
+
+
+class AccountPatch(BaseModel):
+    """Lo que se puede cambiar de una cuenta: su nombre y si está activa.
+
+    El código **no** está: es lo que el contador usa para referirse a ella en
+    papel y lo que ordena el catálogo. Cambiarlo dejaría los reportes ya
+    impresos hablando de otra cuenta.
+    """
+
+    name: str | None = None
+    is_active: bool | None = None
+
+
+class Deleted(BaseModel):
+    deleted: int
+
+
+# ------------------------------------------------------------------- el mapeo
+
+
+class MappingRow(BaseModel):
+    event: str
+    role: str
+    account_id: int | None = None
+    account_code: str | None = None
+    account_name: str | None = None
+    #: Los que caen en «por clasificar» a propósito: no se pintan en rojo,
+    #: porque no están mal (plan §13.8).
+    unmapped_on_purpose: bool = False
+
+
+class Mappings(BaseModel):
+    mappings: list[MappingRow] = []
+
+
+class MappingIn(BaseModel):
+    event: str
+    role: str
+    account_id: int
+
+
+class MappingsIn(BaseModel):
+    mappings: list[MappingIn] | None = None
+
+
+# -------------------------------------------------------------- reclasificar
+
+
+class ReclassifyIn(BaseModel):
+    #: A dónde va el saldo que había caído en «por clasificar».
+    account_id: int
+    #: La frase de quien reclasifica, si escribe una.
+    description: str | None = None
+
+
+class Reclassified(BaseModel):
+    adjustment_entry_id: int

@@ -380,6 +380,46 @@ class InvalidEntryLine(DomainError):
         self.code = code
 
 
+class AccountIsSystem(DomainError):
+    """Se quiso borrar o desactivar una cuenta que el mapeo necesita (RN-64).
+
+    No es una preferencia de orden: sin esa cuenta, el papel que la usaba se
+    queda sin dónde caer y su saldo se va a «por clasificar» sin que nadie lo
+    haya decidido. El contador la puede **renombrar** —eso sí— porque el mapeo
+    apunta al id y no al nombre.
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(f"la cuenta {code} es de sistema")
+        self.code = code
+
+
+class AccountInUse(DomainError):
+    """Se quiso borrar una cuenta con movimientos (RN-64).
+
+    Borrarla se llevaría su historia: los asientos que la nombran dejarían de
+    poder decir contra qué se hicieron. Lo que sí se puede es **desactivarla**,
+    que la saca de las listas donde se escoge y deja el libro intacto.
+    """
+
+    def __init__(self, code: str, lines: int) -> None:
+        super().__init__(f"la cuenta {code} tiene {lines} línea(s) de asiento")
+        self.code = code
+        self.lines = lines
+
+
+class NothingToReclassify(DomainError):
+    """Se quiso reclasificar un asiento que no tiene nada en «por clasificar».
+
+    Pasa de verdad cuando dos personas miran la misma pantalla y una reclasifica
+    primero. No es un error del que llega segundo: es que ya está resuelto.
+    """
+
+    def __init__(self, entry_id: int) -> None:
+        super().__init__(f"el asiento {entry_id} no tiene nada por clasificar")
+        self.entry_id = entry_id
+
+
 class PeriodClosed(DomainError):
     """Se quiso escribir con fecha dentro de un periodo cerrado (RN-61).
 

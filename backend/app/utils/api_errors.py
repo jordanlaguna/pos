@@ -227,6 +227,30 @@ CODES: frozenset[str] = frozenset(
         # rompió y la unidad de trabajo ya revirtió. `cause` va para el registro,
         # no para mostrar.
         "accounting_failed",
+        "account_not_found",
+        # `account_code`: dos cuentas con el mismo código harían ambiguo todo
+        # asiento que las nombre, y el código es justo lo que el contador lee.
+        #
+        # El dato se llama `account_code` y no `code` en los tres porque `code` es
+        # el nombre del parámetro de `api_error`: pasarlo como dato choca con él.
+        "account_code_taken",
+        # `account_code`: es de sistema y la necesita el mapeo (RN-64). Sin ella,
+        # el papel que la usaba se queda sin dónde caer. Renombrarla sí se puede:
+        # el mapeo apunta al id.
+        "account_is_system",
+        # `account_code` y `lines`: tiene historia. Borrarla dejaría a los
+        # asientos que la nombran sin poder decir contra qué se hicieron; se
+        # desactiva (RN-64).
+        "account_in_use",
+        "journal_entry_not_found",
+        # `entry_id`: ya no queda nada en «por clasificar» de ese asiento. Pasa
+        # cuando dos personas miran la misma pantalla y una reclasifica primero:
+        # no es un error del que llega segundo, es que ya está resuelto.
+        "nothing_to_reclassify",
+        # `year` y `month`: nada se escribe con fecha dentro de un periodo
+        # cerrado (RN-61). Lo que haya que corregir va por un ajuste en el
+        # periodo abierto.
+        "period_closed",
         # -------------------------------------------------- configuración
         "unsupported_locale",
         "settings_too_large",

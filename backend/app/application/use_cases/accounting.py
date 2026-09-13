@@ -27,15 +27,16 @@ from datetime import date
 from app.application.ports.accounting import (
     AccountingSettings,
     AccountRepository,
+    JournalRepository,
     MappingRepository,
     PeriodRepository,
 )
 from app.application.ports.clock import Clock
 from app.application.ports.ledger import JournalWriter
 from app.application.ports.repositories import UnitOfWork
-from app.domain.chart import CHART, TEMPLATES, default_mapping
-from app.domain.errors import DomainError
-from app.domain.ledger import OPENING, JournalEntry, Line
+from app.domain.chart import CHART, TEMPLATES, UNCLASSIFIED_CODE, default_mapping
+from app.domain.errors import DomainError, NothingToReclassify
+from app.domain.ledger import OPENING, JournalEntry, Line, post_reclassification
 from app.domain.money import Money
 
 
@@ -227,3 +228,89 @@ class ActivateAccounting:
                 description=request.description.strip() or OPENING,
             )
         )
+
+
+class AccountNotFound(DomainError):
+    def __init__(self, account_id: int) -> None:
+        super().__init__(f"la cuenta {account_id} no existe")
+        self.account_id = account_id
+
+
+class JournalEntryNotFound(DomainError):
+    def __init__(self, entry_id: int) -> None:
+        super().__init__(f"el asiento {entry_id} no existe")
+        self.entry_id = entry_id
+
+
+@dataclass(frozen=True)
+class ReclassifyRequest:
+    entry_id: int
+    to_account_id: int
+    user_id: int
+    #: La frase de quien reclasifica, si escribe una. Sin ella va el código.
+    description: str = ""
+
+
+class Reclassify:
+    """Mueve a su cuenta lo que había caído en «por clasificar» (RF-49, RN-59).
+
+    Es la otra mitad de la decisión de plan §13.1: el asiento automático nunca se
+    detiene porque lo que falta cae en 1.9.99, y esto es lo que después lo saca de
+    ahí. Sin esta pieza, «por clasificar» sería un basurero en vez de una bandeja
+    de entrada.
+
+    **No toca el asiento original.** Escribe uno de ajuste que lo referencia, con
+    la fecha de hoy: el original pudo quedar en un periodo ya cerrado y entregado,
+    y RN-61 dice que eso no se reescribe.
+    """
+
+    def __init__(
+        self,
+        *,
+        entries: JournalRepository,
+        accounts: AccountRepository,
+        journal: JournalWriter,
+        uow: UnitOfWork,
+        clock: Clock,
+    ) -> None:
+        self._entries = entries
+        self._accounts = accounts
+        self._journal = journal
+        self._uow = uow
+        self._clock = clock
+
+    def __call__(self, request: ReclassifyRequest) -> int:
+        if self._entries.get(request.entry_id) is None:
+            raise JournalEntryNotFound(request.entry_id)
+
+        cuentas = self._accounts.all()
+        destino = next((c for c in cuentas if c.id == request.to_account_id), None)
+        if destino is None or not destino.is_active:
+            # Una inactiva se trata como inexistente: no se ofrece para escribir,
+            # y mandar un saldo ahí solo cambiaría un problema por otro.
+            raise AccountNotFound(request.to_account_id)
+
+        por_clasificar = next(
+            (c for c in cuentas if c.code == UNCLASSIFIED_CODE), None
+        )
+        if por_clasificar is None:
+            raise AccountNotFound(request.to_account_id)
+
+        with self._uow:
+            ajuste = post_reclassification(
+                source_entry_id=request.entry_id,
+                lines=self._entries.lines_of(request.entry_id),
+                to_account=destino.id,
+                unclassified=por_clasificar.id,
+                on=self._clock.now().date(),
+                description=request.description.strip(),
+            )
+            if ajuste is None:
+                # Pasa de verdad: dos personas mirando la misma pantalla y una
+                # reclasifica primero. No es un error del que llega segundo.
+                raise NothingToReclassify(request.entry_id)
+
+            id_ajuste = self._journal.post(ajuste)
+            self._uow.commit()
+
+        return id_ajuste
