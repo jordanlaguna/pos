@@ -12,7 +12,7 @@
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-09-12",
+  "actualizado": "2026-09-13",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -118,6 +118,14 @@
       "modulos": "Compras es el primer módulo que se activa por plan (RN-49). Se aplica en el servidor —403 con código, nunca un redirect— y solo a lo que escribe: bajar de plan deja lo anterior en solo lectura (RN-50). En el menú se ve CON CANDADO y no desaparece, que es lo único que le dice al dueño que el producto lo tiene.",
       "redes": "982 pruebas del backend con cobertura 100 % en dominio y aplicación, 580 del POS y 54 de punta a punta. Dos de ellas recorren F10 entera en una compañía que la prueba da de alta: XML del proveedor, compra a crédito, el IVA en el reporte por tarifa, abono en efectivo, el arqueo cuadrado y la anulación.",
       "fase": "F10, terminada el 2026-09-12 (T-1001 a T-1016, más T-1003b y T-1011b)."
+    },
+    "contabilidad": {
+      "estado": "listo",
+      "detalle": "Partida doble por compañía, activada por el contador con una fecha de inicio y un asiento de apertura (RN-60). El asiento automático se escribe en la MISMA transacción del hecho que lo origina (RN-59), y lo que hace eso posible sin detener a un cajero es que el mapeo no pueda estar incompleto: todo papel sin cuenta cae en «por clasificar», el asiento balancea igual y el contador lo resuelve después con un ajuste.",
+      "el_asiento_no_existe_si_no_cuadra": "RN-58 vive en el constructor de `JournalEntry` y no en una comprobación aparte: no hay forma de tener en las manos un asiento desbalanceado. Y las cifras salen de las líneas y no del encabezado, para que un `sales.total` que se hubiera desviado un céntimo no produzca una venta que no se puede cobrar.",
+      "el_puerto": "`Ledger` recibe **el hecho y no el asiento**: con `post(entry)` quien llama tendría que leer el mapeo de cuentas, o sea saber de contabilidad, que es justamente lo que el puerto existe para evitar. Con el módulo apagado el adaptador es nulo y `test_characterization.py` da las mismas cifras.",
+      "los_periodos": "Mensuales, y cerrado no se reabre (RN-61). Cerrar exige que el anterior esté cerrado, y un mes tampoco puede **nacer** detrás de uno cerrado: sin eso, una factura vieja capturada tarde cambiaba un balance ya entregado, porque un mes sin asientos no tiene fila y nacía abierto.",
+      "el_d104": "Cruza los dos desgloses por tarifa que ya existen —ventas (RF-21) y compras (RF-45)— en vez de sumar el libro aparte, que es RN-65 al pie de la letra. Al hacerlo apareció que la mitad de ventas no existía y que las dos guardan la tarifa en unidades distintas: 0,13 en la venta y 13 en la compra."
     }
   },
   "defectos_corregidos": [
@@ -442,6 +450,42 @@
       "sintoma": "Contra el simulado, una compañía en plan Básico —sin ningún módulo— daba de alta proveedores sin problema. El backend sí lo rechazaba, así que la misma acción se comportaba distinto según contra qué corriera: la clase de divergencia que hace que una prueba de punta a punta pase y la instalación de verdad falle.",
       "causa": "Dos huecos a la vez. En el POS, las `actions` de escritura no llamaban a `requireModule`, que se había creado en T-1004 sin destino. En el simulado, las rutas de proveedores, abonos y compra no comprobaban el plan.",
       "arreglo": "Las tres acciones de escritura del POS llaman a `requireModule` —la de entradas solo cuando la carga trae proveedor, porque ese formulario escribe dos cosas distintas—, y el simulado gana `exigirModulo()`, aplicado a las mismas cuatro rutas que `require_module` en el backend."
+    },
+    {
+      "defecto": "El papel de venta de una tarifa múltiplo de diez salía en notación científica",
+      "sintoma": "`TaxRate.as_percent` usa `Decimal.normalize()`, que escribe el 10 % como `1E+1`. El papel habría quedado en 'sales_1E+1', que no está en ningún mapeo: **todas** las ventas al 10 % a «por clasificar», sin un solo aviso. No llegó a producción porque se vio al escribir `_percent_text`.",
+      "arreglo": "El nombre del papel se arma con `format(valor, 'f')` y no con `as_percent`, y hay una prueba con el 10 % por si alguien vuelve a la forma corta.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "defecto": "La venta cobrada por transferencia o SINPE Móvil no tenía cuenta en el mapeo",
+      "sintoma": "El mapeo por omisión de plan §13.8 no traía el papel `bank` para el evento `sale`, y los dos métodos de pago que van al banco caían enteros en «por clasificar» desde el primer día.",
+      "arreglo": "La fila `(sale, bank) → 1.1.02`. Lo cazó la prueba que corre los seis `post_*` contra el catálogo sembrado en vez de leer la tabla del mapeo.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "defecto": "En el simulado, la hora de la venta la ponía el cliente",
+      "sintoma": "El POS manda su hora **local** y el turno de caja se sella en UTC, así que en UTC−6 la venta caía seis horas por detrás de la apertura y quedaba fuera de la ventana del turno. En modo demo el arqueo mostraba «0 ventas» siempre y el faltante o el sobrante salían por el monto entero de lo vendido.",
+      "arreglo": "`created_at: nowIso()` en la ruta de venta del simulado, que es lo que hace el backend de verdad (spec §8, regla 2).",
+      "fecha": "2026-09-13"
+    },
+    {
+      "defecto": "`getDb()` devuelve una copia superficial y asignarle una propiedad se pierde",
+      "sintoma": "`db.settings = …` escribía en la copia y no en el almacén, así que la contabilidad se activaba y seguía diciendo que no. Los arreglos sí son la misma referencia, y por eso `db.accounts.push(…)` funcionaba: el error solo aparece al **reemplazar** una propiedad.",
+      "arreglo": "Se usa `settingsRow()`, que muta el objeto guardado.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "defecto": "Una exportación de más en un `+page.server.ts` tumba la ruta con un 500",
+      "sintoma": "`export const REPORTES` junto a `load` hacía que `/contabilidad/reportes` respondiera 500 **en tiempo de ejecución**: `npm run check` pasa en 0/0 y la pantalla no abre.",
+      "arreglo": "La constante deja de exportarse.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "defecto": "El número de afiliado de las pruebas repetía cada minuto",
+      "sintoma": "`afiliado=int(marca[-6:])` toma dos dígitos del segundo y cuatro del contador. La base de pruebas sobrevive entre corridas y `bootstrap.py` con un par (afiliado, compañía) que ya existe **no crea nada**: le agrega el administrador a la que está. La prueba fallaba diciendo que la contabilidad ya estaba activa, que era cierto, pero de la corrida anterior.",
+      "arreglo": "`afiliado_unico()` en `conftest.py`, con nueve dígitos: repite cada 27 horas.",
+      "fecha": "2026-09-13"
     }
   ],
   "decisiones": [
@@ -1138,6 +1182,36 @@
       "decision": "`POST /inventory/entry` exige el módulo `purchases` **solo si el cuerpo trae `supplier_id`**. `require_module` se apoya ahora en una función suelta, `exigir_modulo(db, sesion, module)`, que el endpoint llama después de leer el cuerpo. Decidido con el usuario el 2026-09-12, entre tres opciones.",
       "porque": "Desde T-1009 esa ruta escribe una entrada de mercadería cuando no trae proveedor y una compra cuando lo trae (RN-52). Una dependencia de FastAPI decide antes de que el cuerpo exista, así que no puede distinguirlas: ponerla le cerraría el inventario a quien bajó de plan —lo contrario de RN-50— y no ponerla lo deja registrando compras sin el módulo —lo contrario de RN-49—. El hueco solo lo alcanzaba quien ya tenía proveedores, porque darlos de alta sí estaba cerrado desde T-1007; es decir, exactamente el caso de la compañía que baja de plan, que es del que habla RN-50.",
       "lo_que_se_descarto": "Cerrar el módulo entero, incluyendo anular y abonar. Se descartó porque dejaría a la compañía sin poder corregir una compra mal cargada ni registrar que le pagó al proveedor, con una deuda congelada en un saldo que no puede mover. RN-50 promete solo lectura sobre lo que existe, no un candado sobre los errores propios."
+    },
+    {
+      "tema": "El puerto del libro recibe el hecho, no el asiento",
+      "decision": "`Ledger` tiene un método por evento —`record_sale`, `record_purchase`…— y el adaptador arma el asiento. El plan lo dibujaba como `post(entry)`.",
+      "porque": "Con `post(entry)`, quien llama tiene que leer `account_mappings`, resolver los papeles y conocer «por clasificar»: o sea, saber de contabilidad. El puerto existe precisamente para que `RegisterSale` no sepa si está activa. Pasando el hecho, el adaptador es el único sitio del sistema que conoce el mapeo. `post(entry)` se conserva aparte para los asientos que **no** salen de ningún evento: la apertura, el manual y el de ajuste.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "tema": "La compra va siempre contra proveedores, también la de contado",
+      "decision": "`post_purchase` acredita `payables` siempre. El plan §13.3 decía «caja (contado)»; corregido.",
+      "porque": "Desde F10 una compra de contado con método de pago crea su propio abono, y el abono asienta proveedores contra caja. Acreditando caja también en la compra, la plata salía dos veces. Cargando siempre el pasivo, la de contado queda —sumando las dos— en inventario e IVA contra caja, y la de contado **sin** método de pago queda debiendo, que también es correcto: nadie registró que se pagara.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "tema": "El CSV de los reportes lo arma el POS",
+      "decision": "`GET /accounting/reports/*` devuelve JSON y el CSV se genera en `contabilidad/reportes/reporte.csv/+server.ts`. El plan §13.4 lo pedía en el backend con `?format=csv`.",
+      "porque": "Un CSV lleva encabezados, y los encabezados son texto que lee una persona (RN-30). El backend no escribe texto para personas. Es además lo que ya hacía la plantilla de importación de inventario.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "tema": "Los nombres de las cuentas son datos, no mensajes",
+      "decision": "La plantilla de `domain/chart.py` trae los nombres en español y no pasa por los catálogos de traducción.",
+      "porque": "El catálogo de cuentas es un documento de la compañía: lo imprime su contador, lo renombra a su gusto y lo entrega a Hacienda. Traducirlo cambiaría el documento según quién mire la pantalla. Lo que sigue sin escribirse en el servidor es cualquier «no», que viaja en código.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "tema": "Un mes no puede nacer detrás de uno cerrado",
+      "decision": "Al crear un periodo al vuelo, el adaptador rechaza la escritura si hay algún periodo posterior ya cerrado.",
+      "porque": "RN-61 prohíbe escribir **dentro** de un periodo cerrado, y eso dejaba un agujero: un mes sin un solo asiento no tiene fila, así que nacía abierto. Cerrado enero, una factura con fecha en diciembre entraba sin problema y cambiaba un balance ya entregado.",
+      "fecha": "2026-09-13"
     }
   ],
   "invariantes_verificados": {
@@ -2089,6 +2163,17 @@
         "Verde: 580 del POS, 54 de punta a punta, `npm run check` en 0/0."
       ],
       "lo_que_ensena": "**Duplicar un bloque por responsividad rompe toda prueba que diga `.first()`.** La copia oculta suele ir primero en el árbol —el menú se renderiza antes que la barra—, así que `getByText(X).first()` pasa a resolver a un elemento con `display:none` y la prueba falla diciendo «no es visible» sobre algo que sí está en pantalla. Cayeron cuatro, ninguna del menú: una de cambio de compañía y tres de idiomas. La corrección no es poner `.nth(1)` —que es igual de frágil al revés— sino pedir **la copia visible**, que además es lo que la prueba quiere decir. Lo mismo con los `#id`: el selector de idioma se mudó una vez y las pruebas lo apuntaban por `id`; ahora lo buscan por `select[name=\"locale\"]:visible`, que sobrevive a la próxima mudanza."
+    },
+    {
+      "fecha": "2026-09-13",
+      "titulo": "F11 entera: de la activación al mes cerrado",
+      "hecho": [
+        "T-1101 a T-1113, las trece. La migración 010 con las cinco tablas y `sale_details.unit_cost`; `domain/ledger.py` con los seis asientos automáticos y los cuatro libros; el puerto `Ledger` enganchado en los seis casos de uso; activación, catálogo, mapeo, reclasificación, asientos manuales, periodos con cierre, los cinco reportes y el D-104; las siete pantallas, el libro del simulado y el recorrido de punta a punta.",
+        "El método de pago de una venta deja de ser texto libre (T-1104): los cuatro que el POS ya ofrece, sin renombrar ninguno, porque son los valores guardados en el historial de cada cliente.",
+        "La verificación de que el mapeo está completo no lee la tabla del mapeo: corre los seis `post_*` contra el catálogo sembrado y exige que ninguna línea caiga en «por clasificar», salvo las tres que caen ahí a propósito. Así apareció la fila que faltaba.",
+        "Cifras: 1 233 pruebas del backend con cobertura 100 % en dominio y aplicación, 608 unitarias del POS, 56 de punta a punta, `npm run check` en 0/0."
+      ],
+      "aprendido": "Las dos verificaciones que más encontraron fueron las que no miran lo que se escribió sino lo que el sistema hace: correr los `post_*` de verdad contra el catálogo sembrado, y armar el escenario de los reportes con esos mismos `post_*` en vez de escribir las filas a mano. Una tabla copiada a mano se comprueba a sí misma."
     }
   ],
   "$reparto": {

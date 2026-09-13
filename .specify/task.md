@@ -3019,7 +3019,7 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ---
 
-## F11 · Contabilidad
+## F11 · Contabilidad — **terminada el 2026-09-13**
 
 > **Qué deja.** Partida doble por compañía: catálogo desde plantilla, asientos
 > automáticos **en la misma transacción** con «por clasificar» para que nada
@@ -3051,7 +3051,7 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ### Base de datos
 
-- [ ] **T-1101** Migración `010-contabilidad.sql` (plan §13.2) y sus modelos:
+- [x] **T-1101** Migración `010-contabilidad.sql` (plan §13.2) y sus modelos:
       `accounts`, `account_mappings`, `accounting_periods`, `journal_entries`,
       `journal_lines` y `sale_details.unit_cost`. `company_dump.py`: las cinco
       viajan. RN-58, RN-61, RN-63.
@@ -3059,9 +3059,15 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       **Verificación:** `test_esquema.py`; exportar y restaurar una compañía
       con un libro deja el mismo balance de comprobación.
 
+      **Hecho.** El `SHOW CREATE TABLE` que deja la migración y el que deja
+      `create_all` solo difieren en el orden de las columnas y en los nombres
+      que MySQL autogenera para las foráneas, como ya pasa con el resto.
+      `month` va en SMALLINT y no en el TINYINT del boceto: el byte que se
+      ahorra no paga un tipo que solo existe en MySQL.
+
 ### Dominio
 
-- [ ] **T-1102** `domain/ledger.py`: `JournalEntry` que **no se construye
+- [x] **T-1102** `domain/ledger.py`: `JournalEntry` que **no se construye
       desbalanceado**; `post_sale`, `post_return`, `post_cash_close`,
       `post_cash_movement`, `post_purchase`, `post_supplier_payment`;
       `assert_open`. La tabla de casos de plan §13.3, con las cifras de los
@@ -3073,16 +3079,28 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       el cierre 53 000 contra 53 277,00 asienta un faltante de 277,00;
       cobertura 100 %.
 
-- [ ] **T-1103** Reportes en el dominio: `trial_balance`, `income_statement`,
+      **Hecho.** Con el mapeo VACÍO la venta sigue dejando asiento, que es
+      RN-59 comprobada. Dos hallazgos: `TaxRate.as_percent` escribe el 10 %
+      como `1E+1` —el papel habría quedado en 'sales_1E+1' y todas esas
+      ventas en «por clasificar» sin aviso—, y la compra tiene que ir
+      **siempre** contra proveedores: el «caja (contado)» del plan contaba
+      la plata dos veces, porque desde F10 la de contado ya crea su abono.
+
+- [x] **T-1103** Reportes en el dominio: `trial_balance`, `income_statement`,
       `balance_sheet`, `vat_draft`. RF-53, RF-54, RN-65.
 
       **Verificación:** con los asientos de la tabla, activo = pasivo +
       patrimonio + resultado; el `vat_draft` del ejemplo da saldo a favor de
       12 434,50 (565,50 − 13 000).
 
+      **Hecho.** El escenario de la prueba se arma con los `post_*` de
+      T-1102 y no a mano: así no puede cuadrar por casualidad. Activo
+      214 938,50 = pasivo 63 565,50 + patrimonio 150 000 + resultado 1 373,
+      y el D-104 del ejemplo da los 12 434,50 a favor.
+
 ### Backend
 
-- [ ] **T-1104** `sales.payment_method` deja de ser texto libre: un conjunto
+- [x] **T-1104** `sales.payment_method` deja de ser texto libre: un conjunto
       cerrado de valores admitidos —los que hoy existen, **sin renombrar lo
       guardado**— sobre el que se define el mapeo; un valor fuera del conjunto
       se rechaza al vender.
@@ -3090,7 +3108,11 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       **Verificación:** `POST /sales` con un método desconocido responde
       código; los reportes de métodos de pago dan lo mismo que antes.
 
-- [ ] **T-1105** Puerto `Ledger` con adaptador nulo y adaptador SQLAlchemy en
+      **Hecho.** Los cuatro valores que ya existen, sin renombrar ninguno.
+      `CASH_METHOD` se mudó al dominio: estaba escrito en el caso de uso y
+      otra vez en el POS, y el libro lo necesitaba en un tercer sitio.
+
+- [x] **T-1105** Puerto `Ledger` con adaptador nulo y adaptador SQLAlchemy en
       **la misma sesión**; enganche en `RegisterSale`, `RegisterReturn`,
       `CloseCashSession`, movimientos de caja, `RegisterPurchase` y
       `PaySupplier`. RN-59, RF-50.
@@ -3101,14 +3123,23 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       segundo; sin la cuenta `cash` en el mapeo, la línea va a 1.9.99 **y la
       venta se confirma**.
 
-- [ ] **T-1106** `unit_cost` congelado en `sale_details` al vender, desde
+      **Hecho.** El puerto recibe **el hecho y no el asiento**: con
+      `post(entry)` quien llama tendría que leer el mapeo, o sea saber de
+      contabilidad, que es lo que el puerto existe para evitar. El
+      correlativo sin huecos exige serializar, y se serializa sobre la fila
+      de la compañía.
+
+- [x] **T-1106** `unit_cost` congelado en `sale_details` al vender, desde
       `products.cost`; `NULL` si el producto no tiene costo. RN-63.
 
       **Verificación:** vender, comprar más caro, y la línea vendida conserva
       su costo; `post_sale` de una línea sin costo no asienta el par costo /
       inventario.
 
-- [ ] **T-1107** `ActivateAccounting`: la plantilla de plan §13.8, el mapeo por
+      **Hecho.** El repositorio gana `sold_costs`, que es lo que hace que
+      devolver mercadería la reponga por lo que costó y no por lo de hoy.
+
+- [x] **T-1107** `ActivateAccounting`: la plantilla de plan §13.8, el mapeo por
       omisión completo, el periodo de la fecha de inicio y el asiento de
       apertura; `accounting` en `settings`. RF-47, RN-60.
 
@@ -3116,14 +3147,23 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       fila del mapeo falta**; una apertura desbalanceada responde
       `invalid_opening_balance`; activar dos veces responde código.
 
-- [ ] **T-1108** Catálogo y mapeo: rutas, `account_is_system`,
+      **Hecho.** La prueba corre los seis `post_*` contra el catálogo
+      sembrado en vez de leer la tabla del mapeo. Así apareció que faltaba
+      una fila: la venta cobrada por transferencia o SINPE Móvil no tenía
+      cuenta y se habría ido entera a 1.9.99 el primer día.
+
+- [x] **T-1108** Catálogo y mapeo: rutas, `account_is_system`,
       `account_in_use`, y `Reclassify`. RF-48, RF-49, RN-64.
 
       **Verificación:** borrar 1.1.01 → código; borrar una cuenta nueva sin
       movimientos → se va; reclasificar deja 1.9.99 en cero con un asiento
       `adjustment` que referencia al original.
 
-- [ ] **T-1109** Asientos manuales y de ajuste; periodos y `ClosePeriod` con
+      **Hecho.** El dato de los tres códigos de cuenta se llama
+      `account_code` y no `code`: `code` es el nombre del parámetro de
+      `api_error` y pasarlo como dato revienta en tiempo de ejecución.
+
+- [x] **T-1109** Asientos manuales y de ajuste; periodos y `ClosePeriod` con
       confirmación y bitácora; `period_closed`, `period_not_closeable`. RF-51,
       RF-52, RN-61.
 
@@ -3131,31 +3171,50 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       y luego un manual con fecha en julio → `period_closed`; `audit_log`
       tiene el cierre con quién y cuándo.
 
-- [ ] **T-1110** Rutas de los cinco reportes y del D-104, con `format=csv`.
+      **Hecho.** Y se cerró un agujero que RN-61 dejaba abierto: cerrar
+      enero no impedía capturar algo con fecha en diciembre **si diciembre
+      nunca tuvo un asiento**, porque entonces no tiene fila y nacía
+      abierto. Un mes ya no puede nacer detrás de uno cerrado.
+
+- [x] **T-1110** Rutas de los cinco reportes y del D-104, con `format=csv`.
       RF-53, RF-54.
 
       **Verificación:** el CSV del diario abre y suma lo mismo que la pantalla;
       el D-104 del mes da el débito por tarifa **igual** al desglose de ventas
       por tarifa (RF-21) y el crédito **igual** al reporte de compras (RF-45).
 
+      **Hecho.** Faltaba media ruta: `GET /reports/sales_by_rate`, el espejo
+      de `/reports/purchases`. Y las dos mitades venían en unidades
+      distintas —la venta guarda 0,13 y la compra 13—, que sin convertir
+      parte el D-104 en dos filas. El `?format=csv` del plan no va en el
+      backend: un CSV lleva encabezados y los encabezados son texto (RN-30).
+
 ### Frontend
 
-- [ ] **T-1111** Pantallas de `/contabilidad` (plan §13.4): el resumen con por
+- [x] **T-1111** Pantallas de `/contabilidad` (plan §13.4): el resumen con por
       clasificar en rojo, activación, cuentas, mapeo, asientos, periodos,
       reportes e IVA. Quién las ve depende de la decisión del rol contador.
 
       **Verificación:** punta a punta: activar, vender, abrir el asiento desde
       la venta, cerrar el mes con el resumen a la vista.
 
-- [ ] **T-1112** Simulado y catálogos: doce endpoints con contrato idéntico, un
+      **Hecho.** Siete pantallas y el CSV, que lo arma el POS.
+
+- [x] **T-1112** Simulado y catálogos: doce endpoints con contrato idéntico, un
       libro en el seed, `messages/es/accounting.json` declarado, y los siete
       códigos en los cuatro lugares.
 
       **Verificación:** `npm test`; `npm run check` en 0/0.
 
+      **Hecho.** El simulado tiene su propio libro (`mock/ledger.ts`).
+      Al escribirlo aparecieron dos defectos suyos: ponía en la venta la
+      hora del **cliente** —que es local, mientras el turno se sella en
+      UTC, así que el arqueo del demo decía «0 ventas» siempre— y
+      `db.settings = …` escribía en la copia que devuelve `getDb()`.
+
 ### Verificación — sin esto la fase no está terminada
 
-- [ ] **T-1113** Punta a punta en una compañía que la prueba da de alta:
+- [x] **T-1113** Punta a punta en una compañía que la prueba da de alta:
       activar contabilidad, vender 3 × 1 450 en efectivo y ver el asiento que
       balancea, comprar a crédito, abonar, cerrar caja con faltante, cerrar el
       mes, intentar un asiento en el mes cerrado → código; el D-104 del mes
@@ -3163,6 +3222,11 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
       **Verificación:** Playwright contra el simulado y, a mano, contra el
       stack real; `pytest`, `npm test` y `npm run check` en verde.
+
+      **Hecho.** 56 pruebas de punta a punta en verde. La del recorrido
+      espera a que el pie de la tabla sume antes de llenar los saldos
+      iniciales: lo tecleado antes de hidratar se borra al hidratar, y el
+      formulario llegaba a medias con un «no cuadran» que engañaba.
 
 ---
 
