@@ -144,7 +144,12 @@ export async function parseSpreadsheet(
 			quantity: Number.isFinite(quantity) ? quantity : 0,
 			unit_cost: round2(cost),
 			matched: null,
-			matched_by: null
+			matched_by: null,
+			// Una hoja de cálculo no trae impuesto: es una lista de qué entra y a
+			// cuánto. Queda en cero y lo pone quien registra la compra, si la
+			// factura del proveedor lo lleva (RN-53).
+			tax_rate: 0,
+			tax_amount: 0
 		};
 
 		if (!(line.quantity > 0)) {

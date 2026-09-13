@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { round2 } from '$lib/domain/money';
-import type { ImportNote, ParsedLine, ParseResult } from '$lib/domain/types';
+import type { ImportNote, ParsedLine, ParsedSupplier, ParseResult } from '$lib/domain/types';
 import { ImportError } from './errors';
 
 /**
@@ -74,6 +74,70 @@ function codesOf(line: Node): string[] {
 	return [...new Set(codes)];
 }
 
+/**
+ * Quién emitió el documento (RF-42).
+ *
+ * La identificación es lo que importa: con ella se reconoce al proveedor sin
+ * preguntarle nada a nadie, porque la misma identificación es el mismo
+ * proveedor. Sin nombre no se devuelve nada —un proveedor sin nombre no se
+ * puede dar de alta— y entonces la compra se registra eligiéndolo a mano.
+ */
+function supplierOf(emisor: Node): ParsedSupplier | null {
+	const name = text(emisor.Nombre) || text(emisor.NombreComercial);
+	if (!name) return null;
+
+	const identificacion = (emisor.Identificacion ?? {}) as Node;
+	return {
+		name,
+		identification_type: text(identificacion.Tipo) || null,
+		identification: text(identificacion.Numero) || null,
+		email: text(emisor.CorreoElectronico) || null,
+		// El teléfono viene partido en código de país y número; se guarda el
+		// número, que es lo que alguien marca.
+		phone: text((emisor.Telefono as Node)?.NumTelefono) || null
+	};
+}
+
+/**
+ * El impuesto de una línea, tal como lo dice el documento (RN-53).
+ *
+ * Una línea puede traer **varios** `<Impuesto>` —el IVA y uno selectivo, por
+ * ejemplo—. La tarifa que se guarda es la del IVA (código 01), que es la que
+ * va al D-104; si no hay IVA se toma la del primero, y una línea exenta no
+ * trae ninguno y queda en cero.
+ *
+ * El monto sale de `ImpuestoNeto` cuando está, y no de la suma de los montos:
+ * el neto ya descuenta `ImpuestoAsumidoEmisorFabrica`, que es impuesto que el
+ * comprador **no** pagó y por lo tanto no puede acreditarse.
+ */
+function taxOf(line: Node): { rate: number; amount: number } {
+	const impuestos = asArray(line.Impuesto);
+	if (impuestos.length === 0) return { rate: 0, amount: 0 };
+
+	const iva = impuestos.find((i) => text(i.Codigo) === '01') ?? impuestos[0];
+	const neto = text(line.ImpuestoNeto);
+
+	return {
+		rate: num(iva.Tarifa),
+		amount: neto ? num(neto) : impuestos.reduce((suma, i) => suma + num(i.Monto), 0)
+	};
+}
+
+/**
+ * `CondicionVenta` → cómo se paga.
+ *
+ * 01 es contado y 02 es crédito; el resto —apartado, consignación, prepago— se
+ * trata como contado, que es lo que no crea una cuenta por pagar que nadie va a
+ * cobrar. `PlazoCredito` solo viene en las de crédito.
+ */
+function paymentTermsOf(root: Node): { terms: 'cash' | 'credit'; days: number } {
+	const condicion = text(root.CondicionVenta);
+	if (condicion !== '02') return { terms: 'cash', days: 0 };
+
+	const dias = Math.trunc(num(root.PlazoCredito));
+	return { terms: 'credit', days: dias > 0 ? dias : 0 };
+}
+
 export function parseHaciendaXml(xml: string): ParseResult {
 	const warnings: ImportNote[] = [];
 
@@ -99,9 +163,14 @@ export function parseHaciendaXml(xml: string): ParseResult {
 	}
 
 	const emisor = (root.Emisor ?? {}) as Node;
-	const supplier = text(emisor.Nombre) || text(emisor.NombreComercial) || null;
+	const supplierDetails = supplierOf(emisor);
+	const supplier = supplierDetails?.name ?? null;
 	const documentNumber = text(root.NumeroConsecutivo) || text(root.Clave) || null;
+	// La clave aparte del consecutivo: son dos cosas, y la de 50 dígitos es la
+	// que identifica el comprobante ante Hacienda.
+	const documentKey = text(root.Clave) || null;
 	const issuedAt = text(root.FechaEmision) || null;
+	const { terms, days } = paymentTermsOf(root);
 
 	const detalle = (root.DetalleServicio ?? {}) as Node;
 	const rawLines = asArray(detalle.LineaDetalle);
@@ -126,6 +195,7 @@ export function parseHaciendaXml(xml: string): ParseResult {
 			quantity > 0 && subtotal > 0 ? round2(subtotal / quantity) : num(raw.PrecioUnitario);
 
 		const codes = codesOf(raw);
+		const tax = taxOf(raw);
 
 		const line: ParsedLine = {
 			code: codes[0] ?? '',
@@ -133,7 +203,9 @@ export function parseHaciendaXml(xml: string): ParseResult {
 			quantity,
 			unit_cost: unitCost,
 			matched: null,
-			matched_by: null
+			matched_by: null,
+			tax_rate: tax.rate,
+			tax_amount: tax.amount
 		};
 
 		// Las facturas de servicios traen líneas sin cantidad entera; se avisa en
@@ -161,6 +233,10 @@ export function parseHaciendaXml(xml: string): ParseResult {
 		document_number: documentNumber,
 		issued_at: issuedAt,
 		lines,
-		warnings
+		warnings,
+		supplier_details: supplierDetails,
+		document_key: documentKey,
+		payment_terms: terms,
+		credit_days: days
 	};
 }

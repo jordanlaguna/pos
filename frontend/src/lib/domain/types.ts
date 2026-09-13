@@ -608,6 +608,30 @@ export interface ParsedLine {
 	matched_by: 'barcode' | 'name' | null;
 	/** Problema de la línea que impide usarla (cantidad inválida, etc.). */
 	issue?: ImportNote;
+	/**
+	 * El impuesto de la línea **tal como lo dice el documento** (RN-53, F10).
+	 *
+	 * No se recalcula desde la tarifa del producto: el crédito fiscal es lo que
+	 * se pagó, no lo que se habría cobrado. En 0 cuando la línea va exenta o
+	 * cuando el archivo no trae impuesto —una hoja de Excel, por ejemplo—.
+	 */
+	tax_rate: number;
+	tax_amount: number;
+}
+
+/**
+ * Quién emitió el documento (F10, RF-42).
+ *
+ * Con la identificación alcanza para reconocer al proveedor sin preguntarle
+ * nada a nadie: la misma identificación es el mismo proveedor. Lo demás sirve
+ * para darlo de alta si no existe todavía.
+ */
+export interface ParsedSupplier {
+	name: string;
+	identification_type: string | null;
+	identification: string | null;
+	email: string | null;
+	phone: string | null;
 }
 
 export interface ParseResult {
@@ -618,6 +642,18 @@ export interface ParseResult {
 	lines: ParsedLine[];
 	/** Avisos no fatales: filas salteadas, columnas que no se encontraron… */
 	warnings: ImportNote[];
+
+	/**
+	 * Lo que solo trae un comprobante electrónico (F10). Nulo en las otras dos
+	 * vías —manual y Excel—, donde el proveedor se elige a mano.
+	 */
+	supplier_details?: ParsedSupplier | null;
+	/** La clave de 50 dígitos. `document_number` sigue siendo el consecutivo. */
+	document_key?: string | null;
+	/** 'cash' | 'credit', leído de `CondicionVenta`. */
+	payment_terms?: 'cash' | 'credit';
+	/** Días de `PlazoCredito`. 0 cuando es de contado o no lo dice. */
+	credit_days?: number;
 }
 
 // -------------------------------------------------------------------- reportes

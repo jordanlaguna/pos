@@ -73,6 +73,122 @@ describe('el invariante de progress.json', () => {
 		expect(chiverre.unit_cost).toBe(0);
 		expect(chiverre.quantity).toBe(3);
 	});
+
+	it('lo que F10 agregó no mueve ni una cifra de las de arriba', () => {
+		/*
+		 * Esta factura no trae `<Impuesto>` ni `<CondicionVenta>`, así que los
+		 * campos nuevos salen en su valor de reposo. Es la mitad que importa del
+		 * invariante: el lector aprendió a leer más, no a leer distinto.
+		 */
+		expect(r.lines.every((l) => l.tax_rate === 0 && l.tax_amount === 0)).toBe(true);
+		expect(r.payment_terms).toBe('cash');
+		expect(r.credit_days).toBe(0);
+	});
+
+	it('ahora reconoce al emisor por su identificación', () => {
+		// Es lo que permite encontrar al proveedor sin preguntarle a nadie: la
+		// misma identificación es el mismo proveedor (RN-52).
+		expect(r.supplier_details).toEqual({
+			name: 'Distribuidora La Central S.A.',
+			identification_type: '02',
+			identification: '3101154998',
+			email: null,
+			phone: null
+		});
+	});
+
+	it('la clave y el consecutivo son dos cosas distintas', () => {
+		expect(r.document_number).toBe('00100001010000514161');
+		expect(r.document_key).toBe('50601012600310115499800100001010000514161100514161');
+		expect(r.document_key).toHaveLength(50);
+	});
+});
+
+/*
+ * Contra comprobantes **reales** de Hacienda, los que vienen en
+ * `docs/hacienda/costa-rica/` desde abril. La factura de arriba la escribimos
+ * nosotros para fijar el invariante; estas las emitió alguien de verdad, y son
+ * las que dicen si el lector sirve el día que llega un correo del proveedor.
+ */
+describe('facturas reales del material de Hacienda', () => {
+	function oficial(ruta: string): string {
+		return readFileSync(
+			fileURLToPath(new URL(`../../../../../docs/hacienda/costa-rica/${ruta}`, import.meta.url)),
+			'utf-8'
+		);
+	}
+
+	describe('una a crédito, con IVA por línea', () => {
+		const r = parseHaciendaXml(
+			oficial(
+				'normativa/protocolos/' +
+					'50606012600310134122000100001010000009369100009369.xml'
+			)
+		);
+
+		it('reconoce al emisor con su cédula jurídica', () => {
+			expect(r.supplier_details?.name).toBe('Plastipol de Costa Rica R V S.A.');
+			expect(r.supplier_details?.identification_type).toBe('02');
+			expect(r.supplier_details?.identification).toBe('3101341220');
+		});
+
+		it('la condición de venta da la cuenta por pagar y su plazo', () => {
+			expect(r.payment_terms).toBe('credit');
+			expect(r.credit_days).toBe(30);
+		});
+
+		it('cada línea trae la tarifa y el monto del documento', () => {
+			// Los números son los del archivo: 500 kg a 2,70 → 1 350 y 175,50 de
+			// IVA; 200 kg → 540 y 70,20. Es el crédito fiscal de esta compra.
+			expect(r.lines).toHaveLength(2);
+			expect(r.lines[0].tax_rate).toBe(13);
+			expect(r.lines[0].tax_amount).toBe(175.5);
+			expect(r.lines[1].tax_rate).toBe(13);
+			expect(r.lines[1].tax_amount).toBe(70.2);
+		});
+
+		it('el impuesto no se deduce del subtotal sino que se lee', () => {
+			// Aplicar 13 % al subtotal daría lo mismo acá, y por eso no prueba
+			// nada por sí solo; lo que se comprueba es de dónde sale el número.
+			const [primera] = r.lines;
+			expect(primera.quantity * primera.unit_cost).toBe(1350);
+			expect(primera.tax_amount).toBe(175.5);
+		});
+	});
+
+	describe('otra de contado, al 1 %', () => {
+		const r = parseHaciendaXml(
+			oficial(
+				'normativa/protocolos/' +
+					'50608012600011175091400100001010000004940100004940.xml'
+			)
+		);
+
+		it('la tarifa reducida se lee tal cual, no se normaliza a 13', () => {
+			// Es lo que motivó RN-53: el crédito fiscal es lo que se pagó, y un
+			// producto de canasta básica se compra al 1 %.
+			expect(r.lines[0].tax_rate).toBe(1);
+		});
+
+		it('a crédito a un día sigue siendo a crédito', () => {
+			expect(r.payment_terms).toBe('credit');
+			expect(r.credit_days).toBe(1);
+		});
+	});
+
+	describe('una con condición que no es ni contado ni crédito', () => {
+		const r = parseHaciendaXml(
+			oficial('XML-Ejemplos/' + '50616072600310170293400100002030000500153170510022.xml')
+		);
+
+		it('se trata como contado', () => {
+			// `CondicionVenta` tiene más valores —apartado, consignación,
+			// prepago—. Tratarlos como crédito crearía una cuenta por pagar que
+			// nadie va a cobrar; como contado, no se inventa deuda.
+			expect(r.payment_terms).toBe('cash');
+			expect(r.credit_days).toBe(0);
+		});
+	});
 });
 
 /*

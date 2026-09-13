@@ -2637,14 +2637,33 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       rutas dentro de `test_aislamiento.py` —la lista no mezcla y el `PUT` a un
       proveedor de otra compañía da 404—. 872 pruebas del backend en verde.
 
-- [ ] **T-1008** El lector de XML (`lib/server/import/hacienda.ts`) extrae
+- [x] **T-1008** El lector de XML (`lib/server/import/hacienda.ts`) extrae
       además `Emisor` (tipo, número, nombre), `Clave`, `NumeroConsecutivo`,
       `FechaEmision`, `CondicionVenta` con `PlazoCredito`, y por línea
       `Impuesto/Tarifa` y `Impuesto/Monto`. RF-42, RN-53.
 
-      **Verificación:** los comprobantes de ejemplo de `docs/hacienda/`
-      producen proveedor, condición y tarifa por línea; el invariante 79 800
-      sigue igual en `test_characterization.py`.
+      **Hecho el 2026-09-12.** Tres cosas que solo se ven leyendo los
+      comprobantes de verdad, y que el diseño no contemplaba:
+
+      1. **Una línea puede traer varios `<Impuesto>`** —el IVA y uno
+         selectivo—. La tarifa que se guarda es la del código `01`, que es la
+         que va al D-104; si no hay IVA se toma la del primero.
+      2. **El monto sale de `ImpuestoNeto`, no de la suma de los montos.** El
+         neto ya descuenta `ImpuestoAsumidoEmisorFabrica`, que es impuesto que
+         el comprador **no** pagó y por lo tanto no puede acreditarse.
+      3. **`CondicionVenta` tiene más de dos valores.** Apartado, consignación
+         y prepago se tratan como contado: tratarlos como crédito crearía una
+         cuenta por pagar que nadie va a cobrar.
+
+      La clave de 50 dígitos se guarda aparte del consecutivo: son dos cosas.
+
+      **Verificación:** `hacienda.test.ts`, 22 pruebas. Tres corren contra
+      comprobantes **reales** del material de Hacienda que está en el repo
+      —una a crédito a 30 días con IVA de 175,50 y 70,20 por línea, una al 1 %
+      y una con condición 11—, y una comprueba que el invariante de 79 800 no
+      se movió: esa factura no trae impuesto ni condición, así que los campos
+      nuevos salen en su valor de reposo. El lector aprendió a leer más, no a
+      leer distinto.
 
 - [ ] **T-1009** `RegisterPurchase`: aplica el stock como hoy, actualiza
       `products.cost` con el promedio, calcula `due_date` desde la condición,

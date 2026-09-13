@@ -55,6 +55,10 @@
 			matched: base.matched ?? null,
 			matched_by: base.matched_by ?? null,
 			issue: base.issue,
+			// El del documento del proveedor (RN-53). En cero cuando la línea se
+			// agregó a mano o vino de una hoja de cálculo.
+			tax_rate: base.tax_rate ?? 0,
+			tax_amount: base.tax_amount ?? 0,
 			key: ++secuencia,
 			// Las líneas con problema entran desmarcadas para que se revisen.
 			incluir: !base.issue,
