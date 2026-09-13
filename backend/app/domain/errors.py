@@ -491,3 +491,30 @@ class InvalidClave(DomainError):
         super().__init__(f"clave numérica no válida ({code}): {value!r}")
         self.value = value
         self.code = code
+
+
+class InvalidIdentificationType(DomainError):
+    """Un tipo de identificación que no es ninguno de los cuatro de Hacienda.
+
+    Sale de una lista cerrada, así que llegar acá con un valor raro significa
+    que alguien mandó el campo a mano. Se rechaza porque el tipo viaja dentro
+    del XML: uno inventado no lo rechaza el sistema, lo rechaza Hacienda.
+    """
+
+    def __init__(self, value: object) -> None:
+        super().__init__(f"tipo de identificación no válido: {value!r}")
+        self.value = value
+
+
+class InvalidSigningKey(DomainError):
+    """No se pudo armar el nombre de la llave de firma.
+
+    El nombre se deriva de la compañía y el ambiente, y los dos los pone el
+    servidor: si acá llega algo que no es una compañía, lo que hay es un error
+    de programación. Se rechaza en vez de componer un nombre cualquiera, porque
+    un nombre cualquiera es una llave de otro.
+    """
+
+    def __init__(self, company_id: object) -> None:
+        super().__init__(f"compañía no válida para una llave de firma: {company_id!r}")
+        self.company_id = company_id

@@ -19,7 +19,14 @@ from typing import Protocol, get_type_hints
 
 import pytest
 
-from app.application.ports import clock, documents, repositories, security
+from app.application.ports import (
+    clock,
+    documents,
+    repositories,
+    secrets,
+    security,
+    signing,
+)
 
 PUERTOS = [
     (clock.Clock, {"now", "today"}),
@@ -72,6 +79,15 @@ PUERTOS = [
     # documentos se custodian por ley y borrarlos es mantenimiento, no una
     # operación de la aplicación—; un método acá sería una invitación.
     (documents.DocumentStore, {"put", "get", "exists"}),
+    # F6: quién firma. `forget_key` no estaba en el boceto del plan y hace falta
+    # para RF-24: sin él, quitar el certificado dejaría la fila vacía y la llave
+    # viva en Vault —el negocio creería que no puede firmar y el sistema podría
+    # hacerlo—.
+    (signing.DocumentSigner, {"import_key", "sign", "forget_key"}),
+    # F6: el cifrado en reposo, con un solo cliente —la contraseña de ATV—.
+    # Todo lo demás que era secreto se fue a Vault, donde no se guarda nada que
+    # se pueda leer de vuelta.
+    (secrets.SecretBox, {"encrypt", "decrypt"}),
     (repositories.ProductSnapshot, set()),
     (repositories.SupplierSnapshot, set()),
 ]
@@ -136,7 +152,7 @@ def test_los_puertos_no_conocen_la_persistencia_ni_HTTP():
     """
     import inspect
 
-    for modulo in (clock, documents, repositories, security):
+    for modulo in (clock, documents, repositories, secrets, security, signing):
         fuente = inspect.getsource(modulo)
         for prohibido in ("sqlalchemy", "fastapi", "pydantic", "app.models"):
             assert prohibido not in fuente, f"{modulo.__name__} importa {prohibido}"

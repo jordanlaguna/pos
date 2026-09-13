@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database.database import Base, engine
+from app.infrastructure.crypto.fe_crypto import secret_box
 
 # Los modelos se importan antes de create_all para que SQLAlchemy conozca todas
 # las tablas, incluidas las nuevas de caja y devoluciones.
@@ -56,6 +57,13 @@ from app.router import (
     support_routes,
     user_routes,
 )
+
+# La llave de cifrado de la factura electrónica, comprobada ANTES de servir
+# la primera petición (T-618, RNF-5). Si no está o no mide 32 bytes, el
+# arranque se cae acá: el otro momento posible para enterarse es el día que
+# alguien guarda credenciales de Hacienda, y para entonces el despliegue ya se
+# dio por bueno.
+secret_box()
 
 Base.metadata.create_all(bind=engine)
 

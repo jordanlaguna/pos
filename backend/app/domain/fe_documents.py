@@ -39,16 +39,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-from .errors import InvalidClave, InvalidDocumentKind, InvalidEnvironment
+from .errors import InvalidClave, InvalidDocumentKind
+from .hacienda import ENVIRONMENTS, PRODUCTION, SANDBOX, check_environment
 
-# ------------------------------------------------------------------ ambientes
-
-SANDBOX: Final = "sandbox"
-PRODUCTION: Final = "production"
-
-#: En inglés y no en español, como el resto de las columnas nuevas (plan §3.9).
-#: `'sandbox'` es además el valor que el POS ya publica hoy.
-ENVIRONMENTS: Final = (SANDBOX, PRODUCTION)
+#: Se reexportan para quien archiva documentos: el ambiente es de Hacienda, no
+#: del almacén, y vive en `hacienda.py` con el resto. Tenerlo dos veces sería
+#: tener dos verdades sobre cómo se llama «producción».
+__all__ = [
+    "ENVIRONMENTS",
+    "PRODUCTION",
+    "SANDBOX",
+    "DocumentRef",
+    "KINDS",
+    "company_prefix",
+]
 
 # -------------------------------------------------------- clases de documento
 
@@ -128,8 +132,7 @@ class DocumentRef:
     def __post_init__(self) -> None:
         if not isinstance(self.company_id, int) or self.company_id <= 0:
             raise InvalidClave(self.company_id, "company")
-        if self.environment not in ENVIRONMENTS:
-            raise InvalidEnvironment(self.environment)
+        check_environment(self.environment)
         if self.kind not in _MEDIA:
             raise InvalidDocumentKind(self.kind)
         _check_clave(self.clave)

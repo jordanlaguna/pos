@@ -413,3 +413,72 @@ class FakeDocumentStore:
 
     def exists(self, ref) -> bool:
         return ref.key in self.contenido
+
+
+class FakeSecretBox:
+    """El cifrado en reposo, sin cifrar nada (T-602a).
+
+    **No cifra, y es a propósito**: lo que un doble tiene que replicar no es el
+    AES sino **la regla** —que un valor sellado para una compañía y un ambiente
+    no se abra con otros—, porque es lo único que un caso de uso puede notar.
+    Un doble que cifrara de verdad sería un segundo adaptador con sus propios
+    defectos.
+
+    Nunca sale de `tests/`. Si apareciera importado desde `app/`, lo que habría
+    es una credencial guardada en claro.
+    """
+
+    def encrypt(self, plaintext: str, *, company_id: int, environment: str) -> str:
+        return f"{company_id}:{environment}|{plaintext}"
+
+    def decrypt(self, sealed: str, *, company_id: int, environment: str) -> str:
+        from app.application.ports.secrets import SecretUnreadable
+
+        prefijo = f"{company_id}:{environment}|"
+        if not sealed.startswith(prefijo):
+            raise SecretUnreadable("no abre con esta compañía y este ambiente")
+        return sealed[len(prefijo):]
+
+
+class FakeDocumentSigner:
+    """El firmante, con las llaves en memoria (T-602).
+
+    **Firma de verdad**, y tiene que hacerlo: lo que un caso de uso comprueba de
+    un firmante es que lo firmado verifique con el certificado público, y un
+    doble que devolviera bytes fijos dejaría pasar cualquier error de a quién
+    pertenece la llave.
+
+    Lo que NO replica es lo que hace valioso a Vault —que la privada no pase por
+    la memoria de la aplicación—, y por eso vive en `tests/` y no en `app/`.
+    """
+
+    def __init__(self) -> None:
+        self.llaves: dict[tuple[int, str], object] = {}
+
+    def import_key(self, pkcs8_der: bytes, *, company_id: int, environment: str) -> None:
+        from cryptography.hazmat.primitives import serialization
+
+        from app.domain.hacienda import check_environment
+
+        check_environment(environment)
+        self.llaves[(company_id, environment)] = serialization.load_der_private_key(
+            pkcs8_der, password=None
+        )
+
+    def sign(self, digest: bytes, *, company_id: int, environment: str) -> bytes:
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.asymmetric import utils as asimetrico
+
+        from app.application.ports.signing import SigningKeyMissing
+
+        llave = self.llaves.get((company_id, environment))
+        if llave is None:
+            raise SigningKeyMissing(company_id, environment)
+        return llave.sign(
+            digest, padding.PKCS1v15(), asimetrico.Prehashed(hashes.SHA256())
+        )
+
+    def forget_key(self, *, company_id: int, environment: str) -> None:
+        # Quitar lo que no está no es un error: es el estado que se pedía.
+        self.llaves.pop((company_id, environment), None)
