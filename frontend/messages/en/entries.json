@@ -1,19 +1,15 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-
 	"$comentario": "Stock entries: the history and the loading screen. They live together because they share half the labels —product, quantity, cost, subtotal— and splitting them would duplicate those.",
-
 	"entries_title": "Stock entries",
 	"entries_description": "History of goods received. Every load records who, when and where from.",
 	"entries_catalog": "Catalog",
 	"entries_new": "New entry",
 	"entries_created_toast": "Entry recorded",
 	"entries_created_detail": "The stock is already updated.",
-
 	"$comentario_modulo": "The «module missing» notice is read by whoever installs the system, not by the cashier. It is translated all the same: whoever installs it may also have the POS in another language.",
 	"entries_module_missing": "The entries module is not available.",
 	"entries_module_missing_hint": "The backend does not expose {endpoint}. Update the FastAPI in {folder} and run the migration.",
-
 	"entries_col_date": "Date",
 	"entries_col_supplier": "Supplier",
 	"entries_col_document": "Document",
@@ -22,20 +18,16 @@
 	"entries_col_units": "Units",
 	"entries_col_cost": "Cost",
 	"entries_col_status": "Status",
-
 	"$comentario_origen": "'manual', 'excel' and 'xml' are the values stored in `stock_entries.source` and validated by the backend. The value is not translated; how it is shown is.",
 	"entries_source_manual": "Manual",
 	"entries_source_excel": "Excel",
 	"entries_source_xml": "Tax authority XML",
-
 	"entries_status_cancelled": "Voided",
 	"entries_status_applied": "Applied",
 	"entries_view_detail": "View the detail of entry {entry}",
 	"entries_cancel_entry": "Void entry {entry}",
-
 	"entries_none": "No entries yet",
 	"entries_none_hint": "Load the first supplier invoice to start keeping the history.",
-
 	"entries_detail_title": "Entry #{entry}",
 	"entries_detail_subtitle": "{supplier} · {date}",
 	"entries_no_supplier": "No supplier",
@@ -44,27 +36,22 @@
 	"entries_line_unit_cost": "Unit cost",
 	"entries_line_subtotal": "Subtotal",
 	"entries_total": "Total",
-
 	"entries_cancel_title": "Void entry",
 	"entries_cancel_units": "{units} units will be taken out of inventory, leaving it as it was before this load.",
 	"entries_cancel_sold_note": "If part of those goods has already been sold, the backend will not allow the void: the stock would go negative. In that case it has to be adjusted by hand.",
 	"entries_cancel_confirm": "Void entry",
 	"entries_cancel_failed": "Could not be voided",
 	"entries_cancelled_ok": "Entry voided; the stock went back.",
-
 	"$comentario_nueva": "The loading screen.",
-
 	"entry_new_title": "Goods received",
 	"entry_new_description": "Add stock from a supplier invoice or by hand. Nothing goes in until you confirm it.",
 	"entry_new_see_entries": "View entries",
-
 	"entry_method_manual": "Manual",
 	"entry_method_file": "From a file",
 	"entry_search_placeholder": "Search for the product by name or barcode…",
 	"entry_search_label": "Search for a product to add to the entry",
 	"entry_search_stock": "stock {stock}",
 	"entry_search_hint": "Search and tap every product that arrived. Then adjust quantity and cost in the table.",
-
 	"entry_file_label": "Supplier invoice",
 	"entry_file_reading": "Reading…",
 	"entry_file_analyze": "Analyze",
@@ -73,27 +60,28 @@
 	"entry_file_xml_hint": "the tax authority's electronic invoice (v4.3 or 4.4), the one that arrives by email. Supplier, sequence number and lines are read from it.",
 	"entry_file_sheet": "Excel or CSV",
 	"entry_file_sheet_hint": "with columns {code}, {description}, {quantity} and {cost}. The order does not matter.",
-
 	"$comentario_columnas": "The headers the spreadsheet reader looks for (`server/import/spreadsheet.ts`). They are separate from the field labels because they are column names in someone else's file, not form labels: here they carry no article. Translating them does NOT change what the reader accepts —its synonym list is in Spanish and English— so the day the interface is in Portuguese, the Portuguese synonyms will have to be added there.",
 	"entry_column_code": "Code",
 	"entry_column_description": "Description",
 	"entry_column_quantity": "Quantity",
 	"entry_column_cost": "Cost",
 	"entry_file_template": "Download template",
-
 	"entry_preview_none": "No lines yet",
 	"entry_preview_none_manual": "Search for products above to build the entry.",
 	"entry_preview_none_file": "Upload the supplier invoice and review what is going in.",
-
 	"entry_stat_lines": "Lines to add",
 	"entry_stat_units": "Units",
 	"entry_stat_cost": "Total cost",
 	"entry_stat_unmatched": "No match",
-
 	"entry_orphans": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "1 line is marked to go in but does not exist in the catalog.",
 				"countPlural=other": "{count} lines are marked to go in but do not exist in the catalog."
@@ -102,7 +90,6 @@
 	],
 	"entry_orphans_hint": "Check {create} to add them, or uncheck them to leave them out.",
 	"entry_create_word": "Create",
-
 	"entry_col_include": "Include",
 	"entry_col_status": "Status",
 	"entry_col_stock": "Stock",
@@ -115,13 +102,11 @@
 	"entry_matched_barcode": "By barcode",
 	"entry_matched_name": "By name",
 	"entry_create_product": "Create product",
-
 	"entry_label_barcode": "Barcode",
 	"entry_label_sale_price": "Sale price",
 	"entry_price_hint": "Suggested: cost + 30 %",
 	"entry_label_category": "Category",
 	"entry_required_short": "Required",
-
 	"entry_document_data": "Document details",
 	"entry_label_supplier": "Supplier",
 	"entry_supplier_placeholder": "E.g., La Central Distributors",
@@ -129,12 +114,16 @@
 	"entry_document_hint": "Prevents loading the same invoice twice.",
 	"entry_label_notes": "Notes",
 	"entry_notes_placeholder": "Optional",
-
 	"entry_summary_units": "{units} units will go in",
 	"entry_summary_creating": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "and 1 product will be created",
 				"countPlural=other": "and {count} products will be created"
@@ -146,7 +135,6 @@
 	"entry_saving": "Adding…",
 	"entry_submit": "Add to inventory",
 	"entry_submit_failed": "The entry could not be recorded",
-
 	"$comentario_lectura": "What the file readers say (`server/import/*`). They return a code and the sentence is built in the interface, same as with the backend: an adapter does not know what language the screen is in.",
 	"import_csv_unreadable": "The CSV could not be read. Check that it is plain text separated by commas or semicolons.",
 	"import_xlsx_unreadable": "The Excel file could not be read. Save it as .xlsx (not .xls) and try again.",
@@ -164,19 +152,58 @@
 	"import_fractional_quantity_in_row": "Fractional quantity ({quantity}) in row {row}.",
 	"import_lines_need_review": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "1 line needs manual review.",
 				"countPlural=other": "{count} lines need manual review."
 			}
 		}
 	],
-
 	"entry_pick_file_first": "Choose a file first.",
 	"entry_file_too_big": "The file is {size} MB; the maximum is {max} MB.",
 	"entry_format_unsupported": "Format not supported. Use .xml, .xlsx or .csv.",
 	"entry_read_failed": "The file could not be read.",
 	"entry_detail_unreadable": "The entry detail could not be read.",
-	"entry_mark_one_line": "Mark at least one line to add."
+	"entry_mark_one_line": "Mark at least one line to add.",
+	"entries_cancel_payable_note": "Voiding it also reverses what you owe the supplier for this invoice.",
+	"entries_cancel_cost_note": "The products' average cost does not roll back: recalculating it would mean redoing every later purchase. The next purchase corrects it.",
+	"entries_cancel_reason_label": "Reason",
+	"entries_cancel_reason_placeholder": "Why this purchase is being voided",
+	"entries_col_document_date": "Document date",
+	"entries_col_terms": "Terms",
+	"entries_terms_cash": "Cash",
+	"entries_terms_credit_until": "Credit, due {date}",
+	"entries_line_tax": "Tax",
+	"entries_line_tax_rate": "({rate}%)",
+	"entries_subtotal": "Subtotal",
+	"entries_tax": "Tax",
+	"entry_label_supplier_account": "Registered supplier",
+	"entry_supplier_none": "No supplier (entry, not a purchase)",
+	"entry_supplier_new": "{name} is not registered: it will be created on submit.",
+	"entry_supplier_text_hint": "Optional: leave it blank to use the registered supplier's name.",
+	"entry_label_document_date": "Document date",
+	"entry_document_date_hint": "The invoice's date, not today's. The due date counts from here.",
+	"entry_label_terms": "Payment terms",
+	"entry_terms_cash": "Cash",
+	"entry_terms_credit": "Credit",
+	"entry_label_credit_days": "Days",
+	"entry_credit_days_hint": "Blank uses the supplier's usual terms.",
+	"entry_label_payment_method": "How it was paid",
+	"entry_payment_later": "Not yet (leaves a balance)",
+	"entry_payment_cash": "Cash",
+	"entry_payment_transfer": "Transfer",
+	"entry_payment_other": "Other",
+	"entry_payment_cash_warning": "Needs an open register: the cash comes out of it.",
+	"entry_payment_reason": "Payment to {supplier}, invoice {document}",
+	"entry_col_tax_rate": "Rate %",
+	"entry_tax_rate_of": "Tax rate for {product}",
+	"entry_tax_differs": "The product has {rate}%",
+	"entry_tax_mismatch": "On {count} line(s) the document's rate differs from the product's. The document's is kept, because that is what was paid.",
+	"entry_summary_tax": "Tax {tax}. Total {total}."
 }

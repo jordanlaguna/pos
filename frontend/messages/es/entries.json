@@ -1,19 +1,15 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-
 	"$comentario": "Entradas de mercadería: el historial y la pantalla de carga. Van juntas porque comparten la mitad de los rótulos —producto, cantidad, costo, subtotal— y separarlas los duplicaría.",
-
 	"entries_title": "Entradas de inventario",
 	"entries_description": "Historial de mercadería recibida. Cada carga deja constancia de quién, cuándo y de dónde.",
 	"entries_catalog": "Catálogo",
 	"entries_new": "Nueva entrada",
 	"entries_created_toast": "Entrada registrada",
 	"entries_created_detail": "El stock ya está actualizado.",
-
 	"$comentario_modulo": "El aviso de que falta el módulo lo lee quien instala, no el cajero. Se traduce igual: quien instala también puede tener el POS en otro idioma.",
 	"entries_module_missing": "El módulo de entradas no está disponible.",
 	"entries_module_missing_hint": "El backend no expone {endpoint}. Actualice el FastAPI de {folder} y corra la migración.",
-
 	"entries_col_date": "Fecha",
 	"entries_col_supplier": "Proveedor",
 	"entries_col_document": "Documento",
@@ -22,20 +18,16 @@
 	"entries_col_units": "Unidades",
 	"entries_col_cost": "Costo",
 	"entries_col_status": "Estado",
-
 	"$comentario_origen": "'manual', 'excel' y 'xml' son los valores que guarda `stock_entries.source` y con los que el backend valida. El valor no se traduce; se traduce cómo se muestra.",
 	"entries_source_manual": "Manual",
 	"entries_source_excel": "Excel",
 	"entries_source_xml": "XML Hacienda",
-
 	"entries_status_cancelled": "Anulada",
 	"entries_status_applied": "Aplicada",
 	"entries_view_detail": "Ver detalle de la entrada {entry}",
 	"entries_cancel_entry": "Anular la entrada {entry}",
-
 	"entries_none": "Todavía no hay entradas",
 	"entries_none_hint": "Cargue la primera factura de proveedor para empezar a llevar el historial.",
-
 	"entries_detail_title": "Entrada #{entry}",
 	"entries_detail_subtitle": "{supplier} · {date}",
 	"entries_no_supplier": "Sin proveedor",
@@ -44,27 +36,22 @@
 	"entries_line_unit_cost": "Costo unit.",
 	"entries_line_subtotal": "Subtotal",
 	"entries_total": "Total",
-
 	"entries_cancel_title": "Anular entrada",
 	"entries_cancel_units": "Se van a restar {units} unidades del inventario, dejándolo como estaba antes de esta carga.",
 	"entries_cancel_sold_note": "Si parte de esa mercadería ya se vendió, el backend no permitirá la anulación: el stock quedaría en negativo. En ese caso hay que ajustarlo a mano.",
 	"entries_cancel_confirm": "Anular entrada",
 	"entries_cancel_failed": "No se pudo anular",
 	"entries_cancelled_ok": "Entrada anulada; el stock volvió atrás.",
-
 	"$comentario_nueva": "La pantalla de carga.",
-
 	"entry_new_title": "Entrada de mercadería",
 	"entry_new_description": "Sume stock desde una factura del proveedor o a mano. Nada entra hasta que lo confirme.",
 	"entry_new_see_entries": "Ver entradas",
-
 	"entry_method_manual": "Manual",
 	"entry_method_file": "Desde archivo",
 	"entry_search_placeholder": "Busque el producto por nombre o código de barras…",
 	"entry_search_label": "Buscar producto para agregar a la entrada",
 	"entry_search_stock": "stock {stock}",
 	"entry_search_hint": "Busque y toque cada producto que llegó. Después ajuste cantidad y costo en la tabla.",
-
 	"entry_file_label": "Factura del proveedor",
 	"entry_file_reading": "Leyendo…",
 	"entry_file_analyze": "Analizar",
@@ -73,27 +60,28 @@
 	"entry_file_xml_hint": "factura electrónica de Hacienda (v4.3 o 4.4), la que llega por correo. Se leen proveedor, consecutivo y líneas.",
 	"entry_file_sheet": "Excel o CSV",
 	"entry_file_sheet_hint": "con columnas {code}, {description}, {quantity} y {cost}. El orden no importa.",
-
 	"$comentario_columnas": "Los encabezados que busca el lector de hojas de cálculo (`server/import/spreadsheet.ts`). Van aparte de los rótulos de campo porque son nombres de columna de un archivo ajeno, no etiquetas de un formulario: aquí no llevan artículo. Traducirlos NO cambia lo que el lector acepta —su lista de sinónimos está en español y en inglés— así que el día que la interfaz esté en portugués habrá que agregar los sinónimos portugueses ahí.",
 	"entry_column_code": "Código",
 	"entry_column_description": "Descripción",
 	"entry_column_quantity": "Cantidad",
 	"entry_column_cost": "Costo",
 	"entry_file_template": "Descargar plantilla",
-
 	"entry_preview_none": "Todavía no hay líneas",
 	"entry_preview_none_manual": "Busque productos arriba para armar la entrada.",
 	"entry_preview_none_file": "Suba la factura del proveedor y revise lo que se va a ingresar.",
-
 	"entry_stat_lines": "Líneas a ingresar",
 	"entry_stat_units": "Unidades",
 	"entry_stat_cost": "Costo total",
 	"entry_stat_unmatched": "Sin coincidencia",
-
 	"entry_orphans": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "1 línea está marcada para ingresar pero no existe en el catálogo.",
 				"countPlural=other": "{count} líneas están marcadas para ingresar pero no existen en el catálogo."
@@ -102,7 +90,6 @@
 	],
 	"entry_orphans_hint": "Marque {create} para darlas de alta, o desmárquelas para dejarlas fuera.",
 	"entry_create_word": "Crear",
-
 	"entry_col_include": "Incluir",
 	"entry_col_status": "Estado",
 	"entry_col_stock": "Stock",
@@ -115,13 +102,11 @@
 	"entry_matched_barcode": "Por código",
 	"entry_matched_name": "Por nombre",
 	"entry_create_product": "Crear producto",
-
 	"entry_label_barcode": "Código de barras",
 	"entry_label_sale_price": "Precio de venta",
 	"entry_price_hint": "Sugerido: costo + 30 %",
 	"entry_label_category": "Categoría",
 	"entry_required_short": "Obligatorio",
-
 	"entry_document_data": "Datos del documento",
 	"entry_label_supplier": "Proveedor",
 	"entry_supplier_placeholder": "Ej.: Distribuidora La Central",
@@ -129,12 +114,16 @@
 	"entry_document_hint": "Evita cargar la misma factura dos veces.",
 	"entry_label_notes": "Notas",
 	"entry_notes_placeholder": "Opcional",
-
 	"entry_summary_units": "Van a entrar {units} unidades",
 	"entry_summary_creating": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "y se va a crear 1 producto",
 				"countPlural=other": "y se van a crear {count} productos"
@@ -146,7 +135,6 @@
 	"entry_saving": "Ingresando…",
 	"entry_submit": "Ingresar al inventario",
 	"entry_submit_failed": "No se pudo registrar la entrada",
-
 	"$comentario_lectura": "Lo que dicen los lectores de archivos (`server/import/*`). Devuelven un código y la frase se arma en la interfaz, igual que con el backend: un adaptador no sabe en qué idioma está la pantalla.",
 	"import_csv_unreadable": "No se pudo leer el CSV. Revise que sea texto plano separado por comas o punto y coma.",
 	"import_xlsx_unreadable": "No se pudo leer el Excel. Guárdelo como .xlsx (no .xls) e intente de nuevo.",
@@ -164,19 +152,58 @@
 	"import_fractional_quantity_in_row": "Cantidad fraccionaria ({quantity}) en la fila {row}.",
 	"import_lines_need_review": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "1 línea necesita revisión manual.",
 				"countPlural=other": "{count} líneas necesitan revisión manual."
 			}
 		}
 	],
-
 	"entry_pick_file_first": "Elija un archivo primero.",
 	"entry_file_too_big": "El archivo pesa {size} MB; el máximo es {max} MB.",
 	"entry_format_unsupported": "Formato no admitido. Use .xml, .xlsx o .csv.",
 	"entry_read_failed": "No se pudo leer el archivo.",
 	"entry_detail_unreadable": "No se pudo leer el detalle de la entrada.",
-	"entry_mark_one_line": "Marque al menos una línea para ingresar."
+	"entry_mark_one_line": "Marque al menos una línea para ingresar.",
+	"entries_cancel_payable_note": "Al anularla se revierte también lo que le debe al proveedor por esta factura.",
+	"entries_cancel_cost_note": "El costo promedio de los productos no vuelve atrás: recalcularlo exigiría rehacer todas las compras posteriores. La siguiente compra lo corrige.",
+	"entries_cancel_reason_label": "Motivo",
+	"entries_cancel_reason_placeholder": "Por qué se anula esta compra",
+	"entries_col_document_date": "Fecha del documento",
+	"entries_col_terms": "Condición",
+	"entries_terms_cash": "Contado",
+	"entries_terms_credit_until": "Crédito, vence el {date}",
+	"entries_line_tax": "Impuesto",
+	"entries_line_tax_rate": "({rate} %)",
+	"entries_subtotal": "Subtotal",
+	"entries_tax": "Impuesto",
+	"entry_label_supplier_account": "Proveedor registrado",
+	"entry_supplier_none": "Sin proveedor (entrada, no compra)",
+	"entry_supplier_new": "{name} no está registrado: se dará de alta al ingresar.",
+	"entry_supplier_text_hint": "Opcional: si lo deja vacío se usa el nombre del proveedor registrado.",
+	"entry_label_document_date": "Fecha del documento",
+	"entry_document_date_hint": "La de la factura, no la de hoy. El vencimiento se cuenta desde acá.",
+	"entry_label_terms": "Condición de pago",
+	"entry_terms_cash": "Contado",
+	"entry_terms_credit": "Crédito",
+	"entry_label_credit_days": "Días de plazo",
+	"entry_credit_days_hint": "Vacío usa el plazo habitual del proveedor.",
+	"entry_label_payment_method": "Cómo se pagó",
+	"entry_payment_later": "Todavía no (queda con saldo)",
+	"entry_payment_cash": "Efectivo",
+	"entry_payment_transfer": "Transferencia",
+	"entry_payment_other": "Otro",
+	"entry_payment_cash_warning": "Necesita una caja abierta: el efectivo sale de ella.",
+	"entry_payment_reason": "Pago a {supplier}, factura {document}",
+	"entry_col_tax_rate": "Tarifa %",
+	"entry_tax_rate_of": "Tarifa de impuesto de {product}",
+	"entry_tax_differs": "El producto tiene {rate} %",
+	"entry_tax_mismatch": "En {count} línea(s) la tarifa del documento no coincide con la del producto. Se guarda la del documento, que es lo que se pagó.",
+	"entry_summary_tax": "Impuesto {tax}. Total {total}."
 }

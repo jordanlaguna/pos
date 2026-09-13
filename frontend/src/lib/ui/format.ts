@@ -40,9 +40,28 @@ function tag(locale?: string): string {
 	return INTL[pedido] ?? INTL.es;
 }
 
+/** `2026-09-10`: fecha de calendario, sin hora y por lo tanto sin huso. */
+const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
 function toDate(value: string | Date | null | undefined): Date | null {
 	if (!value) return null;
-	const d = value instanceof Date ? value : new Date(value);
+
+	/*
+	 * Una fecha **sin hora** se interpreta como local y no como UTC.
+	 *
+	 * `new Date('2026-09-10')` devuelve medianoche UTC por especificación, así
+	 * que al oeste de Greenwich se muestra el día anterior: en Costa Rica
+	 * —UTC−6— una factura del 10 salía como «09/09/2026». No es un detalle de
+	 * presentación: el vencimiento de una compra parecería caer un día antes y
+	 * el de una suscripción también.
+	 *
+	 * Con hora no se toca: `2026-09-10T14:32:00` sí es un instante, y ahí
+	 * convertir al huso del navegador es lo correcto.
+	 */
+	const d =
+		value instanceof Date
+			? value
+			: new Date(SOLO_FECHA.test(value) ? `${value}T00:00:00` : value);
 	return Number.isNaN(d.getTime()) ? null : d;
 }
 

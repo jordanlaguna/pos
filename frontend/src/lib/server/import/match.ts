@@ -1,4 +1,4 @@
-import type { ParsedLine, Product } from '$lib/domain/types';
+import type { MatchedProduct, ParsedLine, Product } from '$lib/domain/types';
 
 /**
  * Empareja las líneas de un archivo con el catálogo.
@@ -20,6 +20,25 @@ function normalizeName(value: string): string {
 		// "cafe 1820 500g" tienen que ser lo mismo.
 		.replace(/[.,;:()]/g, ' ')
 		.replace(/\s+/g, ' ');
+}
+
+/**
+ * Lo que la vista previa necesita del producto encontrado.
+ *
+ * Lleva `tax_rate` desde F10: es lo que permite avisar cuando la tarifa del
+ * documento del proveedor difiere de la del producto (RF-43). Sin ella la
+ * pantalla no tendría contra qué comparar y el aviso sería imposible.
+ */
+function instantanea(found: Product): MatchedProduct {
+	return {
+		id_product: found.id_product,
+		name: found.name,
+		barcode: found.barcode,
+		stock: found.stock,
+		price: Number(found.price),
+		tax_rate: found.tax_rate ?? null,
+		cost: Number(found.cost ?? 0)
+	};
 }
 
 export function matchLines(lines: ParsedLine[], products: Product[]): ParsedLine[] {
@@ -48,13 +67,7 @@ export function matchLines(lines: ParsedLine[], products: Product[]): ParsedLine
 			if (found) {
 				return {
 					...line,
-					matched: {
-						id_product: found.id_product,
-						name: found.name,
-						barcode: found.barcode,
-						stock: found.stock,
-						price: Number(found.price)
-					},
+					matched: instantanea(found),
 					matched_by: 'barcode' as const
 				};
 			}
@@ -66,13 +79,7 @@ export function matchLines(lines: ParsedLine[], products: Product[]): ParsedLine
 			if (found) {
 				return {
 					...line,
-					matched: {
-						id_product: found.id_product,
-						name: found.name,
-						barcode: found.barcode,
-						stock: found.stock,
-						price: Number(found.price)
-					},
+					matched: instantanea(found),
 					matched_by: 'name' as const
 				};
 			}

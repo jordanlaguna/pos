@@ -8,7 +8,7 @@
 	import EmptyState from '$lib/ui/components/EmptyState.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney } from '$lib/domain/money';
-	import { formatDateTime, formatInt } from '$lib/ui/format';
+	import { formatDate, formatDateTime, formatInt } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { StockEntry } from '$lib/domain/types';
 	import type { PageData } from './$types';
@@ -17,6 +17,22 @@
 
 	let detalle = $state<StockEntry | null>(null);
 	let anular = $state<StockEntry | null>(null);
+	let motivo = $state('');
+
+	/**
+	 * Si lo que se va a anular es una compra (RN-52).
+	 *
+	 * Cambia tres cosas del diálogo: pide motivo —que el backend exige solo
+	 * acá—, avisa que se revierte la cuenta por pagar, y avisa que el costo
+	 * promedio **no** se deshace, que es lo que nadie espera.
+	 */
+	const esCompra = $derived(anular?.supplier_id != null);
+
+	// El motivo es de cada anulación: dejarlo puesto haría que la siguiente
+	// heredara el porqué de la anterior, que es peor que no tenerlo.
+	$effect(() => {
+		if (anular === null) motivo = '';
+	});
 
 	/**
 	 * El rótulo y el icono de cada origen.
@@ -192,6 +208,19 @@
 			<dd class="text-[var(--text)]">{detalle.document_number ?? '—'}</dd>
 			<dt class="text-[var(--text-subtle)]">{m.entries_col_loaded_by()}</dt>
 			<dd class="text-[var(--text)]">{detalle.user_name ?? `#${detalle.user_id}`}</dd>
+
+			{#if detalle.supplier_id != null}
+				<!-- Solo de una compra. La fecha del documento va aparte de la de
+				     carga porque no son la misma, y el IVA es de la primera. -->
+				<dt class="text-[var(--text-subtle)]">{m.entries_col_document_date()}</dt>
+				<dd class="text-[var(--text)]">{formatDate(detalle.document_date)}</dd>
+				<dt class="text-[var(--text-subtle)]">{m.entries_col_terms()}</dt>
+				<dd class="text-[var(--text)]">
+					{detalle.payment_terms === 'credit'
+						? m.entries_terms_credit_until({ date: formatDate(detalle.due_date) })
+						: m.entries_terms_cash()}
+				</dd>
+			{/if}
 		</dl>
 
 		{#if detalle.notes}
@@ -207,6 +236,9 @@
 						<th scope="col">{m.entries_line_product()}</th>
 						<th scope="col" class="num">{m.entries_line_quantity()}</th>
 						<th scope="col" class="num">{m.entries_line_unit_cost()}</th>
+						{#if detalle.supplier_id != null}
+							<th scope="col" class="num">{m.entries_line_tax()}</th>
+						{/if}
 						<th scope="col" class="num">{m.entries_line_subtotal()}</th>
 					</tr>
 				</thead>
@@ -216,13 +248,41 @@
 							<td>{line.name}</td>
 							<td class="num tabular-nums">{line.quantity}</td>
 							<td class="num tabular-nums">{formatMoney(line.unit_cost)}</td>
+							{#if detalle.supplier_id != null}
+								<td class="num tabular-nums text-[var(--text-muted)]">
+									<!-- El monto y, chiquita, la tarifa con la que salió: es lo
+									     que se compara contra la factura al conciliar el D-104. -->
+									{formatMoney(line.tax_amount ?? 0)}
+									<span class="text-[var(--text-subtle)]">
+										{m.entries_line_tax_rate({ rate: line.tax_rate ?? 0 })}
+									</span>
+								</td>
+							{/if}
 							<td class="num font-semibold tabular-nums">{formatMoney(line.subtotal)}</td>
 						</tr>
 					{/each}
 				</tbody>
 				<tfoot>
+					{#if detalle.supplier_id != null}
+						<!-- Desglosado solo en una compra: en una entrada el subtotal es el
+						     total y repetirlo dos veces no dice nada. -->
+						<tr>
+							<td colspan={4} class="text-right text-[var(--text-muted)]">
+								{m.entries_subtotal()}
+							</td>
+							<td class="num tabular-nums">{formatMoney(detalle.subtotal ?? 0)}</td>
+						</tr>
+						<tr>
+							<td colspan={4} class="text-right text-[var(--text-muted)]">
+								{m.entries_tax()}
+							</td>
+							<td class="num tabular-nums">{formatMoney(detalle.tax ?? 0)}</td>
+						</tr>
+					{/if}
 					<tr>
-						<td colspan="3" class="text-right font-semibold">{m.entries_total()}</td>
+						<td colspan={detalle.supplier_id != null ? 4 : 3} class="text-right font-semibold">
+							{m.entries_total()}
+						</td>
 						<td class="num font-bold tabular-nums">{formatMoney(detalle.total_cost)}</td>
 					</tr>
 				</tfoot>
@@ -245,9 +305,37 @@
 		{m.entries_cancel_sold_note()}
 	</p>
 
+	{#if esCompra}
+		<!-- Dos avisos que solo valen para una compra. El del costo importa más
+		     de lo que parece: quien anula espera que todo vuelva atrás, y el
+		     promedio no vuelve (RN-57). -->
+		<p class="mt-2 text-xs text-[var(--text-subtle)]">
+			{m.entries_cancel_payable_note()}
+		</p>
+		<p class="mt-2 rounded-lg bg-[var(--surface-sunken)] p-2 text-xs text-[var(--text-muted)]">
+			{m.entries_cancel_cost_note()}
+		</p>
+
+		<label class="mt-4 block" for="motivo-anular">
+			<span class="label">{m.entries_cancel_reason_label()}</span>
+			<input
+				id="motivo-anular"
+				form="form-anular"
+				name="reason"
+				type="text"
+				class="input"
+				maxlength="200"
+				required
+				bind:value={motivo}
+				placeholder={m.entries_cancel_reason_placeholder()}
+			/>
+		</label>
+	{/if}
+
 	{#snippet footer()}
 		<button type="button" class="btn btn-ghost" onclick={() => (anular = null)}>{m.common_cancel()}</button>
 		<form
+			id="form-anular"
 			method="POST"
 			action="?/anular"
 			use:enhance={submit({

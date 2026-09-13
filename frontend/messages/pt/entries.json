@@ -1,19 +1,15 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-
 	"$comentario": "Entradas de mercadoria: o histórico e a tela de carga. Ficam juntas porque compartilham metade dos rótulos —produto, quantidade, custo, subtotal— e separá-las os duplicaria.",
-
 	"entries_title": "Entradas de estoque",
 	"entries_description": "Histórico de mercadoria recebida. Cada carga registra quem, quando e de onde.",
 	"entries_catalog": "Catálogo",
 	"entries_new": "Nova entrada",
 	"entries_created_toast": "Entrada registrada",
 	"entries_created_detail": "O estoque já está atualizado.",
-
 	"$comentario_modulo": "O aviso de que falta o módulo é lido por quem instala, não pelo operador de caixa. Traduz-se do mesmo jeito: quem instala também pode ter o POS em outro idioma.",
 	"entries_module_missing": "O módulo de entradas não está disponível.",
 	"entries_module_missing_hint": "O backend não expõe {endpoint}. Atualize o FastAPI de {folder} e rode a migração.",
-
 	"entries_col_date": "Data",
 	"entries_col_supplier": "Fornecedor",
 	"entries_col_document": "Documento",
@@ -22,20 +18,16 @@
 	"entries_col_units": "Unidades",
 	"entries_col_cost": "Custo",
 	"entries_col_status": "Situação",
-
 	"$comentario_origen": "'manual', 'excel' e 'xml' são os valores guardados em `stock_entries.source` e com os quais o backend valida. O valor não se traduz; traduz-se como ele é mostrado.",
 	"entries_source_manual": "Manual",
 	"entries_source_excel": "Excel",
 	"entries_source_xml": "XML da autoridade fiscal",
-
 	"entries_status_cancelled": "Estornada",
 	"entries_status_applied": "Aplicada",
 	"entries_view_detail": "Ver detalhe da entrada {entry}",
 	"entries_cancel_entry": "Estornar a entrada {entry}",
-
 	"entries_none": "Ainda não há entradas",
 	"entries_none_hint": "Carregue a primeira nota do fornecedor para começar a manter o histórico.",
-
 	"entries_detail_title": "Entrada #{entry}",
 	"entries_detail_subtitle": "{supplier} · {date}",
 	"entries_no_supplier": "Sem fornecedor",
@@ -44,27 +36,22 @@
 	"entries_line_unit_cost": "Custo unit.",
 	"entries_line_subtotal": "Subtotal",
 	"entries_total": "Total",
-
 	"entries_cancel_title": "Estornar entrada",
 	"entries_cancel_units": "Vão ser subtraídas {units} unidades do estoque, deixando-o como estava antes desta carga.",
 	"entries_cancel_sold_note": "Se parte dessa mercadoria já foi vendida, o backend não vai permitir o estorno: o estoque ficaria negativo. Nesse caso é preciso ajustá-lo à mão.",
 	"entries_cancel_confirm": "Estornar entrada",
 	"entries_cancel_failed": "Não foi possível estornar",
 	"entries_cancelled_ok": "Entrada estornada; o estoque voltou atrás.",
-
 	"$comentario_nueva": "A tela de carga.",
-
 	"entry_new_title": "Entrada de mercadoria",
 	"entry_new_description": "Some estoque a partir de uma nota do fornecedor ou à mão. Nada entra até você confirmar.",
 	"entry_new_see_entries": "Ver entradas",
-
 	"entry_method_manual": "Manual",
 	"entry_method_file": "De um arquivo",
 	"entry_search_placeholder": "Busque o produto por nome ou código de barras…",
 	"entry_search_label": "Buscar produto para adicionar à entrada",
 	"entry_search_stock": "estoque {stock}",
 	"entry_search_hint": "Busque e toque em cada produto que chegou. Depois ajuste quantidade e custo na tabela.",
-
 	"entry_file_label": "Nota do fornecedor",
 	"entry_file_reading": "Lendo…",
 	"entry_file_analyze": "Analisar",
@@ -73,27 +60,28 @@
 	"entry_file_xml_hint": "nota fiscal eletrônica da autoridade fiscal (v4.3 ou 4.4), a que chega por e-mail. São lidos fornecedor, número e linhas.",
 	"entry_file_sheet": "Excel ou CSV",
 	"entry_file_sheet_hint": "com as colunas {code}, {description}, {quantity} e {cost}. A ordem não importa.",
-
 	"$comentario_columnas": "Os cabeçalhos que o leitor de planilhas procura (`server/import/spreadsheet.ts`). Traduzi-los NÃO muda o que o leitor aceita —a sua lista de sinônimos está em espanhol e em inglês— então quando a interface estiver em português será preciso acrescentar lá os sinônimos portugueses.",
 	"entry_column_code": "Código",
 	"entry_column_description": "Descrição",
 	"entry_column_quantity": "Quantidade",
 	"entry_column_cost": "Custo",
 	"entry_file_template": "Baixar modelo",
-
 	"entry_preview_none": "Ainda não há linhas",
 	"entry_preview_none_manual": "Busque produtos acima para montar a entrada.",
 	"entry_preview_none_file": "Envie a nota do fornecedor e revise o que vai entrar.",
-
 	"entry_stat_lines": "Linhas a lançar",
 	"entry_stat_units": "Unidades",
 	"entry_stat_cost": "Custo total",
 	"entry_stat_unmatched": "Sem correspondência",
-
 	"entry_orphans": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "1 linha está marcada para lançar mas não existe no catálogo.",
 				"countPlural=other": "{count} linhas estão marcadas para lançar mas não existem no catálogo."
@@ -102,7 +90,6 @@
 	],
 	"entry_orphans_hint": "Marque {create} para cadastrá-las, ou desmarque-as para deixá-las de fora.",
 	"entry_create_word": "Criar",
-
 	"entry_col_include": "Incluir",
 	"entry_col_status": "Situação",
 	"entry_col_stock": "Estoque",
@@ -115,13 +102,11 @@
 	"entry_matched_barcode": "Por código",
 	"entry_matched_name": "Por nome",
 	"entry_create_product": "Criar produto",
-
 	"entry_label_barcode": "Código de barras",
 	"entry_label_sale_price": "Preço de venda",
 	"entry_price_hint": "Sugerido: custo + 30 %",
 	"entry_label_category": "Categoria",
 	"entry_required_short": "Obrigatório",
-
 	"entry_document_data": "Dados do documento",
 	"entry_label_supplier": "Fornecedor",
 	"entry_supplier_placeholder": "Ex.: Distribuidora La Central",
@@ -129,12 +114,16 @@
 	"entry_document_hint": "Evita carregar a mesma nota duas vezes.",
 	"entry_label_notes": "Observações",
 	"entry_notes_placeholder": "Opcional",
-
 	"entry_summary_units": "Vão entrar {units} unidades",
 	"entry_summary_creating": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "e vai ser criado 1 produto",
 				"countPlural=other": "e vão ser criados {count} produtos"
@@ -146,7 +135,6 @@
 	"entry_saving": "Lançando…",
 	"entry_submit": "Lançar no estoque",
 	"entry_submit_failed": "Não foi possível registrar a entrada",
-
 	"$comentario_lectura": "O que dizem os leitores de arquivos (`server/import/*`). Devolvem um código e a frase é montada na interface, igual ao backend: um adaptador não sabe em que idioma está a tela.",
 	"import_csv_unreadable": "Não foi possível ler o CSV. Verifique se é texto puro separado por vírgulas ou ponto e vírgula.",
 	"import_xlsx_unreadable": "Não foi possível ler o Excel. Salve como .xlsx (não .xls) e tente de novo.",
@@ -164,19 +152,58 @@
 	"import_fractional_quantity_in_row": "Quantidade fracionada ({quantity}) na linha {row}.",
 	"import_lines_need_review": [
 		{
-			"declarations": ["input count", "local countPlural = count: plural"],
-			"selectors": ["countPlural"],
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
 			"match": {
 				"countPlural=one": "1 linha precisa de revisão manual.",
 				"countPlural=other": "{count} linhas precisam de revisão manual."
 			}
 		}
 	],
-
 	"entry_pick_file_first": "Escolha um arquivo primeiro.",
 	"entry_file_too_big": "O arquivo tem {size} MB; o máximo é {max} MB.",
 	"entry_format_unsupported": "Formato não aceito. Use .xml, .xlsx ou .csv.",
 	"entry_read_failed": "Não foi possível ler o arquivo.",
 	"entry_detail_unreadable": "Não foi possível ler o detalhe da entrada.",
-	"entry_mark_one_line": "Marque pelo menos uma linha para lançar."
+	"entry_mark_one_line": "Marque pelo menos uma linha para lançar.",
+	"entries_cancel_payable_note": "Ao cancelá-la também se reverte o que se deve ao fornecedor por esta fatura.",
+	"entries_cancel_cost_note": "O custo médio dos produtos não volta atrás: recalculá-lo exigiria refazer todas as compras posteriores. A próxima compra o corrige.",
+	"entries_cancel_reason_label": "Motivo",
+	"entries_cancel_reason_placeholder": "Por que esta compra está sendo cancelada",
+	"entries_col_document_date": "Data do documento",
+	"entries_col_terms": "Condição",
+	"entries_terms_cash": "À vista",
+	"entries_terms_credit_until": "A prazo, vence em {date}",
+	"entries_line_tax": "Imposto",
+	"entries_line_tax_rate": "({rate} %)",
+	"entries_subtotal": "Subtotal",
+	"entries_tax": "Imposto",
+	"entry_label_supplier_account": "Fornecedor cadastrado",
+	"entry_supplier_none": "Sem fornecedor (entrada, não compra)",
+	"entry_supplier_new": "{name} não está cadastrado: será criado ao registrar.",
+	"entry_supplier_text_hint": "Opcional: deixe em branco para usar o nome do fornecedor cadastrado.",
+	"entry_label_document_date": "Data do documento",
+	"entry_document_date_hint": "A da fatura, não a de hoje. O vencimento conta a partir daqui.",
+	"entry_label_terms": "Condição de pagamento",
+	"entry_terms_cash": "À vista",
+	"entry_terms_credit": "A prazo",
+	"entry_label_credit_days": "Dias de prazo",
+	"entry_credit_days_hint": "Em branco usa o prazo habitual do fornecedor.",
+	"entry_label_payment_method": "Como foi pago",
+	"entry_payment_later": "Ainda não (fica com saldo)",
+	"entry_payment_cash": "Dinheiro",
+	"entry_payment_transfer": "Transferência",
+	"entry_payment_other": "Outro",
+	"entry_payment_cash_warning": "Precisa de um caixa aberto: o dinheiro sai dele.",
+	"entry_payment_reason": "Pagamento a {supplier}, fatura {document}",
+	"entry_col_tax_rate": "Alíquota %",
+	"entry_tax_rate_of": "Alíquota de imposto de {product}",
+	"entry_tax_differs": "O produto tem {rate} %",
+	"entry_tax_mismatch": "Em {count} linha(s) a alíquota do documento não coincide com a do produto. Guarda-se a do documento, que é o que foi pago.",
+	"entry_summary_tax": "Imposto {tax}. Total {total}."
 }

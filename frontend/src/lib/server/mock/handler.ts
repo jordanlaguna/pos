@@ -34,6 +34,7 @@ import type {
 	SaleItem,
 	SaleReturn,
 	SalesByDay,
+	Supplier,
 	TopProduct
 } from '$lib/domain/types';
 
@@ -1545,6 +1546,186 @@ route('GET', '/reports/low_stock', ({ query, companyId }) => {
 		}));
 });
 
+// ------------------------------------------------------------- proveedores
+
+route('GET', '/suppliers', ({ companyId, query }) => {
+	const todos = getDb(companyId).suppliers ?? [];
+	// Sin `require_module`: leer se puede siempre (RN-50).
+	return query.get('incluir_inactivos') === 'true' ? todos : todos.filter((p) => p.is_active);
+});
+
+route('POST', '/suppliers', ({ body, companyId }) => {
+	const db = getDb(companyId);
+	validarIdentificacion(body);
+
+	const identificacion = String(body?.identification ?? '').trim() || null;
+	if (identificacion) {
+		// La misma identificación es el mismo proveedor: dos fichas del mismo
+		// mayorista se reparten sus compras y ninguno de los dos saldos sirve.
+		const existente = (db.suppliers ?? []).find(
+			(p) => (p.identification ?? '').trim() === identificacion
+		);
+		if (existente) {
+			fail(400, 'supplier_identification_taken', {
+				identification: identificacion,
+				name: existente.name
+			});
+		}
+	}
+
+	const proveedor: Supplier = {
+		id: nextId('suppliers'),
+		identification_type: String(body?.identification_type ?? '').trim() || null,
+		identification: identificacion,
+		name: String(body?.name ?? '').trim(),
+		email: String(body?.email ?? '').trim() || null,
+		phone: String(body?.phone ?? '').trim() || null,
+		payment_terms_days: Math.trunc(Number(body?.payment_terms_days ?? 0)) || 0,
+		is_active: true
+	};
+	db.suppliers.push(proveedor);
+	persist();
+	return proveedor;
+});
+
+route('PUT', '/suppliers/:id', ({ params, body, companyId }) => {
+	const db = getDb(companyId);
+	const proveedor = (db.suppliers ?? []).find((p) => p.id === Number(params[0]));
+	if (!proveedor) fail(404, 'supplier_not_found', { supplier_id: Number(params[0]) });
+	validarIdentificacion(body);
+
+	const identificacion = String(body?.identification ?? '').trim() || null;
+	if (identificacion) {
+		const otro = db.suppliers.find(
+			(p) => p.id !== proveedor.id && (p.identification ?? '').trim() === identificacion
+		);
+		if (otro) {
+			fail(400, 'supplier_identification_taken', {
+				identification: identificacion,
+				name: otro.name
+			});
+		}
+	}
+
+	if (body?.name != null) proveedor.name = String(body.name).trim();
+	if (body?.identification_type !== undefined)
+		proveedor.identification_type = String(body.identification_type ?? '').trim() || null;
+	if (body?.identification !== undefined) proveedor.identification = identificacion;
+	if (body?.email !== undefined) proveedor.email = String(body.email ?? '').trim() || null;
+	if (body?.phone !== undefined) proveedor.phone = String(body.phone ?? '').trim() || null;
+	if (body?.payment_terms_days != null)
+		proveedor.payment_terms_days = Math.trunc(Number(body.payment_terms_days)) || 0;
+	// No se borra: se desactiva. Sus compras respaldan el crédito fiscal.
+	if (body?.is_active != null) proveedor.is_active = Boolean(body.is_active);
+
+	persist();
+	return proveedor;
+});
+
+/** Los dos «no» de la identificación de Hacienda, iguales a los del backend. */
+function validarIdentificacion(body: Record<string, unknown> | null): void {
+	const tipo = String(body?.identification_type ?? '').trim();
+	if (!tipo) return;
+	if (!['01', '02', '03', '04'].includes(tipo))
+		fail(400, 'invalid_identification_type', { identification_type: tipo });
+	if (!String(body?.identification ?? '').trim()) fail(400, 'identification_required');
+}
+
+// ------------------------------------------------ compras: lo compartido
+
+/**
+ * El costo del producto después de entrarle `quantity` a `unitCost` (RN-54).
+ *
+ * Con existencia menor o igual a cero, el costo es el de la compra: promediar
+ * contra una existencia nula sería dividir entre cero, y contra una negativa
+ * daría un costo negativo que se arrastraría a todos los asientos siguientes.
+ */
+function promedioPonderado(stock: number, cost: number, quantity: number, unitCost: number): number {
+	if (stock <= 0) return round2(unitCost);
+	return round2((cost * stock + unitCost * quantity) / (stock + quantity));
+}
+
+function sumarDias(desde: string, dias: number): string {
+	const d = new Date(`${desde}T00:00:00`);
+	d.setDate(d.getDate() + Math.max(0, dias));
+	return d.toISOString().slice(0, 10);
+}
+
+/** Lo abonado a una compra. El saldo es su total menos esto (RN-55). */
+function abonadoA(companyId: number, entryId: number): number {
+	return round2(
+		(getDb(companyId).supplier_payments ?? [])
+			.filter((a) => a.entry_id === entryId)
+			.reduce((suma, a) => suma + a.amount, 0)
+	);
+}
+
+/**
+ * Escribe un abono, y su salida de caja si fue en efectivo (RN-56).
+ *
+ * **La gaveta primero**, porque el abono la apunta. Quien decide si hace falta
+ * turno abierto es el método: solo el efectivo sale de la caja, y un pago por
+ * transferencia no la necesita —el administrador que registra facturas en la
+ * oficina no tiene por qué tener caja—.
+ */
+function abonar(
+	companyId: number,
+	datos: {
+		entryId: number;
+		supplierId: number;
+		amount: number;
+		method: string;
+		reference: string | null;
+		reason: string;
+		userId: number;
+	}
+): number {
+	const db = getDb(companyId);
+	const monto = round2(datos.amount);
+	if (!(monto > 0)) fail(400, 'payment_not_positive');
+	if (!['cash', 'transfer', 'other'].includes(datos.method))
+		fail(400, 'invalid_payment_method', { method: datos.method });
+
+	let cashMovementId: number | null = null;
+	if (datos.method === 'cash') {
+		const turno = db.cash_sessions.find(
+			(s) => s.user_id === datos.userId && s.status === 'abierta'
+		);
+		if (!turno) fail(400, 'cash_no_open_session');
+		if (!datos.reason.trim()) fail(400, 'cash_missing_reason');
+
+		// El mismo cálculo del arqueo: sin esto, una salida de más deja el
+		// esperado del turno en negativo y el corte Z deja de significar nada.
+		const disponible = computeExpected(turno, companyId).expected_amount;
+		if (round2(disponible - monto) < 0)
+			fail(400, 'cash_insufficient', { available: disponible });
+
+		cashMovementId = nextId('cash_movements');
+		db.cash_movements.push({
+			id: cashMovementId,
+			session_id: turno.id,
+			type: 'salida',
+			amount: monto,
+			reason: datos.reason.trim(),
+			created_at: nowIso()
+		});
+	}
+
+	const id = nextId('supplier_payments');
+	db.supplier_payments.push({
+		id,
+		supplier_id: datos.supplierId,
+		entry_id: datos.entryId,
+		amount: monto,
+		method: datos.method,
+		reference: datos.reference,
+		cash_movement_id: cashMovementId,
+		user_id: datos.userId,
+		paid_at: nowIso()
+	});
+	return id;
+}
+
 // -------------------------------------------- entradas de inventario
 
 route('GET', '/inventory/entries', ({ companyId }) =>
@@ -1562,10 +1743,26 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	const requested = Array.isArray(body?.lines) ? body.lines : [];
 	if (!requested.length) fail(400, 'empty_entry');
 
+	// ------------------------------------------------------- compra (F10)
+	//
+	// Con `supplier_id` esto es una compra (RN-52): abre cuenta por pagar y
+	// crédito fiscal. Sin él es la entrada de siempre y nada de esto se usa.
+	const supplierId = Number(body?.supplier_id ?? 0) || null;
+	const proveedor = supplierId
+		? (db.suppliers ?? []).find((p) => p.id === supplierId)
+		: undefined;
+	if (supplierId && !proveedor) fail(404, 'supplier_not_found', { supplier_id: supplierId });
+	if (proveedor && !proveedor.is_active) fail(400, 'supplier_inactive', { name: proveedor.name });
+
 	const documentNumber = body?.document_number ? String(body.document_number).trim() : null;
 	if (documentNumber) {
+		// Por proveedor desde F10: la factura 1234 de un mayorista no es la 1234
+		// de otro, y compararlas rechazaría una compra legítima.
 		const duplicate = db.stock_entries.find(
-			(e) => e.document_number === documentNumber && e.status === 'aplicada'
+			(e) =>
+				e.document_number === documentNumber &&
+				e.status === 'aplicada' &&
+				(e.supplier_id ?? null) === supplierId
 		);
 		if (duplicate) {
 			fail(400, 'duplicate_document', {
@@ -1576,12 +1773,22 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	}
 
 	// Se valida todo antes de escribir: o entra la carga completa, o ninguna.
-	const resolved: { product: Product; quantity: number; unitCost: number }[] = [];
+	const resolved: {
+		product: Product;
+		quantity: number;
+		unitCost: number;
+		taxRate: number;
+		taxAmount: number;
+	}[] = [];
 	let createdProducts = 0;
 
 	for (const [index, raw] of requested.entries()) {
 		const quantity = Math.trunc(Number(raw?.quantity ?? 0));
 		const unitCost = round2(Number(raw?.unit_cost ?? 0));
+		// El impuesto **del documento** (RN-53): es el crédito fiscal, y lo que
+		// se acredita es lo que se pagó. No se recalcula desde el producto.
+		const taxRate = round2(Number(raw?.tax_rate ?? 0));
+		const taxAmount = round2(Number(raw?.tax_amount ?? 0));
 		// Un solo código para las dos, como el backend: el dominio rechaza el valor
 		// y la línea la nombra la interfaz.
 		if (!(quantity > 0) || unitCost < 0)
@@ -1591,7 +1798,7 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 			const product = db.products.find((p) => p.id_product === Number(raw.id_product));
 			if (!product)
 				fail(404, 'entry_product_not_found', { product_id: raw.id_product });
-			resolved.push({ product, quantity, unitCost });
+			resolved.push({ product, quantity, unitCost, taxRate, taxAmount });
 		} else if (raw?.new_product) {
 			const data = raw.new_product;
 			const barcode = String(data.barcode ?? '').trim();
@@ -1614,34 +1821,57 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 			};
 			db.products.push(product);
 			createdProducts += 1;
-			resolved.push({ product, quantity, unitCost });
+			resolved.push({ product, quantity, unitCost, taxRate, taxAmount });
 		} else {
 			fail(400, 'entry_line_without_product', { line: index + 1 });
 		}
 	}
 
 	const id = nextId('stock_entries');
-	let total = 0;
+	let subtotalTotal = 0;
+	let impuestoTotal = 0;
 	let units = 0;
 
-	const lines = resolved.map(({ product, quantity, unitCost }) => {
+	const lines = resolved.map(({ product, quantity, unitCost, taxRate, taxAmount }) => {
 		const subtotal = round2(unitCost * quantity);
-		total = round2(total + subtotal);
+		subtotalTotal = round2(subtotalTotal + subtotal);
+		impuestoTotal = round2(impuestoTotal + taxAmount);
 		units += quantity;
+
+		// El costo **antes** que el stock y los dos en el mismo paso, como el
+		// backend: si un producto aparece dos veces en la misma factura, el
+		// segundo promedio tiene que ver las existencias que dejó el primero
+		// (RN-54).
+		product.cost = promedioPonderado(product.stock, Number(product.cost ?? 0), quantity, unitCost);
 		product.stock += quantity;
+
 		return {
 			id_product: product.id_product,
 			name: product.name,
 			quantity,
 			unit_cost: unitCost,
-			subtotal
+			subtotal,
+			tax_rate: taxRate,
+			tax_amount: taxAmount
 		};
 	});
+	const total = round2(subtotalTotal + impuestoTotal);
+
+	// El vencimiento se cuenta desde la fecha DEL DOCUMENTO, no la de carga: el
+	// proveedor cobra desde su factura. Un plazo de cero días es contado.
+	const documentDate = String(body?.document_date ?? '').trim() || null;
+	const dias = Math.trunc(
+		Number(body?.payment_terms_days ?? proveedor?.payment_terms_days ?? 0) || 0
+	);
+	const aCredito = Boolean(proveedor) && body?.payment_terms === 'credit' && dias > 0;
+	const dueDate = aCredito ? sumarDias(documentDate ?? nowIso().slice(0, 10), dias) : null;
 
 	db.stock_entries.push({
 		id,
 		document_number: documentNumber,
-		supplier: body?.supplier ? String(body.supplier) : null,
+		// El nombre se copia aunque haya `supplier_id`: así la compra lo recuerda
+		// si después se desactiva al proveedor o se le corrige la razón social.
+		supplier: body?.supplier ? String(body.supplier) : (proveedor?.name ?? null),
 		source: ['manual', 'excel', 'xml'].includes(body?.source) ? body.source : 'manual',
 		user_id: Number(body?.user_id ?? 0),
 		user_name: personName(Number(body?.user_id ?? 0)),
@@ -1650,23 +1880,59 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 		status: 'aplicada',
 		total_cost: total,
 		items_count: units,
-		lines
+		lines,
+		supplier_id: supplierId,
+		document_key: String(body?.document_key ?? '').trim() || null,
+		document_date: documentDate,
+		payment_terms: dueDate ? 'credit' : 'cash',
+		due_date: dueDate,
+		subtotal: subtotalTotal,
+		tax: impuestoTotal
 	});
+
+	// El abono de una compra de contado, si se dijo CÓMO se pagó. Sin método
+	// queda con saldo: adivinar «efectivo» descuadraría un arqueo (RN-56).
+	let idPayment: number | null = null;
+	const metodo = String(body?.payment_method ?? '').trim();
+	if (supplierId && !dueDate && metodo) {
+		idPayment = abonar(companyId, {
+			entryId: id,
+			supplierId,
+			amount: total,
+			method: metodo,
+			reference: documentNumber,
+			reason: String(body?.payment_reason ?? ''),
+			userId: Number(body?.user_id ?? 0)
+		});
+	}
+
 	persist();
 
 	return {
 		message: 'entry_registered',
 		id_entry: id,
 		products_created: createdProducts,
-		units_added: units
+		units_added: units,
+		id_payment: idPayment
 	};
 });
 
-route('POST', '/inventory/entry/:id/cancel', ({ params, companyId }) => {
+route('POST', '/inventory/entry/:id/cancel', ({ params, body, companyId }) => {
 	const db = getDb(companyId);
 	const entry = db.stock_entries.find((e) => e.id === Number(params[0]));
 	if (!entry) fail(404, 'entry_not_found');
 	if (entry.status === 'anulada') fail(400, 'entry_already_cancelled');
+
+	// Se pregunta siempre, sin mirar antes `supplier_id`: una entrada que no es
+	// compra no tiene abonos y contesta con la lista vacía (RN-57).
+	const abonos = (db.supplier_payments ?? []).filter((a) => a.entry_id === entry.id);
+	if (abonos.length)
+		fail(400, 'purchase_has_payments', { entry_id: entry.id, payments: abonos.length });
+
+	// El motivo es obligatorio solo si es compra (RF-46): la pantalla de
+	// entradas nunca lo pidió y exigirlo siempre la rompería.
+	const motivo = String(body?.reason ?? '').trim();
+	if (entry.supplier_id != null && !motivo) fail(400, 'void_reason_required');
 
 	// Si parte ya se vendió, revertir dejaría el stock en negativo.
 	for (const line of entry.lines) {

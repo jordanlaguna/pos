@@ -338,9 +338,21 @@ export interface Product {
 	tax_rate?: number | null;
 	/** Unidad de medida del comprobante de Hacienda. 'Unid' por omisión. */
 	unit_of_measure?: string;
+
+	// --- F10: lo que cuesta, no lo que vale (RN-54) --------------------------
+
+	/**
+	 * Promedio ponderado móvil de las compras. **Solo de lectura**: lo escribe
+	 * el backend al recibir mercadería y no hay forma de fijarlo a mano.
+	 *
+	 * Cero es «no se sabe todavía» —lo que tienen los productos anteriores a
+	 * F10— y no «sale gratis». Quien lo muestre tiene que distinguirlos.
+	 */
+	cost?: number;
 }
 
-export type ProductInput = Omit<Product, 'id_product'>;
+/** Lo que se manda al crear o editar. El costo no entra: lo pone la compra. */
+export type ProductInput = Omit<Product, 'id_product' | 'cost'>;
 
 export interface Category {
 	id: number;
@@ -538,6 +550,13 @@ export interface StockEntryLine {
 	/** Lo que costó la unidad al comprarla. No es el precio de venta. */
 	unit_cost: number;
 	subtotal: number;
+	/**
+	 * El impuesto **del documento del proveedor** (RN-53), la tarifa en
+	 * porcentaje: 13 y no 0,13, que es como la dice la factura. Cero cuando la
+	 * entrada no viene de una: sin factura no hay crédito fiscal.
+	 */
+	tax_rate?: number;
+	tax_amount?: number;
 }
 
 export interface StockEntry {
@@ -554,6 +573,45 @@ export interface StockEntry {
 	total_cost: number;
 	items_count: number;
 	lines: StockEntryLine[];
+
+	// --- F10: lo que convierte una entrada en compra (RN-52) -----------------
+
+	/**
+	 * **Lo que decide si esto es una compra.** Con proveedor hay cuenta por
+	 * pagar y crédito fiscal, y anularla exige motivo; sin él es una entrada de
+	 * las de siempre y nada de lo de abajo significa nada.
+	 */
+	supplier_id?: number | null;
+	/** La clave de 50 dígitos del comprobante, cuando vino de un XML. */
+	document_key?: string | null;
+	/** La del documento, que no es la de carga: el IVA es del día de la factura. */
+	document_date?: string | null;
+	payment_terms?: 'cash' | 'credit';
+	due_date?: string | null;
+	/** Sin impuesto, y el impuesto. `total_cost` es la suma de los dos. */
+	subtotal?: number;
+	tax?: number;
+}
+
+/**
+ * A quién se le compra (F10, RF-41).
+ *
+ * La identificación es lo que lo identifica de verdad: la misma identificación
+ * es el mismo proveedor, y es con lo que se lo reconoce al leer el XML de una
+ * factura sin preguntarle nada a nadie.
+ */
+export interface Supplier {
+	id: number;
+	/** 01/02/03/04, la lista de Hacienda. Nulo en un proveedor informal. */
+	identification_type?: string | null;
+	identification?: string | null;
+	name: string;
+	email?: string | null;
+	phone?: string | null;
+	/** Plazo habitual en días. 0 es contado, y es lo que propone una compra. */
+	payment_terms_days: number;
+	/** No se borra: se desactiva. Uno inactivo no recibe compras nuevas. */
+	is_active: boolean;
 }
 
 /** Producto del catálogo con el que se emparejó una línea del archivo. */
@@ -563,6 +621,20 @@ export interface MatchedProduct {
 	barcode: string;
 	stock: number;
 	price: number;
+
+	// --- F10: para poder comparar contra lo que dice el documento ------------
+
+	/**
+	 * La tarifa **del producto**, entre 0 y 1. `null` es «la configurada».
+	 *
+	 * No se usa para calcular nada: la compra guarda la del documento, que es
+	 * lo que se pagó (RN-53). Está para **avisar** cuando las dos no coinciden
+	 * (RF-43), que suele significar o que el proveedor clasificó distinto o que
+	 * el CABYS del producto está mal.
+	 */
+	tax_rate?: number | null;
+	/** El costo promedio de hoy, para verlo al lado del de la factura. */
+	cost?: number;
 }
 
 /**

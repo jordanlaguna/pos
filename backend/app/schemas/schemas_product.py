@@ -57,6 +57,15 @@ class ProductResponse(BaseModel):
     tax_rate: float | None = None
     unit_of_measure: str | None = None
 
+    # --- F10: lo que cuesta, no lo que vale (RN-54) -------------------------
+    #
+    # Promedio ponderado móvil de las compras. Solo de lectura: lo escribe
+    # `RegisterStockEntry` al recibir mercadería y no hay forma de fijarlo a
+    # mano, porque un costo escrito a dedo deja de ser el promedio de nada. En
+    # cero significa «no se sabe todavía», que es lo que tienen los productos
+    # anteriores a F10.
+    cost: float = 0
+
     model_config = {
         "from_attributes": True
     }

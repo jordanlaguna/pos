@@ -23,12 +23,22 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 export const actions: Actions = {
 	anular: async ({ request, locals, url }) => {
 		requireAdmin(locals, url.pathname);
-		const v = new Validator(await request.formData());
+		const form = await request.formData();
+		const v = new Validator(form);
 		const id = v.integer('id_entry', F.entry(), { min: 1 });
 		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
+		// El motivo va siempre que venga. Quién lo exige es el backend, y solo
+		// para una compra (RF-46): una entrada nunca lo pidió y seguir
+		// pidiéndoselo acá sería inventar una regla que no existe.
+		const reason = String(form.get('reason') ?? '').trim() || null;
+
 		try {
-			await api(`/inventory/entry/${id}/cancel`, { method: 'POST', token: locals.token });
+			await api(`/inventory/entry/${id}/cancel`, {
+				method: 'POST',
+				token: locals.token,
+				body: { reason }
+			});
 		} catch (error) {
 			return fail(400, { errors: formError(apiMessage(error)) });
 		}

@@ -83,6 +83,9 @@ def serialize(db: Session, entry: StockEntry) -> dict:
                 "quantity": detail.quantity,
                 "unit_cost": _money(detail.unit_cost),
                 "subtotal": _money(detail.subtotal),
+                # En porcentaje, como lo dice el documento del proveedor (RN-53).
+                "tax_rate": _money(detail.tax_rate),
+                "tax_amount": _money(detail.tax_amount),
             }
         )
 
@@ -99,6 +102,18 @@ def serialize(db: Session, entry: StockEntry) -> dict:
         "total_cost": _money(entry.total_cost),
         "items_count": sum(d.quantity for d in details),
         "lines": lines,
+        # ------------------------------------------------------- compra (F10)
+        #
+        # `supplier_id` es lo que distingue una compra de una entrada, y la
+        # pantalla lo necesita para saber si al anular tiene que pedir motivo y
+        # si hay una cuenta por pagar detrás (RN-52).
+        "supplier_id": entry.supplier_id,
+        "document_key": entry.document_key,
+        "document_date": entry.document_date,
+        "payment_terms": entry.payment_terms,
+        "due_date": entry.due_date,
+        "subtotal": _money(entry.subtotal),
+        "tax": _money(entry.tax),
     }
 
 

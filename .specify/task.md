@@ -2883,28 +2883,49 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ### Frontend
 
-- [ ] **T-1013** La pantalla de entradas gana proveedor, documento, condición y
+- [x] **T-1013** La pantalla de entradas gana proveedor, documento, condición y
       tarifa por línea, con el aviso de RN-53 cuando la del documento difiere
       de la del producto, y conserva la vista previa (§8, regla 6). RF-42,
       RF-43.
 
-      **Además, tres cosas que dejaron T-1010 y T-1011:**
+      Hechas también las tres que dejaron T-1010 y T-1011: el **método de pago**
+      cuando la condición es contado —con el aviso de que en efectivo hace falta
+      caja abierta—, el **motivo al anular** una compra, y **`cost` en la
+      respuesta de producto**.
 
-      - El **método de pago** cuando la condición es contado, y su motivo para
-        el movimiento de caja. Sin método la compra nace con saldo, así que el
-        formulario tiene que pedirlo —y avisar que en efectivo hace falta caja
-        abierta, porque si no la compra entera rebota—.
-      - El **motivo al anular** una compra, que el backend exige
-        (`void_reason_required`). Hoy el diálogo de `/inventario/entradas`
-        anula sin cuerpo: sirve para una entrada y no para una compra.
-      - **`cost` en la respuesta de producto.** No está, y la pantalla de
-        compras lo necesita para mostrar el costo actual al lado del de la
-        factura. De paso deja probar contra la pila que anular no lo deshace,
-        que hoy solo se prueba con dobles.
+      **Verificación:** `tests/e2e/compras.spec.ts`, tres pruebas contra el
+      simulado: una compra a crédito con su vencimiento contado desde la fecha
+      del documento, una anulación que exige motivo, y el XML que marca al
+      proveedor como nuevo conservando el invariante de ₡79 800. 982 del
+      backend, 574 del POS, `npm run check` 0/0.
 
-      **Verificación:** punta a punta: cargar un XML de ejemplo, ver el
-      proveedor marcado «nuevo», la tarifa por línea y el aviso en la línea que
-      difiere; confirmar; el stock sube y el proveedor existe.
+      Cuatro cosas que decidió el código:
+
+      1. **El serializador de entradas no devolvía nada de F10.** La pantalla no
+         tenía cómo saber si una entrada era compra, así que `serialize()` pasa
+         a devolver `supplier_id`, la fecha y clave del documento, la condición,
+         el vencimiento, el subtotal, el impuesto y la tarifa de cada línea.
+      2. **El proveedor se reconoce por identificación, nunca por nombre.** El
+         nombre cambia —razón social, nombre comercial, cómo lo escribió el
+         emisor ese día— sin que cambie con quién se trata; emparejar por nombre
+         crearía una ficha nueva cada vez que el proveedor edite su factura y el
+         saldo quedaría repartido entre las dos.
+      3. **El proveedor nuevo se da de alta antes que la compra**, no dentro. Si
+         la compra falla, el proveedor queda dado de alta y el segundo intento lo
+         encuentra en la lista; al revés dejaría una compra sin a quién pagarle.
+         El cuerpo se relee campo por campo: lo que llega por un formulario es de
+         quien tenga la pantalla abierta.
+      4. **El motivo del pago en efectivo lo arma la pantalla** y viaja en
+         `payment_reason` (RN-30), que es lo que T-1010 dejó preparado.
+
+      **El simulado se puso al día acá y no en T-1015**, porque sin él la
+      pantalla no se puede verificar: proveedores con sus tres rutas, los campos
+      de compra en la entrada, el costo promedio, el abono automático con su
+      salida de caja, y la anulación con motivo y guardia de abonos.
+      `SEED_VERSION` sube a 9.
+
+      **Un defecto que no era de F10 y que esto destapó:** una fecha sin hora se
+      mostraba **un día antes**. Está anotado aparte.
 
 - [ ] **T-1014** `/compras/proveedores` y `/compras/cuentas-por-pagar`: saldos,
       antigüedad y abonar con método y referencia. RF-41, RF-44.
@@ -2912,21 +2933,24 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       **Verificación:** punta a punta: abonar en efectivo con la caja abierta y
       ver el movimiento de salida en `/caja` con el motivo armado.
 
-- [ ] **T-1015** Simulado y catálogos: los endpoints con contrato idéntico
-      —los nueve del plan más `POST /purchases/{id}/payments`—, proveedores y
-      una compra a crédito en el seed, y `messages/es/purchases.json`
-      **declarado en `project.inlang/settings.json`**.
+- [ ] **T-1015** Lo que queda del simulado y el catálogo de pantalla:
+      `POST /purchases/{id}/payments`, `GET /payables` y
+      `GET /reports/purchases` con contrato idéntico, y
+      `messages/es/purchases.json` **declarado en
+      `project.inlang/settings.json`**.
 
-      **Los códigos ya están todos**: `module_not_in_plan` entró con T-1002, los
-      de proveedor con T-1007 y los cinco de abonos con T-1010. Siempre por lo
-      mismo: `messages.test.ts` compara las dos listas y diferirlos tumba
-      `npm test`. Lo que queda acá es el simulado y el catálogo de pantalla.
+      **Buena parte ya está hecha.** Los códigos entraron con T-1002, T-1007 y
+      T-1010 —`messages.test.ts` compara las dos listas y diferirlos tumba
+      `npm test`—, y con T-1013 entraron los proveedores, los campos de compra
+      en la entrada, el costo promedio, el abono automático con su salida de
+      caja y la anulación con motivo: sin eso no había cómo verificar la
+      pantalla. `SEED_VERSION` ya está en 9.
 
-      El simulado tiene que copiar cuatro cosas que no son obvias: que el abono
-      en efectivo escriba el movimiento de caja y baje el esperado del turno,
-      que una compra de contado **con** `payment_method` nazca pagada y **sin**
-      él quede con saldo, que el motivo del movimiento venga en `reason`, y que
-      anular exija motivo y rebote con abonos (T-1011).
+      Lo que falta copiar del backend, y que no es obvio: que un abono en
+      efectivo baje el esperado del turno, que `/payables` deje fuera lo pagado
+      y lo anulado, y que el reporte agrupe por la **fecha del documento**.
+      El ayudante `abonar()` del simulado ya hace lo primero; falta exponerlo
+      como endpoint.
 
       **Verificación:** `npm test` (`loose-text`, `catalogs` y
       `messages.test.ts` comparan las listas de códigos); `npm run check` en

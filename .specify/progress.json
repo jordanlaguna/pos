@@ -415,6 +415,12 @@
       "sintoma": "`tests/test_compras.py::TestElReporteDeCompras` pasaba la primera vez y fallaba la segunda con el doble de impuesto en el mismo día; `test_aislamiento.py::test_el_credito_fiscal_de_A_no_suma_las_compras_de_B` llegó a ver 780 donde esperaba 260. El fallo señala el reporte, que es el único sitio donde no está el problema.",
       "causa": "`docker-compose.test.yml` conserva el contenedor `db` entre corridas de pytest —solo se recrea `fastapi` al reconstruir—, así que cada corrida agrega otra compra con la misma fecha de documento. Un `assert == 130` le está pidiendo a la base que esté vacía sin decirlo.",
       "arreglo": "Las de reportes miden por diferencia: leen el total antes, compran, y comparan la resta. La de aislamiento usa una fecha derivada del reloj al importar el módulo —distinta en cada corrida y la misma para las dos compañías—, porque ahí lo que se compara es un total y no un delta."
+    },
+    {
+      "defecto": "Una fecha sin hora se mostraba un día antes al oeste de Greenwich",
+      "sintoma": "Una compra con fecha de documento 2026-09-10 aparecía como «09/09/2026» en el detalle, y su vencimiento a 30 días como «09/10/2026». Lo mismo le pasaba desde antes al aviso de vencimiento de la suscripción, que lee `vence_el` —también `YYYY-MM-DD`—.",
+      "causa": "`toDate()` en `$lib/ui/format.ts` hacía `new Date(value)`. Para una cadena ISO **sin hora** la especificación manda interpretarla como UTC, así que en un huso negativo el `Intl.DateTimeFormat` local la muestra el día anterior. Con hora no pasa: ahí sí hay un instante que convertir.",
+      "arreglo": "`toDate()` reconoce el patrón `YYYY-MM-DD` y lo construye como medianoche **local** (`${value}T00:00:00`). Dos pruebas nuevas en `format.test.ts`: una por el caso y otra de contraprueba con hora, para que el arreglo no se convierta en «nunca se convierte» y rompa la hora de una venta."
     }
   ],
   "decisiones": [
@@ -2016,6 +2022,18 @@
         "Verde: 982 pruebas del backend con cobertura 100 % en dominio y aplicación, 572 del POS con 100 %, `npm run check` en 0/0."
       ],
       "lo_que_ensena": "**Una prueba que compara contra un absoluto le pide a la base que esté vacía, y nadie se lo prometió.** `assert reporte['tax'] == 130` pasó la primera corrida y falló la segunda con 260, y a la tercera con 390: la pila de pruebas conserva su base mientras no se la tumbe, así que cada corrida agrega otra compra al mismo día. El síntoma es cruel porque señala el reporte —que está bien— y aparece un rato después de escribirlo, cuando ya se cambió otra cosa. La salida tiene dos formas y las dos aparecieron acá: medir **por diferencia** —leer antes, actuar, restar— cuando la prueba comparte los datos con las demás, o **darle a cada corrida su propio día** cuando lo que se compara es un total. Lo que no sirve es limpiar la base entre pruebas: es lento y además esconde que el reporte tiene que ser correcto con datos de otros, que es como va a correr siempre en producción."
+    },
+    {
+      "fecha": "2026-09-12",
+      "titulo": "La pantalla de entradas pasa a ser la de compras",
+      "hecho": [
+        "T-1013: proveedor, fecha y clave del documento, condición de pago, plazo, método de pago y tarifa por línea, con el aviso de RN-53 cuando la del documento no coincide con la del producto.",
+        "`serialize()` de entradas no devolvía nada de F10, así que la pantalla no podía saber si una entrada era compra. Ahora devuelve los siete campos y la tarifa de cada línea. `cost` entró en la respuesta de producto.",
+        "El proveedor del XML que no existe se da de alta al confirmar (RF-42), reconocido por identificación y nunca por nombre.",
+        "El simulado se puso al día —proveedores, campos de compra, costo promedio, abono automático y anulación con motivo— porque sin él la pantalla no se podía verificar. `SEED_VERSION` a 9.",
+        "Verde: 982 pruebas del backend con cobertura 100 %, 574 del POS, tres de punta a punta nuevas en `compras.spec.ts`, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Una fecha sin hora no es un instante, y tratarla como tal corre el calendario.** `new Date('2026-09-10')` devuelve medianoche UTC por especificación; en Costa Rica —UTC−6— eso se muestra como el 9. El defecto llevaba meses ahí, en el aviso de vencimiento de la suscripción, y nadie lo vio porque una fecha equivocada por un día se lee como una fecha. Lo destapó una prueba de punta a punta de F10 que cargó una factura del 10 y leyó «09/09/2026» en el detalle. La distinción que hay que hacer es la que el tipo no hace: `2026-09-10` es una **fecha de calendario** —no tiene huso que convertir— y `2026-09-10T14:32` sí es un instante. La contraprueba quedó escrita al lado del arreglo, porque «nunca convertir» habría roto la hora de las ventas."
     }
   ],
   "$reparto": {

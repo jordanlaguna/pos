@@ -10,7 +10,8 @@ import type {
 	Role,
 	SaleItem,
 	SaleReturn,
-	StockEntry
+	StockEntry,
+	Supplier
 } from '$lib/domain/types';
 import { DEFAULT_TAX_RATE, round2 } from '$lib/domain/money';
 
@@ -129,7 +130,24 @@ export interface MockCompanyData {
 	cash_sessions: CashSession[];
 	cash_movements: CashMovement[];
 	stock_entries: StockEntry[];
+	/** Proveedores y sus abonos (F10). Cada compañía tiene los suyos. */
+	suppliers: Supplier[];
+	supplier_payments: MockSupplierPayment[];
 	settings?: MockSettings;
+}
+
+/** Un abono a **una** compra (RN-55). El saldo no se guarda: es una resta. */
+export interface MockSupplierPayment {
+	id: number;
+	supplier_id: number;
+	entry_id: number;
+	amount: number;
+	/** 'cash' | 'transfer' | 'other'. Solo el primero mueve la gaveta (RN-56). */
+	method: string;
+	reference: string | null;
+	cash_movement_id: number | null;
+	user_id: number;
+	paid_at: string;
 }
 
 /**
@@ -197,7 +215,14 @@ const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
 // Tres quedan sin clasificar **a propósito** —yogurt, natilla y maní—: es el
 // estado en que llega un catálogo heredado, y sin él la asignación en lote no
 // tiene nada que hacer y el aviso de «sin clasificar» del carrito no se ve nunca.
-const SEED_VERSION = 8;
+// 9 (F10, 2026-09-12): proveedores y abonos, y los productos nacen con `cost`.
+// Sin costo, la pantalla de compras no tendría contra qué comparar el de la
+// factura y el promedio ponderado (RN-54) se vería igual que no tenerlo.
+//
+// Los dos proveedores son a propósito **distintos** del emisor de
+// `tests/fixtures/factura-proveedor-v43.xml`: así el XML del demo muestra el
+// caso que importa de RF-42, el del proveedor que todavía no existe.
+const SEED_VERSION = 9;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -295,6 +320,8 @@ export function empresaVacia(): MockCompanyData {
 		cash_sessions: [],
 		cash_movements: [],
 		stock_entries: [],
+		suppliers: [],
+		supplier_payments: [],
 		settings: { data: {}, logo: null, updated_at: null, updated_by: null }
 	};
 }
@@ -386,6 +413,40 @@ const PERSON_SEED: Omit<Person, 'id_person' | 'id_user'>[] = [
 	{ birth_date: '1996-11-03', identification: '118920345', name: 'María', lastName: 'Rojas', secondName: 'Vargas', telephone: '87123344', email: 'cajero@ventasys.cr' },
 	{ birth_date: '1988-07-25', identification: '109887654', name: 'Carlos', lastName: 'Jiménez', secondName: 'Solano', telephone: '89905512', email: 'carlos@ventasys.cr' },
 	{ birth_date: '1985-02-19', identification: '104556677', name: 'Sole', lastName: 'Soporte', secondName: 'Vargas', telephone: '88880000', email: 'soporte@ventasys.cr' }
+];
+
+/**
+ * Dos proveedores para el demo (F10).
+ *
+ * Uno con plazo y otro de contado, que son los dos casos que la pantalla de
+ * compras trata distinto: el primero propone 30 días y abre una cuenta por
+ * pagar, el segundo pide decir cómo se pagó. Con uno solo no se ve la
+ * diferencia.
+ */
+const SUPPLIERS: Supplier[] = [
+	{
+		id: 1,
+		identification_type: '02',
+		identification: '3101987654',
+		// A propósito NO es «Distribuidora La Central», que es quien emite la
+		// factura de ejemplo: así el XML del demo muestra el caso de un proveedor
+		// que todavía no existe y se da de alta al confirmar (RF-42).
+		name: 'Mayorista del Este',
+		email: 'ventas@mayoristadeleste.cr',
+		phone: '22221111',
+		payment_terms_days: 30,
+		is_active: true
+	},
+	{
+		id: 2,
+		identification_type: '01',
+		identification: '109990888',
+		name: 'Verduras del Valle',
+		email: null,
+		phone: '87776655',
+		payment_terms_days: 0,
+		is_active: true
+	}
 ];
 
 /**
@@ -509,7 +570,12 @@ function seed(): MockRoot {
 	const products: Product[] = PRODUCT_SEED.map((p, i) => ({
 		...p,
 		id_product: i + 1,
-		created_at: created
+		created_at: created,
+		// Un margen aproximado del 30 % hacia atrás, para que el demo tenga un
+		// costo de dónde partir (RN-54). Cero sería «no se sabe», que es lo que
+		// tiene un catálogo antes de su primera compra, y dejaría la pantalla de
+		// compras sin nada con qué comparar.
+		cost: round2(p.price / 1.3)
 	}));
 
 	const clients: Client[] = CLIENT_SEED.map((c, i) => ({ ...c, id_client: i + 1 }));
@@ -593,6 +659,8 @@ function seed(): MockRoot {
 				cash_sessions: [],
 				cash_movements: [],
 				stock_entries: [],
+				suppliers: [...SUPPLIERS],
+				supplier_payments: [],
 				settings: { data: {}, logo: null, updated_at: null, updated_by: null }
 			},
 			2: empresaVacia()
@@ -608,6 +676,8 @@ function seed(): MockRoot {
 			cash_sessions: 0,
 			cash_movements: 0,
 			stock_entries: 0,
+			suppliers: SUPPLIERS.length,
+			supplier_payments: 0,
 			audit: 0,
 			companies: 2,
 			plans: PLAN_SEED.length

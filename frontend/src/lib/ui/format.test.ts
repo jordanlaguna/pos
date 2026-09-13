@@ -45,6 +45,29 @@ describe('la fecha depende del idioma', () => {
 		expect(formatRelative(hace5, 'pt')).toContain('há');
 	});
 
+	it('una fecha sin hora es del día que dice, no del anterior', () => {
+		/*
+		 * `new Date('2026-09-10')` es medianoche **UTC** por especificación, así
+		 * que al oeste de Greenwich se mostraba el día anterior: en Costa Rica
+		 * —UTC−6— una factura del 10 salía como «09/09/2026». Lo pagaban la
+		 * fecha de una compra, su vencimiento y el de la suscripción.
+		 *
+		 * Una fecha sin hora es una fecha de calendario y no un instante: no
+		 * tiene huso que convertir.
+		 */
+		expect(formatDate('2026-09-10', 'es')).toBe('10/09/2026');
+		expect(formatDate('2026-01-01', 'es')).toBe('01/01/2026');
+		expect(formatDate('2026-12-31', 'en')).toBe('12/31/2026');
+	});
+
+	it('una fecha CON hora sí se convierte al huso del navegador', () => {
+		// La contraprueba: lo de arriba no puede convertirse en «nunca se
+		// convierte», porque la hora de una venta sí es un instante.
+		const conHora = new Date(2026, 8, 10, 14, 32);
+		expect(formatDate(conHora, 'es')).toBe('10/09/2026');
+		expect(formatDateTime(conHora, 'es')).toContain('14:32');
+	});
+
 	it('un idioma que no está cae al español en vez de romperse', () => {
 		// Nunca debería llegar —el backend descarta lo que no tiene catálogo— pero
 		// una fecha ilegible es peor que una fecha en el idioma equivocado.
