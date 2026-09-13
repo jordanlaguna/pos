@@ -26,6 +26,10 @@ class FakeProduct:
     # las pruebas anteriores a F5 sigan describiendo el caso de siempre: un
     # catálogo sin tarifas propias.
     tax_rate: TaxRate | None = None
+    #: Lo que cuesta (RN-54, F10). Cero por omisión: es «no se sabe», que es lo
+    #: que tienen los productos de las pruebas anteriores a F10 y lo que hace
+    #: que la primera compra establezca el costo.
+    cost: Money = field(default_factory=Money.zero)
 
 
 class FakeProductRepository:
@@ -51,6 +55,9 @@ class FakeProductRepository:
 
     def adjust_stock(self, product_id: int, delta: int) -> None:
         self.productos[product_id].stock += delta
+
+    def update_cost(self, product_id: int, cost: Money) -> None:
+        self.productos[product_id].cost = cost
 
     def barcode_taken(self, barcode: str) -> bool:
         return barcode in self.codigos
@@ -252,6 +259,15 @@ class FilaDeEntrada:
     created_at: datetime
     lines: list
     status: str = "aplicada"
+    # Lo de F10. Con todo en su valor de reposo esto es una entrada de las de
+    # siempre, que es lo que siguen siendo las de las pruebas anteriores.
+    supplier_id: int | None = None
+    document_key: str | None = None
+    document_date: object = None
+    payment_terms: str = "cash"
+    due_date: object = None
+    subtotal: Money | None = None
+    tax: Money | None = None
 
 
 class FakeStockEntryRepository:
@@ -262,12 +278,18 @@ class FakeStockEntryRepository:
     def get(self, entry_id: int) -> FilaDeEntrada | None:
         return next((e for e in self.entradas if e.id == entry_id), None)
 
-    def applied_with_document(self, document_number: str) -> FilaDeEntrada | None:
+    def applied_with_document(
+        self, document_number: str, supplier_id: int | None = None
+    ) -> FilaDeEntrada | None:
+        # Por proveedor desde F10: la factura 1234 de un mayorista no es la 1234
+        # de otro, y sin proveedor se compara contra las que tampoco lo tienen.
         return next(
             (
                 e
                 for e in self.entradas
-                if e.document_number == document_number and e.status == "aplicada"
+                if e.document_number == document_number
+                and e.status == "aplicada"
+                and e.supplier_id == supplier_id
             ),
             None,
         )

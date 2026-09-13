@@ -306,6 +306,7 @@ export const API_CODES = [
 	'client_not_found',
 	// compras (F10)
 	'supplier_not_found',
+	'supplier_inactive',
 	'supplier_identification_taken',
 	'invalid_identification_type',
 	'identification_required',
@@ -664,6 +665,8 @@ function frase(code: ApiCode, d: Failure['data']): string {
 		// ------------------------------------------------------------ compras
 		case 'supplier_not_found':
 			return m.api_supplier_not_found();
+		case 'supplier_inactive':
+			return m.api_supplier_inactive({ name: texto(d.name) });
 		case 'supplier_identification_taken':
 			// Trae de quién es ya: sin el nombre, la frase manda a buscar en una
 			// lista de proveedores el que tiene esa cédula.

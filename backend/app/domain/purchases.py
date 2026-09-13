@@ -9,7 +9,7 @@ como argumento— y por eso se prueban con una tabla de casos.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from .errors import PaymentExceedsBalance
 from .money import Money
@@ -95,6 +95,17 @@ def purchase_totals(lines: list[PurchaseLine]) -> PurchaseTotals:
             (tarifa, base, impuesto) for tarifa, (base, impuesto) in sorted(por_tarifa.items())
         ),
     )
+
+
+def due_date(document_date: date, payment_terms_days: int) -> date:
+    """Cuándo vence una compra a crédito.
+
+    Se cuenta desde la **fecha del documento** y no desde la de carga: una
+    factura del día 28 que se captura el 3 del mes siguiente vence a los 30 días
+    del 28, que es lo que el proveedor va a cobrar. Contar desde la captura le
+    regalaría al negocio los días que tardó en digitarla.
+    """
+    return document_date + timedelta(days=max(0, payment_terms_days))
 
 
 def remaining_balance(total: Money, payments: list[Money]) -> Money:

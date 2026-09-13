@@ -20,6 +20,8 @@ from app.application.use_cases.stock_entry import (
     ProductNotFoundInEntry,
     RegisterStockEntry,
     RequestedEntryLine,
+    SupplierInactive,
+    SupplierNotFound,
 )
 from app.domain.errors import (
     AlreadyCancelled,
@@ -31,10 +33,12 @@ from app.domain.errors import (
     LineWithoutProduct,
 )
 from app.domain.money import Money
+from app.domain.tax import TaxRate
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_repositories import (
     SqlAlchemyProductRepository,
     SqlAlchemyStockEntryRepository,
+    SqlAlchemySupplierRepository,
     SqlAlchemyUnitOfWork,
 )
 from app.models.model_person import Person
@@ -99,6 +103,7 @@ def create_entry(db: Session, payload) -> dict:
         entries=entradas,
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        suppliers=SqlAlchemySupplierRepository(db),
     )
 
     # RN-6, también acá: la entrada de mercadería crea productos, así que sin
@@ -117,11 +122,21 @@ def create_entry(db: Session, payload) -> dict:
         source=payload.source,
         user_id=payload.user_id,
         notes=payload.notes,
+        supplier_id=payload.supplier_id,
+        document_key=payload.document_key,
+        document_date=payload.document_date,
+        payment_terms=payload.payment_terms,
+        payment_terms_days=payload.payment_terms_days,
         lines=[
             RequestedEntryLine(
                 quantity=l.quantity,
                 unit_cost=Money(l.unit_cost),
                 product_id=l.id_product,
+                # La factura la dice en porcentaje y el dominio la guarda entre
+                # 0 y 1. La conversión va acá, en el borde, que es donde viven
+                # las unidades de quien nos habla.
+                tax_rate=TaxRate.percent(l.tax_rate),
+                tax_amount=Money(l.tax_amount),
                 new_product=(
                     NewProduct(
                         name=l.new_product.name,
@@ -149,13 +164,17 @@ def create_entry(db: Session, payload) -> dict:
         # La fecha de la que ya estaba: es lo que deja repetir la carga a
         # sabiendas, anulando primero la anterior. Va en ISO y sin formato: el
         # día y el mes no van en el mismo orden en todos los idiomas.
-        previa = entradas.applied_with_document(e.document_number)
+        previa = entradas.applied_with_document(e.document_number, payload.supplier_id)
         raise api_error(
             400,
             "duplicate_document",
             document_number=e.document_number,
             loaded_at=previa.created_at.isoformat(),
         ) from None
+    except SupplierNotFound as e:
+        raise api_error(404, "supplier_not_found", supplier_id=e.supplier_id) from None
+    except SupplierInactive as e:
+        raise api_error(400, "supplier_inactive", name=e.name) from None
     except InvalidQuantity:
         raise api_error(400, "invalid_entry_line", line=_linea_mala(payload)) from None
     except ProductNotFoundInEntry as e:

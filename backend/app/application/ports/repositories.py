@@ -13,7 +13,7 @@ esta carpeta no se toca.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 
 from app.domain.money import Money
@@ -36,6 +36,11 @@ class ProductSnapshot(Protocol):
     #: el día que alguien devuelva (RN-12).
     tax_rate: TaxRate | None
 
+    #: Lo que cuesta, que no es lo que vale (RN-54). Promedio ponderado móvil.
+    #: Cero en los productos anteriores a F10 y en los que nunca se compraron:
+    #: de esos no se sabe cuánto costaron, y la primera compra lo establece.
+    cost: Money
+
 
 class ProductRepository(Protocol):
     def get(self, product_id: int) -> ProductSnapshot | None: ...
@@ -53,6 +58,14 @@ class ProductRepository(Protocol):
 
     def adjust_stock(self, product_id: int, delta: int) -> None:
         """Suma o resta existencias. Negativo al vender, positivo al devolver."""
+        ...
+
+    def update_cost(self, product_id: int, cost: Money) -> None:
+        """Fija el costo del producto (RN-54).
+
+        Lo calcula el dominio —`weighted_average_cost`— y acá solo se guarda:
+        el promedio ponderado es una regla y no una consulta.
+        """
         ...
 
     def barcode_taken(self, barcode: str) -> bool:
@@ -78,14 +91,33 @@ class ProductRepository(Protocol):
         ...
 
 
+class SupplierSnapshot(Protocol):
+    """Lo que la aplicación necesita saber de un proveedor para comprarle."""
+
+    id: int
+    name: str
+    is_active: bool
+    payment_terms_days: int
+
+
+class SupplierRepository(Protocol):
+    def get(self, supplier_id: int) -> SupplierSnapshot | None: ...
+
+
 class StockEntryRepository(Protocol):
     def get(self, entry_id: int): ...
 
-    def applied_with_document(self, document_number: str):
+    def applied_with_document(self, document_number: str, supplier_id: int | None = None):
         """La entrada **aplicada** que ya usó ese número de documento, si la hay.
 
         Solo las aplicadas: una anulada libera su número, que es como se repite
         una carga que salió mal.
+
+        Desde F10 el número es único **por proveedor** y no por compañía: dos
+        mayoristas distintos numeran sus facturas cada uno desde el uno, y la
+        1234 de uno no tiene nada que ver con la 1234 del otro. Sin proveedor
+        —una entrada que no es compra— se compara contra las que tampoco lo
+        tienen.
         """
         ...
 
@@ -100,6 +132,15 @@ class StockEntryRepository(Protocol):
         total_cost: Money,
         created_at: datetime,
         lines: list,
+        #: Lo que convierte la entrada en compra (F10, RN-52). Todo en nulo es
+        #: una entrada de las de siempre.
+        supplier_id: int | None = None,
+        document_key: str | None = None,
+        document_date: date | None = None,
+        payment_terms: str = "cash",
+        due_date: date | None = None,
+        subtotal: Money | None = None,
+        tax: Money | None = None,
     ) -> int: ...
 
     def lines_of(self, entry_id: int) -> list:

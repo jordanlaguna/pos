@@ -198,6 +198,7 @@
 	"api_client_identification_taken": "There is already a customer with that ID number.",
 	"api_client_not_found": "We could not find that customer.",
 	"api_supplier_not_found": "We could not find that supplier.",
+	"api_supplier_inactive": "{name} is inactive. Reactivate it before buying, or choose another supplier.",
 	"api_supplier_identification_taken": "{identification} already belongs to {name}. The same ID is the same supplier.",
 	"api_invalid_identification_type": "“{identification_type}” is not a Hacienda ID type.",
 	"api_identification_required": "Enter the ID number, or leave the type blank.",

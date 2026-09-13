@@ -7,9 +7,11 @@ from app.domain.stock_entry import (
     EntryLine,
     check_cancellable,
     check_source,
+    entry_tax,
     entry_total,
     entry_units,
 )
+from app.domain.tax import TaxRate
 
 
 def linea(cantidad=1, costo=1200, product_id=1):
@@ -32,6 +34,53 @@ class TestEntryLine:
     def test_un_costo_de_cero_si_vale(self):
         # Mercadería de obsequio del proveedor.
         assert linea(5, 0).subtotal == Money.zero()
+
+
+class TestElImpuestoDeLaLinea:
+    """Lo que F10 agregó (RN-53): el impuesto del documento del proveedor."""
+
+    def test_por_omision_no_hay_impuesto(self):
+        # Una entrada a mano o de un Excel: sin factura no hay crédito fiscal.
+        assert linea().tax_amount.is_zero
+        assert linea().tax_rate.value == 0
+
+    def test_se_guarda_el_monto_del_documento(self):
+        con_iva = EntryLine(
+            product_id=1,
+            quantity=10,
+            unit_cost=Money(120),
+            tax_rate=TaxRate.percent(13),
+            tax_amount=Money(156),
+        )
+        assert con_iva.subtotal == Money(1200)
+        assert con_iva.tax_amount == Money(156)
+
+    def test_rechaza_un_impuesto_negativo(self):
+        # Un crédito fiscal negativo no existe: o es un dedo de más al capturar,
+        # o el documento es una nota de crédito, que no entra por acá.
+        with pytest.raises(InvalidQuantity):
+            EntryLine(
+                product_id=1, quantity=1, unit_cost=Money(100), tax_amount=Money(-1)
+            )
+
+
+class TestElImpuestoTotal:
+    def test_suma_los_montos_y_no_aplica_una_tasa(self):
+        # Una factura con 13 % y 1 %: el promedio no es ninguno de los dos.
+        lineas = [
+            EntryLine(
+                product_id=1, quantity=1, unit_cost=Money(1000),
+                tax_rate=TaxRate.percent(13), tax_amount=Money(130),
+            ),
+            EntryLine(
+                product_id=2, quantity=1, unit_cost=Money(1000),
+                tax_rate=TaxRate.percent(1), tax_amount=Money(10),
+            ),
+        ]
+        assert entry_tax(lineas) == Money(140)
+
+    def test_sin_impuesto_da_cero(self):
+        assert entry_tax([linea(), linea()]).is_zero
 
 
 class TestOrigen:

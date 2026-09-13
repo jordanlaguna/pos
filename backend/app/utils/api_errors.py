@@ -172,6 +172,9 @@ CODES: frozenset[str] = frozenset(
         "last_admin",
         # ------------------------------------------------ compras (F10)
         "supplier_not_found",
+        # `name`: comprarle a un proveedor desactivado. No se reactiva solo;
+        # suele ser un proveedor mal elegido en la lista.
+        "supplier_inactive",
         # `identification` y `name`: la cédula repetida y de quién ya es. La
         # misma identificación es el mismo proveedor, y dos fichas del mismo
         # mayorista se reparten sus compras sin que ninguno de los dos saldos

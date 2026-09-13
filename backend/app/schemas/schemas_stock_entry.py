@@ -20,6 +20,11 @@ class EntryLineInput(BaseModel):
     new_product: NewProduct | None = None
     quantity: int
     unit_cost: float = 0
+    # El impuesto **del documento del proveedor** (RN-53, F10), en porcentaje:
+    # 13 y no 0,13, que es como lo dice la factura. En cero cuando la entrada no
+    # viene de una: el crédito fiscal es lo que se pagó, y sin factura no hay.
+    tax_rate: float = 0
+    tax_amount: float = 0
 
 
 class StockEntryCreate(BaseModel):
@@ -31,6 +36,19 @@ class StockEntryCreate(BaseModel):
     notes: str | None = None
     lines: list[EntryLineInput]
 
+    # ------------------------------------------------------- compra (F10)
+    #
+    # Sin `supplier_id` esto sigue siendo una entrada y nada de lo de abajo se
+    # usa (RN-52): no genera cuenta por pagar ni crédito fiscal.
+    supplier_id: int | None = None
+    document_key: str | None = None
+    document_date: datetime.date | None = None
+    # 'cash' | 'credit'
+    payment_terms: str = "cash"
+    # Los días de plazo. Sin ellos se usa el habitual del proveedor, que es lo
+    # que evita teclear «30» en cada factura del mismo mayorista.
+    payment_terms_days: int | None = None
+
 
 class EntryLineResponse(BaseModel):
     id_product: int
@@ -38,6 +56,9 @@ class EntryLineResponse(BaseModel):
     quantity: int
     unit_cost: float
     subtotal: float
+    #: En porcentaje, como lo dice el documento (RN-53).
+    tax_rate: float = 0
+    tax_amount: float = 0
 
 
 class StockEntryResponse(BaseModel):
@@ -53,6 +74,16 @@ class StockEntryResponse(BaseModel):
     total_cost: float
     items_count: int
     lines: list[EntryLineResponse] = []
+
+    # Lo que hace de esto una compra (F10). Todo en nulo o en cero es una
+    # entrada de las de siempre.
+    supplier_id: int | None = None
+    document_key: str | None = None
+    document_date: datetime.date | None = None
+    payment_terms: str = "cash"
+    due_date: datetime.date | None = None
+    subtotal: float = 0
+    tax: float = 0
 
     model_config = {"from_attributes": True}
 

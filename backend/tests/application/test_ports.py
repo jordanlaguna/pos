@@ -30,10 +30,14 @@ PUERTOS = [
             "get_by_barcode",
             "lock_for_sale",
             "adjust_stock",
+            # Desde F10: el promedio ponderado lo calcula el dominio y acá solo
+            # se guarda (RN-54).
+            "update_cost",
             "barcode_taken",
             "create",
         },
     ),
+    (repositories.SupplierRepository, {"get"}),
     (
         repositories.StockEntryRepository,
         {"get", "applied_with_document", "add", "lines_of", "mark_cancelled"},
@@ -62,6 +66,7 @@ PUERTOS = [
     (security.PasswordHasher, {"hash", "verify"}),
     (security.TokenIssuer, {"issue", "read"}),
     (repositories.ProductSnapshot, set()),
+    (repositories.SupplierSnapshot, set()),
 ]
 
 
@@ -96,6 +101,20 @@ def test_ProductSnapshot_dice_que_necesita_la_venta_de_un_producto():
         "stock",
         # Desde F5: la tarifa del producto, o `None` si usa la configurada.
         "tax_rate",
+        # Desde F10: lo que cuesta, que no es lo que vale. Cero es «no se sabe»
+        # —los productos que nunca se compraron— y la primera compra lo fija.
+        "cost",
+    }
+
+
+def test_SupplierSnapshot_dice_lo_justo_para_comprarle():
+    # Ni correo ni teléfono: para registrar una compra no hacen falta, y un
+    # puerto que pide de más ata la aplicación a datos que no usa.
+    assert set(get_type_hints(repositories.SupplierSnapshot)) == {
+        "id",
+        "name",
+        "is_active",
+        "payment_terms_days",
     }
 
 

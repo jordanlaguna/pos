@@ -9,7 +9,7 @@ circula ni un `float`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.models.model_stock_entry import StockEntry, StockEntryDetail
+from app.models.model_supplier import Supplier
 from app.utils.tenancy import sucursal_actual, terminal_actual
 
 
@@ -38,6 +39,9 @@ class ProductData:
     #: `None` es «la tasa configurada del negocio» (RN-9). Lo resuelve el caso de
     #: uso, no este adaptador: acá solo se transporta lo que dice la fila.
     tax_rate: TaxRate | None = None
+    #: Lo que cuesta (RN-54). Cero es «no se sabe»: los productos anteriores a
+    #: F10 y los que nunca se compraron. La primera compra lo establece.
+    cost: Money = Money.zero()
 
 
 def _a_producto(fila: Product) -> ProductData:
@@ -49,6 +53,7 @@ def _a_producto(fila: Product) -> ProductData:
         price=Money(fila.price) if fila.price is not None else None,
         stock=fila.stock,
         tax_rate=TaxRate(fila.tax_rate) if fila.tax_rate is not None else None,
+        cost=Money(fila.cost) if fila.cost is not None else Money.zero(),
     )
 
 
@@ -91,6 +96,11 @@ class SqlAlchemyProductRepository:
         if fila is not None:
             fila.stock += delta
 
+    def update_cost(self, product_id: int, cost: Money) -> None:
+        fila = self._db.query(Product).filter(Product.id_product == product_id).first()
+        if fila is not None:
+            fila.cost = cost.amount
+
     def barcode_taken(self, barcode: str) -> bool:
         return (
             self._db.query(Product).filter(Product.barcode == barcode).first() is not None
@@ -122,6 +132,32 @@ class SqlAlchemyProductRepository:
         return fila.id_product
 
 
+@dataclass(frozen=True)
+class SupplierData:
+    """Lo que la aplicación necesita de un proveedor para comprarle."""
+
+    id: int
+    name: str
+    is_active: bool
+    payment_terms_days: int
+
+
+class SqlAlchemySupplierRepository:
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def get(self, supplier_id: int) -> SupplierData | None:
+        fila = self._db.query(Supplier).filter(Supplier.id == supplier_id).first()
+        if fila is None:
+            return None
+        return SupplierData(
+            id=fila.id,
+            name=fila.name,
+            is_active=bool(fila.is_active),
+            payment_terms_days=fila.payment_terms_days or 0,
+        )
+
+
 class SqlAlchemyStockEntryRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
@@ -129,12 +165,20 @@ class SqlAlchemyStockEntryRepository:
     def get(self, entry_id: int) -> StockEntry | None:
         return self._db.query(StockEntry).filter(StockEntry.id == entry_id).first()
 
-    def applied_with_document(self, document_number: str) -> StockEntry | None:
+    def applied_with_document(
+        self, document_number: str, supplier_id: int | None = None
+    ) -> StockEntry | None:
         return (
             self._db.query(StockEntry)
             .filter(
                 StockEntry.document_number == document_number,
                 StockEntry.status == "aplicada",
+                # Por proveedor desde F10: la factura 1234 de un mayorista no es
+                # la 1234 de otro. `is_` y no `==` para que el caso sin
+                # proveedor compare contra los nulos y no contra nada.
+                StockEntry.supplier_id == supplier_id
+                if supplier_id is not None
+                else StockEntry.supplier_id.is_(None),
             )
             .first()
         )
@@ -150,6 +194,13 @@ class SqlAlchemyStockEntryRepository:
         total_cost: Money,
         created_at: datetime,
         lines: list,
+        supplier_id: int | None = None,
+        document_key: str | None = None,
+        document_date: date | None = None,
+        payment_terms: str = "cash",
+        due_date: date | None = None,
+        subtotal: Money | None = None,
+        tax: Money | None = None,
     ) -> int:
         entrada = StockEntry(
             # A qué sucursal entró. Sale del token, no del cuerpo de la
@@ -164,6 +215,15 @@ class SqlAlchemyStockEntryRepository:
             notes=notes,
             status="aplicada",
             total_cost=total_cost.amount,
+            supplier_id=supplier_id,
+            document_key=document_key,
+            document_date=document_date,
+            payment_terms=payment_terms,
+            due_date=due_date,
+            # Sin desglose —una entrada de las de siempre— el subtotal es el
+            # total y el impuesto cero: es lo que esa entrada fue.
+            subtotal=(subtotal or total_cost).amount,
+            tax=(tax or Money.zero()).amount,
         )
         self._db.add(entrada)
         self._db.flush()
@@ -176,6 +236,11 @@ class SqlAlchemyStockEntryRepository:
                     quantity=linea.quantity,
                     unit_cost=linea.unit_cost.amount,
                     subtotal=linea.subtotal.amount,
+                    # La tarifa se guarda en porcentaje —13.00 y no 0,13—
+                    # porque es como la dice el documento del proveedor y como
+                    # la va a leer quien concilie el D-104.
+                    tax_rate=linea.tax_rate.as_percent,
+                    tax_amount=linea.tax_amount.amount,
                 )
             )
         return entrada.id

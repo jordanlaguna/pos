@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from .errors import CannotCancel, InvalidQuantity, InvalidSource
 from .money import Money
+from .tax import TaxRate
 
 #: De dónde puede venir una entrada: cargada a mano, de una hoja de cálculo o
 #: del XML de una factura electrónica de Hacienda.
@@ -25,11 +26,19 @@ SOURCES = ("manual", "excel", "xml")
 
 @dataclass(frozen=True)
 class EntryLine:
-    """Un producto que entra, con su costo."""
+    """Un producto que entra, con su costo y —desde F10— su impuesto."""
 
     product_id: int
     quantity: int
     unit_cost: Money
+    #: La del **documento del proveedor** (RN-53), no la del producto: el
+    #: crédito fiscal es lo que se pagó, no lo que se habría cobrado. En cero
+    #: cuando la entrada no viene de una factura —a mano, o de un Excel—.
+    tax_rate: TaxRate = TaxRate.zero()
+    #: El monto tal como lo dice el documento. Se guarda aparte de la tarifa
+    #: porque el documento manda: si el emisor redondeó distinto, lo que se
+    #: acredita es su número y no el nuestro.
+    tax_amount: Money = Money.zero()
 
     def __post_init__(self) -> None:
         if isinstance(self.quantity, bool) or not isinstance(self.quantity, int):
@@ -38,6 +47,8 @@ class EntryLine:
             raise InvalidQuantity(self.quantity)
         if self.unit_cost.is_negative:
             raise InvalidQuantity(self.unit_cost)
+        if self.tax_amount.is_negative:
+            raise InvalidQuantity(self.tax_amount)
 
     @property
     def subtotal(self) -> Money:
@@ -52,6 +63,16 @@ def check_source(source: object) -> None:
 def entry_total(lines: list[EntryLine]) -> Money:
     """Costo total. Se redondea línea por línea, como en la venta."""
     return Money.sum(line.subtotal for line in lines)
+
+
+def entry_tax(lines: list[EntryLine]) -> Money:
+    """El impuesto total de la entrada: el crédito fiscal (RN-53).
+
+    Suma los montos del documento y **no** aplica una tasa al total, por lo
+    mismo que la venta (RN-10): una factura puede traer 13 %, 1 % y exento a la
+    vez, y el promedio no es ninguno de los tres.
+    """
+    return Money.sum(line.tax_amount for line in lines)
 
 
 def entry_units(lines: list[EntryLine]) -> int:

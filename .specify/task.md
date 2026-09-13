@@ -2665,21 +2665,59 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       nuevos salen en su valor de reposo. El lector aprendió a leer más, no a
       leer distinto.
 
-- [ ] **T-1009** `RegisterPurchase`: aplica el stock como hoy, actualiza
-      `products.cost` con el promedio, calcula `due_date` desde la condición,
-      y de contado registra el abono por el total en el mismo acto. La factura
-      duplicada pasa a ser **por proveedor** (`duplicate_supplier_document`).
-      RN-52, RN-54, RN-57.
+- [x] **T-1009** `RegisterPurchase`: aplica el stock como hoy, actualiza
+      `products.cost` con el promedio, calcula `due_date` desde la condición.
+      La factura duplicada pasa a ser **por proveedor**. RN-52, RN-54, RN-57.
 
-      **Verificación:** compra a crédito de 10 u a 120 sobre 10 u a 100 deja
-      `products.cost` en 110, el saldo igual al total y `due_date` = fecha +
-      plazo; repetir el mismo documento del mismo proveedor responde el
-      código; el mismo número de **otro** proveedor entra.
+      **Hecho el 2026-09-12.** No hay clase `RegisterPurchase`: una compra **es**
+      una entrada con proveedor, así que se extendió `RegisterStockEntry`
+      (plan §12.1). El puerto `suppliers` es opcional, y por eso las pruebas de
+      lo que ya existía no tuvieron que aprender nada nuevo.
+
+      Tres cosas que aparecieron al escribirlo:
+
+      1. **El costo y el stock van en el mismo paso, por línea.** Si un
+         producto aparece dos veces en la misma factura, el segundo promedio
+         tiene que ver las existencias que dejó el primero; calculándolos en
+         dos vueltas, los dos promediarían contra la existencia original. Hay
+         una prueba con ese caso: 10 a 100 + 10 a 120 → 110, después + 20 a
+         140 → 125.
+      2. **El vencimiento se cuenta desde la fecha del documento**, no desde la
+         de carga. Una factura del 28 que se digita el 3 vence a los 30 días
+         del 28; contar desde la captura le regala al negocio los días que
+         tardó en digitarla.
+      3. **Un crédito a cero días es contado.** Una deuda que vence el mismo
+         día no es una deuda, y dejarla como crédito abriría una cuenta por
+         pagar que nace saldada.
+
+      El código duplicado se sigue llamando `duplicate_document` —el que ya
+      existía— y lo que cambió es con qué se compara: ahora lleva el
+      proveedor. `duplicate_supplier_document` no hizo falta.
+
+      **Lo que no entró:** el abono automático de una compra de contado. Es de
+      T-1010, donde vive `PaySupplier`: escribirlo acá sería tener la regla del
+      efectivo (RN-56) en dos sitios. Hasta entonces, una compra de contado
+      queda con saldo.
+
+      **Verificación:** `tests/application/test_compra.py`, 22 pruebas sin base,
+      y cinco de dominio nuevas para el impuesto de la línea. 904 del backend
+      en verde con cobertura 100 %.
+
+      De paso se quitó una rama muerta: el `if producto is not None` antes de
+      actualizar el costo no lo puede alcanzar ninguna prueba —el producto o se
+      validó arriba o se acaba de crear—, y la cobertura al 100 % lo señaló.
 
 - [ ] **T-1010** `PaySupplier`: comprueba el saldo (`payment_exceeds_balance`);
       en efectivo exige turno abierto en la terminal de la sesión
       (`cash_session_required`) y escribe el `cash_movements` de salida
       **antes** de guardar el abono. RN-55, RN-56, RF-44.
+
+      **Incluye el abono automático de una compra de contado**, que T-1009 dejó
+      pendiente a propósito: la regla del efectivo vive acá y escribirla dos
+      veces es como se separan. Ojo con el orden que impone RN-56: una compra
+      de contado pagada **en efectivo** va a necesitar turno abierto, y una
+      pagada por transferencia no —el administrador que registra facturas en la
+      oficina no tiene por qué tener caja—.
 
       **Verificación:** abono en efectivo con caja abierta → el efectivo
       esperado del arqueo baja exactamente ese monto; sin caja → código; abono

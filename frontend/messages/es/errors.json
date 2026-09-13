@@ -198,6 +198,7 @@
 	"api_client_identification_taken": "Ya hay un cliente con esa identificación.",
 	"api_client_not_found": "No encontramos ese cliente.",
 	"api_supplier_not_found": "No encontramos ese proveedor.",
+	"api_supplier_inactive": "{name} está desactivado. Actívelo antes de comprarle, o elija otro proveedor.",
 	"api_supplier_identification_taken": "{identification} ya es de {name}. La misma identificación es el mismo proveedor.",
 	"api_invalid_identification_type": "«{identification_type}» no es un tipo de identificación de Hacienda.",
 	"api_identification_required": "Indique el número de identificación, o deje el tipo en blanco.",
