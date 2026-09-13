@@ -24,6 +24,7 @@
 			"./messages/{locale}/returns.json",
 			"./messages/{locale}/inventory.json",
 			"./messages/{locale}/entries.json",
+			"./messages/{locale}/purchases.json",
 			"./messages/{locale}/people.json",
 			"./messages/{locale}/reports.json",
 			"./messages/{locale}/invoices.json",

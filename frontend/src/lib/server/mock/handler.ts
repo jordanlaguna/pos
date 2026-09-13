@@ -1726,6 +1726,148 @@ function abonar(
 	return id;
 }
 
+// --------------------------------------- abonos y cuentas por pagar (F10)
+
+route('POST', '/purchases/:id/payments', ({ params, body, companyId, userId }) => {
+	const db = getDb(companyId);
+	const compra = db.stock_entries.find((e) => e.id === Number(params[0]));
+	// Una entrada sin proveedor no genera cuenta por pagar (RN-52), así que
+	// desde cuentas por pagar no existe: el mismo criterio del backend.
+	if (!compra || compra.supplier_id == null) fail(404, 'entry_not_found');
+	if (compra.status === 'anulada') fail(400, 'purchase_cancelled');
+
+	const monto = round2(Number(body?.amount ?? 0));
+	const saldo = round2(compra.total_cost - abonadoA(companyId, compra.id));
+	// Se comprueba antes de tocar la gaveta: un abono que no cabe no puede
+	// dejar una salida de caja escrita (RN-55).
+	if (monto > saldo)
+		fail(400, 'payment_exceeds_balance', {
+			balance: saldo.toFixed(2),
+			requested: monto.toFixed(2)
+		});
+
+	const id = abonar(companyId, {
+		entryId: compra.id,
+		supplierId: compra.supplier_id,
+		amount: monto,
+		method: String(body?.method ?? ''),
+		reference: String(body?.reference ?? '').trim() || null,
+		reason: String(body?.reason ?? ''),
+		userId: Number(userId ?? 0)
+	});
+	const abono = db.supplier_payments.find((a) => a.id === id)!;
+	persist();
+
+	return {
+		message: 'payment_registered',
+		id_payment: id,
+		balance: round2(saldo - monto),
+		cash_movement_id: abono.cash_movement_id
+	};
+});
+
+route('GET', '/payables', ({ query, companyId }) => {
+	const db = getDb(companyId);
+	const filtro = Number(query.get('supplier_id') ?? 0) || null;
+	const hoy = nowIso().slice(0, 10);
+
+	const tramos = [0, 30, 60, 90];
+	const porTramo = new Map(tramos.map((t) => [t, 0]));
+	const porProveedor = new Map<number, { supplier_id: number; name: string; balance: number; purchases: unknown[] }>();
+	let total = 0;
+
+	const compras = db.stock_entries
+		// Solo compras aplicadas: anular revierte la cuenta por pagar (RN-57) y
+		// una entrada sin proveedor no debe nada (RN-52).
+		.filter((e) => e.supplier_id != null && e.status === 'aplicada')
+		.filter((e) => !filtro || e.supplier_id === filtro)
+		.sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999') || a.id - b.id);
+
+	for (const compra of compras) {
+		const pagado = abonadoA(companyId, compra.id);
+		const saldo = round2(Math.max(0, compra.total_cost - pagado));
+		// Una pagada ya no es una cuenta por pagar.
+		if (saldo <= 0) continue;
+
+		const proveedor = (db.suppliers ?? []).find((p) => p.id === compra.supplier_id);
+		const tramo = tramoDe(compra.due_date ?? null, hoy);
+		const bloque = porProveedor.get(compra.supplier_id!) ?? {
+			supplier_id: compra.supplier_id!,
+			name: proveedor?.name ?? compra.supplier ?? '',
+			balance: 0,
+			purchases: []
+		};
+		bloque.purchases.push({
+			entry_id: compra.id,
+			document_number: compra.document_number,
+			document_date: compra.document_date ?? null,
+			due_date: compra.due_date ?? null,
+			total: compra.total_cost,
+			paid: pagado,
+			balance: saldo,
+			bucket: tramo,
+			days_overdue: compra.due_date ? diasEntre(compra.due_date, hoy) : null
+		});
+		bloque.balance = round2(bloque.balance + saldo);
+		porProveedor.set(compra.supplier_id!, bloque);
+		porTramo.set(tramo, round2((porTramo.get(tramo) ?? 0) + saldo));
+		total = round2(total + saldo);
+	}
+
+	return {
+		as_of: hoy,
+		total,
+		// Los cuatro siempre: una tabla que cambia de columnas según los datos se
+		// lee distinto cada vez.
+		by_bucket: tramos.map((t) => ({ bucket: t, balance: porTramo.get(t) ?? 0 })),
+		suppliers: [...porProveedor.values()].sort((a, b) => b.balance - a.balance)
+	};
+});
+
+route('GET', '/reports/purchases', ({ query, companyId }) => {
+	const db = getDb(companyId);
+	const { from, to } = parseRange(query);
+
+	const porTarifa = new Map<number, { tax_rate: number; base: number; tax: number }>();
+	for (const compra of db.stock_entries) {
+		if (compra.supplier_id == null || compra.status !== 'aplicada') continue;
+		// Por la fecha DEL DOCUMENTO: una factura del 28 digitada el 3 es IVA del
+		// mes de la factura. La de carga es el respaldo cuando no la trae.
+		const dia = (compra.document_date ?? compra.created_at).slice(0, 10);
+		if (dia < from || dia > to) continue;
+
+		for (const linea of compra.lines) {
+			const tarifa = round2(Number(linea.tax_rate ?? 0));
+			const fila = porTarifa.get(tarifa) ?? { tax_rate: tarifa, base: 0, tax: 0 };
+			fila.base = round2(fila.base + linea.subtotal);
+			fila.tax = round2(fila.tax + Number(linea.tax_amount ?? 0));
+			porTarifa.set(tarifa, fila);
+		}
+	}
+
+	const byRate = [...porTarifa.values()].sort((a, b) => a.tax_rate - b.tax_rate);
+	const subtotal = round2(byRate.reduce((s, r) => s + r.base, 0));
+	const tax = round2(byRate.reduce((s, r) => s + r.tax, 0));
+
+	return { date_from: from, date_to: to, subtotal, tax, total: round2(subtotal + tax), by_rate: byRate };
+});
+
+/** El piso del tramo de antigüedad en días: 0, 30, 60 o 90 (RF-44). */
+function tramoDe(dueDate: string | null, hoy: string): number {
+	// Sin vencimiento cae en el primero: lo caro sería marcar de morosa una
+	// compra de contado que nunca tuvo fecha.
+	if (!dueDate) return 0;
+	const dias = diasEntre(dueDate, hoy);
+	for (const tramo of [90, 60, 30]) if (dias > tramo) return tramo;
+	return 0;
+}
+
+function diasEntre(desde: string, hasta: string): number {
+	const a = new Date(`${desde}T00:00:00`).getTime();
+	const b = new Date(`${hasta}T00:00:00`).getTime();
+	return Math.round((b - a) / 86_400_000);
+}
+
 // -------------------------------------------- entradas de inventario
 
 route('GET', '/inventory/entries', ({ companyId }) =>

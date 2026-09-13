@@ -1,19 +1,17 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-
 	"nav_group_operations": "Operación",
 	"nav_group_admin": "Administración",
-
 	"nav_sales": "Ventas",
 	"nav_cash": "Caja",
 	"nav_invoices": "Facturas",
 	"nav_returns": "Devoluciones",
 	"nav_reports": "Reportes",
 	"nav_inventory": "Inventario",
+	"nav_purchases": "Compras",
 	"nav_clients": "Clientes",
 	"nav_users": "Usuarios",
 	"nav_settings": "Configuración",
-
 	"nav_main": "Navegación principal",
 	"nav_tagline": "Punto de venta",
 	"nav_open_menu": "Abrir menú",
@@ -21,21 +19,17 @@
 	"nav_expand_menu": "Expandir menú",
 	"nav_collapse_menu": "Colapsar menú",
 	"nav_locked": "{section}: solo para administradores. Pídale a un administrador que le cambie el rol.",
-
 	"nav_company": "Compañía",
 	"nav_branch_terminal": "Sucursal {branch} · Caja {terminal}",
 	"nav_switch_company": "Cambiar de compañía",
 	"nav_logout": "Cerrar sesión",
-
 	"nav_demo": "Demo",
 	"nav_demo_hint": "El backend real no está conectado; se están usando datos de ejemplo.",
 	"nav_toggle_theme": "Cambiar entre tema claro y oscuro",
-
 	"nav_toggle_theme_short": "Cambiar tema",
 	"nav_language": "Idioma",
 	"nav_language_auto": "El de la compañía",
 	"nav_language_apply": "Cambiar el idioma",
-
 	"role_admin": "Administrador",
 	"role_cashier": "Cajero",
 	"$comentario_rol": "Los rótulos en minúscula son para cuando el rol va dentro de una frase: «le proponen entrar como cajero». En inglés no hay diferencia; en español y portugués sí.",

@@ -56,7 +56,11 @@
 		image: 'M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2ZM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM21 15l-5-5L5 21',
 		palette:
 			'M12 2a10 10 0 1 0 0 20c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1-.24-.27-.39-.62-.39-1 0-.83.67-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.42-4.03-8-9-8ZM6.5 12a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM9.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM14.5 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM17.5 12a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z',
-		bolt: 'M13 2 3 14h9l-1 8 10-12h-9l1-8Z'
+		bolt: 'M13 2 3 14h9l-1 8 10-12h-9l1-8Z',
+		// Compras (F10). El camión es lo que distingue «lo que entra» de `box`,
+		// que ya es el inventario: una compra es mercadería en camino, no en
+		// estante.
+		truck: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8ZM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z'
 	} as const;
 
 	export type IconName = keyof typeof ICONS;

@@ -2927,33 +2927,51 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       **Un defecto que no era de F10 y que esto destapó:** una fecha sin hora se
       mostraba **un día antes**. Está anotado aparte.
 
-- [ ] **T-1014** `/compras/proveedores` y `/compras/cuentas-por-pagar`: saldos,
+- [x] **T-1014** `/compras/proveedores` y `/compras/cuentas-por-pagar`: saldos,
       antigüedad y abonar con método y referencia. RF-41, RF-44.
 
-      **Verificación:** punta a punta: abonar en efectivo con la caja abierta y
-      ver el movimiento de salida en `/caja` con el motivo armado.
+      **Verificación:** `tests/e2e/compras.spec.ts`, una prueba que abre la
+      caja, abona 1 200 en efectivo a una factura de 2 000 y comprueba las tres
+      cosas a la vez: el saldo baja a 800, el «debe haber en caja» del arqueo
+      baja exactamente 1 200, y el movimiento lleva el motivo que armó la
+      pantalla. 52 de punta a punta en verde, 574 del POS, 982 del backend,
+      `npm run check` 0/0.
 
-- [ ] **T-1015** Lo que queda del simulado y el catálogo de pantalla:
-      `POST /purchases/{id}/payments`, `GET /payables` y
-      `GET /reports/purchases` con contrato idéntico, y
-      `messages/es/purchases.json` **declarado en
-      `project.inlang/settings.json`**.
+      Cuatro cosas que decidió el código:
 
-      **Buena parte ya está hecha.** Los códigos entraron con T-1002, T-1007 y
-      T-1010 —`messages.test.ts` compara las dos listas y diferirlos tumba
-      `npm test`—, y con T-1013 entraron los proveedores, los campos de compra
-      en la entrada, el costo promedio, el abono automático con su salida de
-      caja y la anulación con motivo: sin eso no había cómo verificar la
-      pantalla. `SEED_VERSION` ya está en 9.
+      1. **«Compras» es la primera entrada del menú atada a un módulo** (RN-49).
+         Con el plan sin él se ve con candado y no desaparece, que es lo que
+         `visibleGroups` ya hacía para los roles: un «Compras 🔒» es lo único
+         que le dice al dueño que el producto lo tiene.
+      2. **`/compras` redirige a cuentas por pagar**, no a proveedores: lo que
+         se mira todos los días es a quién hay que pagarle; dar de alta un
+         proveedor pasa una vez al mes.
+      3. **El motivo del movimiento de caja lo arma la pantalla** y viaja en
+         `reason` (RN-30), cerrando lo que T-1010 dejó preparado.
+      4. **`/payables` se lee con `apiSafe`**: leer no exige el módulo (RN-50),
+         pero un backend sin F10 no tiene la ruta y la pantalla tiene que abrir
+         igual, con los cuatro tramos en cero.
 
-      Lo que falta copiar del backend, y que no es obvio: que un abono en
-      efectivo baje el esperado del turno, que `/payables` deje fuera lo pagado
-      y lo anulado, y que el reporte agrupe por la **fecha del documento**.
-      El ayudante `abonar()` del simulado ya hace lo primero; falta exponerlo
-      como endpoint.
+      Entró también el catálogo `messages/*/purchases.json` —77 claves en los
+      tres idiomas, declarado en `project.inlang/settings.json`— y los tres
+      endpoints que le faltaban al simulado, que eran lo último de T-1015.
 
-      **Verificación:** `npm test` (`loose-text`, `catalogs` y
-      `messages.test.ts` comparan las listas de códigos); `npm run check` en
+- [x] **T-1015** Simulado y catálogos. **Se hizo repartida entre las tareas que
+      la necesitaban**, y esa es la lección: el simulado no es un paso al final
+      sino la condición para verificar cada pantalla.
+
+      - Los **códigos** en sus cuatro lugares: con T-1002, T-1007 y T-1010.
+        Siempre por lo mismo —`messages.test.ts` compara las dos listas de
+        códigos y diferirlos tumba `npm test`—.
+      - **Proveedores, campos de compra, costo promedio, abono automático y
+        anulación con motivo**: con T-1013, sin lo cual la pantalla de entradas
+        no se podía verificar. `SEED_VERSION` a 9.
+      - **`POST /purchases/{id}/payments`, `GET /payables` y
+        `GET /reports/purchases`**, y el catálogo `purchases.json` declarado en
+        `project.inlang/settings.json`: con T-1014.
+
+      **Verificación:** las 52 de punta a punta pasan contra el simulado, que es
+      la prueba de que el contrato coincide; `npm test` y `npm run check` en
       0/0.
 
 ### Verificación — sin esto la fase no está terminada

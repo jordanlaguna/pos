@@ -52,6 +52,16 @@ export function nav(): NavGroup[] {
 			items: [
 				{ href: '/dashboard', label: m.nav_reports(), icon: 'chart', roles: ['admin'] },
 				{ href: '/inventario', label: m.nav_inventory(), icon: 'box', roles: ['admin'] },
+				{
+					// Primera sección atada a un módulo del plan (RN-49). Con el
+					// módulo apagado se ve con candado y no desaparece: es lo único
+					// que le dice al dueño que el producto tiene compras.
+					href: '/compras',
+					label: m.nav_purchases(),
+					icon: 'truck',
+					roles: ['admin'],
+					module: 'purchases'
+				},
 				{ href: '/clientes', label: m.nav_clients(), icon: 'users' },
 				{ href: '/usuarios', label: m.nav_users(), icon: 'user', roles: ['admin'] },
 				{

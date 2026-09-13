@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { entrar } from './sesion';
+import { clicHasta, entrar } from './sesion';
 
 /**
  * Registrar una compra y anularla, de punta a punta (T-1013, F10).
@@ -17,6 +17,20 @@ import { entrar } from './sesion';
 /** Un número distinto en cada corrida: el simulado guarda su estado en disco. */
 function documento(): string {
 	return `FC-${`${Date.now()}`.slice(-9)}`;
+}
+
+/**
+ * El efectivo que el arqueo dice que tiene que haber en la gaveta.
+ *
+ * Se lee de la tarjeta destacada de `/caja` —la única con el borde de acento— y
+ * se devuelve como número, para poder restar. El formato es `₡50.000,00`.
+ */
+async function montoEsperado(page: Page): Promise<number> {
+	const tarjeta = page.locator('div.card').filter({ hasText: /debe haber en caja/i }).first();
+	const texto = await tarjeta.innerText();
+	// `₡50.000,00` en español: el punto separa miles y la coma los decimales.
+	const monto = texto.match(/[\d.]+,\d{2}/)?.[0] ?? '0';
+	return Number(monto.replace(/\./g, '').replace(',', '.'));
 }
 
 /** Deja una línea de arroz en la vista previa, con su cantidad y su costo. */
@@ -92,6 +106,59 @@ test.describe('Compras', () => {
 		await page.getByRole('button', { name: /anular/i }).last().click();
 
 		await expect(fila).toContainText(/anulada/i);
+	});
+
+	test('un abono en efectivo sale de la caja y se ve en el arqueo', async ({ page }) => {
+		/*
+		 * La verificación de T-1014, y la que de verdad importa de RN-56: si la
+		 * gaveta y el abono no fueran la misma plata, el esperado del turno no se
+		 * movería y el arqueo cerraría con un sobrante igual a lo que se pagó.
+		 */
+		await entrar(page);
+
+		// Una compra a crédito, para que quede saldo que abonar.
+		await page.goto('/inventario/entradas/nueva');
+		await agregarArroz(page, '4', '500');
+		await page.locator('#proveedor').selectOption({ label: 'Mayorista del Este' });
+		const numero = documento();
+		await page.locator('input[name="document_number"]').fill(numero);
+		await page.locator('#condicion').selectOption('credit');
+		await page.locator('input[name="payment_terms_days"]').fill('30');
+		await page.getByRole('button', { name: /ingresar|registrar/i }).last().click();
+		await expect(page).toHaveURL(/\/inventario\/entradas\?creada=/);
+
+		// La caja abierta, que es lo que RN-56 exige para pagar en efectivo. El
+		// botón abre un modal, así que hay que esperar a que hidrate.
+		await page.goto('/caja');
+		const abrir = page.getByRole('button', { name: /^abrir caja$/i }).first();
+		if (await abrir.isVisible().catch(() => false)) {
+			const apertura = page.locator('input[name="opening_amount"]');
+			await clicHasta(abrir, () => expect(apertura).toBeVisible({ timeout: 1000 }));
+			await apertura.fill('50000');
+			// El formulario de /caja se llama `open-form`; el de la pantalla de
+			// ventas es otro. Son dos modales distintos para lo mismo.
+			await page.locator('button[type="submit"][form="open-form"]').click();
+		}
+		const esperadoAntes = await montoEsperado(page);
+
+		await page.goto('/compras/cuentas-por-pagar');
+		const fila = page.getByRole('row', { name: new RegExp(numero) });
+		await expect(fila).toContainText('2.000,00');
+		await clicHasta(fila.getByRole('button', { name: /abonar|pagar/i }), () =>
+			expect(page.locator('#metodo-abono')).toBeVisible()
+		);
+
+		await page.locator('input[name="amount"]').fill('1200');
+		await page.locator('#metodo-abono').selectOption('cash');
+		await page.getByRole('button', { name: /registrar abono/i }).click();
+
+		// El saldo baja a 800 y la gaveta baja 1200.
+		await expect(page.getByRole('row', { name: new RegExp(numero) })).toContainText('800,00');
+
+		await page.goto('/caja');
+		expect(await montoEsperado(page)).toBe(esperadoAntes - 1200);
+		// Y con su motivo, armado por la pantalla y no por el backend (RN-30).
+		await expect(page.locator('body')).toContainText(/Pago a Mayorista del Este/i);
 	});
 
 	test('el XML trae al proveedor, y si no existe lo marca como nuevo', async ({ page }) => {

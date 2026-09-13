@@ -1,19 +1,17 @@
 {
 	"$schema": "https://inlang.com/schema/inlang-message-format",
-
 	"nav_group_operations": "Operations",
 	"nav_group_admin": "Administration",
-
 	"nav_sales": "Sales",
 	"nav_cash": "Cash register",
 	"nav_invoices": "Invoices",
 	"nav_returns": "Returns",
 	"nav_reports": "Reports",
 	"nav_inventory": "Inventory",
+	"nav_purchases": "Purchasing",
 	"nav_clients": "Customers",
 	"nav_users": "Users",
 	"nav_settings": "Settings",
-
 	"nav_main": "Main navigation",
 	"nav_tagline": "Point of sale",
 	"nav_open_menu": "Open menu",
@@ -21,21 +19,17 @@
 	"nav_expand_menu": "Expand menu",
 	"nav_collapse_menu": "Collapse menu",
 	"nav_locked": "{section}: administrators only. Ask an administrator to change your role.",
-
 	"nav_company": "Company",
 	"nav_branch_terminal": "Branch {branch} · Register {terminal}",
 	"nav_switch_company": "Switch company",
 	"nav_logout": "Sign out",
-
 	"nav_demo": "Demo",
 	"nav_demo_hint": "The real backend is not connected; sample data is in use.",
 	"nav_toggle_theme": "Switch between light and dark theme",
-
 	"nav_toggle_theme_short": "Switch theme",
 	"nav_language": "Language",
 	"nav_language_auto": "The company's",
 	"nav_language_apply": "Change the language",
-
 	"role_admin": "Administrator",
 	"role_cashier": "Cashier",
 	"$comentario_rol": "In English the lower-case labels are the same words as the capitalized ones; they exist because Spanish and Portuguese need them inside a sentence.",

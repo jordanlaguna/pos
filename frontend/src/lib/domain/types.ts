@@ -614,6 +614,47 @@ export interface Supplier {
 	is_active: boolean;
 }
 
+/**
+ * Lo que se le debe a los proveedores hoy (F10, RF-44).
+ *
+ * **El saldo no se guarda en ninguna parte**: el de una compra es su total
+ * menos sus abonos y el de un proveedor es la suma de los de sus compras
+ * (RN-55). Todo esto lo calcula el servidor al preguntarlo.
+ */
+export interface PayablePurchase {
+	entry_id: number;
+	document_number: string | null;
+	document_date: string | null;
+	due_date: string | null;
+	total: number;
+	paid: number;
+	balance: number;
+	/**
+	 * El piso del tramo de antigüedad **en días**: 0, 30, 60 o 90.
+	 *
+	 * Un número y no una etiqueta, porque la frase la arma el POS (RN-30).
+	 */
+	bucket: number;
+	/** Negativo mientras no venza. `null` si no vence. */
+	days_overdue: number | null;
+}
+
+export interface PayableSupplier {
+	supplier_id: number;
+	name: string;
+	balance: number;
+	purchases: PayablePurchase[];
+}
+
+export interface Payables {
+	/** Contra qué día se calculó la antigüedad. La pone el servidor. */
+	as_of: string;
+	total: number;
+	/** Los cuatro tramos, siempre los cuatro aunque vayan en cero. */
+	by_bucket: { bucket: number; balance: number }[];
+	suppliers: PayableSupplier[];
+}
+
 /** Producto del catálogo con el que se emparejó una línea del archivo. */
 export interface MatchedProduct {
 	id_product: number;
