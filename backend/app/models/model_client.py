@@ -9,6 +9,11 @@ class Client(TenantMixin, Base):
 
     id_client = Column(Integer, primary_key=True, index=True)
     identification = Column(String(100), nullable=False)
+    # El tipo que el XML exige para el receptor (F6, T-617): '01' física, '02'
+    # jurídica, '03' DIMEX, '04' NITE. Estaba en spec §5.4 desde el principio y
+    # nunca tuvo columna. NULL es «no se sabe», que es lo que queda cuando la
+    # longitud de la cédula no alcanza para deducirlo.
+    identification_type = Column(String(2), nullable=True)
     name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     second_name = Column(String(100), nullable=False)

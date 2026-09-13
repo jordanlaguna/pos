@@ -97,6 +97,15 @@ class Company(Base):
     compania = Column(Integer, nullable=False)
     nombre = Column(String(160), nullable=False)
     identificacion = Column(String(30), nullable=True)
+    # El tipo de identificación de Hacienda: '01' física, '02' jurídica, '03'
+    # DIMEX, '04' NITE (F6, RN-45). En inglés y al lado de `identificacion` en
+    # español, que es la mezcla que T-916 describe y todavía no resuelve.
+    #
+    # Vive acá y no en la configuración del negocio porque el `.p12` se emite
+    # **a esa identificación** y el usuario de ATV la lleva dentro del nombre:
+    # un campo que el negocio pueda editar deja que discrepe de su propio
+    # certificado, y ahí no se rechaza un comprobante, se rechazan todos.
+    identification_type = Column(String(2), nullable=True)
     plan_id = Column(Integer, ForeignKey("plans.id"), nullable=False)
     # 'prueba' | 'activa' | 'vencida' | 'suspendida' | 'cancelada' (spec §2)
     estado = Column(

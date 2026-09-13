@@ -60,6 +60,7 @@ import app.models.model_cash  # noqa: F401
 import app.models.model_categories  # noqa: F401
 import app.models.model_client  # noqa: F401
 import app.models.model_company  # noqa: F401
+import app.models.model_fe  # noqa: F401
 import app.models.model_person  # noqa: F401
 import app.models.model_product  # noqa: F401
 import app.models.model_return  # noqa: F401
@@ -107,9 +108,35 @@ TABLAS_DE_COMPANIA = [
     "accounting_periods",
     "journal_entries",
     "journal_lines",
+    # Factura electrónica (F6). Van después de `terminals`, que es a quien
+    # apunta el contador del consecutivo. De `fe_credentials` viaja una parte y
+    # no toda: ver SECRETOS_QUE_NO_VIAJAN.
+    "fe_credentials",
+    "fe_sequences",
     "settings",
     "audit_log",
 ]
+
+#: Columnas que existen, se respaldan mal y no se respaldan (RN-47, T-601).
+#:
+#: La clasificación de `company_dump.py` era por TABLA, y con `fe_credentials`
+#: eso no alcanza: adentro conviven lo que puede volver solo —el certificado
+#: público, el usuario de ATV, las fechas— y un secreto que no debe viajar.
+#: Clasificar la tabla entera en un lado o en el otro es justo lo que la
+#: decisión descarta: afuera, restaurar deja al cliente sin saber qué le falta;
+#: adentro, el respaldo se lleva una contraseña.
+#:
+#: Es **una sola** columna y no tres porque la llave privada se fue a Vault: el
+#: `.p12` y el PIN ya no están en la base, así que el volcado no puede
+#: llevárselos aunque alguien los clasificara mal. Es la diferencia entre una
+#: regla y una imposibilidad.
+#:
+#: El motivo de descartar la contraseña no es que la llave viaje —no viaja—
+#: sino que en otra instalación, con otra `FE_CRYPTO_KEY`, es un valor
+#: indescifrable que nadie distingue de uno bueno hasta el día de transmitir.
+SECRETOS_QUE_NO_VIAJAN = {
+    ("fe_credentials", "atv_password_encrypted"),
+}
 
 #: Identidad: global, compartida, y por eso no se borra con la compañía. Se
 #: exporta para poder recrearla si hiciera falta al restaurar.
@@ -153,13 +180,22 @@ def _deserializar(valor: Any) -> Any:
 def _columnas(tabla) -> list:
     """Las columnas que se respaldan: las que guardan un dato propio.
 
-    Las generadas quedan fuera —`categories.parent_key` es la primera (F4)— y no
-    por ahorrar espacio: MySQL **rechaza** un INSERT que le dé valor a una
-    columna generada, así que exportarlas hace que la restauración falle. Y
-    tiene sentido: son un derivado de otra columna de la misma fila, y
-    restaurarlas sería restaurar dos veces el mismo dato.
+    Quedan fuera dos clases, por razones distintas:
+
+    * **Las generadas** —`categories.parent_key` es la primera (F4)—, y no por
+      ahorrar espacio: MySQL **rechaza** un INSERT que le dé valor a una columna
+      generada, así que exportarlas hace que la restauración falle. Y tiene
+      sentido: son un derivado de otra columna de la misma fila.
+    * **Los secretos** de `SECRETOS_QUE_NO_VIAJAN` (F6). Acá no hay
+      impedimento técnico: es una decisión, y la fila se restaura con esa
+      columna en NULL para que la pantalla pueda decir qué falta cargar.
     """
-    return [columna for columna in tabla.c if columna.computed is None]
+    return [
+        columna
+        for columna in tabla.c
+        if columna.computed is None
+        and (tabla.name, columna.name) not in SECRETOS_QUE_NO_VIAJAN
+    ]
 
 
 def _filas(conexion, tabla, condicion=None) -> list[dict]:

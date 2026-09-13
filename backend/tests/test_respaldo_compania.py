@@ -276,3 +276,58 @@ class TestCoberturaDelRespaldo:
         """
         salida = herramienta("exportar", "--afiliado", "3", "--compania", "1", "--salida", ARCHIVO)
         assert "Compañía" in salida
+
+
+class TestLoQueNoViajaEnElRespaldo:
+    """La clasificación por COLUMNA, que es lo que F6 le enseñó al guardián.
+
+    `fe_credentials` no se puede clasificar entera en un lado ni en el otro:
+    adentro conviven lo que puede volver solo —el certificado público, el
+    usuario de ATV, las fechas— y un secreto que no debe viajar. Afuera,
+    restaurar deja al cliente sin saber qué le falta; adentro, el respaldo se
+    lleva una contraseña (RN-47, T-601).
+    """
+
+    def test_la_contrasena_de_ATV_no_se_exporta(self):
+        from company_dump import _columnas
+        from app.database.database import Base
+
+        columnas = {c.name for c in _columnas(Base.metadata.tables["fe_credentials"])}
+        assert "atv_password_encrypted" not in columnas, (
+            "la contraseña de ATV viaja en el respaldo. En otra instalación, con "
+            "otra FE_CRYPTO_KEY, es un valor indescifrable que nadie distingue de "
+            "uno bueno hasta el día de transmitir."
+        )
+
+    def test_pero_lo_que_puede_volver_solo_sí_viaja(self):
+        # La otra mitad de la decisión, y la que hace que no se pueda clasificar
+        # la tabla entera afuera: sin esto, restaurar deja a la compañía sin
+        # saber siquiera qué ambiente tenía configurado.
+        from company_dump import _columnas
+        from app.database.database import Base
+
+        columnas = {c.name for c in _columnas(Base.metadata.tables["fe_credentials"])}
+        assert {
+            "environment",
+            "certificate_pem",
+            "certificate_name",
+            "expires_at",
+            "atv_user",
+            "key_custody",
+        } <= columnas
+
+    def test_el_p12_y_el_PIN_no_son_una_decisión_sino_una_imposibilidad(self):
+        """No están en la base, así que el volcado no puede llevárselos.
+
+        Es la diferencia entre una regla —que alguien puede cambiar sin
+        pensarlo— y un hecho del esquema. Lo dio gratis llevar la llave privada
+        a Vault (plan §7.1, 2026-09-13).
+        """
+        from app.database.database import Base
+
+        todas = set(Base.metadata.tables["fe_credentials"].c.keys())
+        assert not (todas & {"p12_encrypted", "pin_encrypted"}), (
+            "volvió una columna para el .p12 o el PIN: con la llave en Vault no "
+            "hay nada que guardar, y guardarlo sería tener dos copias de un "
+            "secreto con una de ellas olvidable"
+        )

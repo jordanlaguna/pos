@@ -26,6 +26,7 @@ from app.models.model_company import (  # noqa: F401
 from app.models.model_cabys import CabysCache  # noqa: F401
 from app.models.model_categories import Category  # noqa: F401
 from app.models.model_client import Client  # noqa: F401
+from app.models.model_fe import FeCredentials, FeSequence  # noqa: F401
 from app.models.model_person import Person  # noqa: F401
 from app.models.model_product import Product  # noqa: F401
 from app.models.model_return import Return, ReturnDetail  # noqa: F401
