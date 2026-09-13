@@ -1684,6 +1684,19 @@ duplicada que ya existe (índice `idx_stock_entries_document`) pasa a ser por
 proveedor: el mismo número de dos proveedores distintos es normal—. Cada uno
 en los cuatro lugares.
 
+**Y cuatro más, que aparecieron al escribir T-1007** y que esta lista no tenía:
+
+| Código | Cuándo | Datos |
+|---|---|---|
+| `supplier_not_found` | Pedir o editar uno que no existe —o que es de otra compañía, que para esta sesión es lo mismo (RNF-1)— | `supplier_id` |
+| `supplier_identification_taken` | La misma identificación es el mismo proveedor: dos fichas del mismo mayorista se reparten sus compras y ninguno de los dos saldos es el que se le debe | `identification`, `name` de quien ya la tiene |
+| `invalid_identification_type` | No es uno de los cuatro de Hacienda | `identification_type` |
+| `identification_required` | Vino el tipo sin el número: un «02» sin cédula jurídica no sirve ni para emitir ni para reconocerlo en un XML | — |
+
+Los dos últimos van **sin prefijo de proveedor** a propósito: `companies`
+(T-621) y `clients` (T-617) tienen el mismo par de columnas y les sirve el
+mismo «no».
+
 ### 12.6 Decisiones
 
 | Tema | Qué se decidió | Por qué | Estado |

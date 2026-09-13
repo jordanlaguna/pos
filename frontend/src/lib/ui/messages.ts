@@ -304,6 +304,11 @@ export const API_CODES = [
 	'person_not_yours',
 	'client_identification_taken',
 	'client_not_found',
+	// compras (F10)
+	'supplier_not_found',
+	'supplier_identification_taken',
+	'invalid_identification_type',
+	'identification_required',
 	'client_update_failed',
 	'invalid_role',
 	'account_not_found',
@@ -655,6 +660,24 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_client_identification_taken();
 		case 'client_not_found':
 			return m.api_client_not_found();
+
+		// ------------------------------------------------------------ compras
+		case 'supplier_not_found':
+			return m.api_supplier_not_found();
+		case 'supplier_identification_taken':
+			// Trae de quién es ya: sin el nombre, la frase manda a buscar en una
+			// lista de proveedores el que tiene esa cédula.
+			return m.api_supplier_identification_taken({
+				identification: texto(d.identification),
+				name: texto(d.name)
+			});
+		case 'invalid_identification_type':
+			return m.api_invalid_identification_type({
+				identification_type: texto(d.identification_type)
+			});
+		case 'identification_required':
+			return m.api_identification_required();
+
 		case 'client_update_failed':
 			return m.api_client_update_failed();
 		case 'invalid_role':

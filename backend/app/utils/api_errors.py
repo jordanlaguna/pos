@@ -170,6 +170,18 @@ CODES: frozenset[str] = frozenset(
         "user_not_found",
         "user_not_yours",
         "last_admin",
+        # ------------------------------------------------ compras (F10)
+        "supplier_not_found",
+        # `identification` y `name`: la cédula repetida y de quién ya es. La
+        # misma identificación es el mismo proveedor, y dos fichas del mismo
+        # mayorista se reparten sus compras sin que ninguno de los dos saldos
+        # sea el que se le debe.
+        "supplier_identification_taken",
+        # Los dos de la identificación de Hacienda. Van sin prefijo de proveedor
+        # a propósito: `companies` (T-621) y `clients` (T-617) tienen el mismo
+        # par de columnas y les sirve el mismo «no».
+        "invalid_identification_type",
+        "identification_required",
         # -------------------------------------------------- configuración
         "unsupported_locale",
         "settings_too_large",

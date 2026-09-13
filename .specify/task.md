@@ -2604,12 +2604,38 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ### Backend
 
-- [ ] **T-1007** Proveedores: `SupplierRepository` y las rutas
-      `GET/POST/PUT /suppliers`; se desactivan, no se borran, y comprarle a
-      uno inactivo responde `supplier_inactive`. RF-41.
+- [x] **T-1007** Proveedores: las rutas `GET/POST/PUT /suppliers`; se
+      desactivan, no se borran. RF-41.
 
-      **Verificación:** `test_aislamiento.py` con las tres rutas; la compra a
-      un proveedor inactivo responde el código.
+      **Hecho el 2026-09-12.** Es la primera ruta que exige un módulo de
+      verdad, y quedó demostrado lo que T-1002 solo fijaba en abstracto: la
+      escritura responde `module_not_in_plan` y la lista se lee igual (RN-50).
+
+      **Sin `SupplierRepository`.** El puerto no se escribió porque no hay
+      todavía ningún caso de uso que lo necesite: esto es un ABM y el servicio
+      habla con SQLAlchemy como los demás `crud_*`. El puerto entra con T-1009,
+      que es cuando `RegisterPurchase` tiene que poder probarse sin base
+      (RN-20). Declararlo antes sería un puerto con un solo implementador y
+      ningún cliente.
+
+      `supplier_inactive` **tampoco** entró acá: lo levanta la compra a un
+      proveedor desactivado, que es T-1009. Un código en `CODES` que nadie
+      lanza tumba `test_error_codes.py`.
+
+      Cuatro códigos nuevos que el plan no tenía: `supplier_not_found`,
+      `supplier_identification_taken` —con el nombre de quién ya la tiene, o la
+      frase manda a buscar en la lista—, y dos genéricos de identificación,
+      `invalid_identification_type` e `identification_required`, sin prefijo de
+      proveedor porque `companies` (T-621) y `clients` (T-617) tienen el mismo
+      par de columnas. Anotados en plan §12.5.
+
+      De paso, `bootstrap.py` gana `--plan-modulos`: sin eso no había forma de
+      dar de alta una compañía con compras, ni en una instalación real ni en la
+      batería. Un módulo que no existe detiene el guion en vez de ignorarse.
+
+      **Verificación:** `tests/test_proveedores.py`, 15 pruebas, y las dos
+      rutas dentro de `test_aislamiento.py` —la lista no mezcla y el `PUT` a un
+      proveedor de otra compañía da 404—. 872 pruebas del backend en verde.
 
 - [ ] **T-1008** El lector de XML (`lib/server/import/hacienda.ts`) extrae
       además `Emisor` (tipo, número, nombre), `Clave`, `NumeroConsecutivo`,

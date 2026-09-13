@@ -27,6 +27,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.domain.limits import SIN_LIMITE, hay_lugar
+from app.domain.modules import MODULES
 from app.models.model_company import Branch, Company, Plan, Terminal, UserCompany
 from app.models.model_person import Person
 from app.models.model_settings import Settings
@@ -146,6 +147,7 @@ def plan_por_nombre(
     *,
     crear: bool = False,
     limites: tuple[int, int, int] = (1, 3, 10),
+    modulos: tuple[str, ...] = (),
 ) -> Plan | None:
     """El plan que se llama así. Lo crea si se pide y no existe.
 
@@ -159,6 +161,10 @@ def plan_por_nombre(
     porque cambiarle los límites le cambia lo que puede hacer a todos los
     clientes que lo tienen. El precio nace en 0 a propósito: cuánto se cobra es
     una decisión comercial y un guion de arranque no la puede tomar.
+
+    `modulos` son los de F10 a F12 y siguen la misma regla: solo al crear. Vacío
+    es ninguno, que es lo correcto —falla cerrado— y lo que ya vale para los
+    planes que existían antes de la migración 008.
     """
     plan = sin_filtro(db.query(Plan).filter(Plan.nombre == nombre)).first()
     if plan or not crear:
@@ -172,6 +178,7 @@ def plan_por_nombre(
         max_terminales=terminales,
         max_usuarios=usuarios,
         factura_electronica=False,
+        **{nombre: nombre in modulos for nombre in MODULES},
     )
     db.add(plan)
     db.flush()

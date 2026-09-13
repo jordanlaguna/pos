@@ -98,6 +98,19 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         },
     )
 
+    proveedor = cliente.ok(
+        "POST",
+        "/suppliers",
+        {
+            "name": f"Mayorista {etiqueta} {marca}",
+            "identification_type": "02",
+            # Única por compañía y por corrida: la misma identificación es el
+            # mismo proveedor, y sin la marca A y B chocarían entre sí.
+            "identification": f"3{marca}",
+            "payment_terms_days": 30,
+        },
+    )
+
     entrada = cliente.ok(
         "POST",
         "/inventory/entry",
@@ -120,6 +133,7 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         "venta_id": venta["id_sale"],
         "devolucion_id": devolucion["id_return"],
         "entrada_id": entrada["id_entry"],
+        "proveedor_id": proveedor["id"],
         "company_id": cliente.company_id,  # type: ignore[attr-defined]
         "user_id": cliente.user_id,  # type: ignore[attr-defined]
     }
@@ -154,6 +168,7 @@ RUTAS_POR_ID = [
     ("POST", "/inventory/entry/{entrada_id}/cancel", None),
     ("PUT", "/categories/update_category/{categoria_id}", {"name": "Secuestrada"}),
     ("DELETE", "/categories/delete_category/{categoria_id}", None),
+    ("PUT", "/suppliers/{proveedor_id}", {"name": "Secuestrado", "payment_terms_days": 0}),
 ]
 
 
@@ -174,6 +189,7 @@ class TestNoSeVeLoDeLaOtraCompania:
             cliente_id=mundo_b["cliente_id"],
             user_id=mundo_b["user_id"],
             categoria_id=mundo_b["categoria_id"],
+            proveedor_id=mundo_b["proveedor_id"],
         )
         estado, respuesta = api.call(metodo, ruta, cuerpo)
 
@@ -273,6 +289,7 @@ LISTAS = [
     ("/returns/returns_list", "id_return", "devolucion_id"),
     ("/inventory/entries", "id", "entrada_id"),
     ("/categories/categories_list", "id", "categoria_id"),
+    ("/suppliers", "id", "proveedor_id"),
 ]
 
 
@@ -648,6 +665,7 @@ def test_ninguna_ruta_de_negocio_quedo_sin_probar():
         "/clients/update_client/{cliente_id}": "/clients/update_client/{id_client}",
         "/categories/update_category/{categoria_id}": "/categories/update_category/{category_id}",
         "/categories/delete_category/{categoria_id}": "/categories/delete_category/{category_id}",
+        "/suppliers/{proveedor_id}": "/suppliers/{supplier_id}",
     }
     cubiertas = {equivalencias.get(r, r) for r in cubiertas}
 

@@ -31,6 +31,7 @@ import sys
 from datetime import datetime
 
 from app.database.database import SessionLocal
+from app.domain.modules import MODULES
 from app.models.model_person import Person
 from app.models.model_user import User
 from app.services import crud_company
@@ -99,12 +100,31 @@ def _cuenta_de_soporte(db, args) -> list[str]:
     ]
 
 
+def _modulos(crudo: str) -> tuple[str, ...]:
+    """«purchases,payroll» → los módulos del plan (RN-49).
+
+    Vacío es ninguno, que es lo correcto: un plan del que no se dijo nada no
+    incluye nada. Un nombre que no existe **detiene el guion** en vez de
+    ignorarse: quien escribió `purchase` en singular quiso dar compras, y
+    enterarse al mes siguiente —cuando el cliente reclama— es el peor momento.
+    """
+    nombres = tuple(p.strip() for p in crudo.split(",") if p.strip())
+    desconocidos = [n for n in nombres if n not in MODULES]
+    if desconocidos:
+        raise SystemExit(
+            f"Módulos que no existen: {', '.join(desconocidos)}. "
+            f"Los que hay son: {', '.join(MODULES)}."
+        )
+    return nombres
+
+
 def _compania(db, args) -> list[str]:
     plan = crud_company.plan_por_nombre(
         db,
         args.plan,
         crear=True,
         limites=(args.plan_max_sucursales, args.plan_max_terminales, args.plan_max_usuarios),
+        modulos=_modulos(args.plan_modulos),
     )
     ya_estaba = crud_company.por_par(db, args.afiliado, args.compania) is not None
 
@@ -172,6 +192,11 @@ def main() -> None:
     ap.add_argument("--plan-max-sucursales", type=int, default=1)
     ap.add_argument("--plan-max-terminales", type=int, default=3)
     ap.add_argument("--plan-max-usuarios", type=int, default=10)
+    ap.add_argument(
+        "--plan-modulos",
+        default="",
+        help="módulos del plan, separados por coma: purchases,accounting,payroll",
+    )
     ap.add_argument("--estado", default="activa", help="prueba | activa | vencida | …")
     ap.add_argument("--idioma", default="es", help="idioma de la pantalla")
     ap.add_argument("--idioma-documento", default="es", help="idioma de la factura")
