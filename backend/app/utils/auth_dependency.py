@@ -344,12 +344,25 @@ def require_module(module: str):
         if request.method not in METODOS_QUE_ESCRIBEN:
             return sesion
 
-        modulos = crud_membership.modulos_de(db, sesion.company_id)
-        if not modulos.includes(module):
-            raise api_error(403, "module_not_in_plan", module=module)
+        exigir_modulo(db, sesion, module)
         return sesion
 
     return dependencia
+
+
+def exigir_modulo(db: Session, sesion: Sesion, module: str) -> None:
+    """La misma comprobación, para cuando no cabe como dependencia de ruta.
+
+    La hay porque un endpoint escribe **dos cosas distintas según su cuerpo**:
+    `POST /inventory/entry` es una entrada de mercadería cuando no trae
+    proveedor y una compra cuando lo trae (RN-52). Una dependencia decide antes
+    de que el cuerpo exista, así que ahí no se puede distinguir, y ponerla de
+    todos modos le cerraría el inventario a quien bajó de plan —que es lo
+    contrario de lo que dice RN-50—.
+    """
+    modulos = crud_membership.modulos_de(db, sesion.company_id)
+    if not modulos.includes(module):
+        raise api_error(403, "module_not_in_plan", module=module)
 
 
 def require_soporte(

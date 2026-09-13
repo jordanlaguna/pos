@@ -12,7 +12,7 @@ from app.schemas.schemas_stock_entry import (
 )
 from app.services import crud_stock_entry
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, require_admin
+from app.utils.auth_dependency import Sesion, exigir_modulo, require_admin
 
 router = APIRouter()
 
@@ -32,6 +32,17 @@ def create_entry(
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
 ):
+    """Recibe mercadería. Con proveedor es una compra (RN-52).
+
+    El módulo se exige **solo si trae proveedor**, y por eso se comprueba acá y
+    no como dependencia: una dependencia decide antes de que exista el cuerpo,
+    así que no puede distinguir las dos cosas que este endpoint escribe. Ponerla
+    igual le cerraría el inventario a una compañía que bajó de plan, que es lo
+    contrario de RN-50; no ponerla la dejaría registrando compras sin el módulo,
+    que es lo contrario de RN-49.
+    """
+    if payload.supplier_id is not None:
+        exigir_modulo(db, admin, "purchases")
     return crud_stock_entry.create_entry(db, payload)
 
 

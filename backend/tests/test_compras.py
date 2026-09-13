@@ -417,7 +417,30 @@ class TestElModuloDelPlan:
         )
         cliente = Api(api.base)
         entrar(cliente, correo, "prueba123")
+        cliente.user_id = cliente.ok("GET", "/users/me")["id_user"]  # type: ignore[attr-defined]
         return cliente
+
+    @pytest.fixture(scope="class")
+    def producto_propio(self, sin_compras: Api) -> dict:
+        """Un producto de esa compañía, para poder cargarle una entrada."""
+        marca = marca_unica()
+        sin_compras.call("POST", "/categories/register_category", {"name": "Pruebas"})
+        categoria = next(
+            c["id"]
+            for c in sin_compras.ok("GET", "/categories/categories_list")
+            if c["name"] == "Pruebas"
+        )
+        cuerpo = {
+            "name": f"Sin módulo {marca}",
+            "description": "producto de prueba",
+            "price": 1000,
+            "stock": 0,
+            "barcode": f"S{marca}",
+            "created_at": "2026-01-01T00:00:00",
+            "category_id": categoria,
+        }
+        sin_compras.ok("POST", "/products/add_product", cuerpo)
+        return sin_compras.ok("GET", f"/products/product/{cuerpo['barcode']}")
 
     def test_abonar_sin_el_modulo_responde_el_codigo(self, sin_compras: Api):
         # Antes que el 404 de la compra: el plan se mira en la dependencia, así
@@ -427,3 +450,62 @@ class TestElModuloDelPlan:
         )
         assert codigo((estado, cuerpo), 403) == "module_not_in_plan"
         assert cuerpo["detail"]["module"] == "purchases"
+
+    def test_registrar_una_compra_sin_el_modulo_tampoco(
+        self, sin_compras: Api, producto_propio
+    ):
+        """El hueco que dejó T-1009 y que el usuario decidió cerrar.
+
+        `POST /inventory/entry` con `supplier_id` es una compra (RN-52), y sin
+        el módulo no entra. Solo lo alcanza quien **bajó** de plan —sin módulo
+        no puede dar de alta proveedores—, que es justo el caso que describe
+        RN-50.
+        """
+        estado, cuerpo = sin_compras.call(
+            "POST",
+            "/inventory/entry",
+            {
+                "document_number": f"NM-{marca_unica()}",
+                "source": "manual",
+                "user_id": sin_compras.user_id,  # type: ignore[attr-defined]
+                "supplier_id": 1,
+                "lines": [
+                    {
+                        "id_product": producto_propio["id_product"],
+                        "quantity": 1,
+                        "unit_cost": 100,
+                    }
+                ],
+            },
+        )
+        assert codigo((estado, cuerpo), 403) == "module_not_in_plan"
+
+    def test_pero_una_entrada_sin_proveedor_sigue_entrando(
+        self, sin_compras: Api, producto_propio
+    ):
+        """La otra mitad, y la que importa de RN-50.
+
+        Apagar Compras no le cierra el inventario a nadie: una entrada de ajuste
+        no es una compra y nunca necesitó el módulo. Por eso el mismo endpoint
+        responde distinto según traiga proveedor o no.
+        """
+        sin_compras.ok(
+            "POST",
+            "/inventory/entry",
+            {
+                "document_number": f"NM-{marca_unica()}",
+                "source": "manual",
+                "user_id": sin_compras.user_id,  # type: ignore[attr-defined]
+                "lines": [
+                    {
+                        "id_product": producto_propio["id_product"],
+                        "quantity": 3,
+                        "unit_cost": 100,
+                    }
+                ],
+            },
+        )
+        assert (
+            sin_compras.ok("GET", f"/products/product/{producto_propio['barcode']}")["stock"]
+            == 3
+        )

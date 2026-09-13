@@ -2810,6 +2810,28 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       pantalla de compras lo va a necesitar igual, así que exponerlo es parte de
       T-1013.
 
+- [x] **T-1011b** El módulo también se exige al **registrar** una compra.
+      RN-49, RN-50. Apareció al cerrar T-1011 y lo decidió el usuario el
+      2026-09-12.
+
+      T-1009 hizo que `POST /inventory/entry` aceptara `supplier_id`, pero esa
+      ruta nunca llevó `require_module`: una compañía que **bajaba** de plan
+      seguía registrando compras a los proveedores que ya tenía. Sin el módulo
+      no puede dar de alta proveedores nuevos, así que solo lo alcanzaba quien
+      ya los tenía —que es exactamente el caso que describe RN-50—.
+
+      **No se puso como dependencia de ruta**, y ahí está lo que enseña: una
+      dependencia decide **antes de que exista el cuerpo**, y este endpoint
+      escribe dos cosas distintas según lo que traiga —entrada sin proveedor,
+      compra con él (RN-52)—. Ponerla igual le cerraría el inventario a quien
+      bajó de plan, que es lo contrario de RN-50. Así que `require_module`
+      quedó apoyado en una función suelta, `exigir_modulo(db, sesion, module)`,
+      que el endpoint llama solo si hay `supplier_id`.
+
+      **Verificación:** `tests/test_compras.py`, dos pruebas con una compañía
+      cuyo plan no trae el módulo: con proveedor responde 403
+      `module_not_in_plan`, y sin proveedor la entrada sube el stock igual.
+
 - [ ] **T-1012** Cuentas por pagar y reporte: `GET /payables` (saldo por compra
       y por proveedor, antigüedad) y `GET /reports/purchases` (base e impuesto
       **por tarifa**). RF-44, RF-45.

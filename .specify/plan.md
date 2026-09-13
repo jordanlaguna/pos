@@ -1687,9 +1687,12 @@ registrar una y no el otro deja una deuda que no existe.
 ```
 GET  /suppliers                      lista, con saldo
 POST /suppliers · PUT /suppliers/{id}  admin
-POST /purchases                      admin · la vista previa confirmada
-POST /purchases/from-xml             admin · el BFF ya parseó: manda el
-                                     proveedor y las líneas con su impuesto
+POST /inventory/entry                admin · la vista previa confirmada. Con
+                                     `supplier_id` es una compra y exige el
+                                     módulo; sin él, la entrada de siempre
+                                     (T-1011b). También recibe lo que el BFF
+                                     sacó del XML: proveedor, condición y
+                                     líneas con su impuesto
 GET  /purchases?supplier=&from=&to=  cualquiera con el módulo
 POST /inventory/entry/{id}/cancel    admin · {reason} opcional, y obligatorio
                                      si la entrada es compra (T-1011). No hay
@@ -1702,8 +1705,14 @@ GET  /payables?supplier=             saldos por compra y antigüedad
 GET  /reports/purchases?from=&to=    base e impuesto por tarifa (RF-45)
 ```
 
-Las rutas de entradas que ya existen siguen: una entrada sin proveedor es un
-`POST /purchases` sin `supplier_id`. En el POS, la pantalla de entradas de
+**No hay un `POST /purchases` aparte: la compra se registra por
+`POST /inventory/entry` con `supplier_id`**, que es la consecuencia directa de
+§12.1 —la compra es la entrada—. Ese endpoint exige el módulo `purchases`
+**solo cuando el cuerpo trae proveedor** (T-1011b), y eso no cabe en una
+dependencia de ruta porque decide antes de que el cuerpo exista: la
+comprobación vive en el endpoint, apoyada en `exigir_modulo()`. Ponerla como
+dependencia le cerraría el inventario a quien bajó de plan (contra RN-50); no
+ponerla lo dejaría registrando compras sin el módulo (contra RN-49). En el POS, la pantalla de entradas de
 `/inventario` **es** la de compras: gana el selector de proveedor, el documento,
 la condición de pago y la tarifa por línea, y conserva la vista previa (§8,
 regla 6). Nuevas: `/compras/proveedores` y `/compras/cuentas-por-pagar`

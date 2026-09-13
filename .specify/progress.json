@@ -1099,6 +1099,12 @@
       "decision": "`CancelStockEntry` extendido y `POST /inventory/entry/{id}/cancel` con `{reason}` opcional. El `POST /purchases/{id}/void` que listaba plan §12.4 no se creó.",
       "porque": "Es el mismo acto sobre la misma fila: la compra ES la entrada (plan §12.1). Dos rutas serían dos sitios donde vive la regla de los abonos, y el día que cambie va a cambiar en uno solo —que es exactamente el argumento con el que §12.1 rechazó tener una tabla `purchases` aparte—. La cuenta por pagar no hace falta revertirla a mano: es implícita, total menos abonos, así que marcar `anulada` alcanza mientras `/payables` filtre por estado. Queda anotado en T-1012.",
       "lo_que_cuesta": "La ruta no lleva `require_module`, igual que `POST /inventory/entry`. Para anular está bien —RN-50 dice que bajar de plan deja lo que existe en solo lectura, no que impida corregir un error de inventario propio—, pero deja a la vista un hueco de T-1009 que sí importa y que quedó para consultar: una compañía sin el módulo `purchases` puede seguir REGISTRANDO compras por `/inventory/entry` con `supplier_id`, porque el módulo solo se exige en `/suppliers` y en los abonos."
+    },
+    {
+      "tema": "Un endpoint que escribe dos cosas no puede resolver el módulo en la dependencia",
+      "decision": "`POST /inventory/entry` exige el módulo `purchases` **solo si el cuerpo trae `supplier_id`**. `require_module` se apoya ahora en una función suelta, `exigir_modulo(db, sesion, module)`, que el endpoint llama después de leer el cuerpo. Decidido con el usuario el 2026-09-12, entre tres opciones.",
+      "porque": "Desde T-1009 esa ruta escribe una entrada de mercadería cuando no trae proveedor y una compra cuando lo trae (RN-52). Una dependencia de FastAPI decide antes de que el cuerpo exista, así que no puede distinguirlas: ponerla le cerraría el inventario a quien bajó de plan —lo contrario de RN-50— y no ponerla lo deja registrando compras sin el módulo —lo contrario de RN-49—. El hueco solo lo alcanzaba quien ya tenía proveedores, porque darlos de alta sí estaba cerrado desde T-1007; es decir, exactamente el caso de la compañía que baja de plan, que es del que habla RN-50.",
+      "lo_que_se_descarto": "Cerrar el módulo entero, incluyendo anular y abonar. Se descartó porque dejaría a la compañía sin poder corregir una compra mal cargada ni registrar que le pagó al proveedor, con una deuda congelada en un saldo que no puede mover. RN-50 promete solo lectura sobre lo que existe, no un candado sobre los errores propios."
     }
   ],
   "invariantes_verificados": {
@@ -1988,7 +1994,8 @@
         "T-1011: `CancelStockEntry` anula también compras. Con abonos rechaza (`purchase_has_payments`, con cuántos), y el motivo es obligatorio solo si la entrada tiene proveedor (`void_reason_required`).",
         "No se creó `VoidPurchase` ni `POST /purchases/{id}/void`: se extendió la ruta de siempre, `POST /inventory/entry/{id}/cancel`, con cuerpo opcional. Plan §12.3 y §12.4 corregidos.",
         "La anotación de bitácora —`anular_compra` o `anular_entrada`— entra en la transacción de la anulación, con el mismo `apply()` que T-1010 le puso a `AddCashMovement` y `PaySupplier`.",
-        "Verde: 966 pruebas del backend con cobertura 100 % en dominio y aplicación, 572 del POS con 100 %, `npm run check` en 0/0."
+        "Verde: 966 pruebas del backend con cobertura 100 % en dominio y aplicación, 572 del POS con 100 %, `npm run check` en 0/0.",
+        "T-1011b, decidida con el usuario: `POST /inventory/entry` con `supplier_id` exige el módulo `purchases`. Era un hueco de T-1009 —una compañía que bajaba de plan seguía registrando compras— y se cerró con `exigir_modulo()` dentro del endpoint, no como dependencia. 968 pruebas en verde."
       ],
       "lo_que_ensena": "**Una regla que depende de dos fuentes hay que colgarla de la que manda.** «¿Esta compra tiene abonos?» se puede responder mirando `stock_entries.supplier_id` —si no es compra, no hay— o preguntándole a `supplier_payments`. Lo primero es una consulta menos y parece equivalente; lo segundo es la verdad. No lo son: la columna y la tabla pueden contradecirse, y el día que se contradigan la versión barata deja anular una compra con plata pagada encima. Se pregunta siempre, y una entrada que no es compra contesta con la lista vacía. Lo mismo pasó con el motivo obligatorio: se comprueba DESPUÉS de anular en memoria, porque hasta ese momento no se sabe cuál de las dos cosas es, y pedirlo antes habría roto la pantalla de entradas que ya existe."
     }
