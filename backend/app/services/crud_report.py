@@ -21,7 +21,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.model_product import Product
-from app.models.model_return import Return
+from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.models.model_stock_entry import StockEntry, StockEntryDetail
@@ -257,6 +257,75 @@ def purchases_by_rate(db: Session, date_from: str | None, date_to: str | None) -
         "tax": impuesto,
         "total": _money(Decimal(str(base)) + Decimal(str(impuesto))),
         "by_rate": por_tarifa,
+    }
+
+
+def sales_by_rate(db: Session, date_from: str | None, date_to: str | None) -> dict:
+    """El débito fiscal del periodo, desglosado por tarifa (RN-65).
+
+    Es la otra mitad del D-104 y el espejo de `purchases_by_rate`. Sale de
+    `sale_details`, que guarda la tarifa **congelada** de cada línea (RN-12), y
+    no de la configurada hoy: si el dueño cambia el IVA, lo que se declara del
+    mes pasado sigue siendo lo que se cobró.
+
+    Las devoluciones van **aparte y no restadas**. Sumadas en silencio, la cifra
+    dejaría de coincidir con el desglose de ventas del periodo y nadie sabría por
+    qué; separadas, el contador ve las dos y el neto, que es como se llena la
+    declaración.
+
+    El `company_id` va escrito a mano en las dos consultas: son agregadas, y el
+    filtro automático no entra en una subconsulta de `SUM` (plan §3.3).
+    """
+    start, end, desde, hasta = parse_range(date_from, date_to)
+
+    def por_tarifa(detalle, cabecera, enlace) -> dict:
+        filas = (
+            db.query(
+                detalle.tax_rate,
+                func.coalesce(func.sum(detalle.subtotal), 0),
+                func.coalesce(func.sum(detalle.tax_amount), 0),
+            )
+            .join(cabecera, enlace)
+            .filter(
+                cabecera.company_id == compania_actual(),
+                cabecera.created_at >= start,
+                cabecera.created_at <= end,
+            )
+            .group_by(detalle.tax_rate)
+            .all()
+        )
+        return {
+            float(fila[0] or 0): (_money(fila[1]), _money(fila[2])) for fila in filas
+        }
+
+    ventas = por_tarifa(SaleDetail, Sale, Sale.id == SaleDetail.sale_id)
+    devoluciones = por_tarifa(
+        ReturnDetail, Return, Return.id == ReturnDetail.return_id
+    )
+
+    lineas = []
+    for tarifa in sorted(set(ventas) | set(devoluciones)):
+        base, impuesto = ventas.get(tarifa, (0.0, 0.0))
+        base_dev, impuesto_dev = devoluciones.get(tarifa, (0.0, 0.0))
+        lineas.append(
+            {
+                "tax_rate": tarifa,
+                "base": base,
+                "tax": impuesto,
+                "returns_base": base_dev,
+                "returns_tax": impuesto_dev,
+                "net_base": _money(Decimal(str(base)) - Decimal(str(base_dev))),
+                "net_tax": _money(Decimal(str(impuesto)) - Decimal(str(impuesto_dev))),
+            }
+        )
+
+    return {
+        "date_from": desde,
+        "date_to": hasta,
+        "by_rate": lineas,
+        "tax": _money(sum(Decimal(str(l["tax"])) for l in lineas)),
+        "returns_tax": _money(sum(Decimal(str(l["returns_tax"])) for l in lineas)),
+        "net_tax": _money(sum(Decimal(str(l["net_tax"])) for l in lineas)),
     }
 
 

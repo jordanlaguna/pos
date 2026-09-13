@@ -223,3 +223,101 @@ class PeriodOut(BaseModel):
     status: str
     closed_at: datetime | None = None
     closed_by: int | None = None
+
+
+# -------------------------------------------------------------- los reportes
+
+
+class BalanceRow(BaseModel):
+    account_id: int
+    code: str
+    name: str
+    kind: str
+    debits: float
+    credits: float
+    #: En su signo natural: positivo es «lo que esta cuenta normalmente tiene».
+    balance: float
+
+
+class TrialBalance(BaseModel):
+    year: int
+    month: int | None = None
+    rows: list[BalanceRow] = []
+    debits: float = 0
+    credits: float = 0
+    #: Falso significa que alguien escribió en la base sin pasar por el dominio.
+    is_balanced: bool = True
+
+
+class IncomeStatement(BaseModel):
+    year: int
+    month: int | None = None
+    income: float = 0
+    cost: float = 0
+    expense: float = 0
+    gross_profit: float = 0
+    result: float = 0
+    rows: list[BalanceRow] = []
+
+
+class BalanceSheet(BaseModel):
+    year: int
+    month: int | None = None
+    assets: float = 0
+    liabilities: float = 0
+    equity: float = 0
+    #: El del periodo, que todavía no se capitalizó. Entra en la igualdad aparte.
+    result: float = 0
+    is_balanced: bool = True
+    rows: list[BalanceRow] = []
+
+
+class Journal(BaseModel):
+    year: int
+    month: int | None = None
+    entries: list[JournalEntryOut] = []
+
+
+class LedgerMovement(BaseModel):
+    entry_id: int
+    entry_number: int
+    entry_date: date
+    description: str
+    debit: float
+    credit: float
+    memo: str | None = None
+
+
+class LedgerAccount(BalanceRow):
+    #: Lo acumulado **antes** del periodo. Sin esto el mayor no sirve: deja al
+    #: lector sumando desde cero una cuenta que empezó el mes con saldo.
+    opening: float = 0
+    closing: float = 0
+    movements: list[LedgerMovement] = []
+
+
+class LedgerReport(BaseModel):
+    year: int
+    month: int | None = None
+    accounts: list[LedgerAccount] = []
+
+
+class VatLine(BaseModel):
+    tax_rate: float
+    sales_base: float
+    debit: float
+    returns_tax: float = 0
+    purchases_base: float
+    credit: float
+    balance: float
+
+
+class VatDraft(BaseModel):
+    year: int
+    month: int | None = None
+    lines: list[VatLine] = []
+    debit: float = 0
+    credit: float = 0
+    #: Positivo se paga; negativo queda a favor.
+    balance: float = 0
+    in_favor: bool = False

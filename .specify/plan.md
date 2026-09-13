@@ -2005,9 +2005,19 @@ POST /accounting/entries                           admin · manual o de ajuste
 GET  /accounting/entries/{id}
 GET  /accounting/periods · POST /{y}/{m}/close     admin, con confirmación
 GET  /accounting/reports/{journal|ledger|trial-balance|income|balance}
-                                                   ?year=&month=[&format=csv]
+                                                   ?year=&month=
 GET  /accounting/vat?year=&month=                  el borrador del D-104
 ```
+
+El `?format=csv` que decía este bloque **no va en el backend**: un CSV lleva
+encabezados, y los encabezados son texto que lee una persona (RN-30). Lo arma el
+POS a partir del JSON, que es lo que ya hace la plantilla de importación de
+inventario (T-1110, 2026-09-13).
+
+Y hacía falta una ruta más: `GET /reports/sales_by_rate`, el espejo de
+`/reports/purchases`. El D-104 cruza los dos desgloses por tarifa y el de ventas
+no existía; sin él habría que sumar el libro aparte, que es justo lo que RN-65
+manda no hacer.
 
 Pantallas: `/contabilidad` (el periodo abierto, el saldo de por clasificar en
 rojo si no es cero, los últimos asientos), `/contabilidad/cuentas`,

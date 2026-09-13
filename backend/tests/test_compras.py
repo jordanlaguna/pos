@@ -12,7 +12,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from tests.conftest import Api, codigo, entrar, marca_unica
+from tests.conftest import Api, afiliado_unico, codigo, entrar, marca_unica
 
 
 @pytest.fixture(scope="module")
@@ -659,7 +659,7 @@ class TestElModuloDelPlan:
         marca = marca_unica()
         correo = f"sc.abono.{marca}@pruebas.ventasys.cr"
         bootstrap(
-            afiliado=int(marca[-6:]),
+            afiliado=afiliado_unico(),
             compania=1,
             nombre="Compañía sin compras para abonar",
             email=correo,

@@ -19,7 +19,8 @@ login, y quien acaba de activar contabilidad tendría que salir y volver a entra
 
 from __future__ import annotations
 
-from datetime import date
+import calendar
+from datetime import date, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -59,7 +60,15 @@ from app.domain.errors import (
     PeriodClosed,
     PeriodNotCloseable,
 )
+from app.domain.ledger_reports import (
+    RateAmount,
+    balance_sheet,
+    income_statement,
+    trial_balance,
+    vat_draft,
+)
 from app.domain.money import Money
+from app.domain.tax import TaxRate
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_accounting import (
     SqlAlchemyAccountingSettings,
@@ -70,7 +79,7 @@ from app.infrastructure.persistence.sqlalchemy_accounting import (
 )
 from app.infrastructure.persistence.sqlalchemy_ledger import SqlAlchemyLedger
 from app.infrastructure.persistence.sqlalchemy_repositories import SqlAlchemyUnitOfWork
-from app.services import crud_membership, crud_settings
+from app.services import crud_membership, crud_report, crud_settings
 from app.utils.api_errors import api_error
 from app.utils.tenancy import compania_actual
 
@@ -515,6 +524,233 @@ def crear_asiento(db: Session, payload, *, user_id: int) -> dict:
         raise api_error(400, "accounting_not_active")
 
     return asiento(db, id_asiento)
+
+
+# -------------------------------------------------------------- los reportes
+
+
+def rango(year: int, month: int | None) -> tuple[date, date]:
+    """El primer y el último día del periodo que se pida.
+
+    Sin mes, el año entero. Es lo que permite pedir un balance de comprobación
+    anual con la misma ruta que el mensual.
+    """
+    if month is None:
+        return date(year, 1, 1), date(year, 12, 31)
+    ultimo = calendar.monthrange(year, month)[1]
+    return date(year, month, 1), date(year, month, ultimo)
+
+
+def _fila_de_saldo(fila) -> dict:
+    return {
+        "account_id": fila.account_id,
+        "code": fila.code,
+        "name": fila.name,
+        "kind": fila.kind,
+        "debits": fila.debits.as_float(),
+        "credits": fila.credits.as_float(),
+        "balance": fila.balance.as_float(),
+    }
+
+
+def balance_de_comprobacion(db: Session, year: int, month: int | None) -> dict:
+    """Toda cuenta con lo que movió en el periodo (RF-53).
+
+    Es del **periodo** y no acumulado: lo que comprueba es que los asientos de
+    esos días cuadren, y para eso hay que mirar solo esos días.
+    """
+    desde, hasta = rango(year, month)
+    balance = trial_balance(
+        SqlAlchemyJournalRepository(db).lineas_hasta(hasta, desde=desde)
+    )
+    return {
+        "year": year,
+        "month": month,
+        "rows": [_fila_de_saldo(fila) for fila in balance.rows],
+        "debits": balance.debits.as_float(),
+        "credits": balance.credits.as_float(),
+        "is_balanced": balance.is_balanced,
+    }
+
+
+def estado_de_resultados(db: Session, year: int, month: int | None) -> dict:
+    """Ingresos − costo − gastos **del periodo** (RF-53)."""
+    desde, hasta = rango(year, month)
+    balance = trial_balance(
+        SqlAlchemyJournalRepository(db).lineas_hasta(hasta, desde=desde)
+    )
+    estado = income_statement(balance)
+    return {
+        "year": year,
+        "month": month,
+        "income": estado.income.as_float(),
+        "cost": estado.cost.as_float(),
+        "expense": estado.expense.as_float(),
+        "gross_profit": estado.gross_profit.as_float(),
+        "result": estado.result.as_float(),
+        "rows": [_fila_de_saldo(fila) for fila in estado.rows],
+    }
+
+
+def balance_general(db: Session, year: int, month: int | None) -> dict:
+    """Activo, pasivo, patrimonio y resultado, **acumulados** (RF-53).
+
+    Acumulado y no del mes, a diferencia de los otros dos: el efectivo que hay
+    hoy es todo lo que entró y salió desde que existe el libro, no lo del mes. Es
+    la diferencia entre una foto y una película, y por eso no comparten la
+    consulta.
+    """
+    _, hasta = rango(year, month)
+    balance = trial_balance(SqlAlchemyJournalRepository(db).lineas_hasta(hasta))
+    general = balance_sheet(balance)
+    return {
+        "year": year,
+        "month": month,
+        "assets": general.assets.as_float(),
+        "liabilities": general.liabilities.as_float(),
+        "equity": general.equity.as_float(),
+        "result": general.result.as_float(),
+        "is_balanced": general.is_balanced,
+        "rows": [_fila_de_saldo(fila) for fila in general.rows],
+    }
+
+
+def diario(db: Session, year: int, month: int | None) -> dict:
+    """El libro diario: los asientos del periodo con sus líneas (RF-53)."""
+    repositorio = SqlAlchemyJournalRepository(db)
+    desde, hasta = rango(year, month)
+    asientos = [
+        _asiento(fila, _lineas_de(repositorio, fila.id))
+        for fila in repositorio.en_el_mes(year=year, month=month)
+    ]
+    return {"year": year, "month": month, "entries": asientos}
+
+
+def mayor(db: Session, year: int, month: int | None, account_id: int | None) -> dict:
+    """El mayor: lo que movió cada cuenta, con su saldo de arranque (RF-53).
+
+    El saldo de arranque es lo acumulado **antes** del periodo, y sin él el mayor
+    no sirve para nada: una cuenta de caja que empieza el mes con ₡200 000 y no
+    lo dice deja al lector sumando desde cero.
+    """
+    repositorio = SqlAlchemyJournalRepository(db)
+    desde, hasta = rango(year, month)
+
+    anteriores = trial_balance(
+        repositorio.lineas_hasta(desde - timedelta(days=1))
+    )
+    del_periodo = trial_balance(repositorio.lineas_hasta(hasta, desde=desde))
+    arranque = {fila.account_id: fila.balance for fila in anteriores.rows}
+
+    cuentas = []
+    for fila in del_periodo.rows:
+        if account_id is not None and fila.account_id != account_id:
+            continue
+        movimientos = [
+            {
+                "entry_id": asiento.id,
+                "entry_number": asiento.entry_number,
+                "entry_date": asiento.entry_date,
+                "description": asiento.description,
+                "debit": _money(linea.debit),
+                "credit": _money(linea.credit),
+                "memo": linea.memo,
+            }
+            for linea, asiento in repositorio.movimientos_de_cuenta(
+                fila.account_id, desde, hasta
+            )
+        ]
+        inicial = arranque.get(fila.account_id, Money.zero())
+        cuentas.append(
+            {
+                **_fila_de_saldo(fila),
+                "opening": inicial.as_float(),
+                "closing": (inicial + fila.balance).as_float(),
+                "movements": movimientos,
+            }
+        )
+
+    return {"year": year, "month": month, "accounts": cuentas}
+
+
+def borrador_del_d104(db: Session, year: int, month: int | None) -> dict:
+    """El borrador del D-104 del periodo (RF-54, RN-65).
+
+    **No suma el libro**: cruza los dos desgloses por tarifa que ya existen —el
+    de ventas (RF-21) y el de compras (RF-45)—. Sumarlo aparte daría dos números
+    para el mismo impuesto y una tarde por delante para averiguar cuál vale.
+
+    El débito va **neto de devoluciones**: lo que se declara del mes es lo que se
+    cobró menos lo que se devolvió. Las dos cifras viajan aparte para que el
+    contador vea de dónde sale el neto y no tenga que creerle a una resta.
+    """
+    desde, hasta = rango(year, month)
+    ventas = crud_report.sales_by_rate(db, desde.isoformat(), hasta.isoformat())
+    compras = crud_report.purchases_by_rate(db, desde.isoformat(), hasta.isoformat())
+
+    borrador = vat_draft(
+        [
+            RateAmount(
+                rate=TaxRate(str(fila["tax_rate"])),
+                base=Money(fila["net_base"]),
+                tax=Money(fila["net_tax"]),
+            )
+            for fila in ventas["by_rate"]
+        ],
+        [
+            # **En porcentaje**, al revés que las ventas. `sale_details.tax_rate`
+            # guarda 0,13 con seis decimales y `stock_entry_details.tax_rate`
+            # guarda 13 con dos, porque el segundo copia lo que dice la factura
+            # del proveedor. Cruzarlos sin convertir no falla: junta el 13 % de
+            # compras con una tarifa del 1 300 % que no existe, y el D-104 sale
+            # con dos filas donde debería haber una.
+            RateAmount(
+                rate=TaxRate.percent(fila["tax_rate"]),
+                base=Money(fila["base"]),
+                tax=Money(fila["tax"]),
+            )
+            for fila in compras["by_rate"]
+        ],
+    )
+
+    devoluciones = {fila["tax_rate"]: fila for fila in ventas["by_rate"]}
+    return {
+        "year": year,
+        "month": month,
+        "lines": [
+            {
+                "tax_rate": float(fila.rate.value),
+                "sales_base": fila.sales_base.as_float(),
+                "debit": fila.debit.as_float(),
+                "returns_tax": devoluciones.get(float(fila.rate.value), {}).get(
+                    "returns_tax", 0.0
+                ),
+                "purchases_base": fila.purchases_base.as_float(),
+                "credit": fila.credit.as_float(),
+                "balance": fila.balance.as_float(),
+            }
+            for fila in borrador.lines
+        ],
+        "debit": borrador.debit.as_float(),
+        "credit": borrador.credit.as_float(),
+        "balance": borrador.balance.as_float(),
+        "in_favor": borrador.is_in_favor,
+    }
+
+
+def _lineas_de(repositorio, entry_id: int) -> list[dict]:
+    return [
+        {
+            "account_id": cuenta.id,
+            "account_code": cuenta.code,
+            "account_name": cuenta.name,
+            "debit": _money(linea.debit),
+            "credit": _money(linea.credit),
+            "tax_rate": float(linea.tax_rate) if linea.tax_rate is not None else None,
+            "memo": linea.memo,
+        }
+        for linea, cuenta in repositorio.filas_con_cuenta(entry_id)
+    ]
 
 
 # --------------------------------------------------------------- los periodos

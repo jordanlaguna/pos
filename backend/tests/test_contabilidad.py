@@ -19,7 +19,7 @@ import pytest
 
 from app.domain.chart import CHART, default_mapping
 
-from .conftest import Api, bootstrap, entrar, marca_unica
+from .conftest import Api, afiliado_unico, bootstrap, entrar, marca_unica
 
 pytestmark = pytest.mark.characterization
 
@@ -34,7 +34,7 @@ def compania_propia(api: Api, etiqueta: str, *, modulos: str | None = None) -> A
     marca = marca_unica()
     correo = f"{etiqueta}.{marca}@pruebas.ventasys.cr"
     opciones = {
-        "afiliado": int(marca[-6:]),
+        "afiliado": afiliado_unico(),
         "compania": 1,
         "nombre": f"Compañía {etiqueta}",
         "email": correo,
@@ -416,6 +416,38 @@ class TestNoSeVeElLibroAjeno:
 
         assert estado == 404
 
+    def test_los_libros_de_una_no_suman_los_de_la_otra(self, dos):
+        # Los cinco reportes no reciben ningún id: suman el libro de la sesión.
+        # Lo que hay que vigilarles es justo esto.
+        una, otra = dos
+        ruta = f"/accounting/reports/trial-balance?year={HOY.year}&month={HOY.month}"
+
+        # Por diferencias y no por cifras absolutas: otras pruebas de esta clase
+        # ya escribieron en estos libros, y una cifra fija haría que agregar una
+        # prueba antes rompiera esta —que es lo que pasó al escribirla—.
+        antes_mio = una.ok("GET", ruta)["debits"]
+        antes_suyo = otra.ok("GET", ruta)["debits"]
+
+        caja = cuenta_por_codigo(otra, "1.1.01")
+        gastos = cuenta_por_codigo(otra, "6.9.02")
+        otra.ok(
+            "POST",
+            "/accounting/entries",
+            {
+                "entry_date": HOY.isoformat(),
+                "description": "Solo de la otra",
+                "lines": [
+                    {"account_id": gastos["id"], "debit": 7777, "credit": 0},
+                    {"account_id": caja["id"], "debit": 0, "credit": 7777},
+                ],
+            },
+        )
+
+        assert otra.ok("GET", ruta)["debits"] - antes_suyo == 7777
+        assert una.ok("GET", ruta)["debits"] == antes_mio, (
+            "el libro de una compañía sumó el de la otra"
+        )
+
     def test_cada_una_ve_su_propio_catalogo_completo(self, dos):
         # La contraprueba: sin esto, un 404 en todo también pasaría el examen.
         una, otra = dos
@@ -659,6 +691,189 @@ class TestCerrarElMes:
         assert [(p["year"], p["month"]) for p in periodos] == sorted(
             [(p["year"], p["month"]) for p in periodos], reverse=True
         )
+
+
+class TestLosLibros:
+    """Los cinco reportes y el D-104, sobre un mes con movimiento (RF-53, RF-54).
+
+    La compañía vende, compra y cierra caja, y después se le piden los libros. Lo
+    que se comprueba no es que cada uno sume, sino que **los cinco salgan del
+    mismo libro**: si el balance general no cuadra, alguno de los otros mintió.
+    """
+
+    @pytest.fixture(scope="class")
+    def negocio(self, api: Api) -> Api:
+        cliente = compania_propia(api, "libros", modulos="accounting,purchases")
+        activar(cliente)
+
+        # Un catálogo mínimo y una venta del invariante: 3 × 1 450 al 13 %.
+        nombre = f"Granos {marca_unica()}"
+        cliente.ok("POST", "/categories/register_category", {"name": nombre})
+        categoria = next(
+            c["id"] for c in cliente.ok("GET", "/categories/categories_list")
+            if c["name"] == nombre
+        )
+        # El producto nace **sin existencias**: así el promedio ponderado de la
+        # primera compra es el costo de esa compra y no una mezcla con un costo
+        # cero que nadie pagó (RN-54).
+        codigo = f"T{marca_unica()}"
+        cliente.ok(
+            "POST",
+            "/products/add_product",
+            {
+                "name": "Arroz",
+                "description": "Arroz",
+                "price": 1450,
+                "stock": 0,
+                "barcode": codigo,
+                "category_id": categoria,
+                "tax_rate": 0.13,
+                "created_at": "2026-01-01T00:00:00",
+            },
+        )
+        producto = cliente.ok("GET", f"/products/product/{codigo}")
+
+        # Primero la compra a crédito —100 unidades a ₡900 más 13 %— para que el
+        # producto tenga costo cuando se venda.
+        proveedor = cliente.ok(
+            "POST",
+            "/suppliers/",
+            {"name": f"Mayorista {marca_unica()}", "payment_terms_days": 30},
+        )
+        cliente.ok(
+            "POST",
+            "/inventory/entry",
+            {
+                "document_number": marca_unica(),
+                "source": "manual",
+                "user_id": cliente.user_id,
+                "supplier_id": proveedor["id"],
+                "payment_terms": "credit",
+                "document_date": HOY.isoformat(),
+                "lines": [
+                    {
+                        "id_product": producto["id_product"],
+                        "quantity": 100,
+                        "unit_cost": 900,
+                        # En porcentaje, que es como lo dice la factura.
+                        "tax_rate": 13,
+                        "tax_amount": 11700,
+                    }
+                ],
+            },
+        )
+
+        # Y la venta del invariante: 3 × 1 450 al 13 %, con costo 900.
+        cliente.ok(
+            "POST",
+            "/sales/add_sale",
+            {
+                "sale_number": marca_unica(),
+                "client_id": None,
+                "user_id": cliente.user_id,
+                "subtotal": 4350,
+                "tax": 565.5,
+                "total": 4915.5,
+                "payment_method": "Efectivo",
+                "cash_received": 5000,
+                "change_given": 84.5,
+                "products": [{"id_product": producto["id_product"], "stock": 3}],
+            },
+        )
+        return cliente
+
+    def test_el_balance_de_comprobacion_cuadra(self, negocio: Api):
+        balance = negocio.ok(
+            "GET", f"/accounting/reports/trial-balance?year={HOY.year}&month={HOY.month}"
+        )
+
+        assert balance["is_balanced"]
+        assert balance["debits"] == balance["credits"]
+        assert balance["rows"], "el mes no tiene movimiento"
+
+    def test_va_ordenado_por_codigo(self, negocio: Api):
+        balance = negocio.ok(
+            "GET", f"/accounting/reports/trial-balance?year={HOY.year}&month={HOY.month}"
+        )
+        codigos = [fila["code"] for fila in balance["rows"]]
+
+        assert codigos == sorted(codigos)
+
+    def test_el_estado_de_resultados_trae_la_venta(self, negocio: Api):
+        estado = negocio.ok(
+            "GET", f"/accounting/reports/income?year={HOY.year}&month={HOY.month}"
+        )
+
+        assert estado["income"] == 4350
+        assert estado["result"] == estado["income"] - estado["cost"] - estado["expense"]
+
+    def test_el_balance_general_cumple_la_ecuacion(self, negocio: Api):
+        # Activo = pasivo + patrimonio + resultado. Es la comprobación que dice
+        # que los cinco reportes salieron del mismo libro.
+        general = negocio.ok(
+            "GET", f"/accounting/reports/balance?year={HOY.year}&month={HOY.month}"
+        )
+
+        assert general["is_balanced"]
+        assert round(
+            general["liabilities"] + general["equity"] + general["result"], 2
+        ) == general["assets"]
+
+    def test_el_pasivo_trae_la_compra_a_credito(self, negocio: Api):
+        general = negocio.ok(
+            "GET", f"/accounting/reports/balance?year={HOY.year}&month={HOY.month}"
+        )
+        proveedores = next(f for f in general["rows"] if f["code"] == "2.1.01")
+
+        assert proveedores["balance"] == 101700
+
+    def test_el_diario_trae_los_asientos_con_sus_lineas(self, negocio: Api):
+        diario = negocio.ok(
+            "GET", f"/accounting/reports/journal?year={HOY.year}&month={HOY.month}"
+        )
+
+        assert diario["entries"]
+        venta = next(a for a in diario["entries"] if a["source_type"] == "sale")
+        assert venta["total"] == 7615.5
+        assert {l["account_code"] for l in venta["lines"]} >= {"1.1.01", "4.1.01", "2.1.02"}
+
+    def test_el_mayor_trae_el_saldo_de_arranque_y_el_final(self, negocio: Api):
+        mayor = negocio.ok(
+            "GET", f"/accounting/reports/ledger?year={HOY.year}&month={HOY.month}"
+        )
+        caja = next(c for c in mayor["accounts"] if c["code"] == "1.1.01")
+
+        assert caja["closing"] == round(caja["opening"] + caja["balance"], 2)
+        assert caja["movements"], "la caja se movió y el mayor no lo muestra"
+
+    def test_se_puede_pedir_el_mayor_de_una_sola_cuenta(self, negocio: Api):
+        caja = cuenta_por_codigo(negocio, "1.1.01")
+        mayor = negocio.ok(
+            "GET",
+            f"/accounting/reports/ledger?year={HOY.year}&month={HOY.month}"
+            f"&account_id={caja['id']}",
+        )
+
+        assert [c["code"] for c in mayor["accounts"]] == ["1.1.01"]
+
+    def test_el_d104_cuadra_con_los_dos_reportes(self, negocio: Api):
+        # La verificación de T-1110: el débito por tarifa igual al desglose de
+        # ventas (RF-21) y el crédito igual al reporte de compras (RF-45).
+        rango = f"date_from={HOY.isoformat()}&date_to={HOY.isoformat()}"
+        compras = negocio.ok("GET", f"/reports/purchases?{rango}")
+        borrador = negocio.ok(f"GET", f"/accounting/vat?year={HOY.year}&month={HOY.month}")
+
+        assert borrador["debit"] == 565.5
+        assert borrador["credit"] == compras["tax"]
+        assert borrador["balance"] == round(borrador["debit"] - borrador["credit"], 2)
+        assert borrador["in_favor"] is True
+
+    def test_la_fila_del_13_trae_las_dos_bases(self, negocio: Api):
+        borrador = negocio.ok("GET", f"/accounting/vat?year={HOY.year}&month={HOY.month}")
+        trece = next(f for f in borrador["lines"] if round(f["tax_rate"], 2) == 0.13)
+
+        assert trece["sales_base"] == 4350
+        assert trece["purchases_base"] == 90000
 
 
 class TestSinElModuloEnElPlan:

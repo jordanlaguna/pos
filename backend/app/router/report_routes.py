@@ -9,6 +9,7 @@ from app.schemas.schemas_report import (
     PaymentBreakdown,
     ReportSummary,
     SalesByDay,
+    SalesByRateReport,
     TopProduct,
 )
 from app.services import crud_report
@@ -87,6 +88,22 @@ def get_purchases(
     que compró.
     """
     return crud_report.purchases_by_rate(db, date_from, date_to)
+
+
+@router.get("/sales_by_rate", response_model=SalesByRateReport)
+def get_sales_by_rate(
+    date_from: str | None = FromParam,
+    date_to: str | None = ToParam,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """El débito fiscal del periodo, por tarifa (RN-65).
+
+    El espejo de `/reports/purchases` y la otra mitad del D-104. Las devoluciones
+    van aparte y no restadas: sumadas en silencio, la cifra dejaría de coincidir
+    con el desglose de ventas del periodo y nadie sabría por qué.
+    """
+    return crud_report.sales_by_rate(db, date_from, date_to)
 
 
 @router.get("/low_stock", response_model=list[LowStockProduct])

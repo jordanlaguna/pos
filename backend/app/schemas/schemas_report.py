@@ -42,3 +42,30 @@ class LowStockProduct(BaseModel):
     category_id: int
 
     model_config = {"from_attributes": True}
+
+
+class SalesRateLine(BaseModel):
+    """Una tarifa en el débito fiscal del periodo (RN-65).
+
+    Las devoluciones van **aparte y no restadas**: sumadas en silencio, la cifra
+    dejaría de coincidir con el desglose de ventas y nadie sabría por qué. El
+    neto viaja ya calculado para que el POS no lo vuelva a restar.
+    """
+
+    #: Entre 0 y 1 —0,13 y no 13—, como se congela en `sale_details`.
+    tax_rate: float
+    base: float
+    tax: float
+    returns_base: float = 0
+    returns_tax: float = 0
+    net_base: float = 0
+    net_tax: float = 0
+
+
+class SalesByRateReport(BaseModel):
+    date_from: str
+    date_to: str
+    by_rate: list[SalesRateLine] = []
+    tax: float = 0
+    returns_tax: float = 0
+    net_tax: float = 0

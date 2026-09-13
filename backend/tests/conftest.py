@@ -53,6 +53,21 @@ def marca_unica() -> str:
     return f"{time.time():.0f}{next(_secuencia):04d}"
 
 
+def afiliado_unico() -> int:
+    """Un número de afiliado que no choque con el de otra corrida.
+
+    **La base de pruebas sobrevive entre corridas**, y `bootstrap.py` con un par
+    (afiliado, compañía) que ya existe no crea nada: le agrega el administrador a
+    la compañía que ya está. Con pocos dígitos eso pasa de verdad —dos corridas
+    en el mismo segundo del minuto, con el mismo contador— y el síntoma engaña:
+    la prueba falla diciendo que la contabilidad ya estaba activa, que es cierto,
+    pero de la compañía de la corrida anterior.
+
+    Nueve dígitos entran en un INT y repiten cada 27 horas, no cada minuto.
+    """
+    return int(marca_unica()[-9:])
+
+
 def codigo(respuesta: tuple[int, object], estado_esperado: int) -> str:
     """El código de un «no», comprobando de paso el estado HTTP.
 

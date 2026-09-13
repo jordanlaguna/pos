@@ -734,6 +734,17 @@ FUERA_DE_LA_BATERIA = {
         "no recibe un id ajeno: el año y el mes son de la compañía de la sesión, "
         "y un mes que ella no tiene responde period_not_found"
     ),
+    # Los cinco libros y el D-104 suman el libro **de la sesión**: no reciben
+    # ningún id. Lo que hay que vigilarles es que no sumen el de otra compañía, y
+    # eso lo prueba `test_contabilidad.py::TestNoSeVeElLibroAjeno`, que da de alta
+    # dos compañías y le pide los libros a cada una.
+    "/accounting/reports/trial-balance": "suma el libro de la compañía de la sesión",
+    "/accounting/reports/income": "suma el libro de la compañía de la sesión",
+    "/accounting/reports/balance": "suma el libro de la compañía de la sesión",
+    "/accounting/reports/journal": "suma el libro de la compañía de la sesión",
+    "/accounting/reports/ledger": "suma el libro de la compañía de la sesión",
+    "/accounting/vat": "cruza los reportes de la compañía de la sesión",
+    "/reports/sales_by_rate": "el espejo de /reports/purchases; mismo filtro escrito a mano",
 }
 
 

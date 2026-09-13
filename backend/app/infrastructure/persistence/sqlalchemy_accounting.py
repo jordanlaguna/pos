@@ -15,8 +15,9 @@ import json
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.domain.money import Money
 from app.domain.ledger import Line
+from app.domain.ledger_reports import PostedLine
+from app.domain.money import Money
 from app.domain.tax import TaxRate
 from app.models.model_accounting import Account, AccountingPeriod, AccountMapping
 from app.models.model_accounting import JournalEntry as FilaDeAsiento
@@ -250,6 +251,49 @@ class SqlAlchemyJournalRepository:
         if kind:
             consulta = consulta.filter(FilaDeAsiento.kind == kind)
         return consulta.order_by(FilaDeAsiento.entry_date, FilaDeAsiento.entry_number).all()
+
+    def lineas_hasta(self, hasta, *, desde=None) -> list[PostedLine]:
+        """Las líneas del libro en ese tramo, ya como valores del dominio.
+
+        `desde` en `None` significa «desde el principio», que es lo que necesita
+        el balance general: el activo de hoy es todo lo que pasó, no lo del mes.
+        El estado de resultados, en cambio, sí es del mes, y por eso el tramo
+        entra como argumento en vez de estar escrito acá.
+        """
+        consulta = (
+            self._db.query(FilaDeLinea, Account)
+            .join(FilaDeAsiento, FilaDeAsiento.id == FilaDeLinea.entry_id)
+            .join(Account, Account.id == FilaDeLinea.account_id)
+            .filter(FilaDeAsiento.entry_date <= hasta)
+        )
+        if desde is not None:
+            consulta = consulta.filter(FilaDeAsiento.entry_date >= desde)
+
+        return [
+            PostedLine(
+                account_id=cuenta.id,
+                code=cuenta.code,
+                name=cuenta.name,
+                kind=cuenta.kind,
+                debit=Money(linea.debit),
+                credit=Money(linea.credit),
+            )
+            for linea, cuenta in consulta.all()
+        ]
+
+    def movimientos_de_cuenta(self, account_id: int, desde, hasta) -> list[tuple]:
+        """Las líneas de una cuenta en el tramo, en orden de libro: el mayor."""
+        return (
+            self._db.query(FilaDeLinea, FilaDeAsiento)
+            .join(FilaDeAsiento, FilaDeAsiento.id == FilaDeLinea.entry_id)
+            .filter(
+                FilaDeLinea.account_id == account_id,
+                FilaDeAsiento.entry_date >= desde,
+                FilaDeAsiento.entry_date <= hasta,
+            )
+            .order_by(FilaDeAsiento.entry_date, FilaDeAsiento.entry_number, FilaDeLinea.id)
+            .all()
+        )
 
     def filas_con_cuenta(self, entry_id: int) -> list[tuple[FilaDeLinea, Account]]:
         """Las líneas con su cuenta, para mostrarlas."""

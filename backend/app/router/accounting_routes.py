@@ -18,14 +18,20 @@ from app.schemas.schemas_accounting import (
     AccountPatch,
     Activated,
     ActivationIn,
+    BalanceSheet,
     Deleted,
+    IncomeStatement,
+    Journal,
     JournalEntryOut,
+    LedgerReport,
     ManualEntryIn,
     Mappings,
     MappingsIn,
     PeriodOut,
     Reclassified,
     ReclassifyIn,
+    TrialBalance,
+    VatDraft,
 )
 from app.services import crud_accounting
 from app.utils.auth_dependency import Sesion, get_db, require_admin, require_module
@@ -141,7 +147,7 @@ def crear_asiento(
     return crud_accounting.crear_asiento(db, payload, user_id=admin.user.id_user)
 
 
-@router.get("/entries/{entry_id}", response_model=JournalEntryOut)
+@router.get("/entries/{entry_id:int}", response_model=JournalEntryOut)
 def asiento(
     entry_id: int,
     db: Session = Depends(get_db),
@@ -174,6 +180,77 @@ def cerrar_periodo(
     que garantizar es que no se deshaga y que quede en bitácora.
     """
     return crud_accounting.cerrar_periodo(db, year, month, sesion=admin)
+
+
+# -------------------------------------------------------------- los reportes
+#
+# Los cinco y el D-104, en JSON. **El CSV lo arma el POS** y no esta capa: un CSV
+# lleva encabezados, y los encabezados son texto que lee una persona (RN-30). Es
+# lo mismo que ya hace la plantilla de importación de inventario, que se sirve
+# desde el POS. El plan §13.4 decía `?format=csv` acá; corregido en T-1110.
+
+
+@router.get("/reports/trial-balance", response_model=TrialBalance)
+def balance_de_comprobacion(
+    year: int,
+    month: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    return crud_accounting.balance_de_comprobacion(db, year, month)
+
+
+@router.get("/reports/income", response_model=IncomeStatement)
+def estado_de_resultados(
+    year: int,
+    month: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    return crud_accounting.estado_de_resultados(db, year, month)
+
+
+@router.get("/reports/balance", response_model=BalanceSheet)
+def balance_general(
+    year: int,
+    month: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """Acumulado desde que existe el libro, no del mes (ver el servicio)."""
+    return crud_accounting.balance_general(db, year, month)
+
+
+@router.get("/reports/journal", response_model=Journal)
+def diario(
+    year: int,
+    month: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    return crud_accounting.diario(db, year, month)
+
+
+@router.get("/reports/ledger", response_model=LedgerReport)
+def mayor(
+    year: int,
+    month: int | None = Query(default=None),
+    account_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    return crud_accounting.mayor(db, year, month, account_id)
+
+
+@router.get("/vat", response_model=VatDraft)
+def borrador_del_d104(
+    year: int,
+    month: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """El borrador del D-104 (RF-54, RN-65)."""
+    return crud_accounting.borrador_del_d104(db, year, month)
 
 
 @router.post("/entries/{entry_id}/reclassify", response_model=Reclassified)
