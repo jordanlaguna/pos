@@ -33,7 +33,9 @@
       "pos": "http://localhost:3000",
       "api": "http://localhost:8001",
       "api_docs": "http://localhost:8001/docs",
-      "adminer": "http://localhost:8080"
+      "adminer": "http://localhost:8080",
+      "minio": "http://localhost:9000 - consola en 9001 (F6)",
+      "vault": "http://localhost:8200 - arranca SELLADO en cada reinicio (F6)"
     },
     "credenciales_demo": {
       "$aviso": "Solo para desarrollo. Cambiar antes de producción.",
@@ -85,8 +87,8 @@
       "marca": "Logo (PNG/JPG/WebP, 250 KB) servido por /marca/logo con caché inmutable, y acento de la interfaz con tono oscuro y tinta derivados en OKLab."
     },
     "facturacion_electronica": {
-      "estado": "no implementado",
-      "detalle": "Solo la casilla y los datos del emisor (ambiente, actividad económica, sucursal, terminal, usuario ATV). No firma, no transmite y no guarda credenciales. La pantalla dice explícitamente qué falta."
+      "estado": "en construcción (F6)",
+      "detalle": "Ya está la preparación: certificado y credenciales de ATV POR AMBIENTE (fe_credentials), el contador del consecutivo con sus cinco dimensiones (fe_sequences), el almacén de comprobantes en MinIO y la firma contra Vault. Se sube el .p12 con su PIN, se guarda la parte pública, la privada se importa a Vault, y ni el archivo ni el PIN quedan en ninguna columna. Se ve el estado de los dos ambientes, con aviso 30 días antes del vencimiento.\n\nTODAVÍA NO EMITE NI TRANSMITE. Faltan de F6: el ambiente activo y el paso a producción con bitácora, la prueba de conexión contra el IdP, la actividad económica, el ABM de sucursales y terminales, el arranque del consecutivo, las pantallas y el simulado. Emitir es F7."
     },
     "backend": {
       "estado": "listo",
@@ -1220,6 +1222,28 @@
       "que_la_reabriria": "Escrito para que no se reabra por menos: que `company_dump.py` versione el esquema por otro motivo —con lo que el rename dejaría de romper respaldos—, o que una de esas columnas empiece a salir en un contrato nuevo hacia afuera. Ninguna está prevista.",
       "sigue_vigente": "La otra mitad de T-913, que nunca estuvo en discusión: la excepción es de las columnas que ya existen, **no una licencia para las nuevas**. F6 estrena `fe_credentials` y `fe_sequences` y las dos van enteras en inglés; `test_esquema.py` compara modelo y migración tabla por tabla.",
       "fecha": "2026-09-13"
+    },
+    {
+      "tema": "Los comprobantes van a un almacén de objetos y no a la base",
+      "decision": "Entra MinIO al compose —hablado por la API de S3— y guarda los cinco tipos de documento de factura electrónica: el XML firmado que se manda, la respuesta firmada de Hacienda, y el comprobante, el acuse y el PDF de los recibidos. La ruta la arma el dominio y nunca quien llama: {company_id}/{environment}/{kind}/{yyyy}/{mm}/{clave}.{xml|pdf}.",
+      "porque": "No es el tamaño de un archivo sino el de todos: son hasta tres por comprobante, para siempre. En columnas, eso convierte cada respaldo de la base en horas y mete al mysqldump —que es cómo se restaura una compañía— en el camino crítico de algo que solo hace falta cuando Hacienda pregunta.\n\nSe levanta en F6 y no en F7 porque es de las pocas piezas de F7 que NO dependen de la ruta sin decidir: con proveedor autorizado también hay que custodiar el XML y el acuse, porque la obligación de custodia es del emisor y no de quien transmite.",
+      "lo_que_se_comprobo": "Contra MinIO RELEASE.2025-09-07: con IfNoneMatch=* la segunda escritura de la misma llave devuelve 412 y el contenido original no se toca. Eso convierte «se escribe una vez» en una garantía del almacén en vez de un head_object antes del put, que tiene carrera. Lo que ataja es un reintento de la cola que llegue tarde y pise el acuse bueno con uno viejo.",
+      "lo_que_arrastro": "El respaldo de la VM pasa a ser tres cosas: la base, el bucket y las llaves de apertura de Vault. Un respaldo que se lleve solo la base restaura un sistema que cree tener sus comprobantes y no los tiene. Está en el README de despliegue.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "tema": "La llave privada de firma va a Vault, y el .p12 no se guarda",
+      "decision": "Vault transit es el único sitio donde vive la privada: se importa al subir el .p12 y no vuelve a salir. Se cierra la elección de dos adaptadores —local y Vault— a uno.",
+      "porque": "Lo pidió el usuario, y lo que hay que mirar no es que entre Vault sino LO QUE SE CAE: p12_encrypted, pin_encrypted y key_version dejan de existir. El PIN solo sirve para abrir el .p12 y eso pasa una sola vez, así que después no hay nada que volver a abrir ni nada que guardar. Un respaldo robado ya no contiene ninguna llave de firma, y company_dump.py pasa de tres columnas que descartar a mano a una sola.\n\nFE_CRYPTO_KEY sobrevive con un solo cliente: la contraseña de ATV, que hay que poder reenviar entera al IdP en cada token. No es un digest que se firme sino un valor que se guarda y se lee, y eso transit no lo hace.",
+      "lo_que_cuesta": "El modo de falla nuevo alcanza también al negocio de una sola caja. Antes la VM de un negocio corría el adaptador local y Vault nunca estaba en el camino; ahora está siempre, y un Vault sellado no firma: se sigue vendiendo y numerando, la cola crece, y nada falla a la vista. Se resuelve en el despliegue —systemd abriéndolo al arrancar, con las llaves en el disco— y eso deja el modelo de amenaza en «cifrado en reposo con la llave en el mismo disco». Lo que se gana igual: la llave no está en la base ni en sus respaldos, hay bitácora de cada firma, y la privada no pasa por la memoria de la aplicación. El README lo dice con todas las letras.",
+      "lo_que_se_comprobo": "Contra Vault 1.20.4, y tres cosas no se deducen de la documentación: firmar sin llave contesta 400 y NO 404 (se pregunta si la llave existe en vez de leer el texto del error, que cambia entre versiones); configurar una llave que no existe también contesta 400, así que «quitar dos veces» parecía una falla de Vault; y reemplazar un certificado va por import_version y no por import, porque importar sobre una llave que ya está obligaría a borrar antes, o sea a dejar una ventana sin firma.\n\nLo que la batería comprueba no es que devuelva bytes sino que la firma VERIFIQUE con el certificado público que se quedó en la base, y que la de la compañía 2 no verifique con el certificado de la 1.",
+      "fecha": "2026-09-13"
+    },
+    {
+      "tema": "factura_electronica se queda fuera de MODULES",
+      "decision": "La bandera del plan que existe desde la 002 no entra a la lista de módulos, y las rutas de F6 no la exigen. domain/modules.py dejaba escrito que esto se decidía el día que F6 la usara.",
+      "porque": "MODULES es a la vez la lista de módulos Y la de columnas —se lee con getattr(Plan, nombre)—, así que meterla ahí pondría un nombre en español dentro de un contrato que viaja al POS en inglés, o exigiría una capa de traducción que existiría por un solo caso. Y sobre todo: la puerta es emitir, no configurar. Subir un certificado en una compañía cuyo plan no incluye factura electrónica no emite nada; el candado que importa es el de F7 (T-713). Cerrar la configuración y dejar abierta la emisión sería cerrar la puerta equivocada.",
+      "fecha": "2026-09-13"
     }
   ],
   "invariantes_verificados": {
@@ -1333,13 +1357,14 @@
     },
     "codigos_de_error": {
       "$comentario": "T-802 y T-803. Si estas cifras se mueven, se movió el contrato entre el backend y el POS: hay un código nuevo, o uno que dejó de levantarse.",
-      "codigos_del_backend": 64,
+      "$deriva": "Este bloque llevaba dos fases sin actualizarse: decía 64 códigos del backend cuando ya eran 126, porque F10 y F11 agregaron los suyos y nadie volvió acá. Lo que enseña es que un invariante que ninguna prueba comprueba es un comentario. Las dos LISTAS no se desincronizan —messages.test.ts las compara entre sí— pero a este NÚMERO no lo mira nadie. Recontado el 2026-09-13.",
+      "codigos_del_backend": 126,
       "codigos_propios_del_pos": 4,
-      "mensajes_de_exito": 12,
+      "mensajes_de_exito": 14,
+      "$en_vuelo": "Al 2026-09-13 el POS va en 125 y le faltan los cinco de F6 —invalid_certificate, certificate_too_large, invalid_environment, atv_user_required, signing_unavailable—, así que messages.test.ts está en rojo A PROPÓSITO: es la mitad del POS de F6, que todavía no se escribió.",
       "raise_migrados": 81,
-      "sitios_del_simulado": 70,
-      "pruebas_del_backend": 479,
-      "pruebas_de_unidad_del_pos": 412
+      "$raise_migrados": "Histórico de T-802: cuántos raise se convirtieron entonces. No es una cifra viva.",
+      "sitios_del_simulado": 70
     },
     "catalogos_de_idioma": {
       "$comentario": "T-804 terminada. Si el total baja sin que se borre una pantalla, alguien volvió a escribir texto dentro de un componente.",
@@ -1386,6 +1411,10 @@
     {
       "riesgo": "Buscar texto en español con `grep` y `\\b` da resultados al revés: las palabras acentuadas rompen el límite de palabra.",
       "mitigacion": "Para cualquier búsqueda sobre texto en español —voseo, tildes, plurales— se usa Python con `re.UNICODE` y clases de caracteres explícitas, no `\\b`. Y una búsqueda que devuelve **cero** resultados se comprueba al revés antes de creerle: se busca algo que uno sabe que está."
+    },
+    {
+      "riesgo": "Vault arranca sellado después de cada reinicio, y sellado no firma. Desde F6 no hay camino sin Vault ni siquiera para un negocio de una sola caja: se sigue vendiendo y numerando, la cola de transmisión crece, y nada falla a la vista hasta que se acaba el plazo para transmitir.",
+      "mitigacion": "Una unidad de systemd que lo abra al arrancar, con las llaves de apertura en un archivo que solo lea root (README de despliegue, «Abrir Vault al arrancar»). Eso baja el modelo de amenaza a «cifrado en reposo con la llave en el mismo disco»; lo que se gana igual es que la llave de firma no está en la base ni en sus respaldos. La alarma que lo hace visible es la de antigüedad de la cola (plan 7.2), que entra en F7."
     }
   ],
   "sesiones": [
@@ -2182,6 +2211,20 @@
         "Cifras: 1 233 pruebas del backend con cobertura 100 % en dominio y aplicación, 608 unitarias del POS, 56 de punta a punta, `npm run check` en 0/0."
       ],
       "aprendido": "Las dos verificaciones que más encontraron fueron las que no miran lo que se escribió sino lo que el sistema hace: correr los `post_*` de verdad contra el catálogo sembrado, y armar el escenario de los reportes con esos mismos `post_*` en vez de escribir las filas a mano. Una tabla copiada a mano se comprueba a sí misma."
+    },
+    {
+      "fecha": "2026-09-13",
+      "titulo": "F6 arranca: el almacén, Vault y los secretos de Hacienda",
+      "hecho": [
+        "T-622 y T-623 (nuevas, las pidió el usuario): MinIO y Vault en las dos pilas, con el puerto DocumentStore, el adaptador de S3 y la derivación de la ruta en el dominio. La pila de pruebas monta transit sola desde el compose, porque su Vault es en memoria y cada reinicio lo dejaba sin motor.",
+        "T-601, T-621 y la mitad de T-617: migración 011 con fe_credentials (llave compuesta por compañía y ambiente), fe_sequences (las cinco dimensiones del consecutivo) y el tipo de identificación del emisor y del receptor. Corrida completa contra MySQL de verdad, que es lo que create_all no comprueba.",
+        "T-602a, T-602, T-602b, T-613 y T-618: AES-256-GCM para la contraseña de ATV, el puerto DocumentSigner con prueba de contrato, el adaptador de Vault con el BYOK completo, el dominio de Hacienda en un solo módulo con su guardián, y el arranque que se cae sin FE_CRYPTO_KEY.",
+        "T-603, T-603b, T-604, T-605 y T-606: subir, reemplazar y quitar el certificado; usuario y contraseña de ATV; el estado de los dos ambientes con aviso 30 días antes del vencimiento.",
+        "T-916 cerrada: el español se queda, y esta vez para siempre.",
+        "Cifras: 1 623 pruebas del backend con cobertura 100 % en dominio y aplicación. El POS todavía no se tocó."
+      ],
+      "lo_que_falta_de_la_fase": "T-607 (actividad económica), T-608 y T-608b (ABM de sucursales y terminales, ya sin puerta), T-610 y T-611 (ambiente activo y paso a producción con bitácora), T-612 (probar la conexión sin emitir), T-616 (arranque del consecutivo), T-609 y T-609b (la bitácora de los secretos), T-615 (el simulado), T-617 (la otra mitad: exigir el tipo al dar de alta un cliente), T-620 (unidad de medida) y T-619 (punta a punta). Más las pantallas.\n\nnpm test ESTÁ EN ROJO A PROPÓSITO: messages.test.ts compara la lista de códigos de error del backend con la del POS, y los cinco de F6 todavía no están del lado del POS. Es la primera cosa que hay que hacer al retomar.",
+      "aprendido": "Las tres cosas que más costaron no estaban en ninguna documentación y salieron de correr el adaptador contra el servicio de verdad: Vault contesta 400 y no 404 cuando no hay llave, y eso borraba la distinción entre «reintentá» y «andá a cargar el certificado» —confundirlas deja la cola reintentando para siempre algo que no va a firmarse nunca—; el mismo 400 para configurar una llave que no existe hacía que «quitar dos veces» pareciera una falla; y cryptography no distingue un PIN malo de un archivo corrupto, así que lo único separable es haber subido otra cosa —se mira el primer byte, que en DER siempre es una SEQUENCE—.\n\nDos guardianes se dispararon sobre código escrito en esta misma sesión, que es para lo que están. El de Hacienda cazó el correo de ejemplo de ATV escrito completo en dos docstrings —un ejemplo también envejece— y antes se había cazado a sí mismo: no encontraba /realms/rut porque el realm estaba partido entre dos literales Y escrito dos veces, en su campo y dentro de la URL.\n\nY la trampa de CLAUDE.md en su forma clásica, ahora en el backend: las pruebas HTTP de credenciales pasaban solas y fallaban en la SEGUNDA corrida completa, porque la base de pruebas sobrevive y la compañía A quedaba con certificado. La salida no es limpiar mejor —una prueba que falla a mitad no limpia nada— sino que cada prueba dé de alta su propia compañía. Se comprueba corriendo la batería entera dos veces seguidas, que es lo único que lo detecta."
     }
   ],
   "$reparto": {
