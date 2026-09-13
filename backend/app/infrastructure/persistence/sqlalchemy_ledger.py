@@ -52,7 +52,11 @@ from app.domain.ledger import (
     post_sale,
     post_supplier_payment,
 )
+from app.domain.errors import PeriodClosed
 from app.domain.money import Money
+from app.infrastructure.persistence.sqlalchemy_accounting import (
+    SqlAlchemyPeriodRepository,
+)
 from app.models.model_accounting import Account, AccountingPeriod, AccountMapping
 from app.models.model_accounting import JournalEntry as FilaDeAsiento
 from app.models.model_accounting import JournalLine as FilaDeLinea
@@ -197,6 +201,12 @@ class SqlAlchemyLedger:
             .first()
         )
         if fila is None:
+            # Un mes que nace **detrás** de uno ya cerrado no puede nacer abierto.
+            # Es el agujero que dejaría RN-61 sin esto: cerrar setiembre no
+            # impediría capturar una factura de agosto si agosto nunca tuvo un
+            # asiento, y eso cambiaría un balance ya entregado.
+            if SqlAlchemyPeriodRepository(self._db).any_closed_after(dia.year, dia.month):
+                raise PeriodClosed(dia.year, dia.month)
             fila = AccountingPeriod(year=dia.year, month=dia.month, status=OPEN)
             self._db.add(fila)
             self._db.flush()

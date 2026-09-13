@@ -341,7 +341,13 @@ export const API_CODES = [
 	'account_in_use',
 	'journal_entry_not_found',
 	'nothing_to_reclassify',
-	'period_closed'
+	'period_closed',
+	'period_not_found',
+	'period_not_closeable',
+	'journal_missing_description',
+	'invalid_journal_line',
+	'entry_not_balanced',
+	'accounting_not_active'
 ] as const;
 
 export type ApiCode = (typeof API_CODES)[number];
@@ -775,6 +781,24 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_nothing_to_reclassify();
 		case 'period_closed':
 			return m.api_period_closed({ year: numero(d.year), month: numero(d.month) });
+		case 'period_not_found':
+			return m.api_period_not_found({ year: numero(d.year), month: numero(d.month) });
+		case 'period_not_closeable':
+			return m.api_period_not_closeable({
+				year: numero(d.blocking_year),
+				month: numero(d.blocking_month)
+			});
+		case 'journal_missing_description':
+			return m.api_journal_missing_description();
+		case 'invalid_journal_line':
+			return m.api_invalid_journal_line();
+		case 'entry_not_balanced':
+			return m.api_entry_not_balanced({
+				debits: texto(d.debits),
+				credits: texto(d.credits)
+			});
+		case 'accounting_not_active':
+			return m.api_accounting_not_active();
 		default:
 			// Acá `code` ya es `never`: si falta un caso, esto no compila. Es lo
 			// único que impide que un código nuevo salga en blanco en la pantalla.

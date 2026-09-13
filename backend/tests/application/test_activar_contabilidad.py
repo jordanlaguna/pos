@@ -17,15 +17,26 @@ from app.application.use_cases.accounting import (
     ActivateAccounting,
     ActivationRequest,
     AlreadyActive,
+    ClosePeriod,
     JournalEntryNotFound,
+    ManualEntryRequest,
+    ManualLine,
+    MissingDescription,
     OpeningLine,
+    PeriodNotFound,
     Reclassify,
     ReclassifyRequest,
+    RecordManualEntry,
     UnknownAccountCode,
     UnknownTemplate,
 )
 from app.domain.chart import CHART, COMMERCE, default_mapping
-from app.domain.errors import EntryNotBalanced, NothingToReclassify
+from app.domain.errors import (
+    EntryNotBalanced,
+    NothingToReclassify,
+    PeriodClosed,
+    PeriodNotCloseable,
+)
 from app.domain.ledger import OPENING, Line
 from app.domain.money import Money
 from app.infrastructure.clock import FixedClock
@@ -85,6 +96,8 @@ class FilaDePeriodo:
     year: int
     month: int
     status: str = "open"
+    closed_at: object = None
+    closed_by: int | None = None
 
 
 class PeriodosFalsos:
@@ -96,10 +109,19 @@ class PeriodosFalsos:
             (p for p in self.periodos if p.year == year and p.month == month), None
         )
 
+    def all(self) -> list[FilaDePeriodo]:
+        return sorted(self.periodos, key=lambda p: (p.year, p.month), reverse=True)
+
     def create(self, year: int, month: int) -> FilaDePeriodo:
         fila = FilaDePeriodo(len(self.periodos) + 1, year, month)
         self.periodos.append(fila)
         return fila
+
+    def close(self, periodo: FilaDePeriodo, *, closed_at, closed_by: int) -> FilaDePeriodo:
+        periodo.status = "closed"
+        periodo.closed_at = closed_at
+        periodo.closed_by = closed_by
+        return periodo
 
 
 class ConfiguracionFalsa:
@@ -455,6 +477,145 @@ class TestReclasificar:
 
         with pytest.raises(AccountNotFound):
             caso(ReclassifyRequest(entry_id=7, to_account_id=self.GASTOS, user_id=ADMIN))
+
+
+class TestElAsientoManual:
+    """Lo que alguien dicta (RF-51)."""
+
+    def _mundo(self):
+        cuentas = CuentasFalsas(
+            [
+                FilaDeCuenta(1, "1.1.01", "Caja", "asset", None, True),
+                FilaDeCuenta(2, "6.9.02", "Gastos", "expense", None, False),
+                FilaDeCuenta(3, "6.2.01", "Comisiones", "expense", None, False, is_active=False),
+            ]
+        )
+        diario, uow = DiarioFalso(), FakeUnitOfWork()
+        caso = RecordManualEntry(accounts=cuentas, journal=diario, uow=uow)
+        return caso, diario, uow
+
+    def _peticion(self, **cambios) -> ManualEntryRequest:
+        datos = dict(
+            entry_date=date(2026, 10, 15),
+            description="Depreciación de octubre",
+            user_id=ADMIN,
+            lines=(
+                ManualLine(account_id=2, debit=Money(5000)),
+                ManualLine(account_id=1, credit=Money(5000)),
+            ),
+        )
+        datos.update(cambios)
+        return ManualEntryRequest(**datos)
+
+    def test_escribe_el_asiento(self, ):
+        caso, diario, uow = self._mundo()
+        id_asiento = caso(self._peticion())
+
+        assert id_asiento == 1
+        asiento = diario.asientos[0]
+        assert asiento.kind == "manual"
+        assert asiento.description == "Depreciación de octubre"
+        assert asiento.total == Money(5000)
+        assert uow.committed
+
+    def test_sin_descripcion_no(self):
+        # Es lo único que explica por qué existe el asiento.
+        caso, _, _ = self._mundo()
+
+        with pytest.raises(MissingDescription):
+            caso(self._peticion(description="   "))
+
+    def test_uno_de_ajuste_referencia_al_que_corrige(self):
+        caso, diario, _ = self._mundo()
+        caso(self._peticion(kind="adjustment", adjusts_entry_id=42))
+
+        assert diario.asientos[0].adjusts_entry_id == 42
+
+    def test_contra_una_cuenta_que_no_existe(self):
+        caso, _, _ = self._mundo()
+
+        with pytest.raises(AccountNotFound):
+            caso(self._peticion(lines=(ManualLine(account_id=99, debit=Money(1)),)))
+
+    def test_contra_una_cuenta_inactiva_tampoco(self):
+        caso, _, _ = self._mundo()
+
+        with pytest.raises(AccountNotFound):
+            caso(self._peticion(lines=(ManualLine(account_id=3, debit=Money(1)),)))
+
+    def test_las_lineas_en_blanco_se_descartan(self):
+        caso, diario, _ = self._mundo()
+        caso(
+            self._peticion(
+                lines=(
+                    ManualLine(account_id=2, debit=Money(5000)),
+                    ManualLine(account_id=1),
+                    ManualLine(account_id=1, credit=Money(5000)),
+                )
+            )
+        )
+
+        assert len(diario.asientos[0].lines) == 2
+
+    def test_uno_que_no_cuadra_no_se_construye(self):
+        caso, _, uow = self._mundo()
+
+        with pytest.raises(EntryNotBalanced):
+            caso(
+                self._peticion(
+                    lines=(
+                        ManualLine(account_id=2, debit=Money(5000)),
+                        ManualLine(account_id=1, credit=Money(4000)),
+                    )
+                )
+            )
+        assert not uow.committed
+
+
+class TestCerrarElPeriodo:
+    """RF-52, RN-61: cerrar es en orden y no se deshace."""
+
+    def _mundo(self, periodos=()):
+        repositorio = PeriodosFalsos()
+        for año, mes, estado in periodos:
+            fila = repositorio.create(año, mes)
+            fila.status = estado
+        uow = FakeUnitOfWork()
+        return ClosePeriod(periods=repositorio, uow=uow, clock=FixedClock(AHORA)), repositorio, uow
+
+    def test_cierra_el_mes_con_quien_y_cuando(self, ):
+        caso, repositorio, uow = self._mundo([(2026, 9, "open")])
+        cerrado = caso(year=2026, month=9, user_id=ADMIN)
+
+        assert cerrado.status == "closed"
+        assert cerrado.closed_at == AHORA
+        assert cerrado.closed_by == ADMIN
+        assert uow.committed
+
+    def test_con_el_anterior_abierto_no(self):
+        caso, _, uow = self._mundo([(2026, 8, "open"), (2026, 9, "open")])
+
+        with pytest.raises(PeriodNotCloseable):
+            caso(year=2026, month=9, user_id=ADMIN)
+        assert not uow.committed
+
+    def test_con_el_anterior_cerrado_sí(self):
+        caso, _, _ = self._mundo([(2026, 8, "closed"), (2026, 9, "open")])
+
+        assert caso(year=2026, month=9, user_id=ADMIN).status == "closed"
+
+    def test_un_mes_que_no_existe(self):
+        # Un mes sin un solo asiento no tiene fila, y cerrarlo no significa nada.
+        caso, _, _ = self._mundo()
+
+        with pytest.raises(PeriodNotFound):
+            caso(year=2026, month=9, user_id=ADMIN)
+
+    def test_uno_ya_cerrado_no_se_cierra_otra_vez(self):
+        caso, _, _ = self._mundo([(2026, 9, "closed")])
+
+        with pytest.raises(PeriodClosed):
+            caso(year=2026, month=9, user_id=ADMIN)
 
 
 class TestLoQueNoSePuede:

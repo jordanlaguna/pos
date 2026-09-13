@@ -235,5 +235,11 @@
 	"api_account_in_use": "A conta {code} tem {lines} linha(s) de lançamento. Desative-a em vez de apagá-la.",
 	"api_journal_entry_not_found": "Esse lançamento não existe.",
 	"api_nothing_to_reclassify": "Esse lançamento já não tem nada por classificar.",
-	"api_period_closed": "O período {month}/{year} está fechado. O que houver para corrigir vai por um lançamento de ajuste no período aberto."
+	"api_period_closed": "O período {month}/{year} está fechado. O que houver para corrigir vai por um lançamento de ajuste no período aberto.",
+	"api_period_not_found": "Não há período contábil de {month}/{year}: esse mês não tem lançamentos.",
+	"api_period_not_closeable": "Antes é preciso fechar {month}/{year}: o saldo de um mês começa onde terminou o anterior.",
+	"api_journal_missing_description": "O lançamento precisa de uma descrição: é a única coisa que explica por que existe.",
+	"api_invalid_journal_line": "Cada linha vai no débito ou no crédito, nunca nos dois, e nunca negativa.",
+	"api_entry_not_balanced": "O lançamento não fecha: {debits} em débitos contra {credits} em créditos.",
+	"api_accounting_not_active": "Esta empresa não mantém livros aqui, ou a data é anterior ao início da sua contabilidade."
 }

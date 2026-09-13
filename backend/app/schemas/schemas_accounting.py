@@ -8,7 +8,7 @@ prueba.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, field_validator
@@ -162,3 +162,64 @@ class ReclassifyIn(BaseModel):
 
 class Reclassified(BaseModel):
     adjustment_entry_id: int
+
+
+# --------------------------------------------------------------- los asientos
+
+
+class JournalLineOut(BaseModel):
+    account_id: int
+    account_code: str
+    account_name: str
+    debit: float
+    credit: float
+    #: En porcentaje —13, no 0,13—, como se guarda y como lo pide el D-104.
+    tax_rate: float | None = None
+    memo: str | None = None
+
+
+class JournalEntryOut(BaseModel):
+    id: int
+    entry_number: int
+    entry_date: date
+    kind: str
+    source_type: str | None = None
+    source_id: int | None = None
+    adjusts_entry_id: int | None = None
+    #: Código del evento en los automáticos; frase de quien lo dictó en los
+    #: manuales. El POS decide cuál muestra.
+    description: str
+    user_id: int
+    created_at: datetime
+    lines: list[JournalLineOut] | None = None
+    total: float | None = None
+
+
+class ManualLineIn(BaseModel):
+    account_id: int
+    debit: float = 0
+    credit: float = 0
+    memo: str | None = None
+
+
+class ManualEntryIn(BaseModel):
+    entry_date: date
+    #: Obligatoria: es lo único que explica por qué existe el asiento.
+    description: str
+    lines: list[ManualLineIn] | None = None
+    #: Manual o de ajuste. Acá sí lo cierra Pydantic: es forma, no negocio. Los
+    #: otros dos tipos —'auto' y 'opening'— no los dicta nadie a mano.
+    kind: Literal["manual", "adjustment"] = "manual"
+    adjusts_entry_id: int | None = None
+
+
+# --------------------------------------------------------------- los periodos
+
+
+class PeriodOut(BaseModel):
+    id: int
+    year: int
+    month: int
+    status: str
+    closed_at: datetime | None = None
+    closed_by: int | None = None

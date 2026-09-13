@@ -727,6 +727,13 @@ FUERA_DE_LA_BATERIA = {
     # `test_contabilidad.py::TestNoSeVeElLibroAjeno`, con dos compañías propias.
     "/accounting/accounts/{account_id}": "probado en test_contabilidad.py",
     "/accounting/entries/{entry_id}/reclassify": "probado en test_contabilidad.py",
+    "/accounting/entries": "el libro de la compañía de la sesión; escribe en ella",
+    "/accounting/entries/{entry_id}": "probado en test_contabilidad.py",
+    "/accounting/periods": "los periodos de la compañía de la sesión",
+    "/accounting/periods/{year}/{month}/close": (
+        "no recibe un id ajeno: el año y el mes son de la compañía de la sesión, "
+        "y un mes que ella no tiene responde period_not_found"
+    ),
 }
 
 

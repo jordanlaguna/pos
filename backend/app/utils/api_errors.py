@@ -251,6 +251,25 @@ CODES: frozenset[str] = frozenset(
         # cerrado (RN-61). Lo que haya que corregir va por un ajuste en el
         # periodo abierto.
         "period_closed",
+        "period_not_found",
+        # `year`, `month` y el par `blocking_*`: el mes anterior sigue abierto.
+        # El saldo de un mes arranca donde terminó el anterior, así que cerrar
+        # noviembre con octubre abierto congelaría un balance que todavía puede
+        # cambiar por debajo (RF-52).
+        "period_not_closeable",
+        # Un asiento manual sin descripción. Es lo único que explica por qué
+        # existe: sin ella, dentro de un año nadie sabrá qué se corrigió.
+        "journal_missing_description",
+        # `reason` ('both_sides', 'negative', 'empty', 'no_lines'): una línea que
+        # no es ni un débito ni un crédito. **No es «no balancea»**: un asiento
+        # con una línea así puede cuadrar perfectamente.
+        "invalid_journal_line",
+        # `debits` y `credits`: el asiento no cuadra (RN-58). Van las dos sumas
+        # porque quien lo escribió necesita ver por cuánto.
+        "entry_not_balanced",
+        # La compañía no lleva libros, o la fecha es anterior al arranque de su
+        # contabilidad (RN-60).
+        "accounting_not_active",
         # -------------------------------------------------- configuración
         "unsupported_locale",
         "settings_too_large",

@@ -71,8 +71,16 @@ class PeriodSnapshot(Protocol):
 class PeriodRepository(Protocol):
     def get(self, year: int, month: int) -> PeriodSnapshot | None: ...
 
+    def all(self) -> list[PeriodSnapshot]:
+        """Todos los meses, del más nuevo al más viejo."""
+        ...
+
     def create(self, year: int, month: int) -> PeriodSnapshot:
         """Crea el mes, abierto."""
+        ...
+
+    def close(self, period: PeriodSnapshot, *, closed_at, closed_by: int) -> PeriodSnapshot:
+        """Lo cierra. **No hay `reopen`**, y esa ausencia es la regla (RN-61)."""
         ...
 
 

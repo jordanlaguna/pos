@@ -145,6 +145,36 @@ class SqlAlchemyPeriodRepository:
         self._db.flush()
         return periodo
 
+    def close(self, periodo: AccountingPeriod, *, closed_at, closed_by: int) -> AccountingPeriod:
+        """Lo cierra. **No hay `reopen`**, y esa ausencia es la regla (RN-61)."""
+        periodo.status = "closed"
+        periodo.closed_at = closed_at
+        periodo.closed_by = closed_by
+        self._db.flush()
+        return periodo
+
+    def any_closed_after(self, year: int, month: int) -> bool:
+        """Si hay algún mes **posterior** ya cerrado.
+
+        Es el agujero que dejaría RN-61 sin esto: cerrar setiembre no impide
+        escribir en agosto **si agosto nunca tuvo un asiento**, porque entonces no
+        tiene fila y nace abierto. Sin esta comprobación, una factura vieja
+        capturada tarde cambiaría un balance ya entregado.
+
+        El `company_id` no hace falta escribirlo: es una consulta del ORM sobre
+        una tabla de negocio, así que el filtro automático entra.
+        """
+        return (
+            self._db.query(AccountingPeriod)
+            .filter(
+                AccountingPeriod.status == "closed",
+                (AccountingPeriod.year > year)
+                | ((AccountingPeriod.year == year) & (AccountingPeriod.month > month)),
+            )
+            .first()
+            is not None
+        )
+
 
 class SqlAlchemyAccountingSettings:
     """La sección `accounting` del JSON de configuración.
@@ -202,6 +232,34 @@ class SqlAlchemyJournalRepository:
 
     def get(self, entry_id: int) -> FilaDeAsiento | None:
         return self._db.query(FilaDeAsiento).filter(FilaDeAsiento.id == entry_id).first()
+
+    def en_el_mes(
+        self, *, year: int | None = None, month: int | None = None, kind: str | None = None
+    ) -> list[FilaDeAsiento]:
+        """El libro diario: por fecha y, dentro del día, por correlativo.
+
+        Sin mes devuelve todo lo del año; sin año, todo. Es el mismo orden en que
+        se imprime un diario, y el correlativo desempata porque dos asientos del
+        mismo día tienen que salir siempre en el mismo orden.
+        """
+        consulta = self._db.query(FilaDeAsiento)
+        if year is not None:
+            consulta = consulta.filter(func.year(FilaDeAsiento.entry_date) == year)
+        if month is not None:
+            consulta = consulta.filter(func.month(FilaDeAsiento.entry_date) == month)
+        if kind:
+            consulta = consulta.filter(FilaDeAsiento.kind == kind)
+        return consulta.order_by(FilaDeAsiento.entry_date, FilaDeAsiento.entry_number).all()
+
+    def filas_con_cuenta(self, entry_id: int) -> list[tuple[FilaDeLinea, Account]]:
+        """Las líneas con su cuenta, para mostrarlas."""
+        return (
+            self._db.query(FilaDeLinea, Account)
+            .join(Account, Account.id == FilaDeLinea.account_id)
+            .filter(FilaDeLinea.entry_id == entry_id)
+            .order_by(FilaDeLinea.id)
+            .all()
+        )
 
     def lines_of(self, entry_id: int) -> list[Line]:
         filas = (

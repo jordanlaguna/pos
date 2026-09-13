@@ -383,6 +383,27 @@ class TestNoSeVeElLibroAjeno:
 
         assert estado == 404
 
+    def test_no_se_ve_un_asiento_de_la_otra(self, dos):
+        una, otra = dos
+        caja = cuenta_por_codigo(otra, "1.1.01")
+        gastos = cuenta_por_codigo(otra, "6.9.02")
+        ajeno = otra.ok(
+            "POST",
+            "/accounting/entries",
+            {
+                "entry_date": HOY.isoformat(),
+                "description": "Privado",
+                "lines": [
+                    {"account_id": gastos["id"], "debit": 10, "credit": 0},
+                    {"account_id": caja["id"], "debit": 0, "credit": 10},
+                ],
+            },
+        )
+
+        estado, _ = una.call("GET", f"/accounting/entries/{ajeno['id']}")
+
+        assert estado == 404
+
     def test_ni_reclasificar_un_asiento_suyo(self, dos):
         una, otra = dos
         # El asiento de apertura de la otra no existe —no dictó saldos— así que
@@ -401,6 +422,243 @@ class TestNoSeVeElLibroAjeno:
 
         assert len(una.ok("GET", "/accounting/accounts")) == len(CHART)
         assert len(otra.ok("GET", "/accounting/accounts")) == len(CHART)
+
+
+class TestElAsientoManual:
+    """RF-51: lo que alguien dicta, y lo que corrige otro asiento."""
+
+    @pytest.fixture(scope="class")
+    def cliente(self, api: Api) -> Api:
+        cliente = compania_propia(api, "manual", modulos="accounting")
+        activar(cliente)
+        return cliente
+
+    def _cuerpo(self, cliente: Api, **cambios) -> dict:
+        caja = cuenta_por_codigo(cliente, "1.1.01")
+        gastos = cuenta_por_codigo(cliente, "6.9.02")
+        cuerpo = {
+            "entry_date": HOY.isoformat(),
+            "description": "Gasto pagado por el dueño",
+            "lines": [
+                {"account_id": gastos["id"], "debit": 5000, "credit": 0},
+                {"account_id": caja["id"], "debit": 0, "credit": 5000},
+            ],
+        }
+        cuerpo.update(cambios)
+        return cuerpo
+
+    def test_entra_con_sus_lineas(self, cliente: Api):
+        asiento = cliente.ok("POST", "/accounting/entries", self._cuerpo(cliente))
+
+        assert asiento["kind"] == "manual"
+        assert asiento["total"] == 5000
+        assert len(asiento["lines"]) == 2
+        # La línea trae el código y el nombre de su cuenta: sin eso la pantalla
+        # tendría que cruzar el catálogo por su cuenta.
+        assert {l["account_code"] for l in asiento["lines"]} == {"1.1.01", "6.9.02"}
+
+    def test_el_correlativo_no_tiene_huecos(self, cliente: Api):
+        antes = cliente.ok("POST", "/accounting/entries", self._cuerpo(cliente))
+        despues = cliente.ok("POST", "/accounting/entries", self._cuerpo(cliente))
+
+        assert despues["entry_number"] == antes["entry_number"] + 1
+
+    def test_uno_que_no_cuadra_responde_con_las_dos_sumas(self, cliente: Api):
+        estado, cuerpo = cliente.call(
+            "POST",
+            "/accounting/entries",
+            self._cuerpo(
+                cliente,
+                lines=[
+                    {
+                        "account_id": cuenta_por_codigo(cliente, "6.9.02")["id"],
+                        "debit": 5000,
+                        "credit": 0,
+                    },
+                    {
+                        "account_id": cuenta_por_codigo(cliente, "1.1.01")["id"],
+                        "debit": 0,
+                        "credit": 4000,
+                    },
+                ],
+            ),
+        )
+
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] == "entry_not_balanced"
+        assert cuerpo["detail"]["debits"] == "5000.00"
+        assert cuerpo["detail"]["credits"] == "4000.00"
+
+    def test_sin_descripcion_tampoco(self, cliente: Api):
+        estado, cuerpo = cliente.call(
+            "POST", "/accounting/entries", self._cuerpo(cliente, description="  ")
+        )
+
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] == "journal_missing_description"
+
+    def test_una_linea_con_las_dos_columnas(self, cliente: Api):
+        estado, cuerpo = cliente.call(
+            "POST",
+            "/accounting/entries",
+            self._cuerpo(
+                cliente,
+                lines=[
+                    {
+                        "account_id": cuenta_por_codigo(cliente, "6.9.02")["id"],
+                        "debit": 10,
+                        "credit": 10,
+                    }
+                ],
+            ),
+        )
+
+        assert estado == 400, cuerpo
+        # No es «no balancea»: ese asiento cuadraría perfectamente.
+        assert cuerpo["detail"]["code"] == "invalid_journal_line"
+        assert cuerpo["detail"]["reason"] == "both_sides"
+
+    def test_el_diario_lo_devuelve_en_orden(self, cliente: Api):
+        asientos = cliente.ok(
+            "GET", f"/accounting/entries?year={HOY.year}&month={HOY.month}"
+        )
+        numeros = [a["entry_number"] for a in asientos]
+
+        assert numeros == sorted(numeros)
+        assert all(a["entry_date"].startswith(str(HOY.year)) for a in asientos)
+
+    def test_se_puede_filtrar_por_tipo(self, cliente: Api):
+        manuales = cliente.ok("GET", "/accounting/entries?kind=manual")
+
+        assert manuales
+        assert {a["kind"] for a in manuales} == {"manual"}
+
+
+class TestCerrarElMes:
+    """RF-52 y RN-61: cerrar es en orden, queda en bitácora y no se deshace."""
+
+    @pytest.fixture(scope="class")
+    def cliente(self, api: Api) -> Api:
+        # Arranca en enero para tener meses vacíos delante y poder cerrarlos.
+        cliente = compania_propia(api, "cierre", modulos="accounting")
+        cliente.ok(
+            "POST",
+            "/accounting/activate",
+            {"start_date": date(HOY.year, 1, 1).isoformat()},
+        )
+        # Un asiento en enero y otro en febrero, para que los dos meses existan.
+        caja = cuenta_por_codigo(cliente, "1.1.01")
+        gastos = cuenta_por_codigo(cliente, "6.9.02")
+        for mes in (1, 2):
+            cliente.ok(
+                "POST",
+                "/accounting/entries",
+                {
+                    "entry_date": date(HOY.year, mes, 15).isoformat(),
+                    "description": f"Gasto del mes {mes}",
+                    "lines": [
+                        {"account_id": gastos["id"], "debit": 1000, "credit": 0},
+                        {"account_id": caja["id"], "debit": 0, "credit": 1000},
+                    ],
+                },
+            )
+        return cliente
+
+    def test_cerrar_febrero_con_enero_abierto_responde_codigo(self, cliente: Api):
+        estado, cuerpo = cliente.call(
+            "POST", f"/accounting/periods/{HOY.year}/2/close", {}
+        )
+
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] == "period_not_closeable"
+        assert cuerpo["detail"]["blocking_month"] == 1
+
+    def test_cerrar_enero_sí(self, cliente: Api):
+        cerrado = cliente.ok("POST", f"/accounting/periods/{HOY.year}/1/close", {})
+
+        assert cerrado["status"] == "closed"
+        assert cerrado["closed_at"] is not None
+        assert cerrado["closed_by"] == cliente.user_id
+
+    def test_y_entonces_un_manual_con_fecha_en_enero_ya_no_entra(self, cliente: Api):
+        # La verificación de T-1109. RN-61: lo que haya que corregir va por un
+        # ajuste en el periodo abierto.
+        caja = cuenta_por_codigo(cliente, "1.1.01")
+        gastos = cuenta_por_codigo(cliente, "6.9.02")
+        estado, cuerpo = cliente.call(
+            "POST",
+            "/accounting/entries",
+            {
+                "entry_date": date(HOY.year, 1, 20).isoformat(),
+                "description": "Tarde",
+                "lines": [
+                    {"account_id": gastos["id"], "debit": 1, "credit": 0},
+                    {"account_id": caja["id"], "debit": 0, "credit": 1},
+                ],
+            },
+        )
+
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] == "period_closed"
+        assert (cuerpo["detail"]["year"], cuerpo["detail"]["month"]) == (HOY.year, 1)
+
+    def test_cerrar_enero_dos_veces_tampoco(self, cliente: Api):
+        estado, cuerpo = cliente.call(
+            "POST", f"/accounting/periods/{HOY.year}/1/close", {}
+        )
+
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] == "period_closed"
+
+    def test_el_cierre_queda_en_bitacora_con_quien_y_cuando(self, cliente: Api, soporte):
+        # La bitácora es del sistema entero y se lee desde el panel de soporte.
+        pagina = soporte.ok("GET", "/support/audit?accion=cerrar_periodo")
+        mios = [r for r in pagina["lineas"] if r["user_id"] == cliente.user_id]
+
+        assert mios, "el cierre no quedó en la bitácora"
+        assert any(r["detalle"] == f"{HOY.year}-01" for r in mios)
+
+    def test_un_mes_sin_asientos_no_se_puede_cerrar(self, cliente: Api):
+        # Un mes sin un solo asiento no tiene fila, y cerrarlo no significa nada.
+        estado, cuerpo = cliente.call(
+            "POST", f"/accounting/periods/{HOY.year - 5}/6/close", {}
+        )
+
+        assert estado == 404, cuerpo
+        assert cuerpo["detail"]["code"] == "period_not_found"
+
+    def test_tampoco_se_escribe_en_un_mes_que_nunca_existio_detras_de_uno_cerrado(
+        self, cliente: Api
+    ):
+        # El agujero que RN-61 dejaría abierto: enero está cerrado, y un mes
+        # anterior que **nunca tuvo un asiento** nacería abierto. Una factura
+        # vieja capturada tarde cambiaría un balance ya entregado.
+        caja = cuenta_por_codigo(cliente, "1.1.01")
+        gastos = cuenta_por_codigo(cliente, "6.9.02")
+        estado, cuerpo = cliente.call(
+            "POST",
+            "/accounting/entries",
+            {
+                "entry_date": date(HOY.year - 1, 12, 15).isoformat(),
+                "description": "De hace un año",
+                "lines": [
+                    {"account_id": gastos["id"], "debit": 1, "credit": 0},
+                    {"account_id": caja["id"], "debit": 0, "credit": 1},
+                ],
+            },
+        )
+
+        # Antes de la fecha de arranque de la contabilidad no hay libro donde
+        # escribirlo (RN-60), y eso se responde igual de claro.
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"]["code"] in ("period_closed", "accounting_not_active")
+
+    def test_los_periodos_se_listan_del_mas_nuevo_al_mas_viejo(self, cliente: Api):
+        periodos = cliente.ok("GET", "/accounting/periods")
+
+        assert [(p["year"], p["month"]) for p in periodos] == sorted(
+            [(p["year"], p["month"]) for p in periodos], reverse=True
+        )
 
 
 class TestSinElModuloEnElPlan:

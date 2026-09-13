@@ -11,7 +11,12 @@ from datetime import date
 
 import pytest
 
-from app.domain.errors import EntryNotBalanced, InvalidEntryLine, PeriodClosed
+from app.domain.errors import (
+    EntryNotBalanced,
+    InvalidJournalLine,
+    PeriodClosed,
+    PeriodNotCloseable,
+)
 from app.domain.ledger import (
     ADJUSTMENT,
     AUTO,
@@ -50,6 +55,7 @@ from app.domain.ledger import (
     SoldLine,
     SupplierPaymentRef,
     assert_open,
+    check_closeable,
     post_cash_close,
     post_cash_movement,
     post_purchase,
@@ -57,6 +63,7 @@ from app.domain.ledger import (
     post_return,
     post_sale,
     post_supplier_payment,
+    previous_period,
     sales_role,
 )
 from app.domain.ledger import METHOD_ROLES
@@ -142,12 +149,12 @@ class TestLaLinea:
 
     def test_no_puede_tener_las_dos_columnas(self):
         # Es la regla de las dos columnas, y la vigila el dominio y no un CHECK.
-        with pytest.raises(InvalidEntryLine) as fallo:
+        with pytest.raises(InvalidJournalLine) as fallo:
             Line(account_id=101, debit=Money(10), credit=Money(10))
         assert fallo.value.code == "both_sides"
 
     def test_no_puede_estar_vacia(self):
-        with pytest.raises(InvalidEntryLine) as fallo:
+        with pytest.raises(InvalidJournalLine) as fallo:
             Line(account_id=101)
         assert fallo.value.code == "empty"
 
@@ -157,7 +164,7 @@ class TestLaLinea:
     def test_no_puede_ser_negativa(self, lado):
         # Un crédito negativo es un débito escrito al revés, y dos formas de
         # decir lo mismo vuelven ilegible el mayor.
-        with pytest.raises(InvalidEntryLine) as fallo:
+        with pytest.raises(InvalidJournalLine) as fallo:
             Line(account_id=101, **lado)
         assert fallo.value.code == "negative"
 
@@ -178,7 +185,7 @@ class TestElAsiento:
         assert fallo.value.credits == "90.00"
 
     def test_uno_sin_lineas_tampoco(self):
-        with pytest.raises(InvalidEntryLine) as fallo:
+        with pytest.raises(InvalidJournalLine) as fallo:
             JournalEntry(kind=AUTO, entry_date=HOY, lines=())
         assert fallo.value.code == "no_lines"
 
@@ -746,3 +753,33 @@ class TestElPeriodo:
     def test_is_closed_lo_dice_sin_comparar_cadenas(self):
         assert Period(2026, 8, CLOSED).is_closed
         assert not Period(2026, 9).is_closed
+
+
+class TestCerrarUnPeriodo:
+    """RF-52: cerrar es en orden, y no se deshace."""
+
+    def test_el_mes_anterior_a_enero_es_diciembre_del_año_pasado(self):
+        assert previous_period(2027, 1) == (2026, 12)
+        assert previous_period(2026, 9) == (2026, 8)
+
+    def test_con_el_anterior_cerrado_se_puede(self):
+        check_closeable(Period(2026, 9), Period(2026, 8, CLOSED))
+
+    def test_con_el_anterior_abierto_no(self):
+        # El saldo de un mes arranca donde terminó el anterior.
+        with pytest.raises(PeriodNotCloseable) as fallo:
+            check_closeable(Period(2026, 9), Period(2026, 8))
+        assert (fallo.value.year, fallo.value.month) == (2026, 9)
+        assert (fallo.value.blocking_year, fallo.value.blocking_month) == (2026, 8)
+
+    def test_si_el_anterior_no_existe_se_puede(self):
+        # O es anterior al arranque de la contabilidad, o es un mes sin un solo
+        # movimiento. Los dos están cerrados de hecho, y exigir que alguien
+        # «cierre» un mes vacío sería un trámite.
+        check_closeable(Period(2026, 9), None)
+
+    def test_uno_ya_cerrado_no_se_cierra_otra_vez(self):
+        # No es idempotente: reescribiría quién lo cerró y cuándo, que es
+        # justamente lo que la bitácora existe para conservar.
+        with pytest.raises(PeriodClosed):
+            check_closeable(Period(2026, 8, CLOSED), Period(2026, 7, CLOSED))

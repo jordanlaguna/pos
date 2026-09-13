@@ -364,7 +364,7 @@ class EntryNotBalanced(DomainError):
         self.credits = credits
 
 
-class InvalidEntryLine(DomainError):
+class InvalidJournalLine(DomainError):
     """Una línea de asiento que no es ni un débito ni un crédito.
 
     Con código y no con frase, como `InvalidMovement` y `InvalidPayment`.
@@ -418,6 +418,26 @@ class NothingToReclassify(DomainError):
     def __init__(self, entry_id: int) -> None:
         super().__init__(f"el asiento {entry_id} no tiene nada por clasificar")
         self.entry_id = entry_id
+
+
+class PeriodNotCloseable(DomainError):
+    """Se quiso cerrar un mes con el anterior todavía abierto (RF-52).
+
+    El orden importa porque el saldo de un mes arranca donde terminó el
+    anterior. Cerrar noviembre con octubre abierto congelaría un balance que
+    todavía puede cambiar por debajo, y el balance ya entregado dejaría de
+    coincidir con el libro sin que nadie tocara noviembre.
+    """
+
+    def __init__(self, year: int, month: int, *, blocking_year: int, blocking_month: int) -> None:
+        super().__init__(
+            f"no se puede cerrar {year}-{month:02d}: "
+            f"{blocking_year}-{blocking_month:02d} sigue abierto"
+        )
+        self.year = year
+        self.month = month
+        self.blocking_year = blocking_year
+        self.blocking_month = blocking_month
 
 
 class PeriodClosed(DomainError):

@@ -235,5 +235,11 @@
 	"api_account_in_use": "La cuenta {code} tiene {lines} línea(s) de asiento. Desactívela en vez de borrarla.",
 	"api_journal_entry_not_found": "Ese asiento no existe.",
 	"api_nothing_to_reclassify": "Ese asiento ya no tiene nada por clasificar.",
-	"api_period_closed": "El periodo {month}/{year} está cerrado. Lo que haya que corregir va por un asiento de ajuste en el periodo abierto."
+	"api_period_closed": "El periodo {month}/{year} está cerrado. Lo que haya que corregir va por un asiento de ajuste en el periodo abierto.",
+	"api_period_not_found": "No hay un periodo contable de {month}/{year}: ese mes no tiene ningún asiento.",
+	"api_period_not_closeable": "Antes hay que cerrar {month}/{year}: el saldo de un mes arranca donde terminó el anterior.",
+	"api_journal_missing_description": "El asiento necesita una descripción: es lo único que explica por qué existe.",
+	"api_invalid_journal_line": "Cada línea va en el débito o en el crédito, nunca en los dos, y nunca en negativo.",
+	"api_entry_not_balanced": "El asiento no cuadra: {debits} en débitos contra {credits} en créditos.",
+	"api_accounting_not_active": "Esta compañía no lleva libros, o la fecha es anterior al arranque de su contabilidad."
 }

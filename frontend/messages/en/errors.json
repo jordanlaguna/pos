@@ -235,5 +235,11 @@
 	"api_account_in_use": "Account {code} has {lines} journal line(s). Deactivate it instead of deleting it.",
 	"api_journal_entry_not_found": "That journal entry does not exist.",
 	"api_nothing_to_reclassify": "That entry has nothing left to reclassify.",
-	"api_period_closed": "Period {month}/{year} is closed. Anything to correct goes through an adjusting entry in the open period."
+	"api_period_closed": "Period {month}/{year} is closed. Anything to correct goes through an adjusting entry in the open period.",
+	"api_period_not_found": "There is no accounting period for {month}/{year}: that month has no entries.",
+	"api_period_not_closeable": "Close {month}/{year} first: a month's balance starts where the previous one ended.",
+	"api_journal_missing_description": "The entry needs a description: it is the only thing that explains why it exists.",
+	"api_invalid_journal_line": "Each line goes in the debit or the credit column, never both, and never negative.",
+	"api_entry_not_balanced": "The entry does not balance: {debits} in debits against {credits} in credits.",
+	"api_accounting_not_active": "This company does not keep books here, or the date is before its accounting start."
 }

@@ -43,7 +43,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from .errors import EntryNotBalanced, InvalidEntryLine, PeriodClosed
+from .errors import (
+    EntryNotBalanced,
+    InvalidJournalLine,
+    PeriodClosed,
+    PeriodNotCloseable,
+)
 from .money import Money
 from .sale import CASH_METHOD
 from .tax import TaxRate
@@ -243,11 +248,11 @@ class Line:
 
     def __post_init__(self) -> None:
         if self.debit.is_negative or self.credit.is_negative:
-            raise InvalidEntryLine("negative")
+            raise InvalidJournalLine("negative")
         if self.debit.is_positive and self.credit.is_positive:
-            raise InvalidEntryLine("both_sides")
+            raise InvalidJournalLine("both_sides")
         if self.debit.is_zero and self.credit.is_zero:
-            raise InvalidEntryLine("empty")
+            raise InvalidJournalLine("empty")
 
     @classmethod
     def debit_of(
@@ -290,7 +295,7 @@ class JournalEntry:
     def __post_init__(self) -> None:
         object.__setattr__(self, "lines", tuple(self.lines))
         if not self.lines:
-            raise InvalidEntryLine("no_lines")
+            raise InvalidJournalLine("no_lines")
         if self.debits != self.credits:
             raise EntryNotBalanced(str(self.debits), str(self.credits))
 
@@ -788,6 +793,38 @@ class Period:
     @property
     def is_closed(self) -> bool:
         return self.status == CLOSED
+
+
+def previous_period(year: int, month: int) -> tuple[int, int]:
+    """El mes anterior. Enero se lleva el año consigo."""
+    return (year - 1, 12) if month == 1 else (year, month - 1)
+
+
+def check_closeable(period: Period, previous: Period | None) -> None:
+    """Si ese mes se puede cerrar (RF-52, RN-61).
+
+    Dos condiciones, y las dos son sobre el orden del tiempo:
+
+    * **El mes no está ya cerrado.** Cerrar dos veces no es idempotente: la
+      segunda vez reescribiría quién lo cerró y cuándo, y eso es justamente lo
+      que la bitácora existe para conservar.
+    * **El anterior está cerrado**, si existe. El saldo de un mes arranca donde
+      terminó el anterior; cerrar noviembre con octubre abierto congelaría un
+      balance que todavía puede cambiar por debajo.
+
+    Que el anterior **no exista** es un sí: o es anterior al arranque de la
+    contabilidad, o es un mes sin un solo movimiento. Los dos están cerrados de
+    hecho, y exigir que alguien «cierre» un mes vacío sería un trámite.
+    """
+    if period.is_closed:
+        raise PeriodClosed(period.year, period.month)
+    if previous is not None and not previous.is_closed:
+        raise PeriodNotCloseable(
+            period.year,
+            period.month,
+            blocking_year=previous.year,
+            blocking_month=previous.month,
+        )
 
 
 def assert_open(period: Period | None, on: date) -> None:

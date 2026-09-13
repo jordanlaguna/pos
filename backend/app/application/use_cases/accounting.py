@@ -36,7 +36,16 @@ from app.application.ports.ledger import JournalWriter
 from app.application.ports.repositories import UnitOfWork
 from app.domain.chart import CHART, TEMPLATES, UNCLASSIFIED_CODE, default_mapping
 from app.domain.errors import DomainError, NothingToReclassify
-from app.domain.ledger import OPENING, JournalEntry, Line, post_reclassification
+from app.domain.ledger import (
+    MANUAL,
+    OPENING,
+    JournalEntry,
+    Line,
+    Period,
+    check_closeable,
+    post_reclassification,
+    previous_period,
+)
 from app.domain.money import Money
 
 
@@ -228,6 +237,158 @@ class ActivateAccounting:
                 description=request.description.strip() or OPENING,
             )
         )
+
+
+class PeriodNotFound(DomainError):
+    """Se quiso cerrar un mes que no existe.
+
+    Un mes sin un solo asiento no tiene fila, y cerrarlo no significa nada: lo
+    que hay que cerrar es lo que tiene movimiento.
+    """
+
+    def __init__(self, year: int, month: int) -> None:
+        super().__init__(f"no hay periodo {year}-{month:02d}")
+        self.year = year
+        self.month = month
+
+
+@dataclass(frozen=True)
+class ManualLine:
+    account_id: int
+    debit: Money = field(default_factory=Money.zero)
+    credit: Money = field(default_factory=Money.zero)
+    memo: str | None = None
+
+    @property
+    def is_empty(self) -> bool:
+        return self.debit.is_zero and self.credit.is_zero
+
+
+@dataclass(frozen=True)
+class ManualEntryRequest:
+    entry_date: date
+    #: Lo que dice el asiento. **Obligatoria**: es lo único que explica por qué
+    #: existe, y sin ella, dentro de un año nadie sabrá qué se corrigió. La
+    #: escribe una persona, así que es texto y no código (RN-30).
+    description: str
+    lines: tuple[ManualLine, ...]
+    user_id: int
+    #: 'manual' o 'adjustment'. Lo cierra el esquema, que es donde va la forma.
+    kind: str = MANUAL
+    #: A cuál corrige, si es de ajuste (RN-61).
+    adjusts_entry_id: int | None = None
+
+
+class MissingDescription(DomainError):
+    def __init__(self) -> None:
+        super().__init__("el asiento manual necesita una descripción")
+
+
+class RecordManualEntry:
+    """Un asiento que alguien dicta (RF-51).
+
+    Es la vía por la que entra todo lo que el POS no sabe: una depreciación, un
+    gasto pagado por el dueño, la comisión que el adquirente liquidó. Y la vía
+    por la que se corrige lo que quedó mal, con un ajuste que referencia al
+    asiento que corrige.
+
+    Lo que este caso de uso comprueba es que las cuentas existan y estén activas;
+    que cuadre lo comprueba el constructor del asiento y que el periodo esté
+    abierto, el adaptador (RN-58, RN-61). Cada regla en un solo sitio.
+    """
+
+    def __init__(
+        self,
+        *,
+        accounts: AccountRepository,
+        journal: JournalWriter,
+        uow: UnitOfWork,
+    ) -> None:
+        self._accounts = accounts
+        self._journal = journal
+        self._uow = uow
+
+    def __call__(self, request: ManualEntryRequest) -> int:
+        if not request.description.strip():
+            raise MissingDescription()
+
+        activas = {c.id for c in self._accounts.all() if c.is_active}
+        lineas = []
+        for pedida in request.lines:
+            if pedida.is_empty:
+                # La pantalla ofrece más renglones de los que se usan.
+                continue
+            if pedida.account_id not in activas:
+                raise AccountNotFound(pedida.account_id)
+            lineas.append(
+                Line(
+                    account_id=pedida.account_id,
+                    debit=pedida.debit,
+                    credit=pedida.credit,
+                    memo=pedida.memo,
+                )
+            )
+
+        with self._uow:
+            id_asiento = self._journal.post(
+                JournalEntry(
+                    kind=request.kind,
+                    entry_date=request.entry_date,
+                    lines=tuple(lineas),
+                    description=request.description.strip(),
+                    adjusts_entry_id=request.adjusts_entry_id,
+                )
+            )
+            self._uow.commit()
+
+        return id_asiento
+
+
+class ClosePeriod:
+    """Cierra un mes, para siempre (RF-52, RN-61).
+
+    No se reabre: reabrir es la puerta por donde un balance ya entregado deja de
+    coincidir con el libro. Lo que quedó mal se ajusta en el siguiente, que es lo
+    que un contador hace de todos modos.
+
+    `apply()` existe separado del `__call__` por lo mismo que en `PaySupplier`:
+    quien cierra también escribe la bitácora, y las dos cosas tienen que entrar
+    juntas. Un cierre sin su registro es exactamente lo que RN-61 pide que no
+    pase.
+    """
+
+    def __init__(
+        self, *, periods: PeriodRepository, uow: UnitOfWork, clock: Clock
+    ) -> None:
+        self._periods = periods
+        self._uow = uow
+        self._clock = clock
+
+    def __call__(self, *, year: int, month: int, user_id: int):
+        with self._uow:
+            periodo = self.apply(year=year, month=month, user_id=user_id)
+            self._uow.commit()
+        return periodo
+
+    def apply(self, *, year: int, month: int, user_id: int):
+        """El cierre, comprobado y escrito, **sin confirmar**."""
+        periodo = self._periods.get(year, month)
+        if periodo is None:
+            raise PeriodNotFound(year, month)
+
+        anterior_año, anterior_mes = previous_period(year, month)
+        check_closeable(
+            Period(periodo.year, periodo.month, periodo.status),
+            _como_periodo(self._periods.get(anterior_año, anterior_mes)),
+        )
+
+        return self._periods.close(
+            periodo, closed_at=self._clock.now(), closed_by=user_id
+        )
+
+
+def _como_periodo(fila) -> Period | None:
+    return None if fila is None else Period(fila.year, fila.month, fila.status)
 
 
 class AccountNotFound(DomainError):

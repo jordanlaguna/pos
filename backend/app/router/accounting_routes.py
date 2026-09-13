@@ -8,7 +8,7 @@ que seguir viendo sus libros, que son su respaldo ante Hacienda.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.schemas.schemas_accounting import (
@@ -19,8 +19,11 @@ from app.schemas.schemas_accounting import (
     Activated,
     ActivationIn,
     Deleted,
+    JournalEntryOut,
+    ManualEntryIn,
     Mappings,
     MappingsIn,
+    PeriodOut,
     Reclassified,
     ReclassifyIn,
 )
@@ -110,6 +113,67 @@ def guardar_mapeo(
 ):
     """Afecta lo que venga, nunca lo que ya está en el libro (RN-62)."""
     return crud_accounting.guardar_mapeo(db, payload)
+
+
+# --------------------------------------------------------------- los asientos
+
+
+@router.get("/entries", response_model=list[JournalEntryOut])
+def asientos(
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    kind: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """El libro diario del periodo que se pida (RF-53)."""
+    return crud_accounting.asientos(db, year=year, month=month, kind=kind)
+
+
+@router.post("/entries", response_model=JournalEntryOut)
+def crear_asiento(
+    payload: ManualEntryIn,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _: None = Depends(require_module("accounting")),
+):
+    """Un asiento manual o de ajuste (RF-51)."""
+    return crud_accounting.crear_asiento(db, payload, user_id=admin.user.id_user)
+
+
+@router.get("/entries/{entry_id}", response_model=JournalEntryOut)
+def asiento(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """Un asiento con sus líneas y el nombre de cada cuenta."""
+    return crud_accounting.asiento(db, entry_id)
+
+
+# --------------------------------------------------------------- los periodos
+
+
+@router.get("/periods", response_model=list[PeriodOut])
+def periodos(db: Session = Depends(get_db), admin: Sesion = Depends(require_admin)):
+    """Los meses, del más nuevo al más viejo (RF-52)."""
+    return crud_accounting.periodos(db)
+
+
+@router.post("/periods/{year}/{month}/close", response_model=PeriodOut)
+def cerrar_periodo(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _: None = Depends(require_module("accounting")),
+):
+    """Cierra el mes, para siempre (RF-52, RN-61).
+
+    La confirmación la pide el POS, que es donde está la persona; acá lo que hay
+    que garantizar es que no se deshaga y que quede en bitácora.
+    """
+    return crud_accounting.cerrar_periodo(db, year, month, sesion=admin)
 
 
 @router.post("/entries/{entry_id}/reclassify", response_model=Reclassified)
