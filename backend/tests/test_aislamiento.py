@@ -710,6 +710,13 @@ FUERA_DE_LA_BATERIA = {
     "/reports/by_payment_method": "sin cobertura todavía",
     "/reports/purchases": "probado en TestLosReportesNoSuman",
     "/payables": "probado en TestLosReportesNoSuman",
+    # Contabilidad (F11). Las dos operan sobre la compañía de la sesión y no
+    # reciben ningún id: la activación siembra el catálogo de quien la pide, y el
+    # estado lee su configuración. Que el libro de una compañía no se vea desde
+    # otra lo sostiene `TenantMixin` en las cinco tablas, y lo comprueba
+    # `test_contabilidad.py` de punta a punta con dos compañías.
+    "/accounting": "opera sobre la compañía de la sesión",
+    "/accounting/activate": "siembra en la compañía de la sesión",
 }
 
 

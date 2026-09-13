@@ -31,6 +31,7 @@ from typing import Protocol
 from app.domain.ledger import (
     ClosedSession,
     DrawerMovement,
+    JournalEntry,
     PurchasedDocument,
     PurchasedLine,
     ReturnDocument,
@@ -54,7 +55,21 @@ class AccountingNotActive(DomainError):
         super().__init__("la contabilidad no está activada para esta compañía")
 
 
-class Ledger(Protocol):
+class JournalWriter(Protocol):
+    """Escribir un asiento **ya armado**.
+
+    Es la mitad del libro que usan los asientos que no salen de ningún evento: la
+    apertura, el manual y el de ajuste. Esos los dictó una persona y llegan con
+    sus cuentas puestas, así que no hay nada que traducir.
+
+    Devuelve el id, o `None` si no había asiento que escribir —una apertura sin
+    saldos, una fecha anterior al arranque de la contabilidad (RN-60)—.
+    """
+
+    def post(self, entry: JournalEntry | None) -> int | None: ...
+
+
+class Ledger(JournalWriter, Protocol):
     """Lo que el libro necesita que le cuenten."""
 
     def record_sale(self, sale: SoldDocument, lines: Sequence[SoldLine]) -> None: ...
@@ -88,6 +103,9 @@ class NullLedger:
     Que exista es lo que permite que los casos de uso llamen siempre, sin un `if`
     en cada uno. Un `if` por evento serían seis sitios donde olvidarse.
     """
+
+    def post(self, entry: JournalEntry | None) -> int | None:
+        return None
 
     def record_sale(self, sale: SoldDocument, lines: Sequence[SoldLine]) -> None:
         return None

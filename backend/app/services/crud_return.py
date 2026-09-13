@@ -34,6 +34,7 @@ from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.models.model_user import User
+from app.services import crud_accounting
 from app.utils.api_errors import api_error
 
 

@@ -214,6 +214,19 @@ CODES: frozenset[str] = frozenset(
         # una compra el motivo es parte del requisito (RF-46), porque es lo que
         # le queda al proveedor cuando reclame la factura.
         "void_reason_required",
+        # ---------------------------------------------- contabilidad (F11)
+        # Activar dos veces. No es prolijidad: la segunda vez volvería a sembrar
+        # sobre un libro con movimiento y podría cambiar el mapeo bajo los
+        # asientos que ya existen, que es lo que RN-62 prohíbe.
+        "accounting_already_active",
+        # `debits` y `credits`: los saldos iniciales que dictó el contador no
+        # cuadran. Van las dos sumas porque quien lo escribió necesita ver por
+        # cuánto, y con eso sabe qué línea le falta.
+        "invalid_opening_balance",
+        # El 500 de este módulo, como `sale_failed` y `payment_failed`: algo se
+        # rompió y la unidad de trabajo ya revirtió. `cause` va para el registro,
+        # no para mostrar.
+        "accounting_failed",
         # -------------------------------------------------- configuración
         "unsupported_locale",
         "settings_too_large",

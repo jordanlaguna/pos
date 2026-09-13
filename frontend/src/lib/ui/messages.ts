@@ -330,7 +330,11 @@ export const API_CODES = [
 	'settings_too_large',
 	'tax_rate_not_a_number',
 	'tax_rate_out_of_range',
-	'settings_save_failed'
+	'settings_save_failed',
+	// contabilidad (F11)
+	'accounting_already_active',
+	'invalid_opening_balance',
+	'accounting_failed'
 ] as const;
 
 export type ApiCode = (typeof API_CODES)[number];
@@ -736,6 +740,17 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_tax_rate_out_of_range();
 		case 'settings_save_failed':
 			return m.api_settings_save_failed();
+
+		// --------------------------------------------------- contabilidad
+		case 'accounting_already_active':
+			return m.api_accounting_already_active();
+		case 'invalid_opening_balance':
+			return m.api_invalid_opening_balance({
+				debits: texto(d.debits),
+				credits: texto(d.credits)
+			});
+		case 'accounting_failed':
+			return m.api_accounting_failed();
 		default:
 			// Acá `code` ya es `never`: si falta un caso, esto no compila. Es lo
 			// único que impide que un código nuevo salga en blanco en la pantalla.

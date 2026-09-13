@@ -225,6 +225,8 @@
 
 	"$comentario_producto": "When the backend sends the product id but not its name —because the row is gone— the sentence says «#47» instead of leaving a hole. And if it sends neither, «(unidentified)». The parentheses are not decoration: this text goes where a product name goes, and «the product unidentified» reads as broken English while «the product (unidentified)» reads as a name that is missing. Spanish gets away with «sin identificar» because the adjective follows the noun.",
 	"api_product_by_id": "#{product_id}",
-	"api_product_unknown": "(unidentified)"
-
+	"api_product_unknown": "(unidentified)",
+	"api_accounting_already_active": "Accounting is already active.",
+	"api_invalid_opening_balance": "The opening balances do not match: {debits} in debits against {credits} in credits.",
+	"api_accounting_failed": "Accounting could not be activated. Nothing was left half done."
 }

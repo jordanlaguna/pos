@@ -507,6 +507,9 @@ class TestElLibroNulo:
     def test_los_seis_metodos_no_hacen_nada(self):
         nulo = NullLedger()
 
+        # Y el séptimo: el asiento ya armado —la apertura, el manual— tampoco se
+        # escribe. Una compañía sin libros no tiene dónde ponerlo.
+        assert nulo.post(None) is None
         assert nulo.record_sale(None, []) is None
         assert nulo.record_return(None, []) is None
         assert nulo.record_cash_close(None, expected=Money.zero(), counted=Money.zero()) is None

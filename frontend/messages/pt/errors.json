@@ -225,5 +225,8 @@
 
 	"$comentario_producto": "Quando o backend manda o id do produto mas não o nome —porque a linha já não existe—, a frase diz «#47» em vez de deixar o buraco. E se não manda nenhum dos dois, «(não identificado)».",
 	"api_product_by_id": "#{product_id}",
-	"api_product_unknown": "(não identificado)"
+	"api_product_unknown": "(não identificado)",
+	"api_accounting_already_active": "A contabilidade já está ativada.",
+	"api_invalid_opening_balance": "Os saldos iniciais não batem: {debits} em débitos contra {credits} em créditos.",
+	"api_accounting_failed": "Não foi possível ativar a contabilidade. Nada ficou pela metade."
 }

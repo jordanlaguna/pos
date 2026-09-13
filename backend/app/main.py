@@ -36,6 +36,7 @@ from app.models.model_stock_entry import StockEntry, StockEntryDetail  # noqa: F
 from app.models.model_supplier import Supplier, SupplierPayment  # noqa: F401
 from app.models.model_user import User  # noqa: F401
 from app.router import (
+    accounting_routes,
     auth_routes,
     cabys_routes,
     cash_routes,
@@ -97,6 +98,7 @@ app.include_router(
 app.include_router(supplier_routes.router, prefix="/suppliers", tags=["Suppliers"])
 app.include_router(purchase_routes.router, prefix="/purchases", tags=["Purchases"])
 app.include_router(payable_routes.router, prefix="/payables", tags=["Payables"])
+app.include_router(accounting_routes.router, prefix="/accounting", tags=["Accounting"])
 app.include_router(settings_routes.router, prefix="/settings", tags=["Settings"])
 # El panel de soporte va bajo /support y no bajo /admin: `admin` ya es el rol del
 # administrador de una compañía, y dos cosas distintas con el mismo nombre en el
