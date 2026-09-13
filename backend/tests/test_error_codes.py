@@ -142,6 +142,11 @@ def test_ningun_codigo_del_catalogo_esta_de_adorno():
         "cash_invalid_movement_type",
         "cash_amount_not_positive",
         "cash_missing_reason",
+        # Los dos de `InvalidPayment`, por lo mismo (T-1010). Se levantan desde
+        # dos sitios —el abono suelto y el de una compra de contado— y en los dos
+        # por tabla, que es lo que impide que se separen.
+        "invalid_payment_method",
+        "payment_not_positive",
     }
     huerfanos = CODES - usados - desde_tabla
     assert not huerfanos, (

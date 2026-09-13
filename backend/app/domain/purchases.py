@@ -11,13 +11,39 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from .errors import PaymentExceedsBalance
+from .errors import InvalidPayment, PaymentExceedsBalance
 from .money import Money
 from .tax import TaxRate
 
 #: Los tramos de antigüedad de un saldo, en días y de menor a mayor (RF-44).
 #: Son los que usa cualquier contador y los que espera ver quien cobra.
 TRAMOS: tuple[int, ...] = (30, 60, 90)
+
+#: Cómo se le paga a un proveedor. En inglés como el resto del código, y sin
+#: enum por lo mismo que `MOVEMENT_TYPES`: en la base es un `VARCHAR`.
+PAYMENT_METHODS: tuple[str, ...] = ("cash", "transfer", "other")
+
+#: El único que mueve la gaveta (RN-56). Los otros dos salen del banco, y por
+#: eso un pago por transferencia no necesita turno abierto: el administrador que
+#: registra facturas en la oficina no tiene por qué tener caja.
+CASH: str = "cash"
+
+
+def check_payment(amount: Money, method: str) -> None:
+    """Valida un abono antes de mirar el saldo (RN-55, RN-56).
+
+    El método no es una formalidad: el `if` que decide si hay que sacar plata de
+    la caja compara contra `CASH`, así que un «efectivo» o un «CASH» escaparía
+    de él y el turno cerraría con un sobrante igual a lo que se pagó.
+
+    Y el monto se comprueba acá y no solo contra el saldo, porque un abono de
+    cero pasa la prueba del saldo sin problema —cero nunca es mayor que nada— y
+    dejaría una fila en el estado de cuenta que no significa nada.
+    """
+    if not amount.is_positive:
+        raise InvalidPayment("amount_not_positive")
+    if method not in PAYMENT_METHODS:
+        raise InvalidPayment("invalid_method")
 
 
 def weighted_average_cost(

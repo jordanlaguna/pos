@@ -49,6 +49,14 @@ class StockEntryCreate(BaseModel):
     # que evita teclear «30» en cada factura del mismo mayorista.
     payment_terms_days: int | None = None
 
+    # `payment_terms` dice CUÁNDO se paga y esto CÓMO. Sin método, una compra de
+    # contado queda con saldo y se abona desde cuentas por pagar: inventarle uno
+    # sería adivinar de dónde salió la plata, y si adivina «efectivo» descuadra
+    # un arqueo (RN-56).
+    payment_method: str | None = None
+    # El motivo del movimiento de caja, armado por el POS (RN-30).
+    payment_reason: str = ""
+
 
 class EntryLineResponse(BaseModel):
     id_product: int
@@ -93,3 +101,5 @@ class StockEntrySuccess(BaseModel):
     id_entry: int
     products_created: int
     units_added: int
+    #: El abono de una compra de contado, cuando se dijo cómo se pagó.
+    id_payment: int | None = None

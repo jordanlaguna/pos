@@ -104,6 +104,33 @@ class SupplierRepository(Protocol):
     def get(self, supplier_id: int) -> SupplierSnapshot | None: ...
 
 
+class SupplierPaymentRepository(Protocol):
+    """Los abonos de una compra (RN-55).
+
+    No guarda saldos: el de una compra es su total menos sus abonos y el de un
+    proveedor es la suma de los de sus compras. Un saldo guardado es un número
+    más que hay que mantener cuadrado, y el día que se descuadre nadie sabrá
+    cuál de los dos miente.
+    """
+
+    def amounts_for(self, entry_id: int) -> list[Money]:
+        """Lo abonado a esa compra, monto por monto."""
+        ...
+
+    def add(
+        self,
+        *,
+        supplier_id: int,
+        entry_id: int,
+        amount: Money,
+        method: str,
+        reference: str | None,
+        cash_movement_id: int | None,
+        user_id: int,
+        paid_at: datetime,
+    ) -> int: ...
+
+
 class StockEntryRepository(Protocol):
     def get(self, entry_id: int): ...
 

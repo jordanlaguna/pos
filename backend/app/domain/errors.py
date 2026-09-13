@@ -186,6 +186,25 @@ class PaymentExceedsBalance(DomainError):
         self.requested = requested
 
 
+class InvalidPayment(DomainError):
+    """Un abono a proveedor mal formado: monto o método (RN-55, RN-56).
+
+    Con código y no con frase, igual que `InvalidMovement`, y por la misma
+    razón: la que no estuviera en la tabla la interfaz la reenviaba tal cual y
+    así se colaba el español del dominio hasta la pantalla.
+
+    El método importa más de lo que parece: de los tres, **solo `cash` mueve la
+    gaveta**, y uno mal escrito —«efectivo», «CASH»— pasaría de largo por el
+    `if` del efectivo, y el turno cerraría con un sobrante igual a lo que se
+    pagó. Que el método sea uno de la lista es lo que sostiene RN-56.
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        #: Qué está mal: 'amount_not_positive' o 'invalid_method'.
+        self.code = code
+
+
 class BarcodeTaken(DomainError):
     """Se quiso crear un producto con un código que ya existe."""
 

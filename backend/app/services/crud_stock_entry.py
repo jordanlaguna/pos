@@ -10,6 +10,7 @@ from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.application.use_cases.cash_session import NoOpenSession
 from app.application.use_cases.stock_entry import (
     CancelStockEntry,
     EmptyEntry,
@@ -23,11 +24,15 @@ from app.application.use_cases.stock_entry import (
     SupplierInactive,
     SupplierNotFound,
 )
+from app.application.use_cases.supplier_payment import PaySupplier
 from app.domain.errors import (
     AlreadyCancelled,
     BarcodeTaken,
     CannotCancel,
     DuplicateDocument,
+    InsufficientCash,
+    InvalidMovement,
+    InvalidPayment,
     InvalidQuantity,
     InvalidSource,
     LineWithoutProduct,
@@ -38,6 +43,7 @@ from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_repositories import (
     SqlAlchemyProductRepository,
     SqlAlchemyStockEntryRepository,
+    SqlAlchemySupplierPaymentRepository,
     SqlAlchemySupplierRepository,
     SqlAlchemyUnitOfWork,
 )
@@ -45,7 +51,7 @@ from app.models.model_person import Person
 from app.models.model_product import Product
 from app.models.model_stock_entry import StockEntry, StockEntryDetail
 from app.models.model_user import User
-from app.services import crud_categories
+from app.services import crud_categories, crud_supplier_payment
 from app.utils.api_errors import api_error
 
 
@@ -104,6 +110,15 @@ def create_entry(db: Session, payload) -> dict:
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
         suppliers=SqlAlchemySupplierRepository(db),
+        # Para el abono de una compra de contado, que entra en la misma
+        # transacción que la mercadería: son el mismo hecho.
+        payer=PaySupplier(
+            entries=entradas,
+            payments=SqlAlchemySupplierPaymentRepository(db),
+            movements=crud_supplier_payment.movimientos_de_caja(db),
+            uow=SqlAlchemyUnitOfWork(db),
+            clock=SystemClock(),
+        ),
     )
 
     # RN-6, también acá: la entrada de mercadería crea productos, así que sin
@@ -127,6 +142,8 @@ def create_entry(db: Session, payload) -> dict:
         document_date=payload.document_date,
         payment_terms=payload.payment_terms,
         payment_terms_days=payload.payment_terms_days,
+        payment_method=payload.payment_method,
+        payment_reason=payload.payment_reason,
         lines=[
             RequestedEntryLine(
                 quantity=l.quantity,
@@ -185,6 +202,28 @@ def create_entry(db: Session, payload) -> dict:
         raise api_error(400, "barcode_taken", barcode=e.barcode) from None
     except LineWithoutProduct as e:
         raise api_error(400, "entry_line_without_product", line=e.index) from None
+
+    # ------------------------------- los del abono de una compra de contado
+    #
+    # Suben desde `PaySupplier` y tumban la compra entera, que es lo correcto:
+    # la mercadería y el pago son el mismo hecho, y una compra de contado sin su
+    # abono deja un saldo que no se debe. Quien las traduce a HTTP es esto y no
+    # `crud_supplier_payment`, porque el que falló fue este endpoint.
+    except NoOpenSession:
+        raise api_error(400, "cash_no_open_session") from None
+    except InsufficientCash as e:
+        raise api_error(400, "cash_insufficient", available=e.available.as_float()) from None
+    except InvalidPayment as e:
+        codigos = {
+            "amount_not_positive": "payment_not_positive",
+            "invalid_method": "invalid_payment_method",
+        }
+        raise api_error(400, codigos[e.code], method=payload.payment_method) from None
+    except InvalidMovement:
+        # Solo queda alcanzable el motivo vacío: el tipo lo pone el caso de uso y
+        # el monto ya lo comprobó `check_payment`.
+        raise api_error(400, "cash_missing_reason") from None
+
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -195,6 +234,7 @@ def create_entry(db: Session, payload) -> dict:
         "id_entry": resultado.id_entry,
         "products_created": resultado.products_created,
         "units_added": resultado.units_added,
+        "id_payment": resultado.id_payment,
     }
 
 

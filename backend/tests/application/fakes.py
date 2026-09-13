@@ -308,6 +308,34 @@ class FakeStockEntryRepository:
         self.get(entry_id).status = "anulada"
 
 
+@dataclass
+class FilaDeAbono:
+    id: int
+    supplier_id: int
+    entry_id: int
+    amount: Money
+    method: str
+    reference: str | None
+    cash_movement_id: int | None
+    user_id: int
+    paid_at: datetime
+
+
+class FakeSupplierPaymentRepository:
+    def __init__(self) -> None:
+        self.abonos: list[FilaDeAbono] = []
+        self._siguiente = 1
+
+    def amounts_for(self, entry_id: int) -> list[Money]:
+        return [a.amount for a in self.abonos if a.entry_id == entry_id]
+
+    def add(self, **datos) -> int:
+        abono = FilaDeAbono(id=self._siguiente, **datos)
+        self._siguiente += 1
+        self.abonos.append(abono)
+        return abono.id
+
+
 class FakeSettingsRepository:
     """La tasa configurada, sin tabla `settings` de por medio."""
 

@@ -185,6 +185,21 @@ CODES: frozenset[str] = frozenset(
         # par de columnas y les sirve el mismo «no».
         "invalid_identification_type",
         "identification_required",
+        # ------------------------------------------ abonos a proveedor (T-1010)
+        # `balance` y `requested`: se quiso abonar más de lo que se debe de esa
+        # compra. No se ajusta al saldo en silencio, porque o es un dedo de más
+        # o el abono va a otra factura, y las dos las arregla una persona.
+        "payment_exceeds_balance",
+        "payment_not_positive",
+        # `method`: solo 'cash', 'transfer' y 'other'. Uno mal escrito se
+        # escaparía del `if` del efectivo y el turno cerraría con un sobrante
+        # igual a lo que se pagó (RN-56).
+        "invalid_payment_method",
+        # Abonar a una compra ya anulada. Pasa de verdad cuando alguien la anula
+        # mientras otro tiene abierta la pantalla de saldos, así que no alcanza
+        # con esconder el botón.
+        "purchase_cancelled",
+        "payment_failed",
         # -------------------------------------------------- configuración
         "unsupported_locale",
         "settings_too_large",
@@ -213,6 +228,7 @@ DONE: frozenset[str] = frozenset(
         "return_registered",
         "entry_registered",
         "entry_cancelled",
+        "payment_registered",
         "role_updated",
     }
 )

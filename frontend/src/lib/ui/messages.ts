@@ -310,6 +310,12 @@ export const API_CODES = [
 	'supplier_identification_taken',
 	'invalid_identification_type',
 	'identification_required',
+	// abonos a proveedor (T-1010)
+	'payment_exceeds_balance',
+	'payment_not_positive',
+	'invalid_payment_method',
+	'purchase_cancelled',
+	'payment_failed',
 	'client_update_failed',
 	'invalid_role',
 	'account_not_found',
@@ -680,6 +686,21 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			});
 		case 'identification_required':
 			return m.api_identification_required();
+		case 'payment_exceeds_balance':
+			// Los dos montos, para que la frase diga cuánto se debe de verdad:
+			// sin el saldo, quien corrige el dedo de más no sabe a qué corregirlo.
+			return m.api_payment_exceeds_balance({
+				balance: numero(d.balance),
+				requested: numero(d.requested)
+			});
+		case 'payment_not_positive':
+			return m.api_payment_not_positive();
+		case 'invalid_payment_method':
+			return m.api_invalid_payment_method();
+		case 'purchase_cancelled':
+			return m.api_purchase_cancelled();
+		case 'payment_failed':
+			return m.api_payment_failed();
 
 		case 'client_update_failed':
 			return m.api_client_update_failed();

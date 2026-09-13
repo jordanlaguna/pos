@@ -16,6 +16,11 @@ from datetime import date, datetime
 
 import pytest
 
+from app.application.use_cases.cash_session import (
+    AddCashMovement,
+    BuildSessionReport,
+    NoOpenSession,
+)
 from app.application.use_cases.stock_entry import (
     EntryRequest,
     RegisterStockEntry,
@@ -23,14 +28,19 @@ from app.application.use_cases.stock_entry import (
     SupplierInactive,
     SupplierNotFound,
 )
+from app.application.use_cases.supplier_payment import PaySupplier
 from app.domain.errors import DuplicateDocument
 from app.domain.money import Money
 from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
 from tests.application.fakes import (
+    FakeCashRepository,
     FakeProduct,
     FakeProductRepository,
+    FakeReturnRepository,
+    FakeSaleRepository,
     FakeStockEntryRepository,
+    FakeSupplierPaymentRepository,
     FakeUnitOfWork,
 )
 
@@ -72,6 +82,55 @@ def mundo():
         suppliers=proveedores,
     )
     return caso, productos, entradas, proveedores
+
+
+@pytest.fixture
+def mundo_pagable():
+    """El mismo mundo, pero sabiendo pagar (T-1010).
+
+    Se arma aparte para que las pruebas de arriba sigan describiendo una compra
+    **sin** `payer`: es lo que sigue siendo una entrada de mercadería, y es la
+    prueba de que pagar es opcional y no un requisito nuevo de comprar.
+
+    La transacción es una sola —la misma `uow` para la compra y para el abono—,
+    que es lo que hace que la mercadería y el pago entren o no entren juntos.
+    """
+    productos = FakeProductRepository(
+        [FakeProduct(1, "Arroz", Money(1500), stock=10, cost=Money(100))]
+    )
+    entradas = FakeStockEntryRepository()
+    abonos = FakeSupplierPaymentRepository()
+    caja = FakeCashRepository()
+    uow = FakeUnitOfWork()
+    reloj = FixedClock(HOY)
+
+    caso = RegisterStockEntry(
+        products=productos,
+        entries=entradas,
+        uow=uow,
+        clock=reloj,
+        suppliers=FakeSupplierRepository(
+            [FakeSupplier(7, "Mayorista del Sur", payment_terms_days=30)]
+        ),
+        payer=PaySupplier(
+            entries=entradas,
+            payments=abonos,
+            movements=AddCashMovement(
+                cash=caja,
+                report=BuildSessionReport(
+                    sales=FakeSaleRepository(),
+                    returns=FakeReturnRepository(),
+                    cash=caja,
+                    clock=reloj,
+                ),
+                uow=uow,
+                clock=reloj,
+            ),
+            uow=uow,
+            clock=reloj,
+        ),
+    )
+    return caso, uow, abonos, caja
 
 
 def compra(**cambios) -> EntryRequest:
@@ -280,6 +339,92 @@ class TestLaFacturaRepetida:
         caso(compra(supplier_id=None, payment_terms="cash"))
         with pytest.raises(DuplicateDocument):
             caso(compra(supplier_id=None, payment_terms="cash"))
+
+
+class TestElAbonoDeUnaCompraDeContado:
+    """Lo que T-1009 dejó a propósito para T-1010.
+
+    De contado quiere decir que ya se pagó, así que el abono entra en el mismo
+    acto. La regla del efectivo no se repite acá: vive en `PaySupplier`, y estas
+    pruebas comprueban que sube tal cual —sin turno abierto **la compra entera**
+    no entra, porque la mercadería y el pago son el mismo hecho—.
+    """
+
+    def test_de_contado_con_metodo_queda_pagada(self, mundo_pagable):
+        caso, _uow, abonos, _ = mundo_pagable
+        resultado = caso(compra(payment_terms="cash", payment_method="transfer"))
+
+        assert resultado.id_payment is not None
+        # Por el total con impuesto, que es lo que se le entregó al proveedor.
+        assert abonos.abonos[0].amount == Money(1356)
+        assert abonos.abonos[0].method == "transfer"
+
+    def test_sin_metodo_queda_con_saldo(self, mundo_pagable):
+        # No se inventa de dónde salió la plata: si adivinara «efectivo»,
+        # descuadraría un arqueo (RN-56). Se abona desde cuentas por pagar.
+        caso, _, abonos, _ = mundo_pagable
+        resultado = caso(compra(payment_terms="cash"))
+
+        assert resultado.id_payment is None
+        assert abonos.abonos == []
+
+    def test_a_credito_no_se_paga_sola(self, mundo_pagable):
+        caso, _, abonos, _ = mundo_pagable
+        resultado = caso(compra(payment_method="transfer"))
+
+        assert resultado.due_date == date(2026, 10, 10)
+        assert resultado.id_payment is None
+        assert abonos.abonos == []
+
+    def test_una_entrada_sin_proveedor_no_paga_nada(self, mundo_pagable):
+        # No genera cuenta por pagar (RN-52), así que tampoco tiene qué abonar.
+        caso, _, abonos, _ = mundo_pagable
+        resultado = caso(
+            compra(supplier_id=None, payment_terms="cash", payment_method="transfer")
+        )
+
+        assert resultado.id_payment is None
+        assert abonos.abonos == []
+
+    def test_en_efectivo_sale_de_la_caja(self, mundo_pagable):
+        caso, _, _, caja = mundo_pagable
+        turno = caja.create_session(
+            user_id=1, opening=Money(5000), opened_at=HOY, notes=None
+        )
+        caso(
+            compra(
+                payment_terms="cash", payment_method="cash", payment_reason="Factura F-001"
+            )
+        )
+
+        movimiento = caja.movements(turno.id)[0]
+        assert (movimiento.type, movimiento.amount) == ("salida", Money(1356))
+
+    def test_en_efectivo_sin_caja_abierta_no_entra_ni_la_mercaderia(self, mundo_pagable):
+        """La consecuencia que hay que mirar de frente.
+
+        Podría parecer más amable registrar la compra y dejar el pago pendiente,
+        pero eso convierte una compra de contado en una deuda que no existe. Y
+        el «no» es accionable: se abre la caja, o se marca el pago como
+        transferencia.
+        """
+        caso, uow, abonos, _ = mundo_pagable
+
+        with pytest.raises(NoOpenSession):
+            caso(
+                compra(
+                    payment_terms="cash",
+                    payment_method="cash",
+                    payment_reason="Factura F-001",
+                )
+            )
+
+        assert abonos.abonos == []
+        # Lo que se comprueba es que la transacción se revirtió, no que el stock
+        # volvió: el repositorio de mentira escribe en un diccionario y no sabe
+        # deshacer. Quien deshace de verdad es `SqlAlchemyUnitOfWork`, y eso se
+        # mira contra MySQL en `tests/test_compras.py`.
+        assert uow.rolled_back and not uow.committed
 
 
 class TestSinProveedoresConfigurados:

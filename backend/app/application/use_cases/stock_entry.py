@@ -19,6 +19,7 @@ from app.application.ports.repositories import (
     SupplierRepository,
     UnitOfWork,
 )
+from app.application.use_cases.supplier_payment import PaymentRequest, PaySupplier
 from app.domain.errors import (
     AlreadyCancelled,
     BarcodeTaken,
@@ -130,6 +131,18 @@ class EntryRequest:
     #: Los días de plazo. Si no vienen, se usa el habitual del proveedor.
     payment_terms_days: int | None = None
 
+    # ------------------------------------------- el pago de una de contado
+    #
+    # `payment_terms` dice **cuándo** se paga y esto **cómo**: son dos cosas
+    # distintas y el XML solo trae la primera —`CondicionVenta` 01 es contado y
+    # no dice con qué—. Sin método no se registra ningún abono: la compra queda
+    # con saldo y se paga desde cuentas por pagar. Inventarle un método sería
+    # adivinar de dónde salió la plata, y si adivina «efectivo» descuadra un
+    # arqueo (RN-56).
+    payment_method: str | None = None
+    #: El motivo del movimiento de caja, armado por la interfaz (RN-30).
+    payment_reason: str = ""
+
 
 @dataclass(frozen=True)
 class RegisteredEntry:
@@ -142,6 +155,8 @@ class RegisteredEntry:
     subtotal: Money = Money.zero()
     tax: Money = Money.zero()
     due_date: date | None = None
+    #: El abono de una compra de contado, cuando se dijo cómo se pagó.
+    id_payment: int | None = None
 
 
 class RegisterStockEntry:
@@ -153,14 +168,16 @@ class RegisterStockEntry:
         uow: UnitOfWork,
         clock: Clock,
         suppliers: SupplierRepository | None = None,
+        payer: PaySupplier | None = None,
     ) -> None:
         self._products = products
         self._entries = entries
         self._uow = uow
         self._clock = clock
-        # Opcional a propósito: una entrada sin proveedor no lo necesita, y las
-        # pruebas de lo que ya existía no tienen que aprender un puerto nuevo.
+        # Opcionales a propósito: una entrada sin proveedor no los necesita, y
+        # las pruebas de lo que ya existía no tienen que aprender puertos nuevos.
         self._suppliers = suppliers
+        self._payer = payer
 
     def __call__(self, request: EntryRequest) -> RegisteredEntry:
         if not request.lines:
@@ -274,6 +291,8 @@ class RegisterStockEntry:
                 )
                 self._products.adjust_stock(linea.product_id, +linea.quantity)
 
+            id_payment = self._abono_de_contado(request, id_entry, total, vence)
+
             self._uow.commit()
 
         return RegisteredEntry(
@@ -284,6 +303,7 @@ class RegisterStockEntry:
             subtotal=subtotal,
             tax=impuesto,
             due_date=vence,
+            id_payment=id_payment,
         )
 
     # ------------------------------------------------------------- compra
@@ -319,6 +339,44 @@ class RegisterStockEntry:
         if not dias or dias <= 0:
             return None
         return fecha_de_vencimiento(request.document_date or hoy, dias)
+
+    def _abono_de_contado(
+        self, request: EntryRequest, id_entry: int, total: Money, vence: date | None
+    ) -> int | None:
+        """El pago de una compra de contado, dentro de la misma transacción.
+
+        Se registra acá y no como un segundo acto porque de contado quiere decir
+        que ya se pagó: dejar la compra con saldo obligaría a acordarse de
+        abonarla, y un saldo que no se debe ensucia el estado de cuenta del
+        proveedor tanto como uno que falta.
+
+        **La regla del efectivo no está acá.** Vive en `PaySupplier`, que es el
+        único que saca plata de la gaveta: si esto la repitiera, el día que
+        cambie quedaría escrita de dos maneras. Por eso también sube tal cual lo
+        que ese caso lance —sin turno abierto la compra entera no entra, que es
+        lo correcto: la mercadería y el pago son el mismo hecho—.
+
+        Con `vence` la compra es a crédito y no hay nada que pagar todavía; sin
+        método, no se sabe de dónde salió la plata y no se inventa.
+        """
+        if (
+            self._payer is None
+            or request.supplier_id is None
+            or vence is not None
+            or request.payment_method is None
+        ):
+            return None
+
+        return self._payer.apply(
+            PaymentRequest(
+                entry_id=id_entry,
+                amount=total,
+                method=request.payment_method,
+                user_id=request.user_id,
+                reference=request.document_number,
+                reason=request.payment_reason,
+            )
+        ).id_payment
 
 
 class CancelStockEntry:

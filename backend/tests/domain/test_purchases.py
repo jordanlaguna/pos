@@ -8,12 +8,15 @@ from datetime import date
 
 import pytest
 
-from app.domain.errors import PaymentExceedsBalance
+from app.domain.errors import InvalidPayment, PaymentExceedsBalance
 from app.domain.money import Money
 from app.domain.purchases import (
+    CASH,
+    PAYMENT_METHODS,
     PurchaseLine,
     aging_bucket,
     apply_payment,
+    check_payment,
     purchase_totals,
     remaining_balance,
     weighted_average_cost,
@@ -141,6 +144,44 @@ class TestAbonar:
 
     def test_un_centimo_de_menos_si_pasa(self):
         assert apply_payment(Money(1000), Money("999.99")) == Money("0.01")
+
+
+class TestElAbonoAntesDeMirarElSaldo:
+    """Lo que se comprueba antes de saber cuánto se debe (T-1010)."""
+
+    @pytest.mark.parametrize("metodo", PAYMENT_METHODS)
+    def test_los_tres_metodos_que_existen(self, metodo):
+        check_payment(Money(1000), metodo)
+
+    @pytest.mark.parametrize("malo", ["efectivo", "CASH", "tarjeta", "", None])
+    def test_cualquier_otro_no(self, malo):
+        # No es formalismo: el `if` del efectivo compara contra 'cash', así que
+        # un método mal escrito pasaría de largo y el turno cerraría con un
+        # sobrante igual a lo que se pagó.
+        with pytest.raises(InvalidPayment) as excepcion:
+            check_payment(Money(1000), malo)
+        assert excepcion.value.code == "invalid_method"
+
+    @pytest.mark.parametrize("monto", [Money.zero(), Money(-1)])
+    def test_un_abono_de_cero_o_negativo_no(self, monto):
+        # Cero pasa la prueba del saldo —nunca es mayor que nada— y dejaría una
+        # fila en el estado de cuenta que no significa nada.
+        with pytest.raises(InvalidPayment) as excepcion:
+            check_payment(monto, "cash")
+        assert excepcion.value.code == "amount_not_positive"
+
+    def test_el_monto_se_mira_antes_que_el_metodo(self):
+        # Con los dos malos gana el monto: es el que decide si hay algo que
+        # registrar, y decir «método inválido» de un abono de cero manda a
+        # corregir lo que no está mal.
+        with pytest.raises(InvalidPayment) as excepcion:
+            check_payment(Money.zero(), "efectivo")
+        assert excepcion.value.code == "amount_not_positive"
+
+    def test_solo_el_efectivo_mueve_la_gaveta(self):
+        # La constante que sostiene RN-56, escrita para que se note si cambia.
+        assert CASH == "cash"
+        assert PAYMENT_METHODS == ("cash", "transfer", "other")
 
 
 class TestAntiguedad:

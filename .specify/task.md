@@ -2707,21 +2707,63 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       actualizar el costo no lo puede alcanzar ninguna prueba —el producto o se
       validó arriba o se acaba de crear—, y la cobertura al 100 % lo señaló.
 
-- [ ] **T-1010** `PaySupplier`: comprueba el saldo (`payment_exceeds_balance`);
-      en efectivo exige turno abierto en la terminal de la sesión
-      (`cash_session_required`) y escribe el `cash_movements` de salida
-      **antes** de guardar el abono. RN-55, RN-56, RF-44.
+- [x] **T-1010** `PaySupplier`: comprueba el saldo (`payment_exceeds_balance`);
+      en efectivo exige turno abierto y escribe el `cash_movements` de salida
+      **antes** de guardar el abono. RN-55, RN-56, RF-44. Ruta:
+      `POST /purchases/{entry_id}/payments`, con `require_admin` y
+      `require_module("purchases")` al lado.
 
       **Incluye el abono automático de una compra de contado**, que T-1009 dejó
       pendiente a propósito: la regla del efectivo vive acá y escribirla dos
-      veces es como se separan. Ojo con el orden que impone RN-56: una compra
-      de contado pagada **en efectivo** va a necesitar turno abierto, y una
-      pagada por transferencia no —el administrador que registra facturas en la
-      oficina no tiene por qué tener caja—.
+      veces es como se separan.
 
-      **Verificación:** abono en efectivo con caja abierta → el efectivo
-      esperado del arqueo baja exactamente ese monto; sin caja → código; abono
-      mayor al saldo → código y nada escrito.
+      **Verificación:** `tests/test_compras.py`, 13 pruebas contra la pila real
+      —el esperado del arqueo baja exactamente lo abonado—, y
+      `tests/application/test_abono_a_proveedor.py`, 22 con dobles. 956 del
+      backend en verde con cobertura 100 %; 570 del POS y `npm run check` 0/0.
+
+      **Cuatro cosas que aparecieron escribiéndolo, y que cambian el plan:**
+
+      1. **`cash_session_required` no se creó: es `cash_no_open_session`, que ya
+         existía.** Dos códigos para el mismo hecho es peor que uno solo, y la
+         frase que ya estaba —«No hay una caja abierta. Ábrala antes de
+         continuar»— sirve igual acá. Plan §12.5 hay que corregirlo.
+
+      2. **El motivo del movimiento de caja lo arma el POS, no el backend.** El
+         plan decía que `PaySupplier` escribiera «Pago a ‹proveedor›, factura
+         ‹n›», y eso es texto para una persona escrito fuera de la interfaz: lo
+         prohíbe RN-30 y dejaría a un cajero brasileño con la mitad del arqueo
+         en español. Viaja en `reason`, que es de donde ya sale el motivo de
+         cualquier otro movimiento de gaveta.
+
+      3. **Una compra de contado no se paga sola: hace falta decir con qué.**
+         `payment_terms` dice **cuándo** y el XML de Hacienda no trae más que
+         eso (`CondicionVenta` 01 es contado y no dice cómo). Sin
+         `payment_method` la compra queda con saldo y se abona desde cuentas
+         por pagar. Adivinar «efectivo» descuadraría un arqueo, y adivinar
+         «transferencia» inventaría un movimiento bancario.
+
+         La consecuencia hay que mirarla de frente: una compra de contado
+         pagada **en efectivo sin turno abierto** no entra —ni la mercadería—,
+         porque la compra y el pago son el mismo hecho. El «no» es accionable:
+         se abre la caja, o se marca el pago como transferencia.
+
+      4. **`not_a_purchase` tampoco se creó.** Una entrada sin proveedor no
+         genera cuenta por pagar (RN-52), así que desde cuentas por pagar **no
+         existe**: responde `entry_not_found`, con el mismo criterio por el que
+         un proveedor de otra compañía responde «no está» y no «no es suyo»
+         (RNF-1). La respuesta se da desde donde se pregunta.
+
+      Los códigos que sí nacieron son cinco y no uno: `payment_exceeds_balance`,
+      `payment_not_positive`, `invalid_payment_method`, `purchase_cancelled` y
+      `payment_failed`. Los cuatro lugares de cada uno se hicieron acá, no en
+      T-1015, por lo mismo que en T-1002: `messages.test.ts` compara las dos
+      listas de códigos y diferirlo tumba `npm test`.
+
+      De paso, `AddCashMovement` ganó un `apply()` que no confirma, y
+      `PaySupplier` otro igual. Es lo que permite que la salida de caja, el
+      abono y —en una compra de contado— la mercadería entren en una sola
+      transacción, sin que la regla del efectivo quede escrita dos veces.
 
 - [ ] **T-1011** `VoidPurchase`: solo sin abonos (`purchase_has_payments`),
       revierte el stock como la anulación de hoy, marca `anulada` y escribe en
@@ -2756,14 +2798,20 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       **Verificación:** punta a punta: abonar en efectivo con la caja abierta y
       ver el movimiento de salida en `/caja` con el motivo armado.
 
-- [ ] **T-1015** Simulado y catálogos: los nueve endpoints con contrato
-      idéntico, proveedores y una compra a crédito en el seed,
-      `messages/es/purchases.json` **declarado en
-      `project.inlang/settings.json`**, y los cinco códigos de compras en
-      `API_CODES` y en `errors.json`.
+- [ ] **T-1015** Simulado y catálogos: los endpoints con contrato idéntico
+      —los nueve del plan más `POST /purchases/{id}/payments`—, proveedores y
+      una compra a crédito en el seed, y `messages/es/purchases.json`
+      **declarado en `project.inlang/settings.json`**.
 
-      `module_not_in_plan` ya está —entró con T-1002, porque
-      `messages.test.ts` compara las dos listas y no se podía diferir—.
+      **Los códigos ya están todos**: `module_not_in_plan` entró con T-1002, los
+      de proveedor con T-1007 y los cinco de abonos con T-1010. Siempre por lo
+      mismo: `messages.test.ts` compara las dos listas y diferirlos tumba
+      `npm test`. Lo que queda acá es el simulado y el catálogo de pantalla.
+
+      El simulado tiene que copiar tres cosas que no son obvias: que el abono
+      en efectivo escriba el movimiento de caja y baje el esperado del turno,
+      que una compra de contado **con** `payment_method` nazca pagada y **sin**
+      él quede con saldo, y que el motivo del movimiento venga en `reason`.
 
       **Verificación:** `npm test` (`loose-text`, `catalogs` y
       `messages.test.ts` comparan las listas de códigos); `npm run check` en

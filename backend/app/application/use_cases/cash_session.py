@@ -180,6 +180,25 @@ class AddCashMovement:
         self._clock = clock
 
     def __call__(self, *, user_id: int, type_: str, amount: Money, reason: str):
+        with self._uow:
+            movimiento = self.apply(
+                user_id=user_id, type_=type_, amount=amount, reason=reason
+            )
+            self._uow.commit()
+        return movimiento
+
+    def apply(self, *, user_id: int, type_: str, amount: Money, reason: str):
+        """El movimiento, comprobado y escrito, **sin confirmar**.
+
+        Existe separado para que un pago a proveedor pueda sacar el efectivo
+        dentro de su propia transacción (RN-56): la salida de caja y el abono
+        tienen que entrar juntos o no entrar, y una gaveta que baja por un abono
+        que después falló es un descuadre que nadie va a saber explicar.
+
+        Lo que se comparte es lo que importa: el turno abierto y que no se pueda
+        sacar más efectivo del que hay. Escribirlo dos veces es como una de las
+        dos copias se queda sin la regla.
+        """
         sesion = self._cash.open_session(user_id)
         if sesion is None:
             raise NoOpenSession(user_id)
@@ -194,16 +213,13 @@ class AddCashMovement:
         )
         check_movement(type_, amount, reason, cifras.expected)
 
-        with self._uow:
-            movimiento = self._cash.add_movement(
-                session_id=sesion.id,
-                type_=type_,
-                amount=amount,
-                reason=reason.strip(),
-                created_at=self._clock.now(),
-            )
-            self._uow.commit()
-        return movimiento
+        return self._cash.add_movement(
+            session_id=sesion.id,
+            type_=type_,
+            amount=amount,
+            reason=reason.strip(),
+            created_at=self._clock.now(),
+        )
 
 
 class CloseCashSession:

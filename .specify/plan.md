@@ -1637,15 +1637,37 @@ gana los campos nuevos. Casos de uso:
   por pagar implícita (saldo = total − abonos). Con condición de contado, el
   pago se registra en el mismo acto como un abono por el total.
 - `PaySupplier`: comprueba el saldo; si el método es efectivo, exige un turno
-  de caja abierto en la terminal de la sesión y escribe el movimiento de salida
-  con motivo —«Pago a ‹proveedor›, factura ‹n›»— antes de guardar el abono
-  (RN-56). Sin turno abierto, `cash_session_required`.
+  de caja abierto y escribe el movimiento de salida antes de guardar el abono
+  —el abono lo apunta—, todo en la misma transacción (RN-56). Sin turno
+  abierto, `cash_no_open_session`.
+
+  **El motivo del movimiento lo arma el POS y viaja en `reason`.** La versión
+  anterior de este párrafo decía que lo escribiera el backend —«Pago a
+  ‹proveedor›, factura ‹n›»— y eso es texto para una persona escrito fuera de
+  la interfaz: lo prohíbe RN-30 y dejaría a un cajero brasileño con la mitad
+  del arqueo en español. Es además de donde ya sale el motivo de cualquier otro
+  movimiento de gaveta.
+
+  Reutiliza `AddCashMovement`, que ganó un `apply()` que no confirma: así las
+  dos comprobaciones del turno —que haya uno abierto y que alcance el
+  efectivo— son literalmente las mismas de cualquier salida de caja, porque es
+  la misma plata.
 - `VoidPurchase`: rechaza si hay abonos (`purchase_has_payments`); si no,
   revierte el stock como la anulación de hoy, marca `anulada`, y escribe en
   bitácora. **No recalcula el costo promedio**: hacerlo exige rehacer todas las
   compras posteriores del mismo producto en orden, y el promedio móvil no
   guarda de dónde vino cada céntimo. La siguiente compra lo corrige sola; la
   pantalla lo dice al anular.
+
+**Una compra de contado se paga en el mismo acto, pero solo si se dice cómo.**
+`payment_terms` dice **cuándo** se paga y `payment_method` **cómo**: son dos
+cosas distintas y el XML de Hacienda solo trae la primera —`CondicionVenta` 01
+es contado y no dice con qué—. Sin método, la compra queda con saldo y se abona
+desde cuentas por pagar; inventarle uno sería adivinar de dónde salió la plata,
+y adivinar «efectivo» descuadra un arqueo. Con método, el abono entra en la
+transacción de la compra, así que una de contado pagada en efectivo **sin turno
+abierto no entra, ni la mercadería**: la compra y el pago son el mismo hecho, y
+registrar una y no el otro deja una deuda que no existe.
 
 ### 12.4 API y pantallas
 
@@ -1657,7 +1679,9 @@ POST /purchases/from-xml             admin · el BFF ya parseó: manda el
                                      proveedor y las líneas con su impuesto
 GET  /purchases?supplier=&from=&to=  cualquiera con el módulo
 POST /purchases/{id}/void            admin · {reason}
-POST /purchases/{id}/payments        admin · {amount, method, reference}
+POST /purchases/{id}/payments        admin · {amount, method, reference, reason}
+                                     `reason` es el motivo del movimiento de
+                                     caja, armado por el POS (RN-30)
 GET  /payables?supplier=             saldos por compra y antigüedad
 GET  /reports/purchases?from=&to=    base e impuesto por tarifa (RF-45)
 ```
@@ -1678,11 +1702,30 @@ previa lo muestra como «nuevo» y se crea al confirmar (RF-42).
 
 ### 12.5 Códigos de error
 
-`supplier_inactive`, `purchase_has_payments`, `payment_exceeds_balance`,
-`cash_session_required`, `duplicate_supplier_document` —la regla de la factura
-duplicada que ya existe (índice `idx_stock_entries_document`) pasa a ser por
-proveedor: el mismo número de dos proveedores distintos es normal—. Cada uno
-en los cuatro lugares.
+`supplier_inactive`, `purchase_has_payments`, `payment_exceeds_balance`. Cada
+uno en los cuatro lugares.
+
+**Dos de esta lista no existen, y es a propósito** (T-1010):
+
+- `cash_session_required` **es `cash_no_open_session`**, que ya estaba. Dos
+  códigos para el mismo hecho es peor que uno solo, y la frase que ya existía
+  sirve igual acá.
+- `duplicate_supplier_document` tampoco hizo falta: lo que cambió no es el
+  código sino **con qué se compara**. `duplicate_document` ahora lleva el
+  proveedor, porque la factura 1234 de un mayorista no es la 1234 de otro.
+
+**Y cuatro que sí nacieron con los abonos:** `payment_not_positive` —cero pasa
+la prueba del saldo sin problema y dejaría una fila que no significa nada—,
+`invalid_payment_method` —un método mal escrito se escapa del `if` del efectivo
+y el turno cierra con un sobrante igual a lo que se pagó—, `purchase_cancelled`
+y `payment_failed`. Los dos primeros se levantan desde una tabla
+(`codigos[e.code]`) igual que los de `InvalidMovement`, así que van declarados
+en `test_error_codes.py`: el AST no los ve.
+
+Abonar a una entrada **sin proveedor** no tiene código propio: no genera cuenta
+por pagar (RN-52), así que desde cuentas por pagar no existe y responde
+`entry_not_found`. Es el mismo criterio por el que un proveedor de otra
+compañía responde «no está» y no «no es suyo» (RNF-1).
 
 **Y cuatro más, que aparecieron al escribir T-1007** y que esta lista no tenía:
 

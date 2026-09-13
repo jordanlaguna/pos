@@ -1081,6 +1081,18 @@
       "planilla_se_queda_de_ultima": "El usuario preguntó por «conta y planilla» como par y no son la misma apuesta. F12 no comparte nada con el POS, su soporte es estacional —todos con el aguinaldo la misma semana de diciembre— y es lo único que ata el producto a un país.",
       "lo_que_de_verdad_pesa": "T-701, no el número de la fase: vía proveedor autorizado F7 es un adaptador detrás de EmisorFE; directo son XAdES, el IdP y seguirle los cambios de esquema. Mientras esa decisión siga abierta, F7 no es una fase grande sino una de tamaño desconocido, y eso es lo que la manda al final.",
       "lo_que_arrastro": "T-916 se mudó de puerta: decía «antes de F6» y pasó a «antes de T-1001». La puerta nunca fue F6 sino la primera migración que se escriba, y ahora es la de F10 — con el caso agrandado, porque T-1001 le pone a `plans` tres columnas en inglés al lado de seis en español. No hay F9: el número de tarea lleva la fase y el 9 lo ocupa Transversal desde F2."
+    },
+    {
+      "tema": "El motivo de un movimiento de caja automático lo arma el POS, no el backend",
+      "decision": "`PaySupplier` recibe el motivo en `reason` y lo guarda tal cual. El plan (§12.3) decía que lo escribiera el backend —«Pago a ‹proveedor›, factura ‹n›»—; se corrigió el plan, no el código.",
+      "porque": "Es texto que lee una persona escrito fuera de la interfaz, que es exactamente lo que prohíbe RN-30. El caso que motivó esa regla fue este mismo: un cajero brasileño viendo media aplicación en su idioma y la otra mitad en español. Un arqueo con movimientos automáticos en español sería la misma falla, solo que en la tabla en vez de en el error. Y no hay que inventar un camino: `reason` es de donde ya sale el motivo de cualquier otro movimiento de gaveta, así que el backend no gana ni una confianza nueva.",
+      "lo_que_no_se_hizo": "Guardar un código y sus datos en `cash_movements.reason` para que el POS armara la frase al leer. Sería más puro y es lo que pide RN-30 si se la lleva al extremo, pero obliga a migrar una columna que hoy tiene texto libre escrito por cajeros, y a que toda pantalla que muestre un arqueo sepa distinguir las dos formas. El día que haya un segundo movimiento automático conviene volver a mirarlo."
+    },
+    {
+      "tema": "Una compra de contado no se paga sola: hace falta decir con qué",
+      "decision": "`payment_terms` dice CUÁNDO y `payment_method` CÓMO. Sin método, una compra de contado queda con saldo y se abona desde cuentas por pagar.",
+      "porque": "El XML de Hacienda no trae más que la condición —`CondicionVenta` 01 es contado y no dice con qué se pagó—, así que el método hay que preguntarlo o no ponerlo. Adivinar «efectivo» descuadra un arqueo; adivinar «transferencia» inventa un movimiento bancario que alguien va a buscar en el banco. Un saldo pendiente, en cambio, se ve y se corrige con un clic.",
+      "la_consecuencia_que_hay_que_mirar_de_frente": "Con método `cash` y sin turno abierto, la compra entera rebota: ni la mercadería entra. Es correcto —la compra y el pago son el mismo hecho, y registrar una sin el otro deja una deuda que no existe— y el «no» es accionable: se abre la caja, o se marca el pago como transferencia. Lo que NO se hizo fue registrar la compra y dejar el pago pendiente en silencio."
     }
   ],
   "invariantes_verificados": {
@@ -1950,6 +1962,18 @@
         "Verde: 816 pruebas del backend con cobertura 100 % en dominio y aplicación, 550 del POS con 100 %, `npm run check` en 0/0."
       ],
       "lo_que_ensena": "**La mitad de un permiso es qué NO bloquea.** RN-50 dice que apagar un módulo no borra nada: lo deja en solo lectura. Escrito como código, eso es que `require_module` devuelve antes de consultar el plan cuando el método no escribe — y el efecto secundario es que ninguna lectura paga la consulta. La regla bien puesta salió más barata que la mal puesta, que es lo contrario de lo que uno espera al agregar un control de acceso.\n\nY una sobre el orden de las tareas. El código de error estaba planeado para T-1015, con el resto del simulado y los catálogos, pero `messages.test.ts` compara la lista de `api_errors.py` contra la de `API_CODES`: agregar uno en el backend y diferir el POS deja `npm test` rojo entre las dos tareas. Cuando dos guardianes se miran entre sí, lo que cruza de un lado al otro no se puede planear por separado.\n\nY una tercera, sobre el mal disfrazado de «no». Un `require_module(\"purchase\")` en singular podía contestar 403 —el plan no incluye ese módulo, literalmente cierto— y mandar a soporte a revisar la suscripción del cliente. Revienta con `UnknownModule`. Cuando un error del programador tiene la misma forma que un estado del negocio, hay que romper la forma a propósito."
+    },
+    {
+      "fecha": "2026-09-12",
+      "titulo": "La compra paga: el efectivo sale de la caja o no sale",
+      "hecho": [
+        "T-1009: `RegisterStockEntry` pasa a registrar compras —costo promedio ponderado, crédito fiscal por línea y vencimiento desde la fecha DEL DOCUMENTO—. No se creó `RegisterPurchase`: una compra es una entrada con proveedor (plan §12.1), y el puerto de proveedores entró opcional para que nada de lo anterior tuviera que aprenderlo.",
+        "T-1010: `PaySupplier` y `POST /purchases/{entry_id}/payments`. El abono comprueba el saldo de ESA compra, y en efectivo escribe la salida de caja antes de guardarse, en la misma transacción.",
+        "`AddCashMovement` ganó un `apply()` que no confirma, y `PaySupplier` otro igual: es lo que permite que la salida de caja, el abono y —en una compra de contado— la mercadería entren juntos, sin escribir la regla del efectivo dos veces.",
+        "Cinco códigos nuevos en los cuatro lugares: `payment_exceeds_balance`, `payment_not_positive`, `invalid_payment_method`, `purchase_cancelled` y `payment_failed`.",
+        "Verde: 956 pruebas del backend con cobertura 100 % en dominio y aplicación, 570 del POS con 100 %, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Dos escrituras que son un solo hecho tienen que caber en una transacción, y eso decide dónde vive la regla.** Un abono en efectivo es una fila en `supplier_payments` y una salida en `cash_movements`; una compra de contado son además el inventario y el costo. Si cada caso de uso abre la suya, una gaveta puede bajar por un abono que después falló, y ese descuadre nadie lo sabe explicar tres días después. La salida fue separar el `apply()` —que comprueba y escribe— del `__call__` —que confirma—, de modo que quien manda en la transacción sea el de más afuera. Lo que se gana no es solo atomicidad: la regla del efectivo queda escrita UNA vez, en `PaySupplier`, y la compra de contado la hereda entera en vez de copiarla. Por eso T-1009 dejó el abono automático pendiente a propósito en vez de adelantarlo: escribirlo antes de tener dónde ponerlo era firmar la copia."
     }
   ],
   "$reparto": {

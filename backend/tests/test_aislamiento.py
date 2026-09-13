@@ -169,6 +169,14 @@ RUTAS_POR_ID = [
     ("PUT", "/categories/update_category/{categoria_id}", {"name": "Secuestrada"}),
     ("DELETE", "/categories/delete_category/{categoria_id}", None),
     ("PUT", "/suppliers/{proveedor_id}", {"name": "Secuestrado", "payment_terms_days": 0}),
+    # Abonarle a la compra de otra compañía: sin el filtro, le bajaría el saldo
+    # a una factura que no es suya y, si fuera en efectivo, le sacaría la plata
+    # a su caja.
+    (
+        "POST",
+        "/purchases/{entrada_id}/payments",
+        {"amount": 1, "method": "transfer"},
+    ),
 ]
 
 
@@ -666,6 +674,7 @@ def test_ninguna_ruta_de_negocio_quedo_sin_probar():
         "/categories/update_category/{categoria_id}": "/categories/update_category/{category_id}",
         "/categories/delete_category/{categoria_id}": "/categories/delete_category/{category_id}",
         "/suppliers/{proveedor_id}": "/suppliers/{supplier_id}",
+        "/purchases/{entrada_id}/payments": "/purchases/{entry_id}/payments",
     }
     cubiertas = {equivalencias.get(r, r) for r in cubiertas}
 

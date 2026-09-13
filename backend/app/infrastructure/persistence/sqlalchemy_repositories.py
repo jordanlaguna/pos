@@ -24,7 +24,7 @@ from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.models.model_stock_entry import StockEntry, StockEntryDetail
-from app.models.model_supplier import Supplier
+from app.models.model_supplier import Supplier, SupplierPayment
 from app.utils.tenancy import sucursal_actual, terminal_actual
 
 
@@ -255,6 +255,51 @@ class SqlAlchemyStockEntryRepository:
     def mark_cancelled(self, entry_id: int) -> None:
         entrada = self._db.query(StockEntry).filter(StockEntry.id == entry_id).first()
         entrada.status = "anulada"
+
+
+class SqlAlchemySupplierPaymentRepository:
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def amounts_for(self, entry_id: int) -> list[Money]:
+        """Lo abonado a esa compra, monto por monto.
+
+        Se traen los montos y no una suma de SQL a propósito: el saldo lo
+        calcula el dominio, que es donde está escrito que nunca es negativo.
+        Una compra no llega a tener tantos abonos como para que importe.
+        """
+        filas = (
+            self._db.query(SupplierPayment.amount)
+            .filter(SupplierPayment.entry_id == entry_id)
+            .all()
+        )
+        return [Money(fila[0]) for fila in filas]
+
+    def add(
+        self,
+        *,
+        supplier_id: int,
+        entry_id: int,
+        amount: Money,
+        method: str,
+        reference: str | None,
+        cash_movement_id: int | None,
+        user_id: int,
+        paid_at: datetime,
+    ) -> int:
+        abono = SupplierPayment(
+            supplier_id=supplier_id,
+            entry_id=entry_id,
+            amount=amount.amount,
+            method=method,
+            reference=reference,
+            cash_movement_id=cash_movement_id,
+            user_id=user_id,
+            paid_at=paid_at,
+        )
+        self._db.add(abono)
+        self._db.flush()
+        return abono.id
 
 
 class SqlAlchemySaleRepository:
