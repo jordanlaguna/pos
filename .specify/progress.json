@@ -1093,6 +1093,12 @@
       "decision": "`payment_terms` dice CUÁNDO y `payment_method` CÓMO. Sin método, una compra de contado queda con saldo y se abona desde cuentas por pagar.",
       "porque": "El XML de Hacienda no trae más que la condición —`CondicionVenta` 01 es contado y no dice con qué se pagó—, así que el método hay que preguntarlo o no ponerlo. Adivinar «efectivo» descuadra un arqueo; adivinar «transferencia» inventa un movimiento bancario que alguien va a buscar en el banco. Un saldo pendiente, en cambio, se ve y se corrige con un clic.",
       "la_consecuencia_que_hay_que_mirar_de_frente": "Con método `cash` y sin turno abierto, la compra entera rebota: ni la mercadería entra. Es correcto —la compra y el pago son el mismo hecho, y registrar una sin el otro deja una deuda que no existe— y el «no» es accionable: se abre la caja, o se marca el pago como transferencia. Lo que NO se hizo fue registrar la compra y dejar el pago pendiente en silencio."
+    },
+    {
+      "tema": "Anular una compra es la anulación de siempre, no una ruta nueva",
+      "decision": "`CancelStockEntry` extendido y `POST /inventory/entry/{id}/cancel` con `{reason}` opcional. El `POST /purchases/{id}/void` que listaba plan §12.4 no se creó.",
+      "porque": "Es el mismo acto sobre la misma fila: la compra ES la entrada (plan §12.1). Dos rutas serían dos sitios donde vive la regla de los abonos, y el día que cambie va a cambiar en uno solo —que es exactamente el argumento con el que §12.1 rechazó tener una tabla `purchases` aparte—. La cuenta por pagar no hace falta revertirla a mano: es implícita, total menos abonos, así que marcar `anulada` alcanza mientras `/payables` filtre por estado. Queda anotado en T-1012.",
+      "lo_que_cuesta": "La ruta no lleva `require_module`, igual que `POST /inventory/entry`. Para anular está bien —RN-50 dice que bajar de plan deja lo que existe en solo lectura, no que impida corregir un error de inventario propio—, pero deja a la vista un hueco de T-1009 que sí importa y que quedó para consultar: una compañía sin el módulo `purchases` puede seguir REGISTRANDO compras por `/inventory/entry` con `supplier_id`, porque el módulo solo se exige en `/suppliers` y en los abonos."
     }
   ],
   "invariantes_verificados": {
@@ -1974,6 +1980,17 @@
         "Verde: 956 pruebas del backend con cobertura 100 % en dominio y aplicación, 570 del POS con 100 %, `npm run check` en 0/0."
       ],
       "lo_que_ensena": "**Dos escrituras que son un solo hecho tienen que caber en una transacción, y eso decide dónde vive la regla.** Un abono en efectivo es una fila en `supplier_payments` y una salida en `cash_movements`; una compra de contado son además el inventario y el costo. Si cada caso de uso abre la suya, una gaveta puede bajar por un abono que después falló, y ese descuadre nadie lo sabe explicar tres días después. La salida fue separar el `apply()` —que comprueba y escribe— del `__call__` —que confirma—, de modo que quien manda en la transacción sea el de más afuera. Lo que se gana no es solo atomicidad: la regla del efectivo queda escrita UNA vez, en `PaySupplier`, y la compra de contado la hereda entera en vez de copiarla. Por eso T-1009 dejó el abono automático pendiente a propósito en vez de adelantarlo: escribirlo antes de tener dónde ponerlo era firmar la copia."
+    },
+    {
+      "fecha": "2026-09-12",
+      "titulo": "Anular una compra: con abonos no, y el costo promedio no se deshace",
+      "hecho": [
+        "T-1011: `CancelStockEntry` anula también compras. Con abonos rechaza (`purchase_has_payments`, con cuántos), y el motivo es obligatorio solo si la entrada tiene proveedor (`void_reason_required`).",
+        "No se creó `VoidPurchase` ni `POST /purchases/{id}/void`: se extendió la ruta de siempre, `POST /inventory/entry/{id}/cancel`, con cuerpo opcional. Plan §12.3 y §12.4 corregidos.",
+        "La anotación de bitácora —`anular_compra` o `anular_entrada`— entra en la transacción de la anulación, con el mismo `apply()` que T-1010 le puso a `AddCashMovement` y `PaySupplier`.",
+        "Verde: 966 pruebas del backend con cobertura 100 % en dominio y aplicación, 572 del POS con 100 %, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Una regla que depende de dos fuentes hay que colgarla de la que manda.** «¿Esta compra tiene abonos?» se puede responder mirando `stock_entries.supplier_id` —si no es compra, no hay— o preguntándole a `supplier_payments`. Lo primero es una consulta menos y parece equivalente; lo segundo es la verdad. No lo son: la columna y la tabla pueden contradecirse, y el día que se contradigan la versión barata deja anular una compra con plata pagada encima. Se pregunta siempre, y una entrada que no es compra contesta con la lista vacía. Lo mismo pasó con el motivo obligatorio: se comprueba DESPUÉS de anular en memoria, porque hasta ese momento no se sabe cuál de las dos cosas es, y pedirlo antes habría roto la pantalla de entradas que ya existe."
     }
   ],
   "$reparto": {

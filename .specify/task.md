@@ -2765,21 +2765,63 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       abono y —en una compra de contado— la mercadería entren en una sola
       transacción, sin que la regla del efectivo quede escrita dos veces.
 
-- [ ] **T-1011** `VoidPurchase`: solo sin abonos (`purchase_has_payments`),
-      revierte el stock como la anulación de hoy, marca `anulada` y escribe en
-      bitácora. **No toca `products.cost`**, y la pantalla lo dice. RF-46,
-      RN-57.
+- [x] **T-1011** Anular una compra: solo sin abonos
+      (`purchase_has_payments`), revierte el stock como la anulación de hoy,
+      marca `anulada` y escribe en bitácora. **No toca `products.cost`**, y la
+      pantalla lo dirá (T-1013). RF-46, RN-57.
 
-      **Verificación:** anular con abonos → código; sin abonos → el stock
-      vuelve, hay fila en `audit_log` y `products.cost` es el mismo de antes.
+      **Verificación:** `tests/test_compras.py`, 4 pruebas nuevas contra la
+      pila real —la fila de `audit_log` con el motivo incluido—, y 6 con dobles
+      en `tests/application/test_compra.py`. 966 del backend con cobertura
+      100 %; 572 del POS y `npm run check` 0/0.
+
+      **No se creó `VoidPurchase` ni `POST /purchases/{id}/void`.** Se extendió
+      `CancelStockEntry` y su ruta de siempre,
+      `POST /inventory/entry/{id}/cancel`, por la misma razón por la que la
+      compra es la entrada (plan §12.1): es el mismo acto sobre la misma fila.
+      Dos rutas serían dos sitios donde escribir la regla de los abonos, y el
+      día que cambie va a cambiar en uno. Plan §12.4 corregido.
+
+      Tres cosas que decidió el código:
+
+      1. **El motivo es obligatorio solo si es compra.** RF-46 lo pide para una
+         compra; la pantalla de entradas nunca lo pidió y exigirlo en el
+         esquema la rompería. Por eso se comprueba **después** de `apply()`,
+         que es cuando se sabe cuál de las dos es, y por eso el cuerpo del POST
+         es opcional. Código nuevo: `void_reason_required`.
+
+      2. **Se pregunta por los abonos siempre, sin mirar `supplier_id`.** Una
+         entrada que no es compra no tiene abonos y la respuesta es la lista
+         vacía; condicionarlo a la columna sería confiar en que esa columna y
+         la tabla de abonos nunca se contradigan, y la que manda es la tabla.
+
+      3. **La cuenta por pagar se revierte sola.** Es implícita —total menos
+         abonos— así que marcar `anulada` basta, siempre que `/payables`
+         (T-1012) filtre por estado. Queda anotado ahí.
+
+      La anotación de bitácora entra en la transacción de la anulación, con el
+      mismo `apply()` que T-1010 le puso a `AddCashMovement` y `PaySupplier`:
+      una anulación sin su rastro es justo la que después nadie puede explicar.
+      Acción `anular_compra` o `anular_entrada` según tenga proveedor.
+
+      **Lo que no pudo probarse contra la pila:** que `products.cost` no cambie.
+      El costo **no está en la respuesta de producto**, así que no hay por dónde
+      leerlo desde una prueba de API. La regla sí está cubierta con dobles. La
+      pantalla de compras lo va a necesitar igual, así que exponerlo es parte de
+      T-1013.
 
 - [ ] **T-1012** Cuentas por pagar y reporte: `GET /payables` (saldo por compra
       y por proveedor, antigüedad) y `GET /reports/purchases` (base e impuesto
       **por tarifa**). RF-44, RF-45.
 
+      **Los dos filtran por `status = 'aplicada'`.** Es lo que hace que anular
+      revierta la cuenta por pagar (RN-57): el saldo es implícito —total menos
+      abonos— así que una anulada que se colara seguiría debiendo, y el crédito
+      fiscal de una compra anulada no existe.
+
       **Verificación:** con una compra al 13 % y otra al 1 %, el reporte da dos
       bases y dos impuestos separados; una compra vencida hace 45 días cae en
-      31–60.
+      31–60; una anulada no aparece en ninguno de los dos.
 
 ### Frontend
 
@@ -2787,6 +2829,20 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       tarifa por línea, con el aviso de RN-53 cuando la del documento difiere
       de la del producto, y conserva la vista previa (§8, regla 6). RF-42,
       RF-43.
+
+      **Además, tres cosas que dejaron T-1010 y T-1011:**
+
+      - El **método de pago** cuando la condición es contado, y su motivo para
+        el movimiento de caja. Sin método la compra nace con saldo, así que el
+        formulario tiene que pedirlo —y avisar que en efectivo hace falta caja
+        abierta, porque si no la compra entera rebota—.
+      - El **motivo al anular** una compra, que el backend exige
+        (`void_reason_required`). Hoy el diálogo de `/inventario/entradas`
+        anula sin cuerpo: sirve para una entrada y no para una compra.
+      - **`cost` en la respuesta de producto.** No está, y la pantalla de
+        compras lo necesita para mostrar el costo actual al lado del de la
+        factura. De paso deja probar contra la pila que anular no lo deshace,
+        que hoy solo se prueba con dobles.
 
       **Verificación:** punta a punta: cargar un XML de ejemplo, ver el
       proveedor marcado «nuevo», la tarifa por línea y el aviso en la línea que
@@ -2808,10 +2864,11 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       mismo: `messages.test.ts` compara las dos listas y diferirlos tumba
       `npm test`. Lo que queda acá es el simulado y el catálogo de pantalla.
 
-      El simulado tiene que copiar tres cosas que no son obvias: que el abono
+      El simulado tiene que copiar cuatro cosas que no son obvias: que el abono
       en efectivo escriba el movimiento de caja y baje el esperado del turno,
       que una compra de contado **con** `payment_method` nazca pagada y **sin**
-      él quede con saldo, y que el motivo del movimiento venga en `reason`.
+      él quede con saldo, que el motivo del movimiento venga en `reason`, y que
+      anular exija motivo y rebote con abonos (T-1011).
 
       **Verificación:** `npm test` (`loose-text`, `catalogs` y
       `messages.test.ts` comparan las listas de códigos); `npm run check` en

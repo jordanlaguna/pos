@@ -36,6 +36,7 @@ from app.domain.errors import (
     InvalidQuantity,
     InvalidSource,
     LineWithoutProduct,
+    PurchaseHasPayments,
 )
 from app.domain.money import Money
 from app.domain.tax import TaxRate
@@ -51,7 +52,7 @@ from app.models.model_person import Person
 from app.models.model_product import Product
 from app.models.model_stock_entry import StockEntry, StockEntryDetail
 from app.models.model_user import User
-from app.services import crud_categories, crud_supplier_payment
+from app.services import crud_categories, crud_membership, crud_supplier_payment
 from app.utils.api_errors import api_error
 
 
@@ -250,20 +251,62 @@ def _linea_mala(payload) -> int:
     return 1
 
 
-def cancel_entry(db: Session, entry_id: int) -> dict:
+def cancel_entry(
+    db: Session, entry_id: int, *, user_id: int, company_id: int, reason: str | None = None
+) -> dict:
+    """Anula una entrada, o una compra (RF-46, RN-57).
+
+    Es **un solo camino** y no dos, por lo mismo que la compra es la entrada
+    (plan §12.1): una anulación de compra revierte lo que revierte una de
+    entrada, más la cuenta por pagar —que es implícita, así que se revierte
+    sola al marcar `anulada`—. Dos rutas para el mismo acto serían dos sitios
+    donde escribir la regla de los abonos, y el día que cambie va a cambiar en
+    uno.
+    """
     productos = SqlAlchemyProductRepository(db)
+    uow = SqlAlchemyUnitOfWork(db)
     caso = CancelStockEntry(
         products=productos,
         entries=SqlAlchemyStockEntryRepository(db),
-        uow=SqlAlchemyUnitOfWork(db),
+        uow=uow,
+        payments=SqlAlchemySupplierPaymentRepository(db),
     )
+    motivo = (reason or "").strip()
 
     try:
-        caso(entry_id)
+        with uow:
+            anulada = caso.apply(entry_id)
+
+            # El motivo es obligatorio para una compra (RF-46) y no para una
+            # entrada, que nunca lo pidió. Se comprueba después de `apply` a
+            # propósito: hasta entonces no se sabe cuál de las dos es, y pedirlo
+            # siempre rompería la pantalla de entradas que ya existe.
+            if anulada.supplier_id is not None and not motivo:
+                raise api_error(400, "void_reason_required")
+
+            crud_membership.registrar(
+                db,
+                user_id=user_id,
+                company_id=company_id,
+                accion="anular_compra" if anulada.supplier_id else "anular_entrada",
+                # Identificadores y el motivo que escribió la persona: nada de
+                # frase armada acá (RN-30). El documento va porque es con lo que
+                # se busca en la bitácora cuando el proveedor reclama.
+                detalle=f"entrada {anulada.id_entry}, documento "
+                f"{anulada.document_number or '-'}, {anulada.units_returned} u"
+                + (f", motivo: {motivo}" if motivo else ""),
+                ip=None,
+            )
+            uow.commit()
+
     except EntryNotFound:
         raise api_error(404, "entry_not_found") from None
     except AlreadyCancelled:
         raise api_error(400, "entry_already_cancelled") from None
+    except PurchaseHasPayments as e:
+        raise api_error(
+            400, "purchase_has_payments", entry_id=e.entry_id, payments=e.payments
+        ) from None
     except CannotCancel as e:
         producto = productos.get(e.product_id)
         raise api_error(

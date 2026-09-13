@@ -321,6 +321,81 @@ class TestLaCompraDeContado:
         assert api.ok("GET", f"/products/product/{item['barcode']}")["stock"] == 0
 
 
+class TestAnularUnaCompra:
+    """RF-46 y RN-57 contra la pila real.
+
+    Es la misma ruta de siempre —`/inventory/entry/{id}/cancel`— y no una
+    `/purchases/{id}/void` aparte: la compra es la entrada, así que anularla es
+    el mismo acto sobre la misma fila. Dos rutas serían dos sitios donde
+    escribir la regla de los abonos.
+    """
+
+    def test_sin_abonos_vuelve_el_stock_y_queda_el_motivo(
+        self, api: Api, soporte: Api, proveedor, producto
+    ):
+        item = producto("Comprado", 2000, 0)
+        compra = comprar(api, proveedor, item)
+        assert api.ok("GET", f"/products/product/{item['barcode']}")["stock"] == 1
+
+        api.ok(
+            "POST",
+            f"/inventory/entry/{compra['id_entry']}/cancel",
+            {"reason": "El proveedor mandó otra cosa"},
+        )
+
+        assert api.ok("GET", f"/products/product/{item['barcode']}")["stock"] == 0
+        assert api.ok("GET", f"/inventory/entry/{compra['id_entry']}")["status"] == "anulada"
+
+        # Y quedó en bitácora, con el motivo. Es lo que le queda al negocio
+        # cuando el proveedor reclame esa factura.
+        lineas = soporte.ok("GET", "/support/audit?accion=anular_compra&limite=20")["lineas"]
+        mia = [l for l in lineas if f"entrada {compra['id_entry']}," in (l["detalle"] or "")]
+        assert mia, "la anulación no quedó en la bitácora"
+        assert "El proveedor mandó otra cosa" in mia[0]["detalle"]
+
+    def test_sin_motivo_no_se_anula_una_compra(self, api: Api, proveedor, producto):
+        compra = comprar(api, proveedor, producto("Comprado", 2000, 0))
+        estado, cuerpo = api.call("POST", f"/inventory/entry/{compra['id_entry']}/cancel")
+        assert codigo((estado, cuerpo), 400) == "void_reason_required"
+
+        # Y no se anuló a medias: sigue aplicada.
+        assert api.ok("GET", f"/inventory/entry/{compra['id_entry']}")["status"] == "aplicada"
+
+    def test_con_abonos_no_se_anula(self, api: Api, proveedor, producto):
+        compra = comprar(api, proveedor, producto("Comprado", 2000, 0))
+        api.ok(
+            "POST",
+            f"/purchases/{compra['id_entry']}/payments",
+            {"amount": 400, "method": "transfer"},
+        )
+
+        estado, cuerpo = api.call(
+            "POST", f"/inventory/entry/{compra['id_entry']}/cancel", {"reason": "Me arrepentí"}
+        )
+        assert codigo((estado, cuerpo), 400) == "purchase_has_payments"
+        # Cuántos: deshacer uno o siete no es la misma tarea.
+        assert cuerpo["detail"]["payments"] == 1
+
+    def test_una_entrada_sin_proveedor_se_anula_sin_motivo(self, api: Api, producto):
+        # La pantalla de entradas nunca pidió motivo, y sigue sin pedirlo: una
+        # entrada no puede tener abonos y su anulación no le debe nada a nadie.
+        item = producto("Comprado", 2000, 0)
+        entrada = api.ok(
+            "POST",
+            "/inventory/entry",
+            {
+                "document_number": f"SIN-{marca_unica()}",
+                "source": "manual",
+                "user_id": api.user_id,  # type: ignore[attr-defined]
+                "lines": [{"id_product": item["id_product"], "quantity": 3, "unit_cost": 500}],
+            },
+        )
+
+        api.ok("POST", f"/inventory/entry/{entrada['id_entry']}/cancel")
+
+        assert api.ok("GET", f"/products/product/{item['barcode']}")["stock"] == 0
+
+
 class TestElModuloDelPlan:
     @pytest.fixture(scope="class")
     def sin_compras(self, api: Api) -> Api:

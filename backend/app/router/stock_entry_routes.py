@@ -5,6 +5,7 @@ from app.database.database import SessionLocal
 from app.models.model_stock_entry import StockEntry
 from app.models.model_user import User
 from app.schemas.schemas_stock_entry import (
+    EntryCancel,
     StockEntryCreate,
     StockEntryResponse,
     StockEntrySuccess,
@@ -61,8 +62,24 @@ def get_entry(
 @router.post("/entry/{entry_id}/cancel")
 def cancel_entry(
     entry_id: int,
+    payload: EntryCancel | None = None,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
 ):
-    """Anula la entrada y devuelve el stock al valor previo."""
-    return crud_stock_entry.cancel_entry(db, entry_id)
+    """Anula la entrada y devuelve el stock al valor previo.
+
+    Anula también compras (RF-46): es el mismo acto sobre la misma fila, y por
+    eso no hay un `/purchases/{id}/void` aparte. Lo que cambia con proveedor es
+    que el motivo pasa a ser obligatorio y que una con abonos no se anula
+    (RN-57).
+
+    El cuerpo es opcional para no romper a quien ya llamaba sin él —la pantalla
+    de entradas—; la que sí lo exige es la compra, y lo dice con su código.
+    """
+    return crud_stock_entry.cancel_entry(
+        db,
+        entry_id,
+        user_id=admin.user.id_user,
+        company_id=admin.company_id,
+        reason=payload.reason if payload else None,
+    )

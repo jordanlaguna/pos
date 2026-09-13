@@ -207,6 +207,8 @@
 	"api_invalid_payment_method": "The payment must be cash, transfer or other.",
 	"api_purchase_cancelled": "That purchase is void and has no balance to pay.",
 	"api_payment_failed": "The payment could not be recorded.",
+	"api_purchase_has_payments": "This purchase already has {payments} payment(s). Undo them before voiding it.",
+	"api_void_reason_required": "Enter why the purchase is being voided.",
 	"api_client_update_failed": "The customer's details could not be saved.",
 	"api_invalid_role": "The role has to be administrator or cashier.",
 	"api_account_not_found": "There is no account with that email address.",

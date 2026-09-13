@@ -207,6 +207,8 @@
 	"api_invalid_payment_method": "El pago tiene que ser en efectivo, por transferencia u otro.",
 	"api_purchase_cancelled": "Esa compra está anulada y no tiene saldo que abonar.",
 	"api_payment_failed": "No se pudo registrar el abono.",
+	"api_purchase_has_payments": "Esta compra ya tiene {payments} abono(s). Deshágalos antes de anularla.",
+	"api_void_reason_required": "Indique por qué se anula la compra.",
 	"api_client_update_failed": "No se pudieron guardar los datos del cliente.",
 	"api_invalid_role": "El rol tiene que ser administrador o cajero.",
 	"api_account_not_found": "No hay ninguna cuenta con ese correo.",

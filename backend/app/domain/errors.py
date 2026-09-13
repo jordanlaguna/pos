@@ -227,6 +227,23 @@ class AlreadyCancelled(DomainError):
         self.entry_id = entry_id
 
 
+class PurchaseHasPayments(DomainError):
+    """Se quiso anular una compra que ya tiene abonos (RN-57).
+
+    Anularla dejaría los abonos colgando de un documento que no existe, y con
+    ellos la plata que de verdad salió de la caja o del banco. Lo que hay que
+    hacer primero es deshacer los abonos, que es una decisión de quien paga y
+    no un efecto secundario de corregir una carga.
+    """
+
+    def __init__(self, entry_id: int, payments: int) -> None:
+        super().__init__(f"la compra {entry_id} tiene {payments} abono(s)")
+        self.entry_id = entry_id
+        #: Cuántos. La frase los cuenta, y saber que es uno o siete cambia lo
+        #: que la persona tiene que ir a deshacer.
+        self.payments = payments
+
+
 class CannotCancel(DomainError):
     """Anular dejaría el inventario en negativo: parte ya se vendió."""
 

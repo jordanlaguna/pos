@@ -58,6 +58,16 @@ class StockEntryCreate(BaseModel):
     payment_reason: str = ""
 
 
+class EntryCancel(BaseModel):
+    """El motivo de una anulación (RF-46).
+
+    Opcional acá y obligatorio en el servicio cuando la entrada es una compra:
+    la pantalla de entradas nunca lo pidió y exigirlo en el esquema la rompería.
+    """
+
+    reason: str | None = None
+
+
 class EntryLineResponse(BaseModel):
     id_product: int
     name: str

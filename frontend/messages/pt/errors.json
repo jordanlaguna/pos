@@ -207,6 +207,8 @@
 	"api_invalid_payment_method": "O pagamento tem que ser em dinheiro, por transferência ou outro.",
 	"api_purchase_cancelled": "Essa compra está cancelada e não tem saldo a pagar.",
 	"api_payment_failed": "Não foi possível registrar o pagamento.",
+	"api_purchase_has_payments": "Esta compra já tem {payments} pagamento(s). Desfaça-os antes de cancelá-la.",
+	"api_void_reason_required": "Informe por que a compra está sendo cancelada.",
 	"api_client_update_failed": "Não foi possível salvar os dados do cliente.",
 	"api_invalid_role": "O perfil tem que ser administrador ou operador de caixa.",
 	"api_account_not_found": "Não existe nenhuma conta com esse e-mail.",

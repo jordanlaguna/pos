@@ -16,6 +16,7 @@ from app.application.ports.clock import Clock
 from app.application.ports.repositories import (
     ProductRepository,
     StockEntryRepository,
+    SupplierPaymentRepository,
     SupplierRepository,
     UnitOfWork,
 )
@@ -26,6 +27,7 @@ from app.domain.errors import (
     DomainError,
     DuplicateDocument,
     LineWithoutProduct,
+    PurchaseHasPayments,
 )
 from app.domain.money import Money
 from app.domain.purchases import due_date as fecha_de_vencimiento
@@ -379,6 +381,16 @@ class RegisterStockEntry:
         ).id_payment
 
 
+@dataclass(frozen=True)
+class CancelledEntry:
+    id_entry: int
+    units_returned: int
+    #: Lo que decide si esto fue anular una compra o anular una entrada. Quien
+    #: escribe la bitácora lo necesita para decir cuál de las dos cosas pasó.
+    supplier_id: int | None
+    document_number: str | None
+
+
 class CancelStockEntry:
     """
     Anula una recepción y devuelve el stock.
@@ -386,6 +398,12 @@ class CancelStockEntry:
     Se comprueba **todo** antes de tocar nada: si una sola línea no se puede
     revertir —porque parte ya se vendió— no se revierte ninguna. Revertir a
     medias dejaría un inventario peor que el que había.
+
+    Desde F10 anula también compras (RN-57), con dos diferencias: no se puede si
+    ya tiene abonos, y **el costo promedio no se deshace**. Lo segundo no es
+    pereza: el promedio móvil no guarda de dónde vino cada céntimo, así que
+    recalcularlo hacia atrás exige rehacer en orden todas las compras
+    posteriores del mismo producto. La siguiente compra lo corrige sola.
     """
 
     def __init__(
@@ -394,17 +412,35 @@ class CancelStockEntry:
         products: ProductRepository,
         entries: StockEntryRepository,
         uow: UnitOfWork,
+        payments: SupplierPaymentRepository | None = None,
     ) -> None:
         self._products = products
         self._entries = entries
         self._uow = uow
+        # Opcional igual que en `RegisterStockEntry`: una entrada que no es
+        # compra no puede tener abonos, y las pruebas de lo que ya existía no
+        # tienen que aprender un puerto nuevo.
+        self._payments = payments
 
-    def __call__(self, entry_id: int) -> int:
+    def __call__(self, entry_id: int) -> CancelledEntry:
+        with self._uow:
+            anulada = self.apply(entry_id)
+            self._uow.commit()
+        return anulada
+
+    def apply(self, entry_id: int) -> CancelledEntry:
+        """La anulación comprobada y escrita, **sin confirmar**.
+
+        Separado del `__call__` para que la anotación de bitácora entre en la
+        misma transacción que el hecho que narra: una anulación sin su rastro es
+        justo la que después nadie puede explicar.
+        """
         entrada = self._entries.get(entry_id)
         if entrada is None:
             raise EntryNotFound(entry_id)
         if entrada.status == "anulada":
             raise AlreadyCancelled(entry_id)
+        self._sin_abonos(entry_id)
 
         lineas = self._entries.lines_of(entry_id)
 
@@ -415,11 +451,29 @@ class CancelStockEntry:
             if producto is not None:
                 check_cancellable(linea.product_id, producto.stock, linea.quantity)
 
-        with self._uow:
-            for linea in lineas:
-                if self._products.get(linea.product_id) is not None:
-                    self._products.adjust_stock(linea.product_id, -linea.quantity)
-            self._entries.mark_cancelled(entry_id)
-            self._uow.commit()
+        for linea in lineas:
+            if self._products.get(linea.product_id) is not None:
+                self._products.adjust_stock(linea.product_id, -linea.quantity)
+        self._entries.mark_cancelled(entry_id)
 
-        return entry_id
+        return CancelledEntry(
+            id_entry=entry_id,
+            units_returned=sum(linea.quantity for linea in lineas),
+            supplier_id=getattr(entrada, "supplier_id", None),
+            document_number=entrada.document_number,
+        )
+
+    def _sin_abonos(self, entry_id: int) -> None:
+        """RN-57: con abonos no se anula.
+
+        Se pregunta siempre que haya puerto, sin mirar antes si es compra: una
+        entrada que no lo es no tiene abonos y la respuesta es la lista vacía.
+        Condicionarlo a `supplier_id` sería confiar en que esa columna y la
+        tabla de abonos nunca se contradigan, y la que manda es la tabla.
+        """
+        if self._payments is None:
+            return
+
+        abonos = self._payments.amounts_for(entry_id)
+        if abonos:
+            raise PurchaseHasPayments(entry_id, len(abonos))

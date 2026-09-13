@@ -22,6 +22,7 @@ from app.application.use_cases.cash_session import (
     NoOpenSession,
 )
 from app.application.use_cases.stock_entry import (
+    CancelStockEntry,
     EntryRequest,
     RegisterStockEntry,
     RequestedEntryLine,
@@ -29,7 +30,7 @@ from app.application.use_cases.stock_entry import (
     SupplierNotFound,
 )
 from app.application.use_cases.supplier_payment import PaySupplier
-from app.domain.errors import DuplicateDocument
+from app.domain.errors import DuplicateDocument, PurchaseHasPayments
 from app.domain.money import Money
 from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
@@ -84,9 +85,26 @@ def mundo():
     return caso, productos, entradas, proveedores
 
 
+@dataclass
+class MundoPagable:
+    """Las piezas de un mundo que sabe comprar, pagar y anular.
+
+    Con nombre y no como tupla porque son seis: `caso, uow, abonos, caja, _, _`
+    es justo la forma de desempacar que nadie lee dos veces.
+    """
+
+    comprar: RegisterStockEntry
+    anular: CancelStockEntry
+    productos: FakeProductRepository
+    entradas: FakeStockEntryRepository
+    abonos: FakeSupplierPaymentRepository
+    caja: FakeCashRepository
+    uow: FakeUnitOfWork
+
+
 @pytest.fixture
-def mundo_pagable():
-    """El mismo mundo, pero sabiendo pagar (T-1010).
+def mundo_pagable() -> MundoPagable:
+    """El mismo mundo, pero sabiendo pagar (T-1010) y anular (T-1011).
 
     Se arma aparte para que las pruebas de arriba sigan describiendo una compra
     **sin** `payer`: es lo que sigue siendo una entrada de mercadería, y es la
@@ -104,33 +122,42 @@ def mundo_pagable():
     uow = FakeUnitOfWork()
     reloj = FixedClock(HOY)
 
-    caso = RegisterStockEntry(
-        products=productos,
-        entries=entradas,
-        uow=uow,
-        clock=reloj,
-        suppliers=FakeSupplierRepository(
-            [FakeSupplier(7, "Mayorista del Sur", payment_terms_days=30)]
-        ),
-        payer=PaySupplier(
+    return MundoPagable(
+        comprar=RegisterStockEntry(
+            products=productos,
             entries=entradas,
-            payments=abonos,
-            movements=AddCashMovement(
-                cash=caja,
-                report=BuildSessionReport(
-                    sales=FakeSaleRepository(),
-                    returns=FakeReturnRepository(),
+            uow=uow,
+            clock=reloj,
+            suppliers=FakeSupplierRepository(
+                [FakeSupplier(7, "Mayorista del Sur", payment_terms_days=30)]
+            ),
+            payer=PaySupplier(
+                entries=entradas,
+                payments=abonos,
+                movements=AddCashMovement(
                     cash=caja,
+                    report=BuildSessionReport(
+                        sales=FakeSaleRepository(),
+                        returns=FakeReturnRepository(),
+                        cash=caja,
+                        clock=reloj,
+                    ),
+                    uow=uow,
                     clock=reloj,
                 ),
                 uow=uow,
                 clock=reloj,
             ),
-            uow=uow,
-            clock=reloj,
         ),
+        anular=CancelStockEntry(
+            products=productos, entries=entradas, uow=uow, payments=abonos
+        ),
+        productos=productos,
+        entradas=entradas,
+        abonos=abonos,
+        caja=caja,
+        uow=uow,
     )
-    return caso, uow, abonos, caja
 
 
 def compra(**cambios) -> EntryRequest:
@@ -351,53 +378,53 @@ class TestElAbonoDeUnaCompraDeContado:
     """
 
     def test_de_contado_con_metodo_queda_pagada(self, mundo_pagable):
-        caso, _uow, abonos, _ = mundo_pagable
-        resultado = caso(compra(payment_terms="cash", payment_method="transfer"))
+        m = mundo_pagable
+        resultado = m.comprar(compra(payment_terms="cash", payment_method="transfer"))
 
         assert resultado.id_payment is not None
         # Por el total con impuesto, que es lo que se le entregó al proveedor.
-        assert abonos.abonos[0].amount == Money(1356)
-        assert abonos.abonos[0].method == "transfer"
+        assert m.abonos.abonos[0].amount == Money(1356)
+        assert m.abonos.abonos[0].method == "transfer"
 
     def test_sin_metodo_queda_con_saldo(self, mundo_pagable):
         # No se inventa de dónde salió la plata: si adivinara «efectivo»,
         # descuadraría un arqueo (RN-56). Se abona desde cuentas por pagar.
-        caso, _, abonos, _ = mundo_pagable
-        resultado = caso(compra(payment_terms="cash"))
+        m = mundo_pagable
+        resultado = m.comprar(compra(payment_terms="cash"))
 
         assert resultado.id_payment is None
-        assert abonos.abonos == []
+        assert m.abonos.abonos == []
 
     def test_a_credito_no_se_paga_sola(self, mundo_pagable):
-        caso, _, abonos, _ = mundo_pagable
-        resultado = caso(compra(payment_method="transfer"))
+        m = mundo_pagable
+        resultado = m.comprar(compra(payment_method="transfer"))
 
         assert resultado.due_date == date(2026, 10, 10)
         assert resultado.id_payment is None
-        assert abonos.abonos == []
+        assert m.abonos.abonos == []
 
     def test_una_entrada_sin_proveedor_no_paga_nada(self, mundo_pagable):
         # No genera cuenta por pagar (RN-52), así que tampoco tiene qué abonar.
-        caso, _, abonos, _ = mundo_pagable
-        resultado = caso(
+        m = mundo_pagable
+        resultado = m.comprar(
             compra(supplier_id=None, payment_terms="cash", payment_method="transfer")
         )
 
         assert resultado.id_payment is None
-        assert abonos.abonos == []
+        assert m.abonos.abonos == []
 
     def test_en_efectivo_sale_de_la_caja(self, mundo_pagable):
-        caso, _, _, caja = mundo_pagable
-        turno = caja.create_session(
+        m = mundo_pagable
+        turno = m.caja.create_session(
             user_id=1, opening=Money(5000), opened_at=HOY, notes=None
         )
-        caso(
+        m.comprar(
             compra(
                 payment_terms="cash", payment_method="cash", payment_reason="Factura F-001"
             )
         )
 
-        movimiento = caja.movements(turno.id)[0]
+        movimiento = m.caja.movements(turno.id)[0]
         assert (movimiento.type, movimiento.amount) == ("salida", Money(1356))
 
     def test_en_efectivo_sin_caja_abierta_no_entra_ni_la_mercaderia(self, mundo_pagable):
@@ -408,10 +435,10 @@ class TestElAbonoDeUnaCompraDeContado:
         el «no» es accionable: se abre la caja, o se marca el pago como
         transferencia.
         """
-        caso, uow, abonos, _ = mundo_pagable
+        m = mundo_pagable
 
         with pytest.raises(NoOpenSession):
-            caso(
+            m.comprar(
                 compra(
                     payment_terms="cash",
                     payment_method="cash",
@@ -419,12 +446,111 @@ class TestElAbonoDeUnaCompraDeContado:
                 )
             )
 
-        assert abonos.abonos == []
+        assert m.abonos.abonos == []
         # Lo que se comprueba es que la transacción se revirtió, no que el stock
         # volvió: el repositorio de mentira escribe en un diccionario y no sabe
         # deshacer. Quien deshace de verdad es `SqlAlchemyUnitOfWork`, y eso se
         # mira contra MySQL en `tests/test_compras.py`.
-        assert uow.rolled_back and not uow.committed
+        assert m.uow.rolled_back and not m.uow.committed
+
+
+class TestAnularUnaCompra:
+    """RN-57, RF-46 (T-1011).
+
+    Es la misma anulación de siempre —`CancelStockEntry`— con una regla más y
+    una que se deja quieta a propósito: con abonos no se anula, y el costo
+    promedio no se deshace.
+    """
+
+    def test_devuelve_el_stock_y_marca_anulada(self, mundo_pagable):
+        m = mundo_pagable
+        entrada = m.comprar(compra()).id_entry
+        antes = m.productos.productos[1].stock
+
+        resultado = m.anular(entrada)
+
+        assert m.productos.productos[1].stock == antes - 10
+        assert m.entradas.get(entrada).status == "anulada"
+        assert resultado.units_returned == 10
+        # Quien escribe la bitácora necesita saber si fue compra o entrada.
+        assert resultado.supplier_id == 7
+        assert resultado.document_number == "F-001"
+
+    def test_el_costo_promedio_no_se_deshace(self, mundo_pagable):
+        """La decisión que hay que poder defender (RN-57).
+
+        Deshacerlo exige rehacer en orden todas las compras posteriores del
+        mismo producto, y el promedio móvil no guarda de dónde vino cada
+        céntimo. La siguiente compra lo corrige sola; la pantalla lo dice.
+        """
+        m = mundo_pagable
+        entrada = m.comprar(compra()).id_entry
+        assert m.productos.productos[1].cost == Money(110)
+
+        m.anular(entrada)
+
+        assert m.productos.productos[1].cost == Money(110)
+
+    def test_con_abonos_no_se_anula(self, mundo_pagable):
+        m = mundo_pagable
+        entrada = m.comprar(compra()).id_entry
+        m.abonos.add(
+            supplier_id=7,
+            entry_id=entrada,
+            amount=Money(400),
+            method="transfer",
+            reference=None,
+            cash_movement_id=None,
+            user_id=1,
+            paid_at=HOY,
+        )
+
+        with pytest.raises(PurchaseHasPayments) as excepcion:
+            m.anular(entrada)
+
+        # Cuántos: deshacer uno o siete no es la misma tarea.
+        assert excepcion.value.payments == 1
+        assert m.entradas.get(entrada).status == "aplicada"
+
+    def test_una_compra_de_contado_pagada_tampoco(self, mundo_pagable):
+        # El abono automático cuenta igual que uno a mano: es el mismo hecho, y
+        # la plata salió igual.
+        m = mundo_pagable
+        entrada = m.comprar(
+            compra(payment_terms="cash", payment_method="transfer")
+        ).id_entry
+
+        with pytest.raises(PurchaseHasPayments):
+            m.anular(entrada)
+
+    def test_una_entrada_sin_proveedor_se_anula_igual(self, mundo_pagable):
+        # Nunca pudo tener abonos, así que la regla no la toca. Es lo que sigue
+        # siendo una entrada de las de siempre.
+        m = mundo_pagable
+        entrada = m.comprar(
+            compra(supplier_id=None, payment_terms="cash", source="manual")
+        ).id_entry
+
+        resultado = m.anular(entrada)
+
+        assert resultado.supplier_id is None
+        assert m.entradas.get(entrada).status == "anulada"
+
+    def test_se_pregunta_por_los_abonos_antes_de_tocar_el_stock(self, mundo_pagable):
+        # El orden importa: si se revirtiera primero y se comprobara después, el
+        # inventario quedaría mal aunque la anulación no llegara a escribirse.
+        m = mundo_pagable
+        entrada = m.comprar(compra()).id_entry
+        despues_de_comprar = m.productos.productos[1].stock
+        m.abonos.add(
+            supplier_id=7, entry_id=entrada, amount=Money(400), method="transfer",
+            reference=None, cash_movement_id=None, user_id=1, paid_at=HOY,
+        )
+
+        with pytest.raises(PurchaseHasPayments):
+            m.anular(entrada)
+
+        assert m.productos.productos[1].stock == despues_de_comprar
 
 
 class TestSinProveedoresConfigurados:

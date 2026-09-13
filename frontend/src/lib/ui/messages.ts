@@ -316,6 +316,8 @@ export const API_CODES = [
 	'invalid_payment_method',
 	'purchase_cancelled',
 	'payment_failed',
+	'purchase_has_payments',
+	'void_reason_required',
 	'client_update_failed',
 	'invalid_role',
 	'account_not_found',
@@ -701,6 +703,11 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_purchase_cancelled();
 		case 'payment_failed':
 			return m.api_payment_failed();
+		case 'purchase_has_payments':
+			// Cuántos: deshacer uno o siete abonos no es la misma tarea.
+			return m.api_purchase_has_payments({ payments: numero(d.payments) });
+		case 'void_reason_required':
+			return m.api_void_reason_required();
 
 		case 'client_update_failed':
 			return m.api_client_update_failed();

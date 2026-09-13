@@ -200,6 +200,15 @@ CODES: frozenset[str] = frozenset(
         # con esconder el botón.
         "purchase_cancelled",
         "payment_failed",
+        # `entry_id` y `payments`: anular una compra con abonos los dejaría
+        # colgando de un documento que no existe, y con ellos la plata que sí
+        # salió. La cuenta va porque la frase la dice: deshacer uno o siete
+        # abonos no es la misma tarea (RN-57).
+        "purchase_has_payments",
+        # Anular una compra sin decir por qué. En una entrada no hace falta; en
+        # una compra el motivo es parte del requisito (RF-46), porque es lo que
+        # le queda al proveedor cuando reclame la factura.
+        "void_reason_required",
         # -------------------------------------------------- configuración
         "unsupported_locale",
         "settings_too_large",

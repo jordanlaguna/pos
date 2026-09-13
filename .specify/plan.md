@@ -1652,12 +1652,25 @@ gana los campos nuevos. Casos de uso:
   dos comprobaciones del turno —que haya uno abierto y que alcance el
   efectivo— son literalmente las mismas de cualquier salida de caja, porque es
   la misma plata.
-- `VoidPurchase`: rechaza si hay abonos (`purchase_has_payments`); si no,
-  revierte el stock como la anulación de hoy, marca `anulada`, y escribe en
-  bitácora. **No recalcula el costo promedio**: hacerlo exige rehacer todas las
-  compras posteriores del mismo producto en orden, y el promedio móvil no
+- **Anular una compra es `CancelStockEntry`, extendido** —no un `VoidPurchase`
+  aparte, por lo mismo que la compra es la entrada (§12.1): es el mismo acto
+  sobre la misma fila, y dos caminos serían dos sitios donde escribir la regla
+  de los abonos—. Rechaza si los hay (`purchase_has_payments`); si no, revierte
+  el stock como siempre, marca `anulada` y escribe en bitácora, todo en una
+  transacción. **No recalcula el costo promedio**: hacerlo exige rehacer todas
+  las compras posteriores del mismo producto en orden, y el promedio móvil no
   guarda de dónde vino cada céntimo. La siguiente compra lo corrige sola; la
   pantalla lo dice al anular.
+
+  Los abonos se consultan **siempre**, sin mirar antes si la entrada tiene
+  proveedor: una que no es compra no tiene abonos y la respuesta es la lista
+  vacía. Condicionarlo a `supplier_id` sería confiar en que esa columna y la
+  tabla de abonos nunca se contradigan, y la que manda es la tabla.
+
+  El motivo es obligatorio **solo si es compra** (RF-46): la pantalla de
+  entradas nunca lo pidió. Se comprueba después de anular en memoria, que es
+  cuando se sabe cuál de las dos es, y por eso el cuerpo del POST es opcional.
+  Código: `void_reason_required`.
 
 **Una compra de contado se paga en el mismo acto, pero solo si se dice cómo.**
 `payment_terms` dice **cuándo** se paga y `payment_method` **cómo**: son dos
@@ -1678,7 +1691,10 @@ POST /purchases                      admin · la vista previa confirmada
 POST /purchases/from-xml             admin · el BFF ya parseó: manda el
                                      proveedor y las líneas con su impuesto
 GET  /purchases?supplier=&from=&to=  cualquiera con el módulo
-POST /purchases/{id}/void            admin · {reason}
+POST /inventory/entry/{id}/cancel    admin · {reason} opcional, y obligatorio
+                                     si la entrada es compra (T-1011). No hay
+                                     `/purchases/{id}/void`: es el mismo acto
+                                     sobre la misma fila
 POST /purchases/{id}/payments        admin · {amount, method, reference, reason}
                                      `reason` es el motivo del movimiento de
                                      caja, armado por el POS (RN-30)
@@ -1714,7 +1730,9 @@ uno en los cuatro lugares.
   código sino **con qué se compara**. `duplicate_document` ahora lleva el
   proveedor, porque la factura 1234 de un mayorista no es la 1234 de otro.
 
-**Y cuatro que sí nacieron con los abonos:** `payment_not_positive` —cero pasa
+**Y seis que sí nacieron.** Con la anulación (T-1011): `purchase_has_payments`
+—con **cuántos** abonos, porque deshacer uno o siete no es la misma tarea— y
+`void_reason_required`. Con los abonos (T-1010): `payment_not_positive` —cero pasa
 la prueba del saldo sin problema y dejaría una fila que no significa nada—,
 `invalid_payment_method` —un método mal escrito se escapa del `if` del efectivo
 y el turno cierra con un sobrante igual a lo que se pagó—, `purchase_cancelled`
