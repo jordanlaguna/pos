@@ -61,5 +61,11 @@
   "field_plan": "O plano",
   "field_company_state": "O estado da assinatura",
   "field_expires_on": "A data de vencimento",
-  "field_cabys_code": "O código CABYS"
+  "field_cabys_code": "O código CABYS",
+  "$comentario_contabilidad": "Os de contabilidade (F11).",
+  "field_accounting_start_date": "A data de início",
+  "field_account": "A conta",
+  "field_account_code": "O código de conta",
+  "field_account_kind": "O tipo de conta",
+  "field_entry_date": "A data do lançamento"
 }

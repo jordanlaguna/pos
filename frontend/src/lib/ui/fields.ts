@@ -95,5 +95,12 @@ export const F = {
 	companyNumber: () => masculino(m.field_company_number()),
 	plan: () => masculino(m.field_plan()),
 	companyState: () => masculino(m.field_company_state()),
-	expiresOn: () => femenino(m.field_expires_on())
+	expiresOn: () => femenino(m.field_expires_on()),
+
+	// ------------------------------------------------------ contabilidad (F11)
+	accountingStartDate: () => femenino(m.field_accounting_start_date()),
+	account: () => femenino(m.field_account()),
+	accountCode: () => masculino(m.field_account_code()),
+	accountKind: () => masculino(m.field_account_kind()),
+	entryDate: () => femenino(m.field_entry_date())
 };

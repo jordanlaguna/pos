@@ -414,6 +414,13 @@ export interface SaleItem {
 	tax_rate?: number | null;
 	/** Lo que se cobró de impuesto en esta línea, con su redondeo. */
 	tax_amount?: number | null;
+	/**
+	 * Lo que costó **al momento de venderse** (RN-63), congelado como la tarifa
+	 * y por lo mismo: comprar más caro mañana no puede cambiar el costo de lo que
+	 * ya salió. `null` es «no se sabe» —un producto que nunca se compró—, y esa
+	 * línea no asienta el par costo / inventario.
+	 */
+	unit_cost?: number | null;
 }
 
 /** Respuesta de GET /sales/sale/{id} — endpoint añadido por este proyecto. */
@@ -676,6 +683,207 @@ export interface PurchasesReport {
 	tax: number;
 	total: number;
 	by_rate: PurchaseRateLine[];
+}
+
+// --------------------------------------------------------------- contabilidad
+//
+// F11. El libro de la compañía: catálogo de cuentas, mapeo de eventos a cuentas,
+// asientos con sus líneas, periodos mensuales y los cinco reportes.
+
+/** Los seis tipos de cuenta. De esto salen los tres estados financieros. */
+export const ACCOUNT_KINDS = [
+	'asset',
+	'liability',
+	'equity',
+	'income',
+	'cost',
+	'expense'
+] as const;
+
+export type AccountKind = (typeof ACCOUNT_KINDS)[number];
+
+/** Cómo nació un asiento. */
+export const ENTRY_KINDS = ['auto', 'manual', 'adjustment', 'opening'] as const;
+
+export type EntryKind = (typeof ENTRY_KINDS)[number];
+
+export interface Account {
+	id: number;
+	/** '1.1.01'. La jerarquía va por el texto, y es lo que ordena el catálogo. */
+	code: string;
+	name: string;
+	kind: AccountKind;
+	parent_id: number | null;
+	/** La usa el mapeo: no se borra ni se desactiva (RN-64). */
+	is_system: boolean;
+	is_active: boolean;
+}
+
+/** Una cuenta de la plantilla, antes de que exista: no tiene id todavía. */
+export interface ChartAccount {
+	code: string;
+	name: string;
+	kind: AccountKind;
+	is_system: boolean;
+}
+
+export interface AccountingStatus {
+	active: boolean;
+	template: string | null;
+	/** Desde cuándo se llevan libros (RN-60). Lo anterior no se reconstruye. */
+	start_date: string | null;
+	templates: string[];
+	/** La plantilla entera. Viene aunque no esté activa: es lo que la pantalla
+	 * de activación necesita para ofrecer los saldos iniciales. */
+	chart: ChartAccount[];
+}
+
+export interface MappingRow {
+	event: string;
+	role: string;
+	account_id: number | null;
+	account_code: string | null;
+	account_name: string | null;
+	/** Los que caen en «por clasificar» a propósito: no se pintan en rojo,
+	 * porque no están mal, es que el sistema no sabe. */
+	unmapped_on_purpose: boolean;
+}
+
+export interface JournalLine {
+	account_id: number;
+	account_code: string;
+	account_name: string;
+	debit: number;
+	credit: number;
+	/** En porcentaje —13, no 0,13—, solo en las líneas de IVA (RN-65). */
+	tax_rate: number | null;
+	memo: string | null;
+}
+
+export interface JournalEntry {
+	id: number;
+	/** Correlativo por compañía, sin huecos. */
+	entry_number: number;
+	entry_date: string;
+	kind: EntryKind;
+	/** De qué tabla salió. Nulo en los manuales y en la apertura. */
+	source_type: string | null;
+	source_id: number | null;
+	/** A cuál corrige, si es de ajuste (RN-61). */
+	adjusts_entry_id: number | null;
+	/** Código del evento en los automáticos; frase de quien lo dictó en los
+	 * manuales. El POS decide cuál muestra. */
+	description: string;
+	user_id: number;
+	created_at: string;
+	lines?: JournalLine[];
+	total?: number;
+}
+
+export interface AccountingPeriod {
+	id: number;
+	year: number;
+	month: number;
+	status: 'open' | 'closed';
+	closed_at: string | null;
+	closed_by: number | null;
+}
+
+export interface BalanceRow {
+	account_id: number;
+	code: string;
+	name: string;
+	kind: AccountKind;
+	debits: number;
+	credits: number;
+	/** En su signo natural: positivo es «lo que esta cuenta normalmente tiene». */
+	balance: number;
+}
+
+export interface TrialBalance {
+	year: number;
+	month: number | null;
+	rows: BalanceRow[];
+	debits: number;
+	credits: number;
+	/** Falso significa que alguien escribió sin pasar por el dominio. */
+	is_balanced: boolean;
+}
+
+export interface IncomeStatement {
+	year: number;
+	month: number | null;
+	income: number;
+	cost: number;
+	expense: number;
+	gross_profit: number;
+	result: number;
+	rows: BalanceRow[];
+}
+
+export interface BalanceSheet {
+	year: number;
+	month: number | null;
+	assets: number;
+	liabilities: number;
+	equity: number;
+	/** El del periodo, que todavía no se capitalizó: entra en la igualdad aparte. */
+	result: number;
+	is_balanced: boolean;
+	rows: BalanceRow[];
+}
+
+/** El libro diario: los asientos del periodo, con sus líneas. */
+export interface Journal {
+	year: number;
+	month: number | null;
+	entries: JournalEntry[];
+}
+
+export interface LedgerMovement {
+	entry_id: number;
+	entry_number: number;
+	entry_date: string;
+	description: string;
+	debit: number;
+	credit: number;
+	memo: string | null;
+}
+
+export interface LedgerAccount extends BalanceRow {
+	/** Lo acumulado **antes** del periodo. Sin esto el mayor no sirve. */
+	opening: number;
+	closing: number;
+	movements: LedgerMovement[];
+}
+
+/** El mayor: cada cuenta con lo que movió en el periodo. */
+export interface LedgerReport {
+	year: number;
+	month: number | null;
+	accounts: LedgerAccount[];
+}
+
+export interface VatLine {
+	/** Entre 0 y 1, como se congela en la línea de la venta. */
+	tax_rate: number;
+	sales_base: number;
+	debit: number;
+	returns_tax: number;
+	purchases_base: number;
+	credit: number;
+	balance: number;
+}
+
+export interface VatDraft {
+	year: number;
+	month: number | null;
+	lines: VatLine[];
+	debit: number;
+	credit: number;
+	/** Positivo se paga; negativo queda a favor. */
+	balance: number;
+	in_favor: boolean;
 }
 
 /** Producto del catálogo con el que se emparejó una línea del archivo. */

@@ -62,6 +62,13 @@ export function nav(): NavGroup[] {
 					roles: ['admin'],
 					module: 'purchases'
 				},
+				{
+					href: '/contabilidad',
+					label: m.nav_accounting(),
+					icon: 'book',
+					roles: ['admin'],
+					module: 'accounting'
+				},
 				{ href: '/clientes', label: m.nav_clients(), icon: 'users' },
 				{ href: '/usuarios', label: m.nav_users(), icon: 'user', roles: ['admin'] },
 				{

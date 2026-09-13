@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type {
+	Account,
+	AccountingPeriod,
 	CashMovement,
 	CashSession,
 	Category,
@@ -10,6 +12,7 @@ import type {
 	Role,
 	SaleItem,
 	SaleReturn,
+	JournalEntry,
 	StockEntry,
 	Supplier
 } from '$lib/domain/types';
@@ -133,7 +136,37 @@ export interface MockCompanyData {
 	/** Proveedores y sus abonos (F10). Cada compañía tiene los suyos. */
 	suppliers: Supplier[];
 	supplier_payments: MockSupplierPayment[];
+	/**
+	 * El libro (F11). Las cinco tablas nacen vacías y se llenan al activar: una
+	 * compañía sin contabilidad las tiene en cero, que es exactamente su estado
+	 * en la base de verdad.
+	 */
+	accounts: Account[];
+	account_mappings: MockAccountMapping[];
+	accounting_periods: AccountingPeriod[];
+	journal_entries: JournalEntry[];
+	journal_lines: MockJournalLine[];
 	settings?: MockSettings;
+}
+
+/** Una fila del mapeo: qué cuenta usa cada papel de cada evento. */
+export interface MockAccountMapping {
+	id: number;
+	event: string;
+	role: string;
+	account_id: number;
+}
+
+/** Una línea de asiento, como se guarda. */
+export interface MockJournalLine {
+	id: number;
+	entry_id: number;
+	account_id: number;
+	debit: number;
+	credit: number;
+	/** En porcentaje —13, no 0,13—, solo en las líneas de IVA (RN-65). */
+	tax_rate: number | null;
+	memo: string | null;
 }
 
 /** Un abono a **una** compra (RN-55). El saldo no se guarda: es una resta. */
@@ -222,7 +255,7 @@ const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
 // Los dos proveedores son a propósito **distintos** del emisor de
 // `tests/fixtures/factura-proveedor-v43.xml`: así el XML del demo muestra el
 // caso que importa de RF-42, el del proveedor que todavía no existe.
-const SEED_VERSION = 9;
+const SEED_VERSION = 10;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -322,6 +355,11 @@ export function empresaVacia(): MockCompanyData {
 		stock_entries: [],
 		suppliers: [],
 		supplier_payments: [],
+		accounts: [],
+		account_mappings: [],
+		accounting_periods: [],
+		journal_entries: [],
+		journal_lines: [],
 		settings: { data: {}, logo: null, updated_at: null, updated_by: null }
 	};
 }
@@ -661,6 +699,15 @@ function seed(): MockRoot {
 				stock_entries: [],
 				suppliers: [...SUPPLIERS],
 				supplier_payments: [],
+				// El libro arranca vacío incluso en la compañía con datos: la
+				// contabilidad se activa (RF-47) y la fecha de arranque manda
+				// (RN-60). Sembrar asientos de ventas anteriores a esa fecha sería
+				// justo lo que el sistema de verdad se niega a hacer.
+				accounts: [],
+				account_mappings: [],
+				accounting_periods: [],
+				journal_entries: [],
+				journal_lines: [],
 				settings: { data: {}, logo: null, updated_at: null, updated_by: null }
 			},
 			2: empresaVacia()
@@ -678,6 +725,11 @@ function seed(): MockRoot {
 			stock_entries: 0,
 			suppliers: SUPPLIERS.length,
 			supplier_payments: 0,
+			accounts: 0,
+			account_mappings: 0,
+			accounting_periods: 0,
+			journal_entries: 0,
+			journal_lines: 0,
 			audit: 0,
 			companies: 2,
 			plans: PLAN_SEED.length

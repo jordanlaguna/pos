@@ -1,4 +1,25 @@
 import { ApiError } from '../api';
+import {
+	CHART,
+	COMMERCE,
+	NoBalancea,
+	PeriodoCerrado,
+	TEMPLATES,
+	activa as activaLaContabilidad,
+	configuracion as configuracionContable,
+	defaultMapping,
+	mapeoParaPantalla,
+	postCashClose,
+	postCashMovement,
+	postEntry,
+	postPurchase,
+	postReclassification,
+	postReturn,
+	postSale,
+	postSupplierPayment,
+	totalDe,
+	trialBalance
+} from './ledger';
 import { LOW_STOCK_THRESHOLD } from '../config';
 import {
 	COMPANIA_DEMO,
@@ -21,6 +42,7 @@ import {
 	round2
 } from '$lib/domain/money';
 import { COMPANY_STATES, MODULES as MODULOS, PAYMENT_METHODS } from '$lib/domain/types';
+import type { Account, JournalEntry } from '$lib/domain/types';
 import type {
 	CashMovement,
 	CashSession,
@@ -715,7 +737,7 @@ route('POST', '/products/add_product', ({ body, companyId }) => {
 		price: round2(Number(body?.price ?? 0)),
 		stock: Math.trunc(Number(body?.stock ?? 0)),
 		barcode,
-		created_at: String(body?.created_at ?? nowIso()),
+		created_at: nowIso(),
 		category_id: Number(body?.category_id ?? 0),
 		// F5: en nulo significa «la tasa configurada del negocio» (RN-9).
 		cabys_code: body?.cabys_code != null ? String(body.cabys_code) : null,
@@ -1101,7 +1123,11 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 			tax_amount: lineTax(
 				round2(product.price * quantity),
 				product.tax_rate ?? tasaDelNegocio
-			)
+			),
+			// El costo, congelado igual que la tarifa (RN-63). En cero significa
+			// «nunca se compró», y eso se guarda como nulo: cero diría que fue
+			// gratis y le inflaría el margen al negocio.
+			unit_cost: (product.cost ?? 0) > 0 ? product.cost! : null
 		});
 	}
 
@@ -1157,13 +1183,40 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 		cash_received: cashReceived,
 		// El vuelto ni se recibe: se calcula. Así no puede venir negativo.
 		change_given: changeDue(cashReceived, calculado.total),
-		created_at: String(body?.created_at ?? nowIso()),
+		/*
+		 * **La hora la pone el servidor, nunca el cliente** (spec §8, regla 2).
+		 * El simulado hacía lo contrario y el efecto era grande: el POS manda su
+		 * hora **local** (`toLocalIso`) y el turno de caja se sella en UTC, así
+		 * que en UTC−6 la venta quedaba seis horas por detrás de la apertura y
+		 * caía fuera de la ventana del turno. En modo demo el arqueo mostraba
+		 * «0 ventas» siempre, y el faltante o el sobrante salían por el monto
+		 * entero de lo vendido.
+		 */
+		created_at: nowIso(),
 		items
 	});
 	for (const item of items) {
 		const product = db.products.find((p) => p.id_product === item.id_product)!;
 		product.stock -= item.quantity;
 	}
+
+	// El asiento, en el mismo paso que la venta (RN-59). Con contabilidad
+	// apagada no hace nada.
+	asentar(companyId, () =>
+		postSale(
+			companyId,
+			{ id, date: nowIso().slice(0, 10), payment_method: paymentMethod },
+			items.map((i) => ({
+				subtotal: i.subtotal,
+				tax: i.tax_amount ?? 0,
+				tax_rate: i.tax_rate ?? tasaDelNegocio,
+				quantity: i.quantity,
+				unit_cost: i.unit_cost ?? null
+			})),
+			Number(body?.user_id ?? 0)
+		)
+	);
+
 	persist();
 	return { message: 'sale_registered', id_sale: id };
 });
@@ -1277,6 +1330,29 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 		const product = db.products.find((p) => p.id_product === item.id_product);
 		if (product) product.stock += item.quantity;
 	}
+
+	// El inverso de la venta, con la tarifa y el costo **de su venta** (RN-12,
+	// RN-63): reponer al inventario por lo que cuesta hoy inventaría utilidad.
+	asentar(companyId, () =>
+		postReturn(
+			companyId,
+			{ id, date: nowIso().slice(0, 10) },
+			items.map((i: any) => {
+				const vendida = sale.items.find((v) => v.id_product === i.id_product);
+				const tarifa = vendida?.tax_rate ?? delEncabezado;
+				const base = round2(i.price * i.quantity);
+				return {
+					subtotal: base,
+					tax: lineTax(base, tarifa),
+					tax_rate: tarifa,
+					quantity: i.quantity,
+					unit_cost: vendida?.unit_cost ?? null
+				};
+			}),
+			Number(body?.user_id ?? 0)
+		)
+	);
+
 	persist();
 	return { message: 'return_registered', id_return: id, total };
 });
@@ -1404,6 +1480,17 @@ route('POST', '/cash/movement', ({ body, companyId }) => {
 		created_at: nowIso()
 	};
 	db.cash_movements.push(movement);
+
+	// Contra «por clasificar»: el sistema sabe que entraron ₡5 000, no de dónde
+	// salieron.
+	asentar(companyId, () =>
+		postCashMovement(
+			companyId,
+			{ id: movement.id, date: nowIso().slice(0, 10), type, amount },
+			user
+		)
+	);
+
 	persist();
 	return movement;
 });
@@ -1422,6 +1509,18 @@ route('POST', '/cash/close', ({ body, companyId }) => {
 	session.expected_amount = report.expected_amount;
 	session.difference = round2(counted - report.expected_amount);
 	if (body?.notes) session.notes = String(body.notes);
+
+	// Un turno que cuadra no deja asiento: no pasó nada que anotar.
+	asentar(companyId, () =>
+		postCashClose(
+			companyId,
+			{ id: session.id, date: nowIso().slice(0, 10) },
+			report.expected_amount,
+			counted,
+			user
+		)
+	);
+
 	persist();
 	return computeExpected(session, companyId);
 });
@@ -1745,6 +1844,17 @@ function abonar(
 		user_id: datos.userId,
 		paid_at: nowIso()
 	});
+
+	// Proveedores contra caja, banco o «por clasificar». La salida de caja de
+	// arriba **no** deja asiento propio: lo deja este abono, o las dos juntas
+	// sacarían de la gaveta el doble de lo que salió (RN-56).
+	asentar(companyId, () =>
+		postSupplierPayment(
+			companyId,
+			{ id, date: nowIso().slice(0, 10), amount: monto, method: datos.method },
+			datos.userId
+		)
+	);
 	return id;
 }
 
@@ -2073,6 +2183,23 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 			reason: String(body?.payment_reason ?? ''),
 			userId: Number(body?.user_id ?? 0)
 		});
+	}
+
+	// Solo una **compra** deja asiento: una entrada sin proveedor es un ajuste
+	// de inventario, y de esos el sistema no sabe la contrapartida (RN-52).
+	if (supplierId) {
+		asentar(companyId, () =>
+			postPurchase(
+				companyId,
+				{ id, date: documentDate ?? nowIso().slice(0, 10) },
+				lines.map((l: any) => ({
+					subtotal: round2(l.unit_cost * l.quantity),
+					tax: l.tax_amount ?? 0,
+					tax_rate: (l.tax_rate ?? 0) / 100
+				})),
+				Number(body?.user_id ?? 0)
+			)
+		);
 	}
 
 	persist();
@@ -2805,5 +2932,686 @@ route('GET', '/support/audit', ({ query }) => {
 	return {
 		lineas,
 		acciones: [...new Set(raiz.audit.map((l) => l.accion))].sort()
+	};
+});
+
+// ------------------------------------------------------- contabilidad (F11)
+//
+// El contrato es el mismo del backend. Lo que asienta cada hecho vive en
+// `./ledger.ts`, que es el espejo de `domain/ledger.py`.
+
+/** Corre algo que escribe en el libro y convierte sus «no» en códigos. */
+function asentar<T>(companyId: number, escribir: () => T): T | null {
+	if (!activaLaContabilidad(companyId)) return null;
+	try {
+		return escribir();
+	} catch (error) {
+		if (error instanceof PeriodoCerrado)
+			fail(400, 'period_closed', { year: error.year, month: error.month });
+		if (error instanceof NoBalancea)
+			fail(400, 'entry_not_balanced', {
+				debits: error.debits.toFixed(2),
+				credits: error.credits.toFixed(2)
+			});
+		throw error;
+	}
+}
+
+function estadoContable(companyId: number) {
+	const config = configuracionContable(companyId);
+	return {
+		active: Boolean(config.active),
+		template: (config.template as string) ?? null,
+		start_date: (config.start_date as string) ?? null,
+		templates: [...TEMPLATES],
+		chart: CHART.map((c) => ({
+			code: c.code,
+			name: c.name,
+			kind: c.kind,
+			is_system: c.is_system !== false
+		}))
+	};
+}
+
+function guardarConfigContable(companyId: number, config: Record<string, unknown>): void {
+	// `settingsRow` y no `getDb(...).settings = …`: `getDb` devuelve una **copia
+	// superficial** de lo global más la compañía, así que asignarle una propiedad
+	// escribe en la copia y se pierde. Mutar el objeto que ya está sí llega al
+	// almacén, y es lo que hace el resto del simulado.
+	const fila = settingsRow(companyId);
+	const datos = (fila.data ?? {}) as Record<string, unknown>;
+	fila.data = { ...datos, accounting: config };
+}
+
+function rangoDelPeriodo(year: number, month: number | null): [string, string] {
+	if (!month) return [`${year}-01-01`, `${year}-12-31`];
+	const ultimo = new Date(year, month, 0).getDate();
+	const mm = String(month).padStart(2, '0');
+	return [`${year}-${mm}-01`, `${year}-${mm}-${String(ultimo).padStart(2, '0')}`];
+}
+
+function restarUnDia(dia: string): string {
+	const fecha = new Date(`${dia}T00:00:00`);
+	fecha.setDate(fecha.getDate() - 1);
+	return fecha.toISOString().slice(0, 10);
+}
+
+route('GET', '/accounting', ({ companyId }) => estadoContable(companyId));
+
+route('POST', '/accounting/activate', ({ body, companyId, userId }) => {
+	exigirModulo(companyId, 'accounting');
+	const db = getDb(companyId);
+	if (configuracionContable(companyId).active) fail(400, 'accounting_already_active');
+
+	const plantilla = String(body?.template ?? COMMERCE);
+	if (!TEMPLATES.includes(plantilla)) fail(422, 'invalid_request', { fields: ['template'] });
+	const inicio = String(body?.start_date ?? '').slice(0, 10);
+
+	// Lo que ya existe no se toca: una activación que falló a mitad pudo dejar
+	// cuentas escritas, y volver a crearlas chocaría con el código único.
+	const porCodigo = new Map(db.accounts.map((c) => [c.code, c]));
+	let creadas = 0;
+	for (const plantillaCuenta of CHART) {
+		if (porCodigo.has(plantillaCuenta.code)) continue;
+		const cuenta = {
+			id: nextId('accounts'),
+			code: plantillaCuenta.code,
+			name: plantillaCuenta.name,
+			kind: plantillaCuenta.kind,
+			parent_id: null,
+			is_system: plantillaCuenta.is_system !== false,
+			is_active: true
+		};
+		db.accounts.push(cuenta);
+		porCodigo.set(cuenta.code, cuenta);
+		creadas++;
+	}
+
+	const yaMapeadas = new Set(db.account_mappings.map((m) => `${m.event}|${m.role}`));
+	let mapeadas = 0;
+	for (const [clave, codigo] of Object.entries(defaultMapping())) {
+		if (yaMapeadas.has(clave)) continue;
+		const [event, role] = clave.split('|');
+		db.account_mappings.push({
+			id: nextId('account_mappings'),
+			event,
+			role,
+			account_id: porCodigo.get(codigo)!.id
+		});
+		mapeadas++;
+	}
+
+	const [year, month] = inicio.split('-').map(Number);
+	if (!db.accounting_periods.some((p) => p.year === year && p.month === month)) {
+		db.accounting_periods.push({
+			id: nextId('accounting_periods'),
+			year,
+			month,
+			status: 'open',
+			closed_at: null,
+			closed_by: null
+		});
+	}
+
+	// La configuración **antes** de la apertura: el libro mira `start_date` para
+	// decidir si escribe, igual que el adaptador de verdad.
+	guardarConfigContable(companyId, {
+		active: true,
+		template: plantilla,
+		start_date: inicio,
+		activated_at: nowIso(),
+		activated_by: Number(userId ?? 0)
+	});
+
+	let apertura: number | null = null;
+	const saldos = Array.isArray(body?.opening) ? body.opening : [];
+	const lineas = saldos
+		.filter(
+			(l: any) => round2(Number(l?.debit ?? 0)) !== 0 || round2(Number(l?.credit ?? 0)) !== 0
+		)
+		.map((l: any) => {
+			const cuenta = porCodigo.get(String(l?.account_code ?? ''));
+			if (!cuenta) fail(422, 'invalid_request', { fields: ['opening'] });
+			return {
+				account_id: cuenta.id,
+				debit: round2(Number(l?.debit ?? 0)),
+				credit: round2(Number(l?.credit ?? 0))
+			};
+		});
+
+	if (lineas.length) {
+		const debitos = round2(lineas.reduce((t: number, l: any) => t + l.debit, 0));
+		const creditos = round2(lineas.reduce((t: number, l: any) => t + l.credit, 0));
+		if (debitos !== creditos) {
+			// No queda nada a medias: se deshace lo sembrado, como hace la
+			// transacción del backend.
+			db.accounts.length = 0;
+			db.account_mappings.length = 0;
+			db.accounting_periods.length = 0;
+			guardarConfigContable(companyId, {});
+			persist();
+			fail(400, 'invalid_opening_balance', {
+				debits: debitos.toFixed(2),
+				credits: creditos.toFixed(2)
+			});
+		}
+		apertura =
+			postEntry(
+				companyId,
+				{
+					kind: 'opening',
+					entry_date: inicio,
+					description: String(body?.description ?? '').trim() || 'opening',
+					lines: lineas
+				},
+				Number(userId ?? 0)
+			)?.id ?? null;
+	}
+
+	persist();
+	return {
+		accounts_created: creadas,
+		mappings_created: mapeadas,
+		opening_entry_id: apertura,
+		...estadoContable(companyId)
+	};
+});
+
+// ---------------------------------------------------------------- el catálogo
+
+route('GET', '/accounting/accounts', ({ companyId }) =>
+	[...getDb(companyId).accounts].sort((a, b) => a.code.localeCompare(b.code))
+);
+
+route('POST', '/accounting/accounts', ({ body, companyId }) => {
+	exigirModulo(companyId, 'accounting');
+	const db = getDb(companyId);
+	const codigo = String(body?.code ?? '').trim();
+	if (db.accounts.some((c) => c.code === codigo))
+		fail(400, 'account_code_taken', { account_code: codigo });
+
+	const cuenta: Account = {
+		id: nextId('accounts'),
+		code: codigo,
+		name: String(body?.name ?? ''),
+		kind: String(body?.kind ?? 'expense') as Account['kind'],
+		parent_id: body?.parent_id != null ? Number(body.parent_id) : null,
+		// Solo la plantilla crea cuentas de sistema (RN-64).
+		is_system: false,
+		is_active: true
+	};
+	db.accounts.push(cuenta);
+	persist();
+	return cuenta;
+});
+
+route('PUT', '/accounting/accounts/:id', ({ params, body, companyId }) => {
+	exigirModulo(companyId, 'accounting');
+	const db = getDb(companyId);
+	const cuenta = db.accounts.find((c) => c.id === Number(params[0]));
+	if (!cuenta) fail(404, 'account_not_found', { account_id: Number(params[0]) });
+
+	if (body?.is_active === false && cuenta.is_system)
+		fail(400, 'account_is_system', { account_code: cuenta.code });
+
+	if (body?.name != null) cuenta.name = String(body.name);
+	if (body?.is_active != null) cuenta.is_active = Boolean(body.is_active);
+	persist();
+	return cuenta;
+});
+
+route('DELETE', '/accounting/accounts/:id', ({ params, companyId }) => {
+	exigirModulo(companyId, 'accounting');
+	const db = getDb(companyId);
+	const cuenta = db.accounts.find((c) => c.id === Number(params[0]));
+	if (!cuenta) fail(404, 'account_not_found', { account_id: Number(params[0]) });
+	if (cuenta.is_system) fail(400, 'account_is_system', { account_code: cuenta.code });
+
+	const lineas = db.journal_lines.filter((l) => l.account_id === cuenta.id).length;
+	if (lineas) fail(400, 'account_in_use', { account_code: cuenta.code, lines: lineas });
+
+	db.accounts.splice(db.accounts.indexOf(cuenta), 1);
+	persist();
+	return { deleted: cuenta.id };
+});
+
+// ------------------------------------------------------------------- el mapeo
+
+route('GET', '/accounting/mappings', ({ companyId }) => ({
+	mappings: mapeoParaPantalla(companyId)
+}));
+
+route('PUT', '/accounting/mappings', ({ body, companyId }) => {
+	exigirModulo(companyId, 'accounting');
+	const db = getDb(companyId);
+	for (const fila of Array.isArray(body?.mappings) ? body.mappings : []) {
+		const cuenta = db.accounts.find((c) => c.id === Number(fila?.account_id));
+		if (!cuenta || !cuenta.is_active)
+			fail(404, 'account_not_found', { account_id: Number(fila?.account_id) });
+
+		const existente = db.account_mappings.find(
+			(m) => m.event === fila.event && m.role === fila.role
+		);
+		if (existente) existente.account_id = cuenta.id;
+		else
+			db.account_mappings.push({
+				id: nextId('account_mappings'),
+				event: String(fila.event),
+				role: String(fila.role),
+				account_id: cuenta.id
+			});
+	}
+	persist();
+	return { mappings: mapeoParaPantalla(companyId) };
+});
+
+// --------------------------------------------------------------- los asientos
+
+function lineasDelAsiento(companyId: number, entryId: number) {
+	const db = getDb(companyId);
+	return db.journal_lines
+		.filter((l) => l.entry_id === entryId)
+		.map((l) => {
+			const cuenta = db.accounts.find((c) => c.id === l.account_id);
+			return {
+				account_id: l.account_id,
+				account_code: cuenta?.code ?? '',
+				account_name: cuenta?.name ?? '',
+				debit: l.debit,
+				credit: l.credit,
+				tax_rate: l.tax_rate,
+				memo: l.memo
+			};
+		});
+}
+
+function asientoConLineas(companyId: number, asiento: JournalEntry) {
+	const lineas = lineasDelAsiento(companyId, asiento.id);
+	return {
+		...asiento,
+		lines: lineas,
+		total: round2(lineas.reduce((t, l) => t + l.debit, 0))
+	};
+}
+
+route('GET', '/accounting/entries', ({ query, companyId }) => {
+	const db = getDb(companyId);
+	const year = query.get('year');
+	const month = query.get('month');
+	const kind = query.get('kind');
+
+	return db.journal_entries
+		.filter((a) => !year || a.entry_date.slice(0, 4) === String(year))
+		.filter((a) => !month || Number(a.entry_date.slice(5, 7)) === Number(month))
+		.filter((a) => !kind || a.kind === kind)
+		.sort(
+			(a, b) => a.entry_date.localeCompare(b.entry_date) || a.entry_number - b.entry_number
+		);
+});
+
+route('POST', '/accounting/entries', ({ body, companyId, userId }) => {
+	exigirModulo(companyId, 'accounting');
+	const db = getDb(companyId);
+	const descripcion = String(body?.description ?? '').trim();
+	if (!descripcion) fail(400, 'journal_missing_description');
+
+	const activas = new Set(db.accounts.filter((c) => c.is_active).map((c) => c.id));
+	const lineas = (Array.isArray(body?.lines) ? body.lines : [])
+		.filter(
+			(l: any) => round2(Number(l?.debit ?? 0)) !== 0 || round2(Number(l?.credit ?? 0)) !== 0
+		)
+		.map((l: any) => {
+			if (!activas.has(Number(l?.account_id)))
+				fail(404, 'account_not_found', { account_id: Number(l?.account_id) });
+			const debit = round2(Number(l?.debit ?? 0));
+			const credit = round2(Number(l?.credit ?? 0));
+			if (debit < 0 || credit < 0) fail(400, 'invalid_journal_line', { reason: 'negative' });
+			if (debit > 0 && credit > 0)
+				fail(400, 'invalid_journal_line', { reason: 'both_sides' });
+			return { account_id: Number(l.account_id), debit, credit, memo: l?.memo ?? null };
+		});
+	if (!lineas.length) fail(400, 'invalid_journal_line', { reason: 'no_lines' });
+
+	const asiento = asentar(companyId, () =>
+		postEntry(
+			companyId,
+			{
+				kind: String(body?.kind ?? 'manual') as JournalEntry['kind'],
+				entry_date: String(body?.entry_date ?? '').slice(0, 10),
+				description: descripcion,
+				lines: lineas,
+				adjusts_entry_id:
+					body?.adjusts_entry_id != null ? Number(body.adjusts_entry_id) : null
+			},
+			Number(userId ?? 0)
+		)
+	);
+	if (!asiento) fail(400, 'accounting_not_active');
+
+	persist();
+	return asientoConLineas(companyId, asiento);
+});
+
+route('GET', '/accounting/entries/:id', ({ params, companyId }) => {
+	const asiento = getDb(companyId).journal_entries.find((a) => a.id === Number(params[0]));
+	if (!asiento) fail(404, 'journal_entry_not_found', { entry_id: Number(params[0]) });
+	return asientoConLineas(companyId, asiento);
+});
+
+route('POST', '/accounting/entries/:id/reclassify', ({ params, body, companyId, userId }) => {
+	exigirModulo(companyId, 'accounting');
+	const db = getDb(companyId);
+	const entryId = Number(params[0]);
+	if (!db.journal_entries.some((a) => a.id === entryId))
+		fail(404, 'journal_entry_not_found', { entry_id: entryId });
+
+	const destino = db.accounts.find((c) => c.id === Number(body?.account_id));
+	if (!destino || !destino.is_active)
+		fail(404, 'account_not_found', { account_id: Number(body?.account_id) });
+
+	const ajuste = asentar(companyId, () =>
+		postReclassification(
+			companyId,
+			entryId,
+			destino.id,
+			nowIso().slice(0, 10),
+			Number(userId ?? 0),
+			String(body?.description ?? '')
+		)
+	);
+	if (!ajuste) fail(400, 'nothing_to_reclassify', { entry_id: entryId });
+
+	persist();
+	return { adjustment_entry_id: ajuste.id };
+});
+
+// --------------------------------------------------------------- los periodos
+
+route('GET', '/accounting/periods', ({ companyId }) =>
+	[...getDb(companyId).accounting_periods].sort((a, b) => b.year - a.year || b.month - a.month)
+);
+
+route('POST', '/accounting/periods/:year/:month/close', ({ params, companyId, userId }) => {
+	exigirModulo(companyId, 'accounting');
+	const db = getDb(companyId);
+	const year = Number(params[0]);
+	const month = Number(params[1]);
+
+	const periodo = db.accounting_periods.find((p) => p.year === year && p.month === month);
+	if (!periodo) fail(404, 'period_not_found', { year, month });
+	if (periodo.status === 'closed') fail(400, 'period_closed', { year, month });
+
+	const [anteriorAnio, anteriorMes] = month === 1 ? [year - 1, 12] : [year, month - 1];
+	const anterior = db.accounting_periods.find(
+		(p) => p.year === anteriorAnio && p.month === anteriorMes
+	);
+	if (anterior && anterior.status !== 'closed')
+		fail(400, 'period_not_closeable', {
+			year,
+			month,
+			blocking_year: anteriorAnio,
+			blocking_month: anteriorMes
+		});
+
+	periodo.status = 'closed';
+	periodo.closed_at = nowIso();
+	periodo.closed_by = Number(userId ?? 0);
+	registrar(
+		Number(userId ?? 0),
+		companyId,
+		'cerrar_periodo',
+		`${year}-${String(month).padStart(2, '0')}`
+	);
+	persist();
+	return periodo;
+});
+
+// -------------------------------------------------------------- los reportes
+
+route('GET', '/accounting/reports/trial-balance', ({ query, companyId }) => {
+	const year = Number(query.get('year'));
+	const month = query.get('month') ? Number(query.get('month')) : null;
+	const [desde, hasta] = rangoDelPeriodo(year, month);
+	const filas = trialBalance(companyId, hasta, desde);
+	const debits = round2(filas.reduce((t, f) => t + f.debits, 0));
+	const credits = round2(filas.reduce((t, f) => t + f.credits, 0));
+	return { year, month, rows: filas, debits, credits, is_balanced: debits === credits };
+});
+
+route('GET', '/accounting/reports/income', ({ query, companyId }) => {
+	const year = Number(query.get('year'));
+	const month = query.get('month') ? Number(query.get('month')) : null;
+	const [desde, hasta] = rangoDelPeriodo(year, month);
+	const filas = trialBalance(companyId, hasta, desde);
+	const income = totalDe(filas, 'income');
+	const cost = totalDe(filas, 'cost');
+	const expense = totalDe(filas, 'expense');
+	return {
+		year,
+		month,
+		income,
+		cost,
+		expense,
+		gross_profit: round2(income - cost),
+		result: round2(income - cost - expense),
+		rows: filas.filter((f) => ['income', 'cost', 'expense'].includes(f.kind))
+	};
+});
+
+route('GET', '/accounting/reports/balance', ({ query, companyId }) => {
+	const year = Number(query.get('year'));
+	const month = query.get('month') ? Number(query.get('month')) : null;
+	// Acumulado, no del mes: el efectivo que hay hoy es todo lo que entró y
+	// salió desde que existe el libro.
+	const [, hasta] = rangoDelPeriodo(year, month);
+	const filas = trialBalance(companyId, hasta);
+	const assets = totalDe(filas, 'asset');
+	const liabilities = totalDe(filas, 'liability');
+	const equity = totalDe(filas, 'equity');
+	const result = round2(
+		totalDe(filas, 'income') - totalDe(filas, 'cost') - totalDe(filas, 'expense')
+	);
+	return {
+		year,
+		month,
+		assets,
+		liabilities,
+		equity,
+		result,
+		is_balanced: assets === round2(liabilities + equity + result),
+		rows: filas.filter((f) => ['asset', 'liability', 'equity'].includes(f.kind))
+	};
+});
+
+route('GET', '/accounting/reports/journal', ({ query, companyId }) => {
+	const db = getDb(companyId);
+	const year = Number(query.get('year'));
+	const month = query.get('month') ? Number(query.get('month')) : null;
+	const [desde, hasta] = rangoDelPeriodo(year, month);
+	return {
+		year,
+		month,
+		entries: db.journal_entries
+			.filter((a) => a.entry_date >= desde && a.entry_date <= hasta)
+			.sort(
+				(a, b) => a.entry_date.localeCompare(b.entry_date) || a.entry_number - b.entry_number
+			)
+			.map((a) => asientoConLineas(companyId, a))
+	};
+});
+
+route('GET', '/accounting/reports/ledger', ({ query, companyId }) => {
+	const db = getDb(companyId);
+	const year = Number(query.get('year'));
+	const month = query.get('month') ? Number(query.get('month')) : null;
+	const filtro = query.get('account_id') ? Number(query.get('account_id')) : null;
+	const [desde, hasta] = rangoDelPeriodo(year, month);
+
+	const antes = new Map(
+		trialBalance(companyId, restarUnDia(desde)).map((f) => [f.account_id, f.balance])
+	);
+	const delPeriodo = trialBalance(companyId, hasta, desde);
+	const porId = new Map(db.journal_entries.map((a) => [a.id, a]));
+
+	return {
+		year,
+		month,
+		accounts: delPeriodo
+			.filter((f) => filtro == null || f.account_id === filtro)
+			.map((f) => {
+				const inicial = antes.get(f.account_id) ?? 0;
+				return {
+					...f,
+					opening: inicial,
+					closing: round2(inicial + f.balance),
+					movements: db.journal_lines
+						.filter((l) => l.account_id === f.account_id)
+						.map((l) => ({ linea: l, asiento: porId.get(l.entry_id) }))
+						.filter(
+							(par) =>
+								par.asiento &&
+								par.asiento.entry_date >= desde &&
+								par.asiento.entry_date <= hasta
+						)
+						.sort(
+							(a, b) =>
+								a.asiento!.entry_date.localeCompare(b.asiento!.entry_date) ||
+								a.asiento!.entry_number - b.asiento!.entry_number
+						)
+						.map((par) => ({
+							entry_id: par.asiento!.id,
+							entry_number: par.asiento!.entry_number,
+							entry_date: par.asiento!.entry_date,
+							description: par.asiento!.description,
+							debit: par.linea.debit,
+							credit: par.linea.credit,
+							memo: par.linea.memo
+						}))
+				};
+			})
+	};
+});
+
+function ventasPorTarifa(companyId: number, desde: string, hasta: string) {
+	const db = getDb(companyId);
+	const acumulado = new Map<
+		number,
+		{ base: number; tax: number; returnsBase: number; returnsTax: number }
+	>();
+	const tasaDelNegocio = configuredTaxRate(companyId);
+
+	const entrada = (tarifa: number) => {
+		if (!acumulado.has(tarifa))
+			acumulado.set(tarifa, { base: 0, tax: 0, returnsBase: 0, returnsTax: 0 });
+		return acumulado.get(tarifa)!;
+	};
+
+	for (const venta of db.sales) {
+		const dia = venta.created_at.slice(0, 10);
+		if (dia < desde || dia > hasta) continue;
+		for (const linea of venta.items) {
+			const tarifa = linea.tax_rate ?? tasaDelNegocio;
+			const fila = entrada(tarifa);
+			fila.base = round2(fila.base + linea.subtotal);
+			fila.tax = round2(fila.tax + (linea.tax_amount ?? 0));
+		}
+	}
+	for (const devolucion of db.returns) {
+		const dia = devolucion.created_at.slice(0, 10);
+		if (dia < desde || dia > hasta) continue;
+		const venta = db.sales.find((s) => s.id === devolucion.sale_id);
+		for (const linea of devolucion.items) {
+			const tarifa =
+				venta?.items.find((v) => v.id_product === linea.id_product)?.tax_rate ??
+				tasaDelNegocio;
+			const fila = entrada(tarifa);
+			const base = round2(linea.price * linea.quantity);
+			fila.returnsBase = round2(fila.returnsBase + base);
+			fila.returnsTax = round2(fila.returnsTax + lineTax(base, tarifa));
+		}
+	}
+	return acumulado;
+}
+
+function comprasPorTarifa(companyId: number, desde: string, hasta: string) {
+	const db = getDb(companyId);
+	const acumulado = new Map<number, { base: number; tax: number }>();
+	for (const compra of db.stock_entries) {
+		if (compra.status !== 'aplicada' || compra.supplier_id == null) continue;
+		const dia = (compra.document_date ?? compra.created_at).slice(0, 10);
+		if (dia < desde || dia > hasta) continue;
+		for (const linea of compra.lines ?? []) {
+			// La tarifa de una compra viaja **en porcentaje** —13 y no 0,13—
+			// porque es la que dice la factura del proveedor. Cruzarla con la de
+			// ventas sin convertir parte el D-104 en dos filas.
+			const tarifa = round2((linea.tax_rate ?? 0) / 100);
+			const fila = acumulado.get(tarifa) ?? { base: 0, tax: 0 };
+			acumulado.set(tarifa, {
+				base: round2(fila.base + linea.subtotal),
+				tax: round2(fila.tax + Number(linea.tax_amount ?? 0))
+			});
+		}
+	}
+	return acumulado;
+}
+
+route('GET', '/accounting/vat', ({ query, companyId }) => {
+	const year = Number(query.get('year'));
+	const month = query.get('month') ? Number(query.get('month')) : null;
+	const [desde, hasta] = rangoDelPeriodo(year, month);
+
+	const ventas = ventasPorTarifa(companyId, desde, hasta);
+	const compras = comprasPorTarifa(companyId, desde, hasta);
+
+	const tarifas = [...new Set([...ventas.keys(), ...compras.keys()])].sort((a, b) => a - b);
+	const lineas = tarifas.map((tarifa) => {
+		const v = ventas.get(tarifa) ?? { base: 0, tax: 0, returnsBase: 0, returnsTax: 0 };
+		const c = compras.get(tarifa) ?? { base: 0, tax: 0 };
+		const debit = round2(v.tax - v.returnsTax);
+		return {
+			tax_rate: tarifa,
+			sales_base: round2(v.base - v.returnsBase),
+			debit,
+			returns_tax: v.returnsTax,
+			purchases_base: c.base,
+			credit: c.tax,
+			balance: round2(debit - c.tax)
+		};
+	});
+
+	const debit = round2(lineas.reduce((t, l) => t + l.debit, 0));
+	const credit = round2(lineas.reduce((t, l) => t + l.credit, 0));
+	return {
+		year,
+		month,
+		lines: lineas,
+		debit,
+		credit,
+		balance: round2(debit - credit),
+		in_favor: round2(debit - credit) < 0
+	};
+});
+
+route('GET', '/reports/sales_by_rate', ({ query, companyId }) => {
+	const { from, to } = parseRange(query);
+	const ventas = ventasPorTarifa(companyId, from, to);
+	const lineas = [...ventas.entries()]
+		.sort((a, b) => a[0] - b[0])
+		.map(([tarifa, v]) => ({
+			tax_rate: tarifa,
+			base: v.base,
+			tax: v.tax,
+			returns_base: v.returnsBase,
+			returns_tax: v.returnsTax,
+			net_base: round2(v.base - v.returnsBase),
+			net_tax: round2(v.tax - v.returnsTax)
+		}));
+	return {
+		date_from: from,
+		date_to: to,
+		by_rate: lineas,
+		tax: round2(lineas.reduce((t, l) => t + l.tax, 0)),
+		returns_tax: round2(lineas.reduce((t, l) => t + l.returns_tax, 0)),
+		net_tax: round2(lineas.reduce((t, l) => t + l.net_tax, 0))
 	};
 });

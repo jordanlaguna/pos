@@ -69,7 +69,10 @@
 		// Compras (F10). El camión es lo que distingue «lo que entra» de `box`,
 		// que ya es el inventario: una compra es mercadería en camino, no en
 		// estante.
-		truck: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8ZM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z'
+		truck: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8ZM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z',
+		// Un libro abierto: la contabilidad (F11). El lomo al centro y las dos
+		// páginas, que es como se reconoce a este tamaño.
+		book: 'M12 6.5C10.5 5 8 4.5 4 4.5v13c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2v-13c-4 0-6.5.5-8 2ZM12 6.5v13'
 	} as const;
 
 	export type IconName = keyof typeof ICONS;
