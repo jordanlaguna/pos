@@ -48,6 +48,58 @@ services:
       retries: 30
       start_period: 20s
 
+  # El almacén de comprobantes, sin persistencia. Mismo criterio que la base:
+  # vive y muere con la corrida.
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: test
+      # MinIO exige ocho caracteres como mínimo y se niega a arrancar con menos.
+      MINIO_ROOT_PASSWORD: testtest
+    tmpfs:
+      - /data
+    ports:
+      # A diferencia de MySQL, este SÍ se publica: la prueba de contrato del
+      # adaptador corre en la máquina —no por HTTP contra la API— y necesita
+      # alcanzarlo. 9002 para no chocar con el 9000 de la pila de trabajo.
+      - "127.0.0.1:9002:9000"
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  # Vault en modo -dev: en memoria, ya inicializado y **desellado**, con un
+  # token raíz conocido. Es lo que permite que las pruebas de integración
+  # firmen de verdad en vez de contra un doble; el de trabajo arranca sellado y
+  # no se parece a este en nada más.
+  vault:
+    image: hashicorp/vault:1.20
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: test-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://127.0.0.1:8200
+    ports:
+      # Publicado por lo mismo que MinIO: la prueba del firmante corre en la
+      # máquina. 8202 para no chocar con el 8200 de la pila de trabajo.
+      - "127.0.0.1:8202:8200"
+    networks:
+      - test-net
+    healthcheck:
+      # `vault status` sale con 0 solo si está inicializado y desellado, que es
+      # justo la condición que hace falta. Sellado sale con 2.
+      test: ["CMD", "vault", "status"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 3s
+
   fastapi:
     build:
       context: .
@@ -64,12 +116,27 @@ services:
       SECRET_KEY: clave-solo-para-pruebas-no-sirve-para-nada-mas
       ACCESS_TOKEN_EXPIRE_MINUTES: 60
       ALLOWED_ORIGINS: ""
+      # 43 caracteres base64url, que son 32 bytes al decodificar: es lo que el
+      # arranque exige, y se comprueba igual acá que en producción.
+      FE_CRYPTO_KEY: clave-de-cifrado-solo-para-pruebas-no-sirve
+      FE_STORAGE_ENDPOINT: http://minio:9000
+      FE_STORAGE_BUCKET: ventasys-fe-test
+      FE_STORAGE_ACCESS_KEY: test
+      FE_STORAGE_SECRET_KEY: testtest
+      FE_VAULT_ADDR: http://vault:8200
+      FE_VAULT_TOKEN: test-root-token
     ports:
       # 8002 para no chocar con el 8001 del stack de trabajo, que puede estar
       # levantado al mismo tiempo.
       - "127.0.0.1:8002:80"
     depends_on:
       db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      # Acá sí espera a que esté sano: en -dev nunca está sellado, así que un
+      # Vault que no responde es una falla de verdad y no el estado normal.
+      vault:
         condition: service_healthy
     networks:
       - test-net

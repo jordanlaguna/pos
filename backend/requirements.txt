@@ -15,3 +15,16 @@ bcrypt>=4.1,<6.0
 
 python-jose[cryptography]>=3.3,<4.0
 reportlab>=4.0,<5.0
+
+# El almacén de comprobantes (plan §7.3). boto3 y no el cliente de MinIO: es la
+# API de S3, así que el mismo adaptador sirve si el despliegue hospedado termina
+# en S3, R2 o Backblaze. Atarse al cliente de MinIO sería elegir el proveedor
+# desde el código.
+#
+# Vault NO lleva cliente: se le habla con `urllib`, igual que el adaptador de
+# CABYS le habla a Hacienda. Son tres endpoints y una dependencia menos.
+boto3>=1.35,<2.0
+
+# Para recibir el `.p12` como archivo. FastAPI no lo trae: sin esto, el primer
+# endpoint con `UploadFile` falla al importarse, no al llamarse.
+python-multipart>=0.0.9,<1.0

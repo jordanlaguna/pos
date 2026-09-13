@@ -904,14 +904,13 @@ CREATE TABLE fe_credentials (
 
     -- Firma -----------------------------------------------------------------
     -- La parte PÚBLICA se guarda siempre y NO es secreta: viaja en el KeyInfo
-    -- de cada XML firmado. El `.p12` —que lleva la privada— solo se guarda con
-    -- custodia 'local'; con 'vault' la privada vive en Vault y acá no hay nada
-    -- que descifrar. Son dos columnas y no una porque son dos contenidos.
+    -- de cada XML firmado.
+    --
+    -- **La privada no está acá, ni cifrada ni de ninguna forma**: se importa a
+    -- Vault al subir el `.p12` y desde entonces vive solo ahí. Por eso tampoco
+    -- están el `.p12` ni el PIN — ver «La llave privada va a Vault», abajo.
     certificate_pem LONGTEXT     NULL,       -- parte pública, sin cifrar
-    p12_encrypted   LONGTEXT     NULL,       -- base64 del .p12 cifrado (solo 'local')
-    pin_encrypted   VARBINARY(512) NULL,
-    key_custody     VARCHAR(12)  NULL,       -- 'local' | 'vault'; NULL = sin certificado
-    key_version     TINYINT      NOT NULL DEFAULT 1,
+    key_custody     VARCHAR(12)  NULL,       -- 'vault'; NULL = sin certificado
     certificate_name VARCHAR(160) NULL,
     expires_at      DATETIME     NULL,       -- DATETIME y no DATE: el notAfter tiene hora
     cert_uploaded_at DATETIME    NULL,
@@ -955,60 +954,89 @@ hay que escribir porque muerden:
    no avanza nunca. Es la misma trampa que CLAUDE.md ya documenta para los
    objetos expirados después del `commit`.
 
-#### Dónde vive la llave privada: un puerto con dos adaptadores
+#### La llave privada va a Vault, y el `.p12` no se guarda (decidido el 2026-09-13)
 
-La decisión no es «Vault sí o no» sino **de quién es el problema**, y eso cambia
-con el despliegue. Va detrás de un puerto —`DocumentSigner`— con dos
-implementaciones:
+**Vault transit es el único sitio donde vive la privada.** Al subir el `.p12` se
+abre en memoria con su PIN, se extrae la llave, **se importa a Vault y se
+descarta todo lo demás**. De ahí en adelante firmar es mandarle el digest y
+recibir la firma (PKCS#1 v1.5, que es lo que pide XAdES-EPES); la llave nunca
+vuelve a entrar en memoria de la aplicación. Es lo que ya hace DetCore
+(`docs/hacienda/costa-rica/recepcion-comprobantes-mensaje-receptor.md` §3.1).
+
+El diseño anterior ofrecía dos adaptadores —uno local con el `.p12` cifrado en
+una columna— y elegía según el despliegue. Se cierra a uno.
+
+**Lo que se cae de la tabla es la mitad de las columnas de firma**, y esa es la
+señal de que la decisión simplifica en vez de agregar:
+
+| Ya no existe | Por qué |
+|---|---|
+| `p12_encrypted` | La privada está en Vault; guardar además el `.p12` sería tener dos copias de un secreto, una de ellas olvidable |
+| `pin_encrypted` | **El PIN solo sirve para abrir el `.p12`, y eso pasa una sola vez.** Importada la llave, no hay nada que volver a abrir |
+| `key_version` | Existía para rotar `FE_CRYPTO_KEY` sin Vault. Transit versiona solo, y la versión que firmó viaja dentro de la propia firma (`vault:v1:…`) |
+
+Que el PIN **no se guarde en ninguna parte** es el mayor efecto secundario, y
+cambia el carácter de T-609: hasta ahora había que comprobar que no se filtrara
+por respuestas, bitácora ni trazas; ahora esa comprobación pasa a ser sobre un
+valor que solo existió durante una petición. Lo que no está no se filtra.
+
+**El puerto sigue existiendo, con un solo adaptador.** `DocumentSigner` no está
+ahí para elegir entre Vault y otra cosa —esa decisión ya se tomó— sino porque
+§7.2 deja abierta la ruta de emisión: si la firma termina pasando por un
+proveedor autorizado, el que cambia es el adaptador y no el caso de uso. Y
+porque un puerto con prueba de contrato es lo que hace que la firma se pueda
+probar sin Vault levantado.
 
 ```python
 class DocumentSigner(Protocol):
     def sign(self, digest: bytes, *, company_id: int, environment: str) -> bytes: ...
+    def import_key(self, pkcs8: bytes, *, company_id: int, environment: str) -> None: ...
 ```
 
 **La compañía y el ambiente van explícitos y no en un `ContextVar`.** Con estado
 escondido, el caso de uso no se puede probar contra «firmá esto con el de
-pruebas», y el adaptador de Vault no tendría cómo elegir llave sin heredar el
-contexto de la petición — que es justo lo que el trabajador de fondo no tiene.
-
-- **Local.** El `.p12` cifrado con **AES-256-GCM**, llave de 32 bytes en
-  `FE_CRYPTO_KEY` y el par `(company_id, environment)` como dato asociado: un
-  registro copiado a otra compañía o a otro ambiente no descifra. Se descifra en
-  memoria, solo al firmar, y no se escribe a disco. Es lo que corre en la VM de
-  un negocio, donde no hay quien administre un Vault.
-- **Vault transit.** La llave privada se importa a Vault y **nunca entra en
-  memoria de la aplicación**: se le manda el digest y devuelve la firma
-  (PKCS#1 v1.5, que es lo que pide XAdES-EPES). Es el despliegue multiempresa, y
-  es el que ya usa DetCore
-  (`docs/hacienda/costa-rica/recepcion-comprobantes-mensaje-receptor.md` §3.1).
+pruebas», y el adaptador no tendría cómo elegir llave sin heredar el contexto de
+la petición — que es justo lo que el trabajador de fondo no tiene.
 
 **El nombre de la llave en Vault se DERIVA, no se guarda.** Se calcula en el
 servidor a partir de `(company_id, environment)`. Guardarlo como un campo que
 alguien pueda escribir sería dejar que el administrador de la compañía 7 apunte
 a la llave de la compañía 3 y emita documentos fiscales firmados con el
-certificado de otro cliente. Es el equivalente exacto del dato asociado del
-AES-GCM: en los dos adaptadores, la identidad de la llave la fija el servidor.
+certificado de otro cliente. Es la misma frase que ya rige la ruta del almacén
+de documentos (§7.3): la identidad la fija el servidor, no quien llama.
 
-**`key_version` existe para poder rotar sin Vault.** El adaptador local usa una
-llave estática, y sin versión en la fila, rotar `FE_CRYPTO_KEY` significa que
-todos los clientes vuelvan a subir su certificado. Con versión, es un trabajo de
-fondo que recifra fila por fila.
-
-**El arranque falla si `FE_CRYPTO_KEY` no está o no mide 32 bytes.** Sin eso, el
-primer aviso llega el día que alguien sube un certificado, que es tarde.
+**`FE_CRYPTO_KEY` no desaparece: le queda un solo cliente.** La contraseña de
+ATV hay que poder **replayarla** al IdP en cada token (`grant_type=password`),
+así que no es un digest que se firme sino un secreto que se guarda y se lee.
+Sigue en su columna con AES-256-GCM y `(company_id, environment)` como dato
+asociado. El arranque falla si la llave no está o no mide 32 bytes: enterarse el
+día que alguien guarda credenciales es tarde.
 
 #### Lo que Vault arregla, y el modo de falla que introduce
 
-Lo que gana es exactamente lo flojo del adaptador local: una llave estática no
+Lo que gana es exactamente lo flojo de una llave estática en una columna: no
 rota, no deja rastro de cada uso y, si se pierde, obliga a todos los clientes a
 volver a subir su certificado. Transit da rotación y **bitácora de cada firma**,
-que para una llave que emite documentos fiscales es la mitad del valor.
+que para una llave que emite documentos fiscales es la mitad del valor. Y quita
+el peor escenario del diseño anterior: un respaldo robado ya no contiene ninguna
+llave de firma, porque en la base no hay ninguna.
 
-**El modo de falla nuevo no es «sin internet».** El despliegue de LAN usa el
-adaptador local, donde Vault nunca está en el camino, y el hospedado ya necesita
-red para que el POS alcance al backend. El riesgo real es **Vault sellado con el
-backend arriba**: se sigue vendiendo, se sigue numerando, y la cola crece sin que
-nada falle a la vista.
+**El modo de falla nuevo no es «sin internet» — es el sello, y ahora alcanza
+también al negocio de una sola caja.** Con dos adaptadores, la VM de un negocio
+corría el local y Vault nunca estaba en el camino. Con uno, Vault está en el
+camino siempre, y **un Vault sellado no firma**: se sigue vendiendo, se sigue
+numerando, y la cola crece sin que nada falle a la vista.
+
+Eso hay que resolverlo en el despliegue, no en el código, y conviene escribir
+que **no es gratis**: Vault arranca sellado después de cada reinicio. Las salidas
+son auto-unseal contra un KMS —que pide internet y una cuenta en la nube— o las
+llaves de apertura en el disco de la propia VM con una unidad de systemd que lo
+abra al arrancar. La segunda es la realista para un negocio, y deja el modelo de
+amenaza en «cifrado en reposo con la llave en el mismo disco», que es más o menos
+lo que daba el adaptador local. **Lo que se gana igual** es que la llave no está
+en la base ni en sus respaldos, que hay bitácora de cada firma y que la privada
+no pasa por la memoria de la aplicación. Va en el README de despliegue, con el
+procedimiento de apertura y el aviso de qué pasa si no se hace.
 
 Y tiene reloj. Lo emitido en contingencia tiene un plazo para transmitirse —unos
 8 días hábiles— y Hacienda rechaza por antigüedad pasados los 30 días. Un Vault
@@ -1055,16 +1083,22 @@ por tabla**, que es lo que el guardián no contemplaba y hay que enseñarle:
 
 | Va en el respaldo | No va |
 |---|---|
-| `certificate_pem`, `certificate_name`, `expires_at` | `p12_encrypted`, `pin_encrypted` |
-| `atv_user`, las marcas de tiempo | `atv_password_encrypted` |
+| `certificate_pem`, `certificate_name`, `expires_at` | `atv_password_encrypted` |
+| `atv_user`, las marcas de tiempo | |
 | `environment`, `key_custody` | |
 
-El descarte del `.p12` cifrado no es por RNF-5 —ahí estaría bien, la llave no
-viaja—: es porque en otra instalación, con otra `FE_CRYPTO_KEY`, es un archivo
-indescifrable que nadie distingue de uno bueno hasta el día de facturar. Lo que
-sí viaja es todo lo que puede volver solo, y **al restaurar la pantalla dice qué
-falta cargar** (RN-47). Un respaldo que parece completo y no lo es solo se
-descubre cuando hace falta.
+**Con la llave en Vault, la columna que más costaba clasificar ya no existe.**
+El `.p12` y el PIN no están en la base (§7.1), así que el volcado no puede
+llevárselos aunque alguien los clasificara mal: es la diferencia entre una regla
+y una imposibilidad. Queda una sola columna que descartar a mano, la contraseña
+de ATV, y el motivo es el de siempre —en otra instalación, con otra
+`FE_CRYPTO_KEY`, es un valor indescifrable que nadie distingue de uno bueno
+hasta el día de transmitir—.
+
+Lo que sí viaja es todo lo que puede volver solo, y **al restaurar la pantalla
+dice qué falta cargar** (RN-47): la contraseña de ATV y **el certificado, que
+hay que volver a subir para que su llave se importe al Vault de destino**. Un
+respaldo que parece completo y no lo es solo se descubre cuando hace falta.
 
 #### La identificación del emisor vive en `companies` (decidido el 2026-09-06)
 
@@ -1240,6 +1274,91 @@ Hacienda caída.
 
 ---
 
+
+### 7.3 El almacén de documentos (se levanta en F6, lo llenan F7 y la recepción)
+
+Entra **MinIO** al compose, hablado por la API de S3. No es para las
+credenciales —la llave de firma va a Vault y el `.p12` no se guarda, §7.1—: es
+para los documentos, que son cinco clases y todas tienen la misma forma —un
+archivo que hay que devolver idéntico años después—:
+
+| Clase | Qué es | Quién lo escribe |
+|---|---|---|
+| `signed-payload` | El XML firmado que se le mandó a Hacienda | F7, al firmar |
+| `gov-response` | La respuesta **firmada** de Hacienda | F7, al consultar el veredicto |
+| `received-comprobante` | El XML que manda un proveedor | Recepción |
+| `received-response` | Nuestro mensaje receptor, firmado | Recepción |
+| `received-pdf` | La representación gráfica que viene con el recibido | Recepción |
+
+**Por qué no en MySQL.** No es el tamaño de uno sino el de todos: son tres
+archivos por comprobante emitido y hasta tres por cada uno recibido, para
+siempre. Un negocio mediano llega al millón de objetos antes de los diez años.
+En columnas eso convierte cada respaldo de la base en horas, hace que un
+`SELECT *` distraído se traiga cien megas a memoria, y mete al `mysqldump` —que
+es cómo se restaura una compañía— en el camino crítico de algo que solo hace
+falta cuando Hacienda pregunta.
+
+**Por qué ahora y no en F7.** La ruta de emisión sigue sin decidir (§7.2:
+firmamos nosotros o pasa por un proveedor autorizado), y **el almacén es de las
+pocas piezas de F7 que no dependen de esa decisión**: con proveedor también hay
+que conservar el XML firmado y el acuse, porque la obligación de custodia es del
+emisor y no de quien transmite. Se puede construir hoy sin apostar a nada.
+
+**Estos objetos NO se cifran, y es lo contrario de lo que se hace con el
+`.p12`.** La asimetría es a propósito y vale escribirla: el `.p12` es un secreto
+cuya pérdida se repone pidiendo otro certificado; el XML firmado es un documento
+legal cuya pérdida no se repone con nada, y no es secreto —ya lo tienen Hacienda
+y el cliente—. Cifrarlo agregaría un modo de falla —`FE_CRYPTO_KEY` perdida— que
+borra documentos que la ley obliga a conservar. Se protege con permisos del
+bucket y con el respaldo, no con una llave.
+
+**La llave del objeto se deriva, igual que las otras dos:**
+
+```
+{company_id}/{environment}/{kind}/{yyyy}/{mm}/{clave}.{xml|pdf}
+```
+
+- **`company_id` primero** y puesto por el servidor, nunca por quien llama: es
+  el mismo argumento del dato asociado del AES-GCM y del nombre de la llave de
+  Vault. Y deja que el prefijo de una compañía sea lo que se copia, se borra al
+  darla de baja o se le entrega al irse.
+- **`environment` en la ruta.** La clave numérica se arma con el consecutivo, y
+  el de pruebas y el de producción se numeran aparte: dos documentos distintos
+  **pueden** tener la misma clave. Sin el ambiente en la ruta, un tiquete de
+  ensayo pisa una factura real. Es la misma trampa que §7.1 ya obliga a evitar
+  guardando el ambiente en la fila del documento.
+- **Año y mes.** La custodia tiene plazo, y borrar lo que pasó el plazo así es
+  listar un prefijo en vez de recorrer el bucket entero.
+- **La clave numérica como nombre**, que es el identificador que usan Hacienda,
+  el proveedor y nosotros. Buscar «el XML de esta factura» no necesita un índice.
+
+**Se escribe una vez.** Un XML firmado que cambia deja de ser el que se firmó
+—la firma no verificaría— y la respuesta de Hacienda para una clave es final; un
+documento rechazado se corrige emitiendo **otra** clave, no reescribiendo esta.
+Así que el puerto sube con `If-None-Match: *` y la segunda escritura de la misma
+llave es un error, no un reemplazo silencioso. Sin eso, un reintento de la cola
+que llegue tarde puede pisar el acuse bueno con uno viejo.
+
+**El respaldo pasa a ser dos, y hay que escribirlo porque muerde.** Hasta hoy
+respaldar la VM era el volumen de MySQL. Ahora es ese y el del almacén, y hay
+que decir en el README que un respaldo que se lleve solo la base restaura un
+sistema que cree tener sus comprobantes y no los tiene. Lo mismo para
+`company_dump.py`: exportar una compañía es sus filas **y su prefijo**.
+
+**`boto3` y no el SDK de MinIO.** Es la misma API y el adaptador no cambia si el
+despliegue hospedado termina en S3, R2 o Backblaze; atarse al cliente de MinIO
+sería elegir el proveedor desde el código. En la VM de un negocio, MinIO en su
+contenedor; en el hospedado, lo que haya — y el puerto no se entera.
+
+**Compañía y ambiente van explícitos en el puerto, no en un `ContextVar`**, por
+la misma razón que `DocumentSigner`: quien más va a usar esto es el trabajador
+de transmisión, que corre fuera de una petición y no tiene contexto que heredar.
+
+**Lo que entrega F6 es el almacén, no su contenido.** En esta fase no hay
+documentos todavía, así que lo que se construye es el contenedor en las dos
+pilas, el puerto, el adaptador y la derivación de la llave — verificados contra
+el MinIO de verdad, no contra un doble. Un adaptador que nunca corrió es lo que
+T-602b ya dice que no se entrega.
 
 ## 8. Multi-idioma (F8)
 

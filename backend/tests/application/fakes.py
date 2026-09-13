@@ -382,3 +382,34 @@ class FakeUnitOfWork:
 
     def rollback(self) -> None:
         self.rolled_back = True
+
+
+class FakeDocumentStore:
+    """El almacén de comprobantes, en memoria (T-623).
+
+    Implementa el mismo contrato que el adaptador de S3 y lo demuestra: los dos
+    pasan la batería de `tests/test_almacen_documentos.py`. Lo que importa que
+    replique no es guardar —eso es un diccionario— sino **negarse a pisar** lo
+    ya escrito, que es la regla de la que depende que una firma siga valiendo.
+    """
+
+    def __init__(self) -> None:
+        self.contenido: dict[str, bytes] = {}
+
+    def put(self, ref, content: bytes) -> str:
+        from app.application.ports.documents import DocumentAlreadyStored
+
+        if ref.key in self.contenido:
+            raise DocumentAlreadyStored(ref.key)
+        self.contenido[ref.key] = bytes(content)
+        return ref.key
+
+    def get(self, ref) -> bytes:
+        from app.application.ports.documents import DocumentNotFound
+
+        if ref.key not in self.contenido:
+            raise DocumentNotFound(ref.key)
+        return self.contenido[ref.key]
+
+    def exists(self, ref) -> bool:
+        return ref.key in self.contenido

@@ -84,6 +84,76 @@ services:
     depends_on:
       - db
 
+  # Almacén de los comprobantes electrónicos (plan §7.3, T-622).
+  #
+  # No guarda credenciales: guarda documentos —el XML firmado que se le manda a
+  # Hacienda, su respuesta firmada, y el comprobante, el acuse y el PDF de los
+  # que llegan de un proveedor—. Son tres archivos por comprobante, para
+  # siempre, y eso en columnas de MySQL convierte cada respaldo de la base en
+  # horas y mete al `mysqldump` en el camino de algo que solo hace falta cuando
+  # Hacienda pregunta.
+  #
+  # Se baja de quay.io y no de Docker Hub: es el registro que publica MinIO.
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: minio_fe
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      TZ: ${TZ:?Falta TZ en .env}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Falta MINIO_ROOT_USER en .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Falta MINIO_ROOT_PASSWORD en .env (mínimo 8 caracteres)}
+    volumes:
+      - fe_documents:/data
+    ports:
+      # Como MySQL y Adminer: solo desde la propia VM. El segundo es la consola
+      # web; para verla desde afuera, túnel SSH.
+      #
+      # Los puertos se parametrizan por lo mismo que `API_PORT`: en la VM de un
+      # negocio el 9000 está libre, pero en una máquina de desarrollo suele
+      # haber otro MinIO —el de otro proyecto— y sin esto los dos stacks no
+      # pueden convivir.
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # Donde vive la llave de firma (plan §7.1, T-622).
+  #
+  # La privada del `.p12` se importa acá al subir el certificado y no vuelve a
+  # salir: se le manda el digest y devuelve la firma. Por eso la base no guarda
+  # ni el `.p12` ni su PIN, y un respaldo robado no contiene ninguna llave.
+  #
+  # OJO: Vault arranca **sellado** después de cada reinicio, y sellado no firma.
+  # El README explica cómo abrirlo al arrancar. `fastapi` NO espera a que esté
+  # sano a propósito: con Vault caído se sigue vendiendo y se sigue numerando,
+  # y lo que se detiene es la transmisión — que es exactamente lo que se quiere.
+  vault:
+    image: hashicorp/vault:1.20
+    container_name: vault_fe
+    restart: unless-stopped
+    command: server
+    cap_add:
+      # Para que Vault pueda bloquear su memoria y las llaves no caigan al
+      # archivo de intercambio. Sin esto hay que apagar mlock, que es peor.
+      - IPC_LOCK
+    environment:
+      TZ: ${TZ:?Falta TZ en .env}
+      VAULT_ADDR: http://127.0.0.1:8200
+    volumes:
+      - fe_vault:/vault/file
+      - ./vault:/vault/config:ro
+    ports:
+      - "127.0.0.1:${VAULT_PORT:-8200}:8200"
+    networks:
+      - backend-net
+
   fastapi:
     build:
       context: .
@@ -106,6 +176,18 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       # El POS habla server-a-server, así que normalmente va vacío.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+
+      # ---------------------------------------------------- factura electrónica
+      # Cifra la contraseña de ATV en reposo (T-602a). 32 bytes en base64url; el
+      # arranque falla si no está o no mide eso, porque enterarse el día que
+      # alguien guarda credenciales es tarde.
+      FE_CRYPTO_KEY: ${FE_CRYPTO_KEY:?Falta FE_CRYPTO_KEY en .env. Generala con python -c "import secrets; print(secrets.token_urlsafe(32))"}
+      FE_STORAGE_ENDPOINT: ${FE_STORAGE_ENDPOINT:-http://minio:9000}
+      FE_STORAGE_BUCKET: ${FE_STORAGE_BUCKET:-ventasys-fe}
+      FE_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?Falta MINIO_ROOT_USER en .env}
+      FE_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Falta MINIO_ROOT_PASSWORD en .env}
+      FE_VAULT_ADDR: ${FE_VAULT_ADDR:-http://vault:8200}
+      FE_VAULT_TOKEN: ${FE_VAULT_TOKEN:-}
     ports:
       # 80 dentro del contenedor, ${API_PORT} en la VM. El POS apunta acá:
       #   API_BASE_URL=http://IP_DE_LA_VM:8001
@@ -113,6 +195,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      # Sin `condition`: arranca aunque Vault esté sellado. Ver el comentario
+      # del servicio.
+      vault:
+        condition: service_started
     networks:
       - backend-net
 
@@ -121,6 +209,12 @@ volumes:
     # Nombre explícito, por la misma razón que `name:` arriba: los datos de la
     # base no deben depender de cómo se llame la carpeta desde la que se levanta.
     name: ventasys_db_data
+  # Los comprobantes y la llave de firma, con nombre por el mismo motivo. Y hay
+  # que respaldarlos: desde F6 el respaldo de la VM son TRES cosas y no una.
+  fe_documents:
+    name: ventasys_fe_documents
+  fe_vault:
+    name: ventasys_fe_vault
 
 networks:
   backend-net:

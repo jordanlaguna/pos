@@ -19,7 +19,7 @@ from typing import Protocol, get_type_hints
 
 import pytest
 
-from app.application.ports import clock, repositories, security
+from app.application.ports import clock, documents, repositories, security
 
 PUERTOS = [
     (clock.Clock, {"now", "today"}),
@@ -68,6 +68,10 @@ PUERTOS = [
     (repositories.UnitOfWork, {"__enter__", "__exit__", "commit", "rollback"}),
     (security.PasswordHasher, {"hash", "verify"}),
     (security.TokenIssuer, {"issue", "read"}),
+    # F6: el almacén de comprobantes. Sin `delete` a propósito —estos
+    # documentos se custodian por ley y borrarlos es mantenimiento, no una
+    # operación de la aplicación—; un método acá sería una invitación.
+    (documents.DocumentStore, {"put", "get", "exists"}),
     (repositories.ProductSnapshot, set()),
     (repositories.SupplierSnapshot, set()),
 ]
@@ -132,7 +136,7 @@ def test_los_puertos_no_conocen_la_persistencia_ni_HTTP():
     """
     import inspect
 
-    for modulo in (clock, repositories, security):
+    for modulo in (clock, documents, repositories, security):
         fuente = inspect.getsource(modulo)
         for prohibido in ("sqlalchemy", "fastapi", "pydantic", "app.models"):
             assert prohibido not in fuente, f"{modulo.__name__} importa {prohibido}"

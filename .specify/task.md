@@ -1360,6 +1360,23 @@ estaban en el camino que una persona recorre el primer día.
 >
 >
 > De ahí salen RF-29 a RF-32 y RN-33 a RN-38, y la revisión de plan §7.1.
+>
+> **Dos piezas de infraestructura, decididas el 2026-09-13 al arrancar la fase.**
+> Las pidió el usuario y cambian el diseño anterior más de lo que parece:
+>
+> 1. **MinIO** (plan §7.3). No es para las credenciales: es el almacén de los
+>    cinco tipos de documento —el XML firmado que se manda, la respuesta firmada
+>    de Hacienda, y el comprobante, el acuse y el PDF de los recibidos—. Se
+>    levanta en F6 y lo llenan F7 y la recepción. Se construye ahora porque es
+>    **de las pocas piezas de F7 que no dependen de la ruta sin decidir**: con
+>    proveedor autorizado también hay que custodiar el XML y el acuse.
+> 2. **La llave privada va a Vault** (plan §7.1). Cierra la elección de dos
+>    adaptadores a uno solo. El efecto que hay que mirar no es que entre Vault
+>    sino **lo que se cae**: `p12_encrypted`, `pin_encrypted` y `key_version`
+>    dejan de existir, porque el PIN solo sirve para abrir el `.p12` y eso pasa
+>    una vez. Y el costo tampoco es el que parece: el negocio de una sola caja
+>    ya no tiene un camino sin Vault, así que **un Vault sellado no firma** y el
+>    despliegue tiene que abrirlo al arrancar.
 
 **Costes medidos antes de empezar** —lo que la fase va a hacer saltar, para que
 no aparezca a mitad de camino como en F5—:
@@ -1454,6 +1471,53 @@ abierta.
       daría `'sandbox'`, y un negocio que ya emitía en producción pasaría a
       pruebas sin que nadie lo pidiera ni lo viera.
 
+### Los dos contenedores
+
+Van primero porque todo lo de la fase se apoya en ellos y porque un adaptador
+que nunca corrió contra el servicio de verdad no está entregado —es lo que
+T-602b ya decía de Vault, ahora vale para los dos—.
+
+- [ ] **T-622** **MinIO y Vault en las dos pilas**: `docker-compose.yml` y
+      `docker-compose.test.yml`, con sus variables en `.env.example` y el
+      procedimiento en el README de despliegue. Plan §7.1 y §7.3.
+
+      La pila de pruebas los levanta **sin persistencia** —igual que MySQL con
+      su `tmpfs`— y Vault en modo `-dev`, que arranca desellado. La de trabajo
+      los levanta con volumen con nombre, por lo mismo que `ventasys_db_data`:
+      el nombre de la carpeta no puede decidir dónde están los comprobantes.
+
+      **Lo que hay que escribir en el README y no es un detalle**: el respaldo
+      pasa a ser **tres** —la base, el bucket y las llaves de apertura de
+      Vault—, y Vault arranca **sellado** después de cada reinicio. Un negocio
+      que reinicia la VM un viernes y no lo abre deja de firmar sin que nada
+      falle a la vista.
+
+      **Verificación:** `docker compose up` con un `.env` al que le falte una
+      variable del almacén **no levanta y dice cuál** —es la forma `${VAR:?}`
+      que ya usan las demás—, y la pila de pruebas queda arriba con el bucket
+      creado y Vault desellado, comprobado desde el contenedor de FastAPI y no
+      desde la máquina.
+
+- [ ] **T-623** Puerto `DocumentStore` y adaptador de S3 (`boto3`), con la
+      **derivación de la llave en el dominio**. Plan §7.3.
+
+      La ruta es `{company_id}/{environment}/{kind}/{yyyy}/{mm}/{clave}.{ext}` y
+      la arma el servidor: quien llama pasa el hecho, no la ruta. Es la misma
+      frase que ya rige el nombre de la llave de Vault y el dato asociado del
+      AES-GCM, y por tercera vez el motivo es el mismo —una ruta escribible deja
+      que la compañía 7 lea el comprobante de la 3—.
+
+      **Se escribe una vez**: la subida va con `If-None-Match: *` y la segunda
+      escritura de la misma llave es un error, no un reemplazo. Un XML firmado
+      que cambia deja de ser el que se firmó, y un reintento de la cola que
+      llegue tarde no puede pisar el acuse bueno con uno viejo.
+
+      **Verificación:** prueba de contrato para el puerto —el precedente es
+      T-106— y de integración contra el MinIO de T-622: subir dos veces la misma
+      llave falla, `company_id` distinto da rutas que no se pisan, y lo que baja
+      es **byte por byte** lo que subió. Esto último no es una obviedad: es la
+      propiedad de la que depende que una firma verifique cinco años después.
+
 ### Secretos
 
 - [ ] **T-601** Tabla `fe_credentials` con llave primaria
@@ -1473,56 +1537,89 @@ abierta.
       `test_esquema.py` compara modelo y migración desde T-919, así que basta
       con que las dos digan lo mismo.
 
+      **Tres columnas del boceto ya no existen**, por la decisión del
+      2026-09-13 de llevar la privada a Vault: `p12_encrypted`, `pin_encrypted`
+      y `key_version`. La de firma que queda es `certificate_pem`, que es
+      pública y viaja sin cifrar dentro de cada XML.
+
       **La clasificación en `company_dump.py` va en este mismo commit, y es por
       columna y no por tabla** (RN-47, decidido el 2026-09-06): viajan el
-      certificado público, el usuario de ATV y las fechas; no viajan el `.p12`,
-      el PIN ni la contraseña. Eso es lo que el guardián no contempla hoy, así
-      que hay que enseñárselo — clasificar la tabla entera en un lado o en el
-      otro es justo lo que la decisión descarta.
+      certificado público, el usuario de ATV y las fechas; no viaja la
+      contraseña. Eso es lo que el guardián no contempla hoy, así que hay que
+      enseñárselo — clasificar la tabla entera en un lado o en el otro es justo
+      lo que la decisión descarta. Con Vault queda **una sola** columna que
+      descartar a mano, y no tres.
 
-      **Verificación:** un volcado no contiene el PIN ni la contraseña —se
-      buscan a propósito, como en T-609— y al restaurar la pantalla enumera lo
-      que hay que volver a cargar.
+      **Verificación:** un volcado no contiene la contraseña —se busca a
+      propósito, como en T-609— y al restaurar la pantalla enumera lo que hay
+      que volver a cargar, **incluido el certificado**: su llave hay que
+      importarla al Vault de destino, y eso solo pasa volviendo a subir el
+      `.p12`.
 
 - [ ] **T-602a** Cifrado en reposo: AES-256-GCM, `FE_CRYPTO_KEY`, con
       `(company_id, environment)` como dato asociado.
 
+      **Le queda un solo cliente: la contraseña de ATV.** No es un digest que se
+      firme sino un secreto que hay que **replayar** al IdP en cada token
+      (`grant_type=password`), así que se guarda y se lee, y eso Vault transit no
+      lo hace. El `.p12` y el PIN ya no pasan por acá.
+
       **Verificación:** una fila copiada a otra compañía —o al otro ambiente de
       la misma— **no descifra**. Es lo que verifica RF-22 y RNF-5, y lo necesita
-      T-603 en esta fase.
+      T-603b en esta fase.
 
-- [ ] **T-602** Puerto `DocumentSigner` —`sign(digest, company_id, environment)`—
-      con **prueba de contrato**, no con dos implementaciones.
+- [ ] **T-602** Puerto `DocumentSigner` —`sign(digest, company_id, environment)`
+      e `import_key(pkcs8, company_id, environment)`— con **prueba de
+      contrato**.
+
+      El puerto no está para elegir entre Vault y otra cosa —eso ya se decidió—
+      sino porque §7.2 deja abierta la ruta de emisión: si la firma termina
+      pasando por un proveedor autorizado, cambia el adaptador y no el caso de
+      uso. Y porque con contrato la firma se puede probar sin Vault levantado.
 
       Compañía y ambiente van explícitos y **no en un `ContextVar`**: con estado
       escondido, el caso de uso no se puede probar contra «firmá esto con el de
       pruebas» y el trabajador de fondo no tiene contexto que heredar.
 
-      **Verificación:** la prueba de contrato la pasa el adaptador local hoy y
-      tiene que pasarla el de Vault el día que llegue. Sin ella, «va aparte»
-      significa que nadie sabrá si el puerto admitía dos implementaciones hasta
-      que haya que escribir la segunda. El precedente es T-106.
+      **Verificación:** la prueba de contrato la pasan el doble de las pruebas y
+      el adaptador de T-602b, la misma batería para los dos. El precedente es
+      T-106.
 
-- [ ] **T-602b** *(puede ir después de cerrar la fase)* Adaptador de **Vault
-      transit**: la llave privada se importa y nunca entra en memoria de la
-      aplicación.
+- [ ] **T-602b** Adaptador de **Vault transit**: la llave privada se importa al
+      subir el `.p12` y **nunca entra en memoria de la aplicación** después.
+      Entra **dentro** de la fase —ya no «puede ir después»—: desde el
+      2026-09-13 es el único adaptador, así que sin él no se firma.
 
       **El nombre de la llave se DERIVA de `(company_id, environment)`, no se
       guarda.** Un campo escribible ahí deja que la compañía 7 apunte a la llave
-      de la 3 y emita firmado con el certificado de otro cliente. Es el
-      equivalente del dato asociado del AES-GCM.
+      de la 3 y emita firmado con el certificado de otro cliente.
 
       **Verificación:** la prueba de contrato de T-602, más una de integración
-      contra Vault en modo `-dev` en contenedor —la misma solución que ya se usa
-      para MySQL—. Sin eso se entrega un adaptador que nunca corrió.
+      contra el Vault en modo `-dev` de T-622. Sin eso se entrega un adaptador
+      que nunca corrió. Y una que comprueba lo que hace valiosa la decisión:
+      **firmar con la llave de la compañía 1 y verificar con el certificado
+      público de la 2 falla**.
 
 - [ ] **T-603** Subida del `.p12` y el PIN, browser → BFF → FastAPI. RF-22.
       Es de **administrador**: así el bloqueo por suscripción la alcanza sin
       tocar nada.
 
-      **Verificación:** un PIN que no abre el `.p12` **no se guarda**. T-606 lo
-      abre igual para leer el vencimiento, así que la validación sale gratis y
-      evita enterarse el día de facturar.
+      **Es el único momento en que el `.p12` y el PIN existen.** La petición
+      abre el archivo en memoria, saca el certificado público y la privada,
+      **importa la privada a Vault** (T-602b), guarda la fila con lo público y
+      descarta el resto. Ni el archivo ni el PIN llegan al disco ni a la base.
+
+      El orden es **primero Vault, después el `COMMIT`**: son dos sistemas sin
+      transacción común, y hay que elegir cuál de los dos desenlaces malos se
+      prefiere. Una llave importada sin fila es inofensiva —la pisa la próxima
+      subida—; una fila que dice «tiene certificado» sin llave en Vault rompe al
+      firmar, que es el peor momento posible.
+
+      **Verificación:** un PIN que no abre el `.p12` **no se guarda** —ni él ni
+      nada—, y después de una subida buena, buscar el PIN en la base **no lo
+      encuentra en ninguna columna**. T-606 abre el archivo igual para leer el
+      vencimiento, así que la validación sale gratis y evita enterarse el día de
+      facturar.
 - [ ] **T-603b** Usuario y contraseña de ATV, por ambiente. La contraseña recibe
       **el mismo trato que el PIN**; el usuario sí se muestra, porque es un
       identificador y sin verlo nadie puede comprobar que escribió el que era.
@@ -1532,8 +1629,17 @@ abierta.
       **No existe** endpoint que devuelva el archivo, el PIN ni la contraseña.
       RF-23, RN-16.
 - [ ] **T-605** Reemplazar y quitar el certificado. RF-24. De administrador.
+
+      Quitar **también quita la llave de Vault**, y ese es el orden inverso al
+      de T-603: primero el `COMMIT` de la fila, después Vault. Una llave
+      huérfana en Vault no firma nada —no hay fila que la nombre— mientras que
+      una fila que dice «tiene certificado» sobre una llave ya borrada vuelve al
+      mismo fallo al firmar.
+
       **Verificación:** reemplazar deja `cert_uploaded_at` nuevo y **no toca**
-      las marcas de ATV; quitar no borra las credenciales de transmisión.
+      las marcas de ATV; quitar no borra las credenciales de transmisión; y
+      después de quitar, firmar con esa compañía falla **por no haber llave**,
+      no por una firma inválida.
 - [ ] **T-606** Leer el vencimiento del propio `.p12` al subirlo, y avisar 30
       días antes. Sin dependencia nueva: `cryptography` ya está y sabe leer
       PKCS#12 —comprobado el 2026-09-05 en el contenedor, versión 50.0.1—.
@@ -1620,6 +1726,12 @@ abierta.
       guardianes: una comprobación que hay que acordarse de repetir no protege
       nada. Lo que se busca es el valor literal en el cuerpo de cada respuesta
       del API, en `audit_log` y en el texto de las excepciones.
+
+      **La mitad del PIN cambió de carácter el 2026-09-13**: ya no se guarda en
+      ninguna parte, así que lo que hay que comprobar no es que no se devuelva
+      sino que **no sobreviva a la petición que lo trajo** — se busca en las
+      tres tablas y en las trazas después de una subida buena. Lo que no está no
+      se filtra; lo que hay que verificar es que de verdad no está.
 
 - [ ] **T-609b** La mitad positiva de la bitácora: **se registra que se usaron**,
       nunca su contenido (plan §7.1). Hoy el único uso es T-612.

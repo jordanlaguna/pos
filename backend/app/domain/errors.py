@@ -452,3 +452,42 @@ class PeriodClosed(DomainError):
         super().__init__(f"el periodo {year}-{month:02d} está cerrado")
         self.year = year
         self.month = month
+
+
+# ------------------------------------------------------- factura electrónica
+
+class InvalidEnvironment(DomainError):
+    """Un ambiente que no es ni `sandbox` ni `production`.
+
+    No es un dato que escriba una persona —sale de una lista cerrada— así que
+    llegar acá significa que algo lo compuso mal. Se rechaza igual: el ambiente
+    decide contra qué IdP se transmite y con qué llave se firma, y equivocarse
+    en él es emitir con efecto fiscal lo que iba a ser un ensayo.
+    """
+
+    def __init__(self, value: object) -> None:
+        super().__init__(f"ambiente no válido: {value!r}")
+        self.value = value
+
+
+class InvalidDocumentKind(DomainError):
+    """Una clase de documento que el almacén no sabe guardar (plan §7.3)."""
+
+    def __init__(self, value: object) -> None:
+        super().__init__(f"clase de documento no válida: {value!r}")
+        self.value = value
+
+
+class InvalidClave(DomainError):
+    """Una clave numérica con la que no se puede armar una ruta.
+
+    Se comprueba el largo, que sean dígitos y que el día y el mes existan —que
+    es lo que arma la carpeta—, no que la clave sea correcta: el país y el
+    código de seguridad son problema de quien la emitió, y rechazarlos acá
+    dejaría comprobantes legítimos sin poder archivarse.
+    """
+
+    def __init__(self, value: object, code: str) -> None:
+        super().__init__(f"clave numérica no válida ({code}): {value!r}")
+        self.value = value
+        self.code = code

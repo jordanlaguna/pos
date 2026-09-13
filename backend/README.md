@@ -54,6 +54,13 @@ routers no se están cargando.
 | API | http://localhost:8001 · docs en `/docs` |
 | Adminer | http://localhost:8080 (solo desde la propia máquina) |
 | MySQL | 127.0.0.1:3306 |
+| MinIO | 127.0.0.1:9000 · consola en 9001 |
+| Vault | 127.0.0.1:8200 · **arranca sellado**, ver más abajo |
+
+Los dos últimos entran con F6 y son de factura electrónica: MinIO guarda los
+comprobantes —el XML firmado, el acuse de Hacienda y lo que llega de un
+proveedor— y Vault guarda la llave con la que se firman. Mientras no se emita,
+que estén abajo no impide vender.
 
 Datos de prueba:
 
@@ -229,14 +236,64 @@ docker compose down                   # parar (conserva los datos)
 docker compose down -v                # parar y BORRAR la base
 ```
 
-Respaldo y restauración:
+Para que el POS alcance la VM: `sudo ufw allow 8001/tcp`.
+
+### Respaldar: desde F6 son tres cosas y no una
 
 ```bash
+# 1. La base.
 docker compose exec -T db mysqldump -u root -pCLAVE posdb > respaldo.sql
 docker compose exec -T db mysql -u root -pCLAVE posdb < respaldo.sql
+
+# 2. Los comprobantes. Se copia el volumen entero.
+docker run --rm -v ventasys_fe_documents:/desde:ro -v "$PWD":/hacia alpine \
+  tar czf /hacia/comprobantes.tgz -C /desde .
+
+# 3. Vault: el volumen Y las llaves de apertura, que NO están en el volumen.
+docker run --rm -v ventasys_fe_vault:/desde:ro -v "$PWD":/hacia alpine \
+  tar czf /hacia/vault.tgz -C /desde .
 ```
 
-Para que el POS alcance la VM: `sudo ufw allow 8001/tcp`.
+**Un respaldo que se lleve solo la base restaura un sistema que cree tener sus
+comprobantes y no los tiene**, y que dice tener certificado sin poder firmar.
+Los tres van juntos o no sirve ninguno.
+
+Las llaves de apertura de Vault y la `FE_CRYPTO_KEY` **no van en el mismo sitio
+que los respaldos**. Guardarlas al lado de lo que protegen convierte tres
+medidas en cero.
+
+### Abrir Vault al arrancar
+
+Vault guarda la llave privada con la que se firma cada comprobante. **Arranca
+sellado después de cada reinicio, y sellado no firma**: el POS sigue vendiendo y
+numerando, la cola de transmisión crece, y nada falla a la vista hasta que se
+acaba el plazo para transmitir.
+
+La primera vez hay que inicializarlo:
+
+```bash
+docker compose exec vault vault operator init -key-shares=3 -key-threshold=2
+```
+
+Devuelve tres llaves de apertura y un token raíz. El token va a `FE_VAULT_TOKEN`
+en el `.env`; las llaves, a donde se guarden las cosas que no pueden perderse
+—**sin ellas los certificados de todos los clientes hay que volver a subirlos**—.
+
+Después de cada reinicio, dos de las tres:
+
+```bash
+docker compose exec vault vault operator unseal LLAVE_1
+docker compose exec vault vault operator unseal LLAVE_2
+docker compose exec vault vault secrets enable transit    # solo la primera vez
+```
+
+En una VM de un negocio eso no lo va a hacer nadie a las seis de la mañana, así
+que **hay que automatizarlo**: una unidad de systemd que lo abra al arrancar,
+con las llaves en un archivo que solo lea root. Conviene tener escrito lo que
+eso significa: el modelo de amenaza baja a «cifrado en reposo con la llave en el
+mismo disco». Lo que se gana igual —y es por lo que se hace así— es que la llave
+de firma **no está en la base ni en sus respaldos**, que queda bitácora de cada
+firma, y que la privada no pasa por la memoria de la aplicación.
 
 ### El volumen no depende de la carpeta
 
@@ -287,6 +344,10 @@ ejemplo y la clave de firma publicada— y nadie se entera.
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Duración de la sesión (480 = 8 h) |
 | `API_PORT` | Puerto publicado (8001) |
 | `ALLOWED_ORIGINS` | Normalmente vacío: el POS habla servidor a servidor |
+| `FE_CRYPTO_KEY` | Cifra la contraseña de ATV. 32 bytes: `python -c "import secrets; print(secrets.token_urlsafe(32))"`. **El arranque falla si no está o no mide eso** |
+| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | El almacén de comprobantes. Mínimo 8 caracteres en la contraseña |
+| `FE_STORAGE_ENDPOINT`, `FE_STORAGE_BUCKET` | Solo se tocan si el almacén no es el del compose (S3, R2, un MinIO en otra máquina) |
+| `FE_VAULT_ADDR`, `FE_VAULT_TOKEN` | Vault. El token sale de `vault operator init` |
 
 ---
 
