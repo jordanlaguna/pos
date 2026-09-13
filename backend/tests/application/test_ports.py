@@ -53,6 +53,9 @@ PUERTOS = [
             # Desde F5: la tarifa congelada de cada línea, que es lo que
             # impide que una devolución parcial use el promedio de la venta.
             "sold_tax_rates",
+            # Desde F11: el costo congelado, que es lo que hace que devolver
+            # mercadería la reponga por lo que costó y no por lo que cuesta hoy.
+            "sold_costs",
             "in_window",
         },
     ),

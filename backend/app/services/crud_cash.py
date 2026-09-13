@@ -31,6 +31,7 @@ from app.infrastructure.persistence.sqlalchemy_repositories import (
 from app.models.model_cash import CashSession
 from app.models.model_person import Person
 from app.models.model_user import User
+from app.services import crud_accounting
 from app.utils.api_errors import api_error
 
 
@@ -139,6 +140,9 @@ def add_movement(db: Session, user_id: int, type_: str, amount: float, reason: s
         report=_reporte(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        # Entrada o salida contra «por clasificar»: el sistema sabe que entraron
+        # ₡5 000, no de dónde salieron.
+        ledger=crud_accounting.libro(db, user_id=user_id),
     )
     try:
         movement = caso(user_id=user_id, type_=type_, amount=Money(amount), reason=reason)
@@ -170,7 +174,13 @@ def add_movement(db: Session, user_id: int, type_: str, amount: float, reason: s
 
 def close_session(db: Session, user_id: int, closing_amount: float, notes: str | None) -> dict:
     caso = CloseCashSession(
-        cash=SqlAlchemyCashRepository(db), uow=SqlAlchemyUnitOfWork(db), clock=SystemClock()
+        cash=SqlAlchemyCashRepository(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+        # El arqueo y el libro van juntos: el asiento del cierre es la diferencia
+        # entre lo esperado y lo contado, y sin el arqueo no hay diferencia.
+        report=_reporte(db),
+        ledger=crud_accounting.libro(db, user_id=user_id),
     )
     try:
         session = caso(user_id=user_id, counted=Money(closing_amount), notes=notes)

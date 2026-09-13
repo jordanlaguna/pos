@@ -120,6 +120,7 @@ def create_return(db: Session, payload) -> dict:
         settings=SqlAlchemySettingsRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        ledger=crud_accounting.libro(db, user_id=payload.user_id),
     )
     peticion = ReturnRequest(
         sale_id=payload.sale_id,

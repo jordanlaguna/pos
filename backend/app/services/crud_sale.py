@@ -39,6 +39,7 @@ from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.schemas.schemas_sales import SaleRegister, SaleRegisterSuccess
+from app.services import crud_accounting
 from app.utils.api_errors import api_error
 
 
@@ -50,6 +51,9 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
         settings=SqlAlchemySettingsRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        # El asiento, en la misma transacción (RN-59). Con contabilidad apagada
+        # —casi todas las compañías— esto es el libro nulo y no hace nada.
+        ledger=crud_accounting.libro(db, user_id=sale.user_id),
     )
 
     peticion = SaleRequest(

@@ -112,6 +112,20 @@ class FakeSaleRepository:
         venta = self.get(sale_id)
         return {l.product_id: l.unit_price for l in venta.lines} if venta else {}
 
+    def sold_costs(self, sale_id: int) -> dict[int, Money]:
+        """El costo congelado de cada línea, para las que lo tengan (RN-63).
+
+        Se salta las que lo traen en nulo —ventas anteriores a F11, productos
+        que nunca se compraron—: el asiento de esa devolución no lleva el par
+        costo / inventario en vez de inventar un cero.
+        """
+        venta = self.get(sale_id)
+        if venta is None:
+            return {}
+        return {
+            l.product_id: l.unit_cost for l in venta.lines if l.unit_cost is not None
+        }
+
     def sold_tax_rates(self, sale_id: int) -> dict[int, TaxRate]:
         """La tarifa congelada de cada línea, para las que la tengan.
 

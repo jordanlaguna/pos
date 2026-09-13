@@ -30,10 +30,11 @@ from app.infrastructure.persistence.sqlalchemy_repositories import (
     SqlAlchemySupplierPaymentRepository,
     SqlAlchemyUnitOfWork,
 )
+from app.services import crud_accounting
 from app.utils.api_errors import api_error
 
 
-def movimientos_de_caja(db: Session) -> AddCashMovement:
+def movimientos_de_caja(db: Session, ledger=None) -> AddCashMovement:
     """La salida de caja, armada como la arma `crud_cash`.
 
     Se construye acá y no se importa hecha porque necesita el mismo `db` de esta
@@ -52,16 +53,22 @@ def movimientos_de_caja(db: Session) -> AddCashMovement:
         ),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        ledger=ledger,
     )
 
 
 def pagar(db: Session, entry_id: int, payload, *, user_id: int) -> dict:
+    # Un solo libro para el abono y para la salida de caja que lo acompaña: los
+    # dos tienen que ver el mismo mapeo, y la salida no deja asiento propio
+    # porque lo deja el abono (RN-56).
+    contable = crud_accounting.libro(db, user_id=user_id)
     caso = PaySupplier(
         entries=SqlAlchemyStockEntryRepository(db),
         payments=SqlAlchemySupplierPaymentRepository(db),
-        movements=movimientos_de_caja(db),
+        movements=movimientos_de_caja(db, contable),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        ledger=contable,
     )
 
     try:

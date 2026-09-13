@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.application.ports.clock import Clock
+from app.application.ports.ledger import Ledger, NullLedger
 from app.application.ports.repositories import (
     ProductRepository,
     SaleRepository,
@@ -34,6 +35,7 @@ from app.domain.errors import (
     EmptySale,
     InvalidQuantity,
 )
+from app.domain.ledger import SoldDocument, SoldLine
 from app.domain.money import Money
 from app.domain.sale import (
     SaleLine,
@@ -109,12 +111,17 @@ class RegisterSale:
         settings: SettingsRepository,
         uow: UnitOfWork,
         clock: Clock,
+        ledger: Ledger | None = None,
     ) -> None:
         self._products = products
         self._sales = sales
         self._settings = settings
         self._uow = uow
         self._clock = clock
+        # Con contabilidad apagada —que es el caso de casi todas las compañías—
+        # el libro es el nulo y no hace nada. El caso de uso no pregunta si está
+        # activa: siempre cuenta lo que pasó (RN-59).
+        self._ledger = ledger or NullLedger()
 
     def __call__(self, request: SaleRequest) -> RegisteredSale:
         if not request.lines:
@@ -168,6 +175,10 @@ class RegisterSale:
                             if producto.tax_rate is not None
                             else tasa_del_negocio
                         ),
+                        # El costo también se congela (RN-63). En cero significa
+                        # «nunca se compró» —así nace `products.cost`— y eso se
+                        # guarda como nulo: cero diría que fue gratis.
+                        unit_cost=producto.cost if producto.cost.is_positive else None,
                     )
                 )
 
@@ -192,6 +203,11 @@ class RegisterSale:
 
             # A partir de acá se escribe. Todo lo que podía decir que no, ya dijo
             # que sí.
+            #
+            # Una sola lectura del reloj para la venta y para su asiento: con dos
+            # podrían caer a los lados de la medianoche y el asiento quedaría en
+            # otro día —y, una vez al mes, en otro periodo contable—.
+            momento = self._clock.now()
             id_sale = self._sales.add(
                 sale_number=request.sale_number,
                 client_id=request.client_id,
@@ -205,12 +221,34 @@ class RegisterSale:
                 # La hora la pone el servidor, nunca el cliente (defecto 9). El
                 # turno de caja se delimita comparando contra `opened_at`, que
                 # sella este mismo backend: dos relojes no se pueden comparar.
-                created_at=self._clock.now(),
+                created_at=momento,
                 lines=lineas,
             )
 
             for linea in lineas:
                 self._products.adjust_stock(linea.product_id, -linea.quantity)
+
+            # El asiento va **dentro** de la transacción (RN-59). Si no se puede
+            # escribir, esto lanza y la venta entera se revierte: un libro no
+            # puede tener el estado «venta sin asiento». Lo que nunca lo tumba es
+            # un mapeo incompleto, porque no existe: lo que falta cae en 1.9.99.
+            self._ledger.record_sale(
+                SoldDocument(
+                    id=id_sale,
+                    date=momento.date(),
+                    payment_method=request.payment_method,
+                ),
+                [
+                    SoldLine(
+                        subtotal=linea.subtotal,
+                        tax=linea.tax_with(tasa_del_negocio),
+                        tax_rate=linea.rate_with(tasa_del_negocio),
+                        quantity=linea.quantity,
+                        unit_cost=linea.unit_cost,
+                    )
+                    for linea in lineas
+                ],
+            )
 
             self._uow.commit()
 

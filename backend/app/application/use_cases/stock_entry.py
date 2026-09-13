@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from app.application.ports.clock import Clock
+from app.application.ports.ledger import Ledger, NullLedger
 from app.application.ports.repositories import (
     ProductRepository,
     StockEntryRepository,
@@ -29,6 +30,7 @@ from app.domain.errors import (
     LineWithoutProduct,
     PurchaseHasPayments,
 )
+from app.domain.ledger import PurchasedDocument, PurchasedLine
 from app.domain.money import Money
 from app.domain.purchases import due_date as fecha_de_vencimiento
 from app.domain.purchases import weighted_average_cost
@@ -171,6 +173,7 @@ class RegisterStockEntry:
         clock: Clock,
         suppliers: SupplierRepository | None = None,
         payer: PaySupplier | None = None,
+        ledger: Ledger | None = None,
     ) -> None:
         self._products = products
         self._entries = entries
@@ -180,6 +183,7 @@ class RegisterStockEntry:
         # las pruebas de lo que ya existía no tienen que aprender puertos nuevos.
         self._suppliers = suppliers
         self._payer = payer
+        self._ledger = ledger or NullLedger()
 
     def __call__(self, request: EntryRequest) -> RegisteredEntry:
         if not request.lines:
@@ -292,6 +296,29 @@ class RegisterStockEntry:
                     ),
                 )
                 self._products.adjust_stock(linea.product_id, +linea.quantity)
+
+            # Solo una **compra** deja asiento. Una entrada sin proveedor no
+            # genera cuenta por pagar ni crédito fiscal (RN-52): es un ajuste de
+            # inventario, y de esos el sistema no sabe la contrapartida.
+            #
+            # Con la fecha del documento del proveedor si la trae, que es la
+            # misma que usa el reporte de compras por tarifa: si el asiento y el
+            # reporte usaran fechas distintas, el D-104 no cuadraría con el libro
+            # justo en las facturas que se capturan a fin de mes.
+            if request.supplier_id is not None:
+                self._ledger.record_purchase(
+                    PurchasedDocument(
+                        id=id_entry, date=request.document_date or ahora.date()
+                    ),
+                    [
+                        PurchasedLine(
+                            subtotal=linea.subtotal,
+                            tax=linea.tax_amount,
+                            tax_rate=linea.tax_rate,
+                        )
+                        for linea in lineas
+                    ],
+                )
 
             id_payment = self._abono_de_contado(request, id_entry, total, vence)
 

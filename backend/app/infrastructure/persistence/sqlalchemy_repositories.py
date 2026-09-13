@@ -359,6 +359,10 @@ class SqlAlchemySaleRepository:
                     # una sola tarifa no se calcule con el promedio de la venta.
                     tax_rate=linea.tax_rate.value,
                     tax_amount=linea.tax_rate.apply(linea.subtotal).amount,
+                    # El costo, congelado igual que la tarifa y por lo mismo
+                    # (RN-63). NULL cuando el producto no tiene: es «no se sabe»,
+                    # y esa línea no asienta el par costo / inventario.
+                    unit_cost=None if linea.unit_cost is None else linea.unit_cost.amount,
                 )
             )
 
@@ -380,6 +384,20 @@ class SqlAlchemySaleRepository:
         filas = self._db.query(SaleDetail).filter(SaleDetail.sale_id == sale_id).all()
         # `unit_price` de la línea, no el precio de hoy del producto.
         return {fila.product_id: Money(fila.unit_price) for fila in filas}
+
+    def sold_costs(self, sale_id: int) -> dict[int, Money]:
+        """El costo CONGELADO de cada línea, para las que lo tengan (RN-63).
+
+        Las anteriores a F11 lo traen en NULL y no salen del diccionario: esas
+        ventas no tienen costo, y el asiento de su devolución no lleva el par
+        costo / inventario en vez de inventar un cero.
+        """
+        filas = self._db.query(SaleDetail).filter(SaleDetail.sale_id == sale_id).all()
+        return {
+            fila.product_id: Money(fila.unit_cost)
+            for fila in filas
+            if fila.unit_cost is not None
+        }
 
     def sold_tax_rates(self, sale_id: int) -> dict[int, TaxRate]:
         """La tarifa CONGELADA de cada línea, para las que la tengan.

@@ -73,6 +73,16 @@ class SaleLine:
     quantity: int
     tax_rate: TaxRate | None = None
 
+    #: Lo que costó **al momento de venderse** (RN-63), congelado como la tarifa
+    #: y por lo mismo: vender hoy con costo ₡110 y comprar mañana a ₡150 no puede
+    #: cambiar el costo de lo que ya salió. Leerlo de `products.cost` al armar el
+    #: asiento reescribiría la utilidad del mes pasado cada vez que llega una
+    #: factura del proveedor.
+    #:
+    #: `None` es «no se sabe»: un producto que nunca se compró. Cero diría «fue
+    #: gratis», que es falso, y le inflaría el margen al negocio.
+    unit_cost: Money | None = None
+
     def __post_init__(self) -> None:
         # `bool` antes que `int` por lo mismo que en Money: `True` es 1.
         if isinstance(self.quantity, bool) or not isinstance(self.quantity, int):

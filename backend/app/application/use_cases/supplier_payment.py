@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.application.ports.clock import Clock
+from app.application.ports.ledger import Ledger, NullLedger
 from app.application.ports.repositories import (
     StockEntryRepository,
     SupplierPaymentRepository,
@@ -22,6 +23,7 @@ from app.application.ports.repositories import (
 )
 from app.application.use_cases.cash_session import AddCashMovement
 from app.domain.errors import DomainError
+from app.domain.ledger import SupplierPaymentRef
 from app.domain.money import Money
 from app.domain.purchases import CASH, apply_payment, check_payment, remaining_balance
 
@@ -91,12 +93,14 @@ class PaySupplier:
         movements: AddCashMovement,
         uow: UnitOfWork,
         clock: Clock,
+        ledger: Ledger | None = None,
     ) -> None:
         self._entries = entries
         self._payments = payments
         self._movements = movements
         self._uow = uow
         self._clock = clock
+        self._ledger = ledger or NullLedger()
 
     def __call__(self, request: PaymentRequest) -> RegisteredPayment:
         with self._uow:
@@ -137,8 +141,12 @@ class PaySupplier:
                 type_="salida",
                 amount=request.amount,
                 reason=request.reason,
+                # Esa salida no deja asiento propio: lo deja este abono, abajo.
+                # Las dos juntas sacarían de la caja el doble de lo que salió.
+                from_supplier_payment=True,
             )
 
+        momento = self._clock.now()
         id_payment = self._payments.add(
             supplier_id=compra.supplier_id,
             entry_id=request.entry_id,
@@ -147,7 +155,17 @@ class PaySupplier:
             reference=request.reference,
             cash_movement_id=movimiento.id if movimiento else None,
             user_id=request.user_id,
-            paid_at=self._clock.now(),
+            paid_at=momento,
+        )
+
+        # Proveedores contra caja, banco o «por clasificar», según el medio.
+        self._ledger.record_supplier_payment(
+            SupplierPaymentRef(
+                id=id_payment,
+                date=momento.date(),
+                amount=request.amount,
+                method=request.method,
+            )
         )
 
         return RegisteredPayment(

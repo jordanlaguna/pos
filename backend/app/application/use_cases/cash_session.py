@@ -20,8 +20,10 @@ from app.application.ports.repositories import (
     SaleRepository,
     UnitOfWork,
 )
+from app.application.ports.ledger import Ledger, NullLedger
 from app.domain.cash import CashCount, check_movement, check_opening, difference, expected_amount
 from app.domain.errors import DomainError
+from app.domain.ledger import ClosedSession, DrawerMovement
 from app.domain.money import Money
 
 # El único método de pago que pasa por la gaveta. Tarjeta y transferencia no
@@ -178,11 +180,13 @@ class AddCashMovement:
         report: BuildSessionReport,
         uow: UnitOfWork,
         clock: Clock,
+        ledger: Ledger | None = None,
     ) -> None:
         self._cash = cash
         self._report = report
         self._uow = uow
         self._clock = clock
+        self._ledger = ledger or NullLedger()
 
     def __call__(self, *, user_id: int, type_: str, amount: Money, reason: str):
         with self._uow:
@@ -192,7 +196,15 @@ class AddCashMovement:
             self._uow.commit()
         return movimiento
 
-    def apply(self, *, user_id: int, type_: str, amount: Money, reason: str):
+    def apply(
+        self,
+        *,
+        user_id: int,
+        type_: str,
+        amount: Money,
+        reason: str,
+        from_supplier_payment: bool = False,
+    ):
         """El movimiento, comprobado y escrito, **sin confirmar**.
 
         Existe separado para que un pago a proveedor pueda sacar el efectivo
@@ -218,20 +230,49 @@ class AddCashMovement:
         )
         check_movement(type_, amount, reason, cifras.expected)
 
-        return self._cash.add_movement(
+        momento = self._clock.now()
+        movimiento = self._cash.add_movement(
             session_id=sesion.id,
             type_=type_,
             amount=amount,
             reason=reason.strip(),
-            created_at=self._clock.now(),
+            created_at=momento,
         )
+
+        # El que nació de un abono a proveedor **no deja asiento**: esa plata ya
+        # la asienta el abono, y las dos juntas la contarían dos veces (RN-56).
+        # Quién decide es el dominio, con su prueba; acá solo se le cuenta de
+        # dónde vino el movimiento.
+        self._ledger.record_cash_movement(
+            DrawerMovement(
+                id=movimiento.id,
+                date=momento.date(),
+                type=type_,
+                amount=amount,
+                from_supplier_payment=from_supplier_payment,
+            )
+        )
+        return movimiento
 
 
 class CloseCashSession:
-    def __init__(self, *, cash: CashRepository, uow: UnitOfWork, clock: Clock) -> None:
+    def __init__(
+        self,
+        *,
+        cash: CashRepository,
+        uow: UnitOfWork,
+        clock: Clock,
+        report: BuildSessionReport | None = None,
+        ledger: Ledger | None = None,
+    ) -> None:
         self._cash = cash
         self._uow = uow
         self._clock = clock
+        # El arqueo hace falta para el asiento del cierre: la diferencia entre lo
+        # esperado y lo contado es todo lo que ese asiento dice. Sin libro no se
+        # arma, y por eso los dos son opcionales juntos.
+        self._report = report
+        self._ledger = ledger or NullLedger()
 
     def __call__(self, *, user_id: int, counted: Money, notes: str | None):
         sesion = self._cash.open_session(user_id)
@@ -241,8 +282,36 @@ class CloseCashSession:
         check_opening(counted)
 
         with self._uow:
-            cerrada = self._cash.close_session(
-                sesion.id, counted=counted, closed_at=self._clock.now(), notes=notes
+            momento = self._clock.now()
+            # **Antes** de cerrar: el arqueo suma las ventas de la ventana del
+            # turno, y la ventana termina en `closed_at`. Calculado después,
+            # `close_session` ya habría escrito esa marca y el resultado sería el
+            # mismo, pero dependería de un orden que nadie escribió.
+            cifras = (
+                self._report(
+                    session_id=sesion.id,
+                    user_id=user_id,
+                    opening=Money(sesion.opening_amount),
+                    opened_at=sesion.opened_at,
+                    closed_at=momento,
+                    counted=counted,
+                )
+                if self._report is not None
+                else None
             )
+
+            cerrada = self._cash.close_session(
+                sesion.id, counted=counted, closed_at=momento, notes=notes
+            )
+
+            if cifras is not None:
+                # Un turno que cuadra no deja asiento, y eso lo decide el
+                # dominio: acá no hay un `if diferencia`.
+                self._ledger.record_cash_close(
+                    ClosedSession(id=sesion.id, date=momento.date()),
+                    expected=cifras.expected,
+                    counted=counted,
+                )
+
             self._uow.commit()
         return cerrada

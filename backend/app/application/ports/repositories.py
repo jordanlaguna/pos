@@ -220,6 +220,20 @@ class SaleRepository(Protocol):
         """
         ...
 
+    def sold_costs(self, sale_id: int) -> dict[int, Money]:
+        """El costo **congelado** de cada línea, para las que lo tengan (RN-63).
+
+        Lo necesita el asiento de la devolución: devolver mercadería la repone al
+        inventario por lo que costó **cuando se vendió**, no por lo que cuesta
+        hoy. Con el costo de hoy, devolver algo comprado más caro después
+        inventaría utilidad de la nada.
+
+        Las líneas sin costo no salen en el diccionario: son las ventas
+        anteriores a F11 y los productos que nunca se compraron, y para esas el
+        asiento simplemente no lleva el par costo / inventario.
+        """
+        ...
+
     def sold_prices(self, sale_id: int) -> dict[int, Money]:
         """
         A qué precio se vendió cada producto **en esa venta**.

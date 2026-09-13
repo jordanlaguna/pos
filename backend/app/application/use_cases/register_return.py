@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.application.ports.clock import Clock
+from app.application.ports.ledger import Ledger, NullLedger
 from app.application.ports.repositories import (
     ProductRepository,
     ReturnRepository,
@@ -26,6 +27,7 @@ from app.application.ports.repositories import (
     UnitOfWork,
 )
 from app.domain.errors import DomainError, InvalidQuantity
+from app.domain.ledger import ReturnDocument, SoldLine
 from app.domain.money import Money
 from app.domain.returns import (
     ReturnLine,
@@ -84,6 +86,7 @@ class RegisterReturn:
         settings: SettingsRepository,
         uow: UnitOfWork,
         clock: Clock,
+        ledger: Ledger | None = None,
     ) -> None:
         self._sales = sales
         self._returns = returns
@@ -91,6 +94,7 @@ class RegisterReturn:
         self._settings = settings
         self._uow = uow
         self._clock = clock
+        self._ledger = ledger or NullLedger()
 
     def __call__(self, request: ReturnRequest) -> RegisteredReturn:
         venta = self._sales.get(request.sale_id)
@@ -104,6 +108,10 @@ class RegisterReturn:
         vendido = self._sales.sold_quantities(request.sale_id)
         precios = self._sales.sold_prices(request.sale_id)
         tarifas = self._sales.sold_tax_rates(request.sale_id)
+        # El costo con el que salió la mercadería (RN-63). Devolverla al
+        # inventario por lo que cuesta hoy inventaría utilidad cada vez que el
+        # proveedor sube el precio entre la venta y la devolución.
+        costos = self._sales.sold_costs(request.sale_id)
         ya_devuelto = self._returns.returned_quantities(request.sale_id)
 
         # La tasa del ENCABEZADO de esta venta, reconstruida de sus montos. Desde
@@ -141,6 +149,8 @@ class RegisterReturn:
         totales = refund_totals(lineas, del_encabezado)
 
         with self._uow:
+            # Una sola lectura del reloj para la devolución y su asiento.
+            momento = self._clock.now()
             id_return = self._returns.add(
                 sale_id=request.sale_id,
                 user_id=request.user_id,
@@ -148,12 +158,27 @@ class RegisterReturn:
                 subtotal=totales.subtotal,
                 tax=totales.tax,
                 total=totales.total,
-                created_at=self._clock.now(),
+                created_at=momento,
                 lines=lineas,
             )
             for linea in lineas:
                 # Lo que el sistema original no hacía: reponer.
                 self._products.adjust_stock(linea.product_id, +linea.quantity)
+
+            # El inverso de la venta, dentro de la misma transacción (RN-59).
+            self._ledger.record_return(
+                ReturnDocument(id=id_return, date=momento.date()),
+                [
+                    SoldLine(
+                        subtotal=linea.subtotal,
+                        tax=(linea.tax_rate or del_encabezado).apply(linea.subtotal),
+                        tax_rate=linea.tax_rate or del_encabezado,
+                        quantity=linea.quantity,
+                        unit_cost=costos.get(linea.product_id),
+                    )
+                    for linea in lineas
+                ],
+            )
             self._uow.commit()
 
         despues = dict(ya_devuelto)

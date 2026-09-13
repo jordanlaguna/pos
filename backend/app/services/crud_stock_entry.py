@@ -52,7 +52,12 @@ from app.models.model_person import Person
 from app.models.model_product import Product
 from app.models.model_stock_entry import StockEntry, StockEntryDetail
 from app.models.model_user import User
-from app.services import crud_categories, crud_membership, crud_supplier_payment
+from app.services import (
+    crud_accounting,
+    crud_categories,
+    crud_membership,
+    crud_supplier_payment,
+)
 from app.utils.api_errors import api_error
 
 
@@ -120,6 +125,9 @@ def serialize(db: Session, entry: StockEntry) -> dict:
 def create_entry(db: Session, payload) -> dict:
     productos = SqlAlchemyProductRepository(db)
     entradas = SqlAlchemyStockEntryRepository(db)
+    # Uno solo para los tres: la compra, su abono de contado y la salida de caja
+    # de ese abono son el mismo hecho y tienen que ver el mismo mapeo.
+    contable = crud_accounting.libro(db, user_id=payload.user_id)
     caso = RegisterStockEntry(
         products=productos,
         entries=entradas,
@@ -131,10 +139,12 @@ def create_entry(db: Session, payload) -> dict:
         payer=PaySupplier(
             entries=entradas,
             payments=SqlAlchemySupplierPaymentRepository(db),
-            movements=crud_supplier_payment.movimientos_de_caja(db),
+            movements=crud_supplier_payment.movimientos_de_caja(db, contable),
             uow=SqlAlchemyUnitOfWork(db),
             clock=SystemClock(),
+            ledger=contable,
         ),
+        ledger=contable,
     )
 
     # RN-6, también acá: la entrada de mercadería crea productos, así que sin
