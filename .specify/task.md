@@ -2832,18 +2832,54 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       cuyo plan no trae el módulo: con proveedor responde 403
       `module_not_in_plan`, y sin proveedor la entrada sube el stock igual.
 
-- [ ] **T-1012** Cuentas por pagar y reporte: `GET /payables` (saldo por compra
+- [x] **T-1012** Cuentas por pagar y reporte: `GET /payables` (saldo por compra
       y por proveedor, antigüedad) y `GET /reports/purchases` (base e impuesto
       **por tarifa**). RF-44, RF-45.
 
-      **Los dos filtran por `status = 'aplicada'`.** Es lo que hace que anular
-      revierta la cuenta por pagar (RN-57): el saldo es implícito —total menos
-      abonos— así que una anulada que se colara seguiría debiendo, y el crédito
-      fiscal de una compra anulada no existe.
+      **Los dos filtran por `status = 'aplicada'` y por `supplier_id NOT
+      NULL`.** Lo primero es lo que hace que anular revierta la cuenta por pagar
+      (RN-57): el saldo es implícito —total menos abonos— así que basta con
+      dejar las anuladas fuera. Lo segundo es RN-52: una entrada sin proveedor
+      no debe nada ni respalda un crédito fiscal, por mucho que haya movido
+      inventario.
 
-      **Verificación:** con una compra al 13 % y otra al 1 %, el reporte da dos
-      bases y dos impuestos separados; una compra vencida hace 45 días cae en
-      31–60; una anulada no aparece en ninguno de los dos.
+      **El reporte filtra por la fecha del documento, no por la de carga.** Una
+      factura del 28 que se digita el 3 es IVA del mes de la factura; contarla
+      por la carga desplazaría **dos** declaraciones a la vez. Para las que no
+      la traen se usa la de carga, que es lo único que hay.
+
+      **Verificación:** `tests/test_compras.py`, 12 pruebas nuevas contra la
+      pila; `tests/test_aislamiento.py`, dos más. 982 del backend con cobertura
+      100 %; 572 del POS y `npm run check` 0/0.
+
+      Tres cosas que decidió el código:
+
+      1. **`/payables` es su propio prefijo y no `/purchases/payables`.** Lo que
+         se debe no es una compra sino el estado de un conjunto de ellas, y F11
+         va a leerlo para el asiento sin entrar por el módulo de compras.
+         Tampoco lleva `require_module`: leer se puede siempre (RN-50), y dejar
+         de pagar no es una funcionalidad que se compre.
+      2. **Los cuatro tramos vienen siempre**, aunque vayan en cero. Una tabla
+         que cambia de columnas según los datos se lee distinto cada vez, y el
+         tramo que falta es justo el que uno querría ver vacío.
+      3. **`days_overdue` lo calcula el servidor**, como `as_of`. Con el reloj
+         del cliente, dos cajas verían tramos distintos del mismo saldo.
+
+      **`crud_payables.py` lleva el filtro por compañía escrito a mano**, igual
+      que `crud_report.py` y por lo mismo: la consulta agrupa y no carga
+      entidades, así que el filtro automático de `tenancy.py` no la alcanza. Hay
+      prueba de aislamiento para las dos consultas nuevas.
+
+      **De paso, un defecto en las pruebas que no era de F10:** la base de la
+      pila de pruebas vive mientras viva la pila, así que un reporte comparado
+      contra un absoluto pasa la primera corrida y falla la segunda. Las de
+      reportes ahora miden **por diferencia**, y la de aislamiento le da a cada
+      corrida su propio día. Está anotado como defecto.
+
+      **Lo que no se hizo:** `GET /purchases?supplier=&from=&to=`, la lista de
+      compras que plan §12.4 menciona. No la pide ninguna tarea ni ninguna
+      pantalla: `/inventory/entries` ya lista las entradas, compras incluidas.
+      Si T-1013 la necesita con filtros propios, se agrega ahí.
 
 ### Frontend
 

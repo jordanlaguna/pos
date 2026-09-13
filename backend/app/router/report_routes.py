@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
 from app.models.model_user import User
+from app.schemas.schemas_purchases import PurchasesReport
 from app.schemas.schemas_report import (
     LowStockProduct,
     PaymentBreakdown,
@@ -70,6 +71,22 @@ def get_by_payment_method(
     admin: Sesion = Depends(require_admin),
 ):
     return crud_report.by_payment_method(db, date_from, date_to)
+
+
+@router.get("/purchases", response_model=PurchasesReport)
+def get_purchases(
+    date_from: str | None = FromParam,
+    date_to: str | None = ToParam,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """El crédito fiscal del periodo, por tarifa (RF-45).
+
+    Va con los demás reportes y no bajo `/purchases` porque es la mitad de
+    compras del D-104: quien lo lee está conciliando impuestos, no revisando lo
+    que compró.
+    """
+    return crud_report.purchases_by_rate(db, date_from, date_to)
 
 
 @router.get("/low_stock", response_model=list[LowStockProduct])

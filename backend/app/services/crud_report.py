@@ -24,6 +24,7 @@ from app.models.model_product import Product
 from app.models.model_return import Return
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
+from app.models.model_stock_entry import StockEntry, StockEntryDetail
 from app.utils import clock
 from app.utils.tenancy import compania_actual
 
@@ -199,6 +200,64 @@ def by_payment_method(db: Session, date_from: str | None, date_to: str | None) -
     return [
         {"payment_method": row[0], "count": int(row[1]), "total": _money(row[2])} for row in rows
     ]
+
+
+def purchases_by_rate(db: Session, date_from: str | None, date_to: str | None) -> dict:
+    """El crédito fiscal del periodo, desglosado por tarifa (RF-45).
+
+    Es la mitad de compras del D-104, y por eso son **tres** los filtros que no
+    se pueden mover:
+
+    1. Solo compras: una entrada sin proveedor no tiene documento que respalde
+       un crédito fiscal, aunque haya movido inventario (RN-52).
+    2. Solo aplicadas: el crédito de una compra anulada no existe.
+    3. Por **fecha del documento**, no de carga. Una factura del 28 que se
+       digita el 3 es IVA de setiembre, y contarla en octubre desplaza la
+       declaración de dos meses a la vez. Para las que no traen fecha —una
+       entrada vieja— se usa la de carga, que es lo único que hay.
+
+    El desglose se agrupa por la tarifa **del documento** y no por la del
+    producto: es lo que se pagó, que es lo que se acredita (RN-53).
+    """
+    start, end, desde, hasta = parse_range(date_from, date_to)
+    del_documento = func.coalesce(
+        StockEntry.document_date, func.date(StockEntry.created_at)
+    )
+
+    rows = (
+        db.query(
+            StockEntryDetail.tax_rate,
+            func.coalesce(func.sum(StockEntryDetail.subtotal), 0),
+            func.coalesce(func.sum(StockEntryDetail.tax_amount), 0),
+        )
+        .join(StockEntry, StockEntry.id == StockEntryDetail.entry_id)
+        .filter(
+            StockEntry.company_id == compania_actual(),
+            StockEntry.status == "aplicada",
+            StockEntry.supplier_id.isnot(None),
+            del_documento >= start.date(),
+            del_documento <= end.date(),
+        )
+        .group_by(StockEntryDetail.tax_rate)
+        .order_by(StockEntryDetail.tax_rate)
+        .all()
+    )
+
+    por_tarifa = [
+        {"tax_rate": float(row[0] or 0), "base": _money(row[1]), "tax": _money(row[2])}
+        for row in rows
+    ]
+    base = _money(sum(Decimal(str(r["base"])) for r in por_tarifa))
+    impuesto = _money(sum(Decimal(str(r["tax"])) for r in por_tarifa))
+
+    return {
+        "date_from": desde,
+        "date_to": hasta,
+        "subtotal": base,
+        "tax": impuesto,
+        "total": _money(Decimal(str(base)) + Decimal(str(impuesto))),
+        "by_rate": por_tarifa,
+    }
 
 
 def low_stock(db: Session, threshold: int = 10) -> list[Product]:

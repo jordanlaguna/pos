@@ -409,6 +409,12 @@
       "causa": "`uq_settings_company` garantiza una fila de configuración por compañía, y el código de terminal es por terminal. El campo prometía un dato que su propia forma no podía guardar.",
       "arreglo": "Se quitó. La sucursal y la terminal se muestran desde la sesión, que ya las resolvía bien.",
       "fecha": "2026-09-06"
+    },
+    {
+      "defecto": "Las pruebas de reportes comparaban contra absolutos y la base de pruebas sobrevive a la corrida",
+      "sintoma": "`tests/test_compras.py::TestElReporteDeCompras` pasaba la primera vez y fallaba la segunda con el doble de impuesto en el mismo día; `test_aislamiento.py::test_el_credito_fiscal_de_A_no_suma_las_compras_de_B` llegó a ver 780 donde esperaba 260. El fallo señala el reporte, que es el único sitio donde no está el problema.",
+      "causa": "`docker-compose.test.yml` conserva el contenedor `db` entre corridas de pytest —solo se recrea `fastapi` al reconstruir—, así que cada corrida agrega otra compra con la misma fecha de documento. Un `assert == 130` le está pidiendo a la base que esté vacía sin decirlo.",
+      "arreglo": "Las de reportes miden por diferencia: leen el total antes, compran, y comparan la resta. La de aislamiento usa una fecha derivada del reloj al importar el módulo —distinta en cada corrida y la misma para las dos compañías—, porque ahí lo que se compara es un total y no un delta."
     }
   ],
   "decisiones": [
@@ -1998,6 +2004,18 @@
         "T-1011b, decidida con el usuario: `POST /inventory/entry` con `supplier_id` exige el módulo `purchases`. Era un hueco de T-1009 —una compañía que bajaba de plan seguía registrando compras— y se cerró con `exigir_modulo()` dentro del endpoint, no como dependencia. 968 pruebas en verde."
       ],
       "lo_que_ensena": "**Una regla que depende de dos fuentes hay que colgarla de la que manda.** «¿Esta compra tiene abonos?» se puede responder mirando `stock_entries.supplier_id` —si no es compra, no hay— o preguntándole a `supplier_payments`. Lo primero es una consulta menos y parece equivalente; lo segundo es la verdad. No lo son: la columna y la tabla pueden contradecirse, y el día que se contradigan la versión barata deja anular una compra con plata pagada encima. Se pregunta siempre, y una entrada que no es compra contesta con la lista vacía. Lo mismo pasó con el motivo obligatorio: se comprueba DESPUÉS de anular en memoria, porque hasta ese momento no se sabe cuál de las dos cosas es, y pedirlo antes habría roto la pantalla de entradas que ya existe."
+    },
+    {
+      "fecha": "2026-09-12",
+      "titulo": "Cuentas por pagar y el crédito fiscal del periodo",
+      "hecho": [
+        "T-1012: `GET /payables` —saldo por proveedor y por compra, con los cuatro tramos de antigüedad— y `GET /reports/purchases` —base e impuesto por tarifa, el crédito fiscal del D-104—.",
+        "Los dos filtran por `status='aplicada'` y `supplier_id NOT NULL`: así anular revierte la cuenta por pagar sin tocar nada (RN-57) y una entrada sin proveedor no inventa un crédito fiscal (RN-52).",
+        "El reporte agrupa por la fecha DEL DOCUMENTO, con la de carga como respaldo. `crud_payables.py` lleva el filtro por compañía escrito a mano, como `crud_report.py`, y hay prueba de aislamiento para las dos consultas.",
+        "Defecto corregido en la batería: los reportes se comparaban contra absolutos y la base de pruebas sobrevive a la corrida, así que la segunda vez veían el doble. Ahora miden por diferencia.",
+        "Verde: 982 pruebas del backend con cobertura 100 % en dominio y aplicación, 572 del POS con 100 %, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Una prueba que compara contra un absoluto le pide a la base que esté vacía, y nadie se lo prometió.** `assert reporte['tax'] == 130` pasó la primera corrida y falló la segunda con 260, y a la tercera con 390: la pila de pruebas conserva su base mientras no se la tumbe, así que cada corrida agrega otra compra al mismo día. El síntoma es cruel porque señala el reporte —que está bien— y aparece un rato después de escribirlo, cuando ya se cambió otra cosa. La salida tiene dos formas y las dos aparecieron acá: medir **por diferencia** —leer antes, actuar, restar— cuando la prueba comparte los datos con las demás, o **darle a cada corrida su propio día** cuando lo que se compara es un total. Lo que no sirve es limpiar la base entre pruebas: es lento y además esconde que el reporte tiene que ser correcto con datos de otros, que es como va a correr siempre en producción."
     }
   ],
   "$reparto": {

@@ -19,12 +19,25 @@ compara ambas listas y falla cuando aparece una ruta nueva sin cubrir.
 
 from __future__ import annotations
 
+import time
+from datetime import date, timedelta
+
 import pytest
 import requests
 
 from .conftest import API, TIMEOUT, Api, entrar, marca_unica
 
 pytestmark = pytest.mark.characterization
+
+#: La fecha del documento de la compra que crean los dos mundos, **distinta en
+#: cada corrida y la misma para A y para B**. Distinta porque la base de pruebas
+#: vive mientras viva la pila: con un día fijo, la segunda corrida vería el
+#: doble de crédito fiscal en ese día y la prueba fallaría por acumulación y no
+#: por una fuga. La misma para las dos porque lo que se compara es que A vea lo
+#: suyo y no la suma de ambas.
+DIA_DE_LA_COMPRA = (
+    date(2020, 1, 1) + timedelta(days=int(time.time()) % 3000)
+).isoformat()
 
 
 # --------------------------------------------------------------------------
@@ -126,6 +139,33 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         },
     )
 
+    # Una compra de verdad —con proveedor, impuesto y a crédito—, que es lo que
+    # alimenta `/payables` y `/reports/purchases`. La entrada de arriba no
+    # sirve: sin `supplier_id` no es una compra y no aparece en ninguno de los
+    # dos (RN-52).
+    compra = cliente.ok(
+        "POST",
+        "/inventory/entry",
+        {
+            "document_number": f"AISLC{marca}",
+            "source": "manual",
+            "user_id": cliente.user_id,  # type: ignore[attr-defined]
+            "supplier_id": proveedor["id"],
+            "document_date": DIA_DE_LA_COMPRA,
+            "payment_terms": "credit",
+            "payment_terms_days": 30,
+            "lines": [
+                {
+                    "id_product": producto["id_product"],
+                    "quantity": 2,
+                    "unit_cost": 1000,
+                    "tax_rate": 13,
+                    "tax_amount": 260,
+                }
+            ],
+        },
+    )
+
     return {
         "categoria_id": categoria["id"],
         "producto": producto,
@@ -133,6 +173,7 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         "venta_id": venta["id_sale"],
         "devolucion_id": devolucion["id_return"],
         "entrada_id": entrada["id_entry"],
+        "compra_id": compra["id_entry"],
         "proveedor_id": proveedor["id"],
         "company_id": cliente.company_id,  # type: ignore[attr-defined]
         "user_id": cliente.user_id,  # type: ignore[attr-defined]
@@ -387,6 +428,33 @@ class TestLosReportesNoSuman:
         for dia in comunes:
             assert dias_a[dia] != dias_a[dia] + dias_b[dia] or dias_b[dia] == 0
 
+    def test_las_cuentas_por_pagar_no_traen_las_deudas_ajenas(
+        self, api: Api, mundo_a: dict, mundo_b: dict
+    ):
+        """`/payables` también agrupa, así que tampoco la cubre el filtro
+        automático: su `company_id ==` está escrito a mano en
+        `crud_payables.py`. Sin él, el dueño de A vería lo que debe B —y a
+        quién— sumado a lo suyo."""
+        pagina = api.ok("GET", "/payables")
+        compras = [c["entry_id"] for s in pagina["suppliers"] for c in s["purchases"]]
+        proveedores = [s["supplier_id"] for s in pagina["suppliers"]]
+
+        assert mundo_a["compra_id"] in compras, "no se ve la compra propia"
+        assert mundo_b["compra_id"] not in compras
+        assert mundo_b["proveedor_id"] not in proveedores
+
+    def test_el_credito_fiscal_de_A_no_suma_las_compras_de_B(
+        self, api: Api, api_b: Api, mundo_a: dict, mundo_b: dict
+    ):
+        # Las dos compraron el mismo día por el mismo monto. Si el filtro no
+        # estuviera, cada una vería el doble —y declararía el doble—.
+        rango = f"from={DIA_DE_LA_COMPRA}&to={DIA_DE_LA_COMPRA}"
+        de_a = api.ok("GET", f"/reports/purchases?{rango}")
+        de_b = api_b.ok("GET", f"/reports/purchases?{rango}")
+
+        assert de_a["tax"] == 260 and de_b["tax"] == 260
+        assert de_a["subtotal"] == 2000, "el reporte de A está sumando las compras de B"
+
 
 # --------------------------------------------------------------------------
 # 4. La caja
@@ -640,6 +708,8 @@ FUERA_DE_LA_BATERIA = {
     "/reports/low_stock": "probado en TestLosReportesNoSuman",
     "/reports/sales_by_day": "probado en TestLosReportesNoSuman",
     "/reports/by_payment_method": "sin cobertura todavía",
+    "/reports/purchases": "probado en TestLosReportesNoSuman",
+    "/payables": "probado en TestLosReportesNoSuman",
 }
 
 

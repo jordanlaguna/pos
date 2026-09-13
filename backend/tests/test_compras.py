@@ -8,6 +8,8 @@ abono no fueran la misma plata, el esperado del turno no se movería.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 
 from tests.conftest import Api, codigo, entrar, marca_unica
@@ -394,6 +396,259 @@ class TestAnularUnaCompra:
         api.ok("POST", f"/inventory/entry/{entrada['id_entry']}/cancel")
 
         assert api.ok("GET", f"/products/product/{item['barcode']}")["stock"] == 0
+
+
+class TestLasCuentasPorPagar:
+    """RF-44 contra la pila real.
+
+    El saldo no se guarda: es el total menos los abonos (RN-55). Estas pruebas
+    miran que esa resta y la antigüedad lleguen a la respuesta, y sobre todo
+    **qué queda fuera**: lo pagado, lo anulado y lo que no es compra.
+    """
+
+    def de_este(self, api: Api, proveedor, **filtros) -> dict | None:
+        """El bloque de este proveedor, que es el único que esta clase mira.
+
+        La batería comparte compañía, así que `/payables` trae también las
+        compras de las otras pruebas: buscar la propia es lo que hace que el
+        orden en que corren no importe.
+        """
+        ruta = "/payables" + (f"?supplier_id={filtros['supplier_id']}" if filtros else "")
+        pagina = api.ok("GET", ruta)
+        return next(
+            (s for s in pagina["suppliers"] if s["supplier_id"] == proveedor["id"]), None
+        )
+
+    def test_una_compra_a_credito_aparece_con_su_saldo(self, api: Api, proveedor, producto):
+        compra = comprar(api, proveedor, producto("Comprado", 2000, 0))
+        api.ok(
+            "POST",
+            f"/purchases/{compra['id_entry']}/payments",
+            {"amount": 400, "method": "transfer"},
+        )
+
+        mia = self.de_este(api, proveedor)
+        fila = next(c for c in mia["purchases"] if c["entry_id"] == compra["id_entry"])
+
+        assert (fila["total"], fila["paid"], fila["balance"]) == (1000, 400, 600)
+        assert fila["due_date"] == "2026-10-10"
+
+    def test_una_pagada_no_es_una_cuenta_por_pagar(self, api: Api, proveedor, producto):
+        compra = comprar(api, proveedor, producto("Comprado", 2000, 0))
+        api.ok(
+            "POST",
+            f"/purchases/{compra['id_entry']}/payments",
+            {"amount": 1000, "method": "transfer"},
+        )
+
+        mia = self.de_este(api, proveedor) or {"purchases": []}
+        assert compra["id_entry"] not in [c["entry_id"] for c in mia["purchases"]]
+
+    def test_una_anulada_tampoco(self, api: Api, proveedor, producto):
+        # Es lo que hace que anular revierta la cuenta por pagar (RN-57): el
+        # saldo es implícito, así que basta con dejarla fuera de acá.
+        compra = comprar(api, proveedor, producto("Comprado", 2000, 0))
+        assert compra["id_entry"] in [
+            c["entry_id"] for c in self.de_este(api, proveedor)["purchases"]
+        ]
+
+        api.ok(
+            "POST",
+            f"/inventory/entry/{compra['id_entry']}/cancel",
+            {"reason": "Cargada dos veces"},
+        )
+
+        mia = self.de_este(api, proveedor) or {"purchases": []}
+        assert compra["id_entry"] not in [c["entry_id"] for c in mia["purchases"]]
+
+    def test_el_saldo_del_proveedor_es_la_suma_de_sus_compras(
+        self, api: Api, proveedor, producto
+    ):
+        antes = self.de_este(api, proveedor)
+        base = antes["balance"] if antes else 0
+        comprar(api, proveedor, producto("Comprado", 2000, 0), total_unitario=700)
+
+        mia = self.de_este(api, proveedor)
+        assert mia["balance"] == round(base + 700, 2)
+        assert mia["balance"] == round(sum(c["balance"] for c in mia["purchases"]), 2)
+
+    def test_siempre_vienen_los_cuatro_tramos(self, api: Api):
+        pagina = api.ok("GET", "/payables")
+        assert [t["bucket"] for t in pagina["by_bucket"]] == [0, 30, 60, 90]
+
+    def test_una_vencida_hace_45_dias_cae_en_31_60(self, api: Api, proveedor, producto):
+        # La fecha de hoy la pone el servidor: con el reloj del cliente, dos
+        # cajas verían tramos distintos del mismo saldo.
+        hoy = date.fromisoformat(api.ok("GET", "/payables")["as_of"])
+        # Un día de plazo desde hace 45: vence hace 44, que es el tramo 31–60.
+        # Con plazo cero sería de contado y no vencería nunca.
+        compra = comprar(
+            api,
+            proveedor,
+            producto("Comprado", 2000, 0),
+            document_date=(hoy - timedelta(days=45)).isoformat(),
+            payment_terms_days=1,
+        )
+
+        fila = next(
+            c
+            for c in self.de_este(api, proveedor)["purchases"]
+            if c["entry_id"] == compra["id_entry"]
+        )
+        assert fila["bucket"] == 30, "44 días de atraso tienen que caer en 31–60"
+        assert fila["days_overdue"] == 44
+
+    def test_el_filtro_por_proveedor_deja_solo_ese(self, api: Api, proveedor, producto):
+        comprar(api, proveedor, producto("Comprado", 2000, 0))
+        pagina = api.ok("GET", f"/payables?supplier_id={proveedor['id']}")
+        assert [s["supplier_id"] for s in pagina["suppliers"]] == [proveedor["id"]]
+
+    def test_una_entrada_sin_proveedor_no_es_una_cuenta_por_pagar(self, api: Api, producto):
+        # No genera cuenta por pagar (RN-52), por mucho que haya movido stock.
+        antes = api.ok("GET", "/payables")["total"]
+        api.ok(
+            "POST",
+            "/inventory/entry",
+            {
+                "document_number": f"SIN-{marca_unica()}",
+                "source": "manual",
+                "user_id": api.user_id,  # type: ignore[attr-defined]
+                "lines": [
+                    {
+                        "id_product": producto("Comprado", 1000, 0)["id_product"],
+                        "quantity": 1,
+                        "unit_cost": 500,
+                    }
+                ],
+            },
+        )
+        assert api.ok("GET", "/payables")["total"] == antes
+
+
+class TestElReporteDeCompras:
+    """RF-45: el crédito fiscal del periodo, por tarifa.
+
+    Todo se mide **por diferencia** y no contra un absoluto. La base de pruebas
+    vive mientras viva la pila, así que dos corridas seguidas dejan el doble de
+    compras del mismo día: un `assert reporte["tax"] == 130` pasa la primera vez
+    y falla la segunda por una razón que no tiene nada que ver con el código.
+    """
+
+    @staticmethod
+    def reporte(api: Api, desde: str, hasta: str | None = None) -> dict:
+        return api.ok("GET", f"/reports/purchases?from={desde}&to={hasta or desde}")
+
+    @staticmethod
+    def tarifas(reporte: dict) -> dict[float, tuple[float, float]]:
+        return {r["tax_rate"]: (r["base"], r["tax"]) for r in reporte["by_rate"]}
+
+    def test_separa_las_bases_y_los_impuestos_por_tarifa(self, api: Api, proveedor, producto):
+        item = producto("Comprado", 2000, 0)
+        dia = "2026-03-15"
+        antes = self.tarifas(self.reporte(api, dia))
+
+        comprar(
+            api,
+            proveedor,
+            item,
+            document_date=dia,
+            lines=[
+                {"id_product": item["id_product"], "quantity": 1, "unit_cost": 1000,
+                 "tax_rate": 13, "tax_amount": 130},
+                {"id_product": item["id_product"], "quantity": 1, "unit_cost": 2000,
+                 "tax_rate": 1, "tax_amount": 20},
+            ],
+        )
+        despues = self.tarifas(self.reporte(api, dia))
+
+        # El 1 % y el 13 % llegan separados: el promedio de los dos no es
+        # ninguno, y el D-104 los pide por aparte.
+        assert self.crecio(antes, despues, 1.0) == (2000, 20)
+        assert self.crecio(antes, despues, 13.0) == (1000, 130)
+
+    def test_el_periodo_es_el_de_la_fecha_del_documento(self, api: Api, proveedor, producto):
+        """La regla que mueve una declaración de mes.
+
+        Una factura del 28 que se digita el 3 es IVA del mes de la factura.
+        Contarla por la fecha de carga la sacaría de su periodo y la metería en
+        el siguiente, desplazando las dos declaraciones a la vez.
+        """
+        item = producto("Comprado", 2000, 0)
+        abril_antes = self.reporte(api, "2026-04-01", "2026-04-30")["tax"]
+        mayo_antes = self.reporte(api, "2026-05-01", "2026-05-31")["tax"]
+
+        comprar(
+            api,
+            proveedor,
+            item,
+            document_date="2026-04-28",
+            lines=[
+                {"id_product": item["id_product"], "quantity": 1, "unit_cost": 5000,
+                 "tax_rate": 13, "tax_amount": 650}
+            ],
+        )
+
+        assert self.reporte(api, "2026-04-01", "2026-04-30")["tax"] - abril_antes == 650
+        assert self.reporte(api, "2026-05-01", "2026-05-31")["tax"] - mayo_antes == 0, (
+            "la factura de abril se contó en mayo: el reporte está mirando la "
+            "fecha de carga y no la del documento"
+        )
+
+    def test_una_anulada_no_deja_credito_fiscal(self, api: Api, proveedor, producto):
+        item = producto("Comprado", 2000, 0)
+        dia = "2026-06-10"
+        antes = self.reporte(api, dia)["tax"]
+
+        compra = comprar(
+            api,
+            proveedor,
+            item,
+            document_date=dia,
+            lines=[
+                {"id_product": item["id_product"], "quantity": 1, "unit_cost": 1000,
+                 "tax_rate": 13, "tax_amount": 130}
+            ],
+        )
+        assert self.reporte(api, dia)["tax"] - antes == 130
+
+        api.ok(
+            "POST",
+            f"/inventory/entry/{compra['id_entry']}/cancel",
+            {"reason": "No llegó la mercadería"},
+        )
+
+        assert self.reporte(api, dia)["tax"] == antes
+
+    def test_una_entrada_sin_proveedor_no_entra(self, api: Api, producto):
+        # Sin documento de proveedor no hay crédito fiscal que acreditar, por
+        # mucho que la entrada haya movido inventario (RN-52).
+        item = producto("Comprado", 2000, 0)
+        dia = "2026-07-20"
+        antes = self.reporte(api, dia)["tax"]
+
+        api.ok(
+            "POST",
+            "/inventory/entry",
+            {
+                "document_number": f"SIN-{marca_unica()}",
+                "source": "manual",
+                "user_id": api.user_id,  # type: ignore[attr-defined]
+                "document_date": dia,
+                "lines": [
+                    {"id_product": item["id_product"], "quantity": 1, "unit_cost": 1000,
+                     "tax_rate": 13, "tax_amount": 130}
+                ],
+            },
+        )
+
+        assert self.reporte(api, dia)["tax"] == antes
+
+    @staticmethod
+    def crecio(antes: dict, despues: dict, tarifa: float) -> tuple[float, float]:
+        """Cuánto creció la base y el impuesto de una tarifa."""
+        base_antes, impuesto_antes = antes.get(tarifa, (0, 0))
+        base, impuesto = despues[tarifa]
+        return round(base - base_antes, 2), round(impuesto - impuesto_antes, 2)
 
 
 class TestElModuloDelPlan:

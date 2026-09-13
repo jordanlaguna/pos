@@ -1693,7 +1693,9 @@ POST /inventory/entry                admin · la vista previa confirmada. Con
                                      (T-1011b). También recibe lo que el BFF
                                      sacó del XML: proveedor, condición y
                                      líneas con su impuesto
-GET  /purchases?supplier=&from=&to=  cualquiera con el módulo
+GET  /inventory/entries              lista entradas y compras. No se agregó un
+                                     `GET /purchases` aparte: no lo pide
+                                     ninguna pantalla (T-1012)
 POST /inventory/entry/{id}/cancel    admin · {reason} opcional, y obligatorio
                                      si la entrada es compra (T-1011). No hay
                                      `/purchases/{id}/void`: es el mismo acto
@@ -1701,8 +1703,12 @@ POST /inventory/entry/{id}/cancel    admin · {reason} opcional, y obligatorio
 POST /purchases/{id}/payments        admin · {amount, method, reference, reason}
                                      `reason` es el motivo del movimiento de
                                      caja, armado por el POS (RN-30)
-GET  /payables?supplier=             saldos por compra y antigüedad
-GET  /reports/purchases?from=&to=    base e impuesto por tarifa (RF-45)
+GET  /payables?supplier_id=          saldos por compra y antigüedad. Prefijo
+                                     propio y sin `require_module`: leer se
+                                     puede siempre (RN-50) y F11 lo lee para
+                                     el asiento sin entrar por compras
+GET  /reports/purchases?from=&to=    base e impuesto por tarifa (RF-45), por
+                                     **fecha del documento**
 ```
 
 **No hay un `POST /purchases` aparte: la compra se registra por
