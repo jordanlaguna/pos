@@ -55,6 +55,7 @@ from app.database.database import Base, engine
 
 # Los modelos se importan para que `Base.metadata` tenga las tablas; el orden de
 # las claves foráneas se declara abajo y no se deduce, para que se pueda leer.
+import app.models.model_accounting  # noqa: F401
 import app.models.model_cash  # noqa: F401
 import app.models.model_categories  # noqa: F401
 import app.models.model_client  # noqa: F401
@@ -97,6 +98,15 @@ TABLAS_DE_COMPANIA = [
     # Y los abonos al final de todo: referencian la compra y el movimiento de
     # caja, que para entonces ya están.
     "supplier_payments",
+    # Contabilidad (F11). El orden adentro es el de sus claves: las cuentas antes
+    # del mapeo que las usa, el periodo antes del asiento que le cuelga, y el
+    # asiento antes de sus líneas. Sin las cinco, restaurar una compañía dejaría
+    # un negocio con su historia y sin su libro.
+    "accounts",
+    "account_mappings",
+    "accounting_periods",
+    "journal_entries",
+    "journal_lines",
     "settings",
     "audit_log",
 ]

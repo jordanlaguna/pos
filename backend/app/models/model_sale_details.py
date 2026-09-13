@@ -29,6 +29,17 @@ class SaleDetail(TenantMixin, Base):
     # de cinco años aunque cambie cómo se redondea.
     tax_amount = Column(Numeric(10, 2), nullable=True)
 
+    # El costo promedio del producto AL MOMENTO DE VENDERSE (RN-63), congelado
+    # igual que la tarifa y por la misma razón. Vender hoy con costo ₡110 y
+    # comprar mañana a ₡150 no cambia el costo de lo que ya salió; leerlo de
+    # `products.cost` al armar el asiento reescribiría la utilidad del mes pasado
+    # cada vez que llega una factura del proveedor.
+    #
+    # NULL —y no 0— en lo anterior a F11 y en el producto que no tiene costo: 0
+    # diría «costó cero», que es falso. NULL dice «no se sabe», y una línea sin
+    # costo simplemente no asienta el par costo / inventario.
+    unit_cost = Column(Numeric(12, 2), nullable=True)
+
     # `company_id` acá es redundante: ya se sabe por la venta. Se paga un INT
     # por fila a cambio de que el filtro automático cubra también las consultas
     # que entran por el detalle sin pasar por la cabecera —«¿en qué facturas

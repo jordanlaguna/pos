@@ -7,6 +7,13 @@ from app.database.database import Base, engine
 
 # Los modelos se importan antes de create_all para que SQLAlchemy conozca todas
 # las tablas, incluidas las nuevas de caja y devoluciones.
+from app.models.model_accounting import (  # noqa: F401
+    Account,
+    AccountingPeriod,
+    AccountMapping,
+    JournalEntry,
+    JournalLine,
+)
 from app.models.model_cash import CashMovement, CashSession  # noqa: F401
 from app.models.model_company import (  # noqa: F401
     AuditLog,
