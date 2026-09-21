@@ -88,6 +88,18 @@ export const F = {
 
 	einvoicingEnvironment: () => masculino(m.field_einvoicing_environment()),
 	einvoicingActivity: () => femenino(m.field_einvoicing_activity()),
+	// Las credenciales de Hacienda (F6). El archivo y el PIN existen durante una
+	// petición y no vuelven a existir; acá solo se nombran para el «no».
+	certificateFile: () => masculino(m.field_certificate_file()),
+	certificatePin: () => masculino(m.field_certificate_pin()),
+	atvUser: () => masculino(m.field_atv_user()),
+	atvPassword: () => femenino(m.field_atv_password()),
+	// Sucursales y cajas (T-608). El código va aparte del nombre porque el «no»
+	// que da el backend es distinto: el nombre está vacío, el código no cabe.
+	branch: () => femenino(m.field_branch()),
+	branchCode: () => masculino(m.field_branch_code()),
+	terminalCode: () => masculino(m.field_terminal_code()),
+	officeName: () => masculino(m.field_office_name()),
 
 	// ---------------------------------------------- panel de soporte (F3)
 	companyName: () => masculino(m.field_company_name()),

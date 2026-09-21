@@ -42,6 +42,22 @@ def check_environment(value: object) -> str:
     return str(value)
 
 
+def needs_confirmation(target: object) -> bool:
+    """Si pasar a ese ambiente hay que confirmarlo (RN-35, T-611).
+
+    **Solo producción.** Es el momento en que los documentos dejan de ser un
+    ensayo y pasan a tener efecto fiscal, y RN-35 dice que no puede ocurrir por
+    haber tocado un desplegable sin querer.
+
+    Volver a pruebas **no** se confirma y sí se registra, y la asimetría es a
+    propósito: exigir confirmación para deshacer convierte la salida de un error
+    en un segundo trámite, justo cuando alguien acaba de darse cuenta de que
+    emitió en el ambiente equivocado. Que quede en bitácora es lo que hace que
+    el cambio no pase inadvertido, que es lo que de verdad importa de ese lado.
+    """
+    return check_environment(target) == PRODUCTION
+
+
 # ------------------------------------------------------- dónde vive Hacienda
 
 
@@ -99,6 +115,38 @@ _PUBLICADOS: Final[dict[str, HaciendaEndpoints]] = {
 #: entera a propósito: el día que TRIBU-CR mueva algo, lo que hay que poder
 #: hacer es apuntar a otro lado ese mismo día, no esperar una versión.
 OVERRIDABLE: Final = ("api_url", "idp_url", "client_id", "realm")
+
+
+#: El espacio de nombres de cada tipo de comprobante, por su código en el
+#: consecutivo (nota 3 del anexo).
+#:
+#: Viven **acá y no en el armador** por lo mismo que las URLs de arriba: son
+#: quién es Hacienda, y el guardián de este módulo tumba `pytest` si aparecen en
+#: otro archivo. No son configurables como las demás: un espacio de nombres
+#: identifica una versión del esquema, así que moverlo no es apuntar a otro
+#: servidor sino emitir otra cosa.
+_ESQUEMAS: Final = "https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4"
+
+NAMESPACES: Final[dict[str, str]] = {
+    "01": f"{_ESQUEMAS}/facturaElectronica",
+    "02": f"{_ESQUEMAS}/notaDebitoElectronica",
+    "03": f"{_ESQUEMAS}/notaCreditoElectronica",
+    "04": f"{_ESQUEMAS}/tiqueteElectronico",
+    "08": f"{_ESQUEMAS}/facturaElectronicaCompra",
+    "09": f"{_ESQUEMAS}/facturaElectronicaExportacion",
+    "10": f"{_ESQUEMAS}/reciboElectronicoPago",
+}
+
+#: El nombre del elemento raíz de cada uno, con el mismo código por llave.
+RAICES: Final[dict[str, str]] = {
+    "01": "FacturaElectronica",
+    "02": "NotaDebitoElectronica",
+    "03": "NotaCreditoElectronica",
+    "04": "TiqueteElectronico",
+    "08": "FacturaElectronicaCompra",
+    "09": "FacturaElectronicaExportacion",
+    "10": "ReciboElectronicoPago",
+}
 
 
 def endpoints(

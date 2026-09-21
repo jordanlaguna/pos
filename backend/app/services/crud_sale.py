@@ -173,6 +173,9 @@ def get_sale_detail(db: Session, sale_id: int) -> dict | None:
                 "tax_amount": (
                     float(detail.tax_amount) if detail.tax_amount is not None else None
                 ),
+                # El código de Hacienda con el que se cobró (RN-76). Del
+                # porcentaje no se vuelve al código, así que va guardado.
+                "tax_code": detail.tax_code,
             }
         )
 

@@ -49,6 +49,17 @@ class FeStatusOut(BaseModel):
     active: str
 
 
+class ActiveEnvironmentIn(BaseModel):
+    """A qué ambiente se pasa, y si se confirmó (RF-30, RN-35)."""
+
+    environment: str = Field(min_length=1, max_length=20)
+    #: Solo lo exige producción, y lo decide `domain/hacienda.py` —no esta clase—
+    #: para que la regla viva en un sitio con prueba. Está en el cuerpo y no en
+    #: la pantalla porque esconder un botón no es control de acceso: RN-35 dice
+    #: que esto no puede ocurrir por haber tocado un desplegable sin querer.
+    confirm: bool = False
+
+
 class AtvIn(BaseModel):
     """Usuario y contraseña de transmisión.
 

@@ -26,6 +26,10 @@ class FakeProduct:
     # las pruebas anteriores a F5 sigan describiendo el caso de siempre: un
     # catálogo sin tarifas propias.
     tax_rate: TaxRate | None = None
+    #: El código de tarifa de Hacienda (RN-76, F7). `None` es «sin clasificar
+    #: para factura electrónica», que es lo que tiene un catálogo heredado y lo
+    #: que traen las pruebas anteriores a F7.
+    tax_code: str | None = None
     #: Lo que cuesta (RN-54, F10). Cero por omisión: es «no se sabe», que es lo
     #: que tienen los productos de las pruebas anteriores a F10 y lo que hace
     #: que la primera compra establezca el costo.
@@ -570,8 +574,32 @@ class FakeFeCredentialsRepository:
         # de septiembre» sobre algo que se cambió hoy y que nadie probó.
         fila.atv_verified_at = None
 
-    def mark_verified(self, *, environment: str, at: datetime) -> None:
+    def set_verified(self, *, environment: str, at: datetime | None) -> None:
         self._fila(environment).atv_verified_at = at
+
+
+class FakeHaciendaIdp:
+    """El IdP de Hacienda, sin red (T-612).
+
+    Se le dice de antemano qué va a contestar, porque **los tres desenlaces de
+    RF-31 no se pueden provocar contra el de verdad**: «credenciales malas» sí,
+    pero «Hacienda caída» hay que esperar a que pase. Un adaptador que solo se
+    probara en vivo tendría dos de los tres caminos sin ejercitar nunca, y el
+    que faltaría es justo el que se confunde.
+    """
+
+    def __init__(self, *, falla: Exception | None = None, token: str = "tok-123") -> None:
+        self.falla = falla
+        self.token_devuelto = token
+        #: Con qué se le llamó. Que la contraseña llegue **descifrada** es la
+        #: mitad del trabajo del caso de uso, y sin mirarlo no se vería.
+        self.llamadas: list[tuple] = []
+
+    def token(self, endpoints, *, user: str, password: str) -> str:
+        self.llamadas.append((endpoints, user, password))
+        if self.falla is not None:
+            raise self.falla
+        return self.token_devuelto
 
 
 @dataclass

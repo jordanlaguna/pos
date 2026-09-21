@@ -55,6 +55,12 @@ class SaleItem(BaseModel):
     tax_rate: float | None = None
     tax_amount: float | None = None
 
+    # El código de tarifa de Hacienda con el que se cobró (F7, RN-76). Va acá y
+    # no se recalcula porque **del porcentaje no se vuelve al código**: un 0 %
+    # pudo ser una venta a la CCSS con derecho a crédito pleno o un bien no
+    # sujeto sin ninguno. En nulo para lo anterior a F7.
+    tax_code: str | None = None
+
 
 class SaleDetailResponse(SalesList):
     """Venta con sus líneas. La necesitan la factura y las devoluciones."""

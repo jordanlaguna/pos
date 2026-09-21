@@ -14,7 +14,34 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	return { clients };
 };
 
-function readClient(v: Validator) {
+/**
+ * La exoneración, leída del formulario (T-717, RN-78).
+ *
+ * **Los ocho campos viajan siempre**, aun vacíos, y eso es lo que permite
+ * quitársela a un cliente: el backend los trata como uno solo y los ocho vacíos
+ * son «no tiene». Mandarlos solo cuando hay algo dejaría la exoneración vieja
+ * pegada a la ficha.
+ *
+ * No se valida acá contra los catálogos: los desplegables solo ofrecen lo que
+ * se puede elegir y el servidor lo comprueba igual, así que repetir la tabla en
+ * un tercer sitio sería un lugar más donde desincronizarse.
+ */
+function readExemption(form: FormData) {
+	const campo = (nombre: string) => String(form.get(nombre) ?? '').trim();
+	const numero = (nombre: string) => (campo(nombre) ? Number(campo(nombre)) : null);
+	return {
+		exo_document_type: campo('exo_document_type') || null,
+		exo_document_number: campo('exo_document_number') || null,
+		exo_institution: campo('exo_institution') || null,
+		exo_institution_other: campo('exo_institution_other') || null,
+		exo_article: numero('exo_article'),
+		exo_subsection: numero('exo_subsection'),
+		exo_date: campo('exo_date') || null,
+		exo_points: numero('exo_points')
+	};
+}
+
+function readClient(v: Validator, form: FormData) {
 	return {
 		identification: v.digits('identification', F.identification(), { min: 9, max: 12 }),
 		name: v.text('name', F.name(), { max: 100 }),
@@ -24,15 +51,17 @@ function readClient(v: Validator) {
 		// El backend guarda el teléfono como entero, así que se manda numérico.
 		telephone: Number(v.digits('telephone', F.telephone(), { min: 8, max: 15 })),
 		address: v.text('address', F.address(), { max: 100 }),
-		register_date: v.date('register_date', F.registerDate())
+		register_date: v.date('register_date', F.registerDate()),
+		...readExemption(form)
 	};
 }
 
 export const actions: Actions = {
 	crear: async ({ request, locals, url }) => {
 		requireUser(locals, url.pathname);
-		const v = new Validator(await request.formData());
-		const client = readClient(v);
+		const form = await request.formData();
+		const v = new Validator(form);
+		const client = readClient(v, form);
 		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
 		try {
@@ -52,7 +81,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const v = new Validator(form);
 		const id = v.integer('id_client', F.client(), { min: 1 });
-		const client = readClient(v);
+		const client = readClient(v, form);
 		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
 
 		try {

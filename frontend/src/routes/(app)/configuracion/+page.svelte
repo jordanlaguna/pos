@@ -5,6 +5,7 @@
 	import Icon from '$lib/ui/components/Icon.svelte';
 	import PageHeader from '$lib/ui/components/PageHeader.svelte';
 	import Field from '$lib/ui/components/Field.svelte';
+	import Modal from '$lib/ui/components/Modal.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import DocumentSheet from '$lib/ui/components/documents/DocumentSheet.svelte';
 	import { computeTotals, configureMoney, formatMoney, round2 } from '$lib/domain/money';
@@ -24,21 +25,22 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	type Seccion = 'negocio' | 'moneda' | 'documentos' | 'electronica';
+	type Seccion = 'negocio' | 'moneda' | 'documentos' | 'electronica' | 'sucursales';
 	let seccion = $state<Seccion>('negocio');
 	let submitting = $state(false);
 
 	/**
-	 * Las cuatro pestañas. Solo el identificador y el icono: el rótulo se pide al
+	 * Las cinco pestañas. Solo el identificador y el icono: el rótulo se pide al
 	 * catálogo al pintar, porque una constante de módulo con el texto adentro se
 	 * evalúa una vez por proceso y todas las peticiones verían el idioma de la
 	 * primera (defecto 17).
 	 */
-	const SECCIONES: { id: Seccion; icon: 'idcard' | 'wallet' | 'receipt' | 'bolt' }[] = [
+	const SECCIONES: { id: Seccion; icon: 'idcard' | 'wallet' | 'receipt' | 'bolt' | 'home' }[] = [
 		{ id: 'negocio', icon: 'idcard' },
 		{ id: 'moneda', icon: 'wallet' },
 		{ id: 'documentos', icon: 'receipt' },
-		{ id: 'electronica', icon: 'bolt' }
+		{ id: 'electronica', icon: 'bolt' },
+		{ id: 'sucursales', icon: 'home' }
 	];
 
 	function seccionRotulo(id: Seccion): string {
@@ -51,6 +53,8 @@
 				return m.settings_tab_documents();
 			case 'electronica':
 				return m.settings_tab_einvoicing();
+			case 'sucursales':
+				return m.settings_tab_offices();
 		}
 	}
 
@@ -195,6 +199,74 @@
 	function seleccionarPlantilla(id: TemplateId) {
 		document = { ...document, template: id };
 	}
+
+	// ------------------------------------------ factura electrónica (F6)
+
+	/** Abierto el diálogo de RN-35, que es el único camino a producción. */
+	let confirmando = $state(false);
+
+	/**
+	 * El ambiente dicho como palabra.
+	 *
+	 * Las claves son las mismas que usa `apiMessage` para los «no» del backend:
+	 * dos juegos de rótulos para el mismo par de valores acabarían diciendo
+	 * «pruebas» en un sitio y «sandbox» en el otro.
+	 */
+	function rotuloAmbiente(valor: string): string {
+		return valor === 'production' ? m.api_environment_production() : m.api_environment_sandbox();
+	}
+
+	/** El color del vencimiento. Un certificado vencido no es un aviso, es un no. */
+	function colorDelEstado(estado: string): string {
+		switch (estado) {
+			case 'expired':
+				return 'text-[var(--negative)]';
+			case 'expiring':
+				return 'text-[var(--warning)]';
+			default:
+				return 'text-[var(--text)]';
+		}
+	}
+
+	// ------------------------------------------ sucursales y cajas (T-608)
+
+	/*
+	 * Los dos tipos salen de `PageData` y no se importan de `+page.server.ts`:
+	 * así no hay dos declaraciones de la misma forma que puedan separarse, y esta
+	 * pantalla no nombra un módulo del servidor ni para los tipos.
+	 */
+	type Sucursal = NonNullable<PageData['oficinas']>['branches'][number];
+	type Caja = NonNullable<PageData['oficinas']>['terminals'][number];
+
+	/** `null` es el diálogo cerrado; una con `id: 0`, el alta. */
+	let sucursalEditando = $state<Sucursal | null>(null);
+	/** Lo mismo para una caja. Al crear, `branch_id` dice en cuál sucursal. */
+	let cajaEditando = $state<Caja | null>(null);
+	/**
+	 * Lo que se va a borrar, con su tipo.
+	 *
+	 * Un solo diálogo para los dos: la pregunta es la misma y el aviso también
+	 * —lo que arrastra historia no se borra, se desactiva—, así que dos modales
+	 * serían dos sitios donde mantener el mismo texto.
+	 */
+	let borrando = $state<{ tipo: 'sucursal' | 'caja'; id: number; nombre: string } | null>(null);
+
+	const cupo = $derived(data.oficinas?.quota);
+	/** Cabe otra si el plan no limita (−1) o todavía no se llegó al techo. */
+	const cabeSucursal = $derived(!cupo || cupo.max_branches < 0 || cupo.branches < cupo.max_branches);
+	const cabeCaja = $derived(!cupo || cupo.max_terminals < 0 || cupo.terminals < cupo.max_terminals);
+
+	function cajasDe(branchId: number): Caja[] {
+		return data.oficinas?.terminals.filter((caja) => caja.branch_id === branchId) ?? [];
+	}
+
+	function nuevaSucursal(): Sucursal {
+		return { id: 0, codigo: '', nombre: '', activa: true };
+	}
+
+	function nuevaCaja(branchId: number): Caja {
+		return { id: 0, branch_id: branchId, codigo: '', nombre: '', activa: true };
+	}
 </script>
 
 <PageHeader
@@ -207,11 +279,19 @@
 				{m.settings_last_change({ date: formatDateTime(data.actualizado) })}
 			</span>
 		{/if}
-		<button type="submit" form="config-form" class="btn btn-primary" disabled={submitting}>
-			{#if submitting}<Spinner size={15} />{m.common_saving()}{:else}
-				<Icon name="check" size={15} />{m.common_save_changes()}
-			{/if}
-		</button>
+		<!--
+			En «Sucursales» no se ofrece: ahí no hay nada que pertenezca a este
+			formulario —cada sucursal y cada caja se guardan en su propio diálogo—,
+			y un botón que promete guardar lo que se está mirando y guarda otra cosa
+			es peor que no tenerlo.
+		-->
+		{#if seccion !== 'sucursales'}
+			<button type="submit" form="config-form" class="btn btn-primary" disabled={submitting}>
+				{#if submitting}<Spinner size={15} />{m.common_saving()}{:else}
+					<Icon name="check" size={15} />{m.common_save_changes()}
+				{/if}
+			</button>
+		{/if}
 	{/snippet}
 </PageHeader>
 
@@ -824,19 +904,15 @@
 					</span>
 				</label>
 
+				<!--
+					El ambiente **ya no se elige acá** (T-611). Vivía en este formulario
+					como un desplegable más, y eso es justo lo que RN-35 prohíbe: pasar a
+					producción es el momento en que los documentos dejan de ser un ensayo,
+					y no puede ocurrir por haber tocado un desplegable sin querer. Se
+					cambia abajo, con confirmación y bitácora, contra `PUT /fe/active` —y
+					el backend lo conserva aunque llegue por este formulario—.
+				-->
 				<div class="grid gap-4 sm:grid-cols-2">
-					<div>
-						<label class="label" for="fe-ambiente">{m.settings_environment()}</label>
-						<select
-							id="fe-ambiente"
-							name="electronica_ambiente"
-							class="input"
-							bind:value={eInvoicing.environment}
-						>
-							<option value="sandbox">{m.settings_environment_sandbox()}</option>
-							<option value="production">{m.settings_environment_production()}</option>
-						</select>
-					</div>
 					<Field
 						label={m.settings_economic_activity()}
 						name="electronica_actividad"
@@ -911,3 +987,669 @@
 		</div>
 	</div>
 </form>
+
+<!--
+	--------------------------------------- credenciales de Hacienda (F6)
+
+	Va **fuera** del formulario grande, y no por maquetado: cada botón de acá
+	habla con un endpoint propio que hace algo irreversible o auditado —importar
+	una llave a Vault, borrarla, salir a internet, dejar una línea de bitácora—.
+	Dentro del «Guardar cambios» de la pantalla, corregir una coma en la
+	dirección del negocio dispararía las cuatro.
+-->
+{#if seccion === 'electronica'}
+	<div class="mt-4 space-y-4">
+		{#if !data.fe}
+			<!-- `apiSafe` en el `load`: la pestaña lo dice en vez de tumbar las otras tres. -->
+			<p
+				class="flex items-center gap-2 rounded-lg border border-[var(--warning)] bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning)]"
+			>
+				<Icon name="alert" size={16} />
+				{m.settings_fe_unavailable()}
+			</p>
+		{:else}
+			<!-- ------------------------------------------------ ambiente activo -->
+			<div class="card flex flex-wrap items-center justify-between gap-3 p-5">
+				<div class="flex items-center gap-3">
+					<Icon name="bolt" size={18} class="text-[var(--accent)]" />
+					<div>
+						<p class="text-sm font-bold text-[var(--text)]">
+							{m.settings_fe_active_environment({ environment: rotuloAmbiente(data.fe.active) })}
+						</p>
+						<p class="text-xs text-[var(--text-subtle)]">
+							{data.fe.active === 'production'
+								? m.settings_fe_active_production_hint()
+								: m.settings_fe_active_sandbox_hint()}
+						</p>
+					</div>
+				</div>
+				{#if data.fe.active === 'production'}
+					<form method="POST" action="?/feAmbiente" use:enhance={submit()}>
+						<input type="hidden" name="ambiente" value="sandbox" />
+						<button type="submit" class="btn btn-secondary">
+							{m.settings_fe_back_to_sandbox()}
+						</button>
+					</form>
+				{:else}
+					<button type="button" class="btn btn-primary" onclick={() => (confirmando = true)}>
+						{m.settings_fe_go_to_production()}
+					</button>
+				{/if}
+			</div>
+
+			<!-- ------------------------------------------ una tarjeta por ambiente -->
+			<div class="grid gap-4 lg:grid-cols-2">
+				{#each data.fe.environments as amb (amb.environment)}
+					<div
+						class="card space-y-5 p-5 {amb.environment === data.fe.active
+							? 'border-[var(--accent)]'
+							: ''}"
+						data-ambiente={amb.environment}
+					>
+						<div class="flex items-start justify-between gap-3">
+							<div>
+								<h3 class="text-sm font-bold text-[var(--text)]">
+									{rotuloAmbiente(amb.environment)}
+								</h3>
+								<p class="text-xs text-[var(--text-subtle)]">
+									{amb.environment === data.fe.active
+										? m.settings_fe_in_use()
+										: m.settings_fe_not_in_use()}
+								</p>
+							</div>
+							<span
+								class="rounded-full px-2.5 py-1 text-xs font-semibold {amb.ready
+									? 'bg-[var(--positive-bg)] text-[var(--positive)]'
+									: 'bg-[var(--surface-muted)] text-[var(--text-subtle)]'}"
+							>
+								{amb.ready ? m.settings_fe_ready() : m.settings_fe_not_ready()}
+							</span>
+						</div>
+
+						<!-- ......................................... el certificado -->
+						<section class="space-y-3">
+							<h4 class="flex items-center gap-2 text-xs font-bold text-[var(--text-muted)]">
+								<Icon name="lock" size={14} />
+								{m.settings_fe_certificate()}
+							</h4>
+
+							{#if amb.certificate_configured}
+								<dl class="space-y-1 text-xs">
+									<div class="flex justify-between gap-2">
+										<dt class="text-[var(--text-subtle)]">{m.settings_fe_holder()}</dt>
+										<dd class="text-right font-semibold text-[var(--text)]">
+											{amb.certificate_name}
+										</dd>
+									</div>
+									<div class="flex justify-between gap-2">
+										<dt class="text-[var(--text-subtle)]">{m.settings_fe_expires()}</dt>
+										<dd class="text-right font-semibold {colorDelEstado(amb.certificate_status)}">
+											{amb.expires_at ? formatDateTime(amb.expires_at) : '—'}
+										</dd>
+									</div>
+								</dl>
+
+								{#if amb.certificate_status !== 'valid'}
+									<p
+										class="flex items-start gap-2 rounded-lg border p-2.5 text-xs {amb.certificate_status ===
+										'expired'
+											? 'border-[var(--negative)] bg-[var(--negative-bg)] text-[var(--negative)]'
+											: 'border-[var(--warning)] bg-[var(--warning-bg)] text-[var(--warning)]'}"
+									>
+										<Icon name="alert" size={14} class="mt-px shrink-0" />
+										{amb.certificate_status === 'expired'
+											? m.settings_fe_certificate_expired()
+											: m.settings_fe_certificate_expiring({ days: amb.days_left ?? 0 })}
+									</p>
+								{/if}
+							{:else}
+								<p class="text-xs text-[var(--text-subtle)]">{m.settings_fe_no_certificate()}</p>
+							{/if}
+
+							<!--
+								El mismo formulario sube y reemplaza: `import_version` de Vault
+								deja la llave nueva en uso sin una ventana en la que la compañía
+								no pueda firmar, así que no hacen falta dos caminos.
+							-->
+							<!--
+								`reset: true` y no por pulcritud: el PIN se queda escrito en el
+								campo después de enviarlo, y ahí sigue mientras la pestaña esté
+								abierta. El servidor no lo devuelve nunca —no lo tiene—, pero
+								dejarlo en el DOM sería guardar en la pantalla justo lo que el
+								sistema entero se ocupa de no guardar en ningún lado.
+							-->
+							<form
+								method="POST"
+								action="?/feCertificado"
+								enctype="multipart/form-data"
+								use:enhance={submit({ reset: true })}
+								class="space-y-2"
+							>
+								<input type="hidden" name="ambiente" value={amb.environment} />
+								<div>
+									<label class="label" for="p12-{amb.environment}">
+										{amb.certificate_configured
+											? m.settings_fe_replace_certificate()
+											: m.settings_fe_upload_certificate()}
+									</label>
+									<input
+										id="p12-{amb.environment}"
+										type="file"
+										name="certificado"
+										accept=".p12,.pfx,application/x-pkcs12"
+										class="input"
+									/>
+									{#if form?.errors?.certificado}
+										<p class="mt-1 text-xs text-[var(--negative)]">{form.errors.certificado}</p>
+									{/if}
+								</div>
+								<Field
+									label={m.settings_fe_pin()}
+									name="pin"
+									type="password"
+									error={form?.errors?.pin}
+									hint={m.settings_fe_pin_hint()}
+								/>
+								<div class="flex flex-wrap gap-2">
+									<button type="submit" class="btn btn-secondary">
+										{m.settings_fe_send_certificate()}
+									</button>
+									{#if amb.certificate_configured}
+										<button
+											type="submit"
+											formaction="?/feQuitarCertificado"
+											class="btn btn-ghost text-[var(--negative)]"
+										>
+											<Icon name="trash" size={14} />
+											{m.settings_fe_remove()}
+										</button>
+									{/if}
+								</div>
+							</form>
+						</section>
+
+						<!-- ................................. las credenciales de ATV -->
+						<section class="space-y-3 border-t border-[var(--border)] pt-4">
+							<h4 class="flex items-center gap-2 text-xs font-bold text-[var(--text-muted)]">
+								<Icon name="clock" size={14} />
+								{m.settings_fe_atv()}
+							</h4>
+
+							<p class="text-xs text-[var(--text-subtle)]">
+								{#if !amb.atv_configured}
+									{m.settings_fe_atv_missing()}
+								{:else if amb.atv_verified_at}
+									{m.settings_fe_atv_verified({ date: formatDateTime(amb.atv_verified_at) })}
+								{:else}
+									{m.settings_fe_atv_unverified()}
+								{/if}
+							</p>
+
+							<!--
+								`reset: true` por lo mismo que el PIN: la contraseña no puede
+								quedarse escrita en el campo después de guardarla. El `reset`
+								nativo devuelve cada campo a su atributo `value`, así que el
+								usuario vuelve a mostrarse y la contraseña —que no tiene— queda
+								vacía. Es exactamente lo que hace falta.
+							-->
+							<form
+								method="POST"
+								action="?/feAtv"
+								use:enhance={submit({ reset: true })}
+								class="space-y-2"
+							>
+								<input type="hidden" name="ambiente" value={amb.environment} />
+								<!--
+									El usuario se muestra y la contraseña no (RN-16). El usuario es
+									un identificador: sin verlo, nadie puede comprobar que escribió
+									el que era.
+								-->
+								<Field
+									label={m.settings_fe_atv_user()}
+									name="atv_usuario"
+									value={amb.atv_user ?? ''}
+									error={form?.errors?.atv_usuario}
+								/>
+								<Field
+									label={m.settings_fe_atv_password()}
+									name="atv_clave"
+									type="password"
+									error={form?.errors?.atv_clave}
+									hint={m.settings_fe_atv_password_hint()}
+								/>
+								<button type="submit" class="btn btn-secondary">
+									{m.settings_fe_save_atv()}
+								</button>
+							</form>
+
+							<form method="POST" action="?/feProbar" use:enhance={submit()}>
+								<input type="hidden" name="ambiente" value={amb.environment} />
+								<button type="submit" class="btn btn-ghost w-full" disabled={!amb.atv_configured}>
+									<Icon name="refresh" size={14} />
+									{m.settings_fe_test_connection()}
+								</button>
+								<p class="mt-1 text-xs text-[var(--text-subtle)]">
+									{m.settings_fe_test_connection_hint()}
+								</p>
+							</form>
+						</section>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+{/if}
+
+<!--
+	------------------------------------------ sucursales y cajas (T-608)
+
+	Fuera del formulario grande por lo mismo que las credenciales: cada alta, cada
+	cambio y cada borrado habla con su propio endpoint. Y la pestaña se monta con
+	`{#if}` en vez de esconderse con `display` como las cuatro de arriba, porque
+	acá no hay ningún campo que tenga que viajar en el envío de ese formulario.
+-->
+{#if seccion === 'sucursales'}
+	<div class="space-y-4">
+		{#if !data.oficinas || !cupo}
+			<!-- `apiSafe` en el `load`: la pestaña lo dice en vez de tumbar las otras. -->
+			<p
+				class="flex items-center gap-2 rounded-lg border border-[var(--warning)] bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning)]"
+			>
+				<Icon name="alert" size={16} />
+				{m.settings_offices_unavailable()}
+			</p>
+		{:else}
+			<!-- ------------------------------------------------ el cupo del plan -->
+			<div class="card flex flex-wrap items-start justify-between gap-3 p-5">
+				<div>
+					<h2 class="mb-1 text-sm font-bold text-[var(--text)]">{m.settings_offices_title()}</h2>
+					<p class="max-w-prose text-xs text-[var(--text-subtle)]">{m.settings_offices_hint()}</p>
+					<!--
+						El cupo se dice **antes** de abrir el formulario, no al chocar con
+						él: enterarse del techo después de llenarlo es el mismo error de
+						diseño que un botón que promete algo que no pasa.
+					-->
+					<div class="mt-3 flex flex-wrap items-center gap-2">
+						<span class="badge bg-[var(--surface-sunken)] text-[var(--text-muted)]">
+							<Icon name="home" size={11} />
+							{cupo.max_branches < 0
+								? m.settings_offices_quota_branches_free({ current: cupo.branches })
+								: m.settings_offices_quota_branches({
+										current: cupo.branches,
+										max: cupo.max_branches
+									})}
+						</span>
+						<span class="badge bg-[var(--surface-sunken)] text-[var(--text-muted)]">
+							<Icon name="wallet" size={11} />
+							{cupo.max_terminals < 0
+								? m.settings_offices_quota_terminals_free({ current: cupo.terminals })
+								: m.settings_offices_quota_terminals({
+										current: cupo.terminals,
+										max: cupo.max_terminals
+									})}
+						</span>
+						<span class="text-xs text-[var(--text-subtle)]">{m.settings_offices_quota_hint()}</span>
+					</div>
+				</div>
+				<div class="text-right">
+					<button
+						type="button"
+						class="btn btn-primary"
+						disabled={!cabeSucursal}
+						onclick={() => (sucursalEditando = nuevaSucursal())}
+					>
+						<Icon name="plus" size={15} />
+						{m.settings_offices_new_branch()}
+					</button>
+					{#if !cabeSucursal}
+						<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.settings_offices_branch_full()}</p>
+					{/if}
+				</div>
+			</div>
+
+			<!-- ------------------------------------- una tarjeta por sucursal -->
+			{#each data.oficinas.branches as sucursal (sucursal.id)}
+				<div class="card p-5" class:opacity-60={!sucursal.activa} data-sucursal={sucursal.codigo}>
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div class="flex items-start gap-3">
+							<span class="font-mono text-lg font-bold text-[var(--accent)]">{sucursal.codigo}</span>
+							<div>
+								<p class="text-sm font-bold text-[var(--text)]">{sucursal.nombre}</p>
+								{#if sucursal.activa}
+									<span class="badge bg-[var(--positive-bg)] text-[var(--positive)]">
+										<Icon name="check" size={11} />
+										{m.settings_offices_active()}
+									</span>
+								{:else}
+									<span class="badge bg-[var(--surface-sunken)] text-[var(--text-muted)]">
+										<Icon name="close" size={11} />
+										{m.settings_offices_inactive()}
+									</span>
+								{/if}
+							</div>
+						</div>
+						<div class="flex items-center gap-1">
+							<button
+								type="button"
+								class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"
+								onclick={() => (sucursalEditando = { ...sucursal })}
+								aria-label={m.settings_offices_edit_branch_action({ name: sucursal.nombre })}
+							>
+								<Icon name="edit" size={15} />
+							</button>
+							<button
+								type="button"
+								class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--negative)]"
+								onclick={() =>
+									(borrando = { tipo: 'sucursal', id: sucursal.id, nombre: sucursal.nombre })}
+								aria-label={m.settings_offices_delete_branch_action({ name: sucursal.nombre })}
+							>
+								<Icon name="trash" size={15} />
+							</button>
+						</div>
+					</div>
+
+					<!-- ................................................ sus cajas -->
+					<ul class="mt-4 space-y-1 border-t border-[var(--border)] pt-3">
+						{#each cajasDe(sucursal.id) as caja (caja.id)}
+							<li
+								class="flex flex-wrap items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[var(--surface-sunken)]"
+								data-caja={caja.codigo}
+							>
+								<Icon name="wallet" size={14} class="text-[var(--text-subtle)]" />
+								<span class="font-mono text-xs text-[var(--text-muted)]">{caja.codigo}</span>
+								<span class="text-sm text-[var(--text)]">{caja.nombre}</span>
+								{#if !caja.activa}
+									<span class="badge bg-[var(--surface-sunken)] text-[var(--text-muted)]">
+										{m.settings_offices_inactive()}
+									</span>
+								{/if}
+								<span class="ml-auto flex items-center gap-1">
+									<button
+										type="button"
+										class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:text-[var(--accent)]"
+										onclick={() => (cajaEditando = { ...caja })}
+										aria-label={m.settings_offices_edit_terminal_action({ name: caja.nombre })}
+									>
+										<Icon name="edit" size={14} />
+									</button>
+									<button
+										type="button"
+										class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:text-[var(--negative)]"
+										onclick={() => (borrando = { tipo: 'caja', id: caja.id, nombre: caja.nombre })}
+										aria-label={m.settings_offices_delete_terminal_action({ name: caja.nombre })}
+									>
+										<Icon name="trash" size={14} />
+									</button>
+								</span>
+							</li>
+						{:else}
+							<li class="px-2 py-1.5 text-xs text-[var(--text-subtle)]">
+								{m.settings_offices_no_terminals()}
+							</li>
+						{/each}
+					</ul>
+
+					<button
+						type="button"
+						class="btn btn-ghost mt-2"
+						disabled={!cabeCaja}
+						onclick={() => (cajaEditando = nuevaCaja(sucursal.id))}
+					>
+						<Icon name="plus" size={14} />
+						{m.settings_offices_add_terminal()}
+					</button>
+					{#if !cabeCaja}
+						<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.settings_offices_terminal_full()}</p>
+					{/if}
+				</div>
+			{/each}
+		{/if}
+	</div>
+{/if}
+
+<!-- ------------------------------------------------ la ficha de la sucursal -->
+<Modal
+	open={sucursalEditando !== null}
+	title={sucursalEditando?.id
+		? m.settings_offices_edit_branch()
+		: m.settings_offices_branch_form_new()}
+	size="sm"
+	onclose={() => (sucursalEditando = null)}
+>
+	{#if sucursalEditando}
+		<form
+			id="form-sucursal"
+			method="POST"
+			action="?/sucursalGuardar"
+			use:enhance={submit({ onSuccess: () => (sucursalEditando = null) })}
+			class="space-y-4"
+		>
+			<input type="hidden" name="id" value={sucursalEditando.id || ''} />
+
+			{#if sucursalEditando.id}
+				<!--
+					El código **se muestra y no se edita**: no está en el esquema de
+					actualización del backend, y cambiarlo movería el número de todos los
+					comprobantes ya emitidos desde esta sucursal.
+				-->
+				<div>
+					<span class="label">{m.settings_offices_label_branch_code()}</span>
+					<p class="font-mono text-sm text-[var(--text)]">{sucursalEditando.codigo}</p>
+					<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.settings_offices_code_locked()}</p>
+				</div>
+			{:else}
+				<Field
+					label={m.settings_offices_label_branch_code()}
+					name="codigo"
+					bind:value={sucursalEditando.codigo}
+					inputmode="numeric"
+					hint={m.settings_offices_branch_code_hint()}
+					error={form?.errors?.codigo}
+					required
+				/>
+			{/if}
+
+			<Field
+				label={m.settings_offices_label_name()}
+				name="nombre"
+				bind:value={sucursalEditando.nombre}
+				error={form?.errors?.nombre}
+				required
+			/>
+
+			{#if sucursalEditando.id}
+				<!-- Solo al editar: una nueva nace activa, y una casilla desmarcable
+				     en el alta solo sirve para dar de alta algo apagado. -->
+				<div>
+					<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--text)]">
+						<input
+							type="checkbox"
+							name="activa"
+							class="h-4 w-4 accent-[var(--accent)]"
+							checked={sucursalEditando.activa}
+						/>
+						{m.settings_offices_label_active()}
+					</label>
+					<p class="mt-1 text-xs text-[var(--text-subtle)]">
+						{m.settings_offices_branch_active_hint()}
+					</p>
+				</div>
+			{/if}
+		</form>
+	{/if}
+
+	{#snippet footer()}
+		<button type="button" class="btn btn-ghost" onclick={() => (sucursalEditando = null)}>
+			{m.common_cancel()}
+		</button>
+		<button type="submit" form="form-sucursal" class="btn btn-primary">
+			<Icon name="check" size={15} />
+			{m.common_save()}
+		</button>
+	{/snippet}
+</Modal>
+
+<!-- ----------------------------------------------------- la ficha de la caja -->
+<Modal
+	open={cajaEditando !== null}
+	title={cajaEditando?.id
+		? m.settings_offices_edit_terminal()
+		: m.settings_offices_terminal_form_new({
+				branch:
+					data.oficinas?.branches.find((s) => s.id === cajaEditando?.branch_id)?.nombre ?? ''
+			})}
+	size="sm"
+	onclose={() => (cajaEditando = null)}
+>
+	{#if cajaEditando}
+		<form
+			id="form-caja"
+			method="POST"
+			action="?/cajaGuardar"
+			use:enhance={submit({ onSuccess: () => (cajaEditando = null) })}
+			class="space-y-4"
+		>
+			<input type="hidden" name="id" value={cajaEditando.id || ''} />
+			<input type="hidden" name="branch_id" value={cajaEditando.branch_id} />
+
+			{#if cajaEditando.id}
+				<div>
+					<span class="label">{m.settings_offices_label_terminal_code()}</span>
+					<p class="font-mono text-sm text-[var(--text)]">{cajaEditando.codigo}</p>
+					<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.settings_offices_code_locked()}</p>
+				</div>
+			{:else}
+				<Field
+					label={m.settings_offices_label_terminal_code()}
+					name="codigo"
+					bind:value={cajaEditando.codigo}
+					inputmode="numeric"
+					hint={m.settings_offices_terminal_code_hint()}
+					error={form?.errors?.codigo}
+					required
+				/>
+			{/if}
+
+			<Field
+				label={m.settings_offices_label_name()}
+				name="nombre"
+				bind:value={cajaEditando.nombre}
+				error={form?.errors?.nombre}
+				required
+			/>
+
+			{#if cajaEditando.id}
+				<div>
+					<label class="flex cursor-pointer items-center gap-2 text-sm text-[var(--text)]">
+						<input
+							type="checkbox"
+							name="activa"
+							class="h-4 w-4 accent-[var(--accent)]"
+							checked={cajaEditando.activa}
+						/>
+						{m.settings_offices_label_active()}
+					</label>
+					<p class="mt-1 text-xs text-[var(--text-subtle)]">
+						{m.settings_offices_terminal_active_hint()}
+					</p>
+				</div>
+			{/if}
+		</form>
+	{/if}
+
+	{#snippet footer()}
+		<button type="button" class="btn btn-ghost" onclick={() => (cajaEditando = null)}>
+			{m.common_cancel()}
+		</button>
+		<button type="submit" form="form-caja" class="btn btn-primary">
+			<Icon name="check" size={15} />
+			{m.common_save()}
+		</button>
+	{/snippet}
+</Modal>
+
+<!--
+	El borrado, uno solo para los dos: la pregunta es la misma y el aviso también
+	—lo que arrastra historia no se borra, se desactiva—, así que dos diálogos
+	serían dos sitios donde mantener el mismo texto.
+
+	Y es una cortesía, no el control: quien tenga ventas recibe `branch_in_use`
+	del backend aunque confirme.
+-->
+<Modal
+	open={borrando !== null}
+	title={borrando?.tipo === 'caja'
+		? m.settings_offices_delete_terminal_title()
+		: m.settings_offices_delete_branch_title()}
+	description={borrando?.nombre}
+	size="sm"
+	onclose={() => (borrando = null)}
+>
+	<p class="text-sm text-[var(--text-muted)]">{m.settings_offices_delete_warning()}</p>
+
+	{#snippet footer()}
+		<button type="button" class="btn btn-ghost" onclick={() => (borrando = null)}>
+			{m.common_cancel()}
+		</button>
+		{#if borrando}
+			<form
+				method="POST"
+				action={borrando.tipo === 'caja' ? '?/cajaBorrar' : '?/sucursalBorrar'}
+				use:enhance={submit({ onSuccess: () => (borrando = null) })}
+			>
+				<input type="hidden" name="id" value={borrando.id} />
+				<button type="submit" class="btn btn-primary bg-[var(--negative)]">
+					<Icon name="trash" size={15} />
+					{m.settings_offices_delete_confirm()}
+				</button>
+			</form>
+		{/if}
+	{/snippet}
+</Modal>
+
+<!--
+	La confirmación de RN-35, que también viaja al servidor: sin `confirmar`, el
+	backend responde `confirmation_required`. El modal es la cortesía; la puerta
+	está del otro lado.
+-->
+<Modal
+	open={confirmando}
+	title={m.settings_fe_confirm_title()}
+	description={m.settings_fe_confirm_description()}
+	size="sm"
+	onclose={() => (confirmando = false)}
+>
+	<div class="space-y-3 text-sm text-[var(--text-muted)]">
+		<p>{m.settings_fe_confirm_effect()}</p>
+		<!--
+			RN-46: se **avisa** de lo que Hacienda exige y no se impide. La puerta
+			dura es T-713, en F7, que es cuando existen comprobantes que contar.
+		-->
+		<div
+			class="flex gap-2 rounded-lg border border-[var(--warning)] bg-[var(--warning-bg)] p-3 text-xs text-[var(--warning)]"
+		>
+			<Icon name="info" size={14} class="mt-px shrink-0" />
+			<div class="space-y-1">
+				<p class="font-semibold">{m.settings_fe_confirm_certification_title()}</p>
+				<p>{m.settings_fe_confirm_certification()}</p>
+			</div>
+		</div>
+	</div>
+	{#snippet footer()}
+		<button type="button" class="btn btn-ghost" onclick={() => (confirmando = false)}>
+			{m.common_cancel()}
+		</button>
+		<form
+			method="POST"
+			action="?/feAmbiente"
+			use:enhance={submit({ onSuccess: () => (confirmando = false) })}
+		>
+			<input type="hidden" name="ambiente" value="production" />
+			<input type="hidden" name="confirmar" value="true" />
+			<button type="submit" class="btn btn-primary">
+				{m.settings_fe_confirm_go()}
+			</button>
+		</form>
+	{/snippet}
+</Modal>

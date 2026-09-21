@@ -518,3 +518,24 @@ class InvalidSigningKey(DomainError):
     def __init__(self, company_id: object) -> None:
         super().__init__(f"compañía no válida para una llave de firma: {company_id!r}")
         self.company_id = company_id
+
+
+class InvalidOfficeCode(DomainError):
+    """Un código de sucursal o de terminal que Hacienda no aceptaría (RN-15).
+
+    Los dos van **dentro de la clave de 50 dígitos** del comprobante, con tres y
+    cinco dígitos exactos. Un código mal formado no lo descubre el sistema: lo
+    descubre Hacienda al rechazar la factura, con el cliente esperando.
+
+    Lleva `code` por lo mismo que `InvalidBarcode`: 'not_text', 'empty',
+    'not_digits' o 'too_long'. Lo que hay que hacer es distinto en cada uno
+    —«escriba un número» no es «ese número no cabe»— y la frase la arma el POS.
+    """
+
+    def __init__(self, value: object, code: str, digits: int) -> None:
+        super().__init__(f"código de {digits} dígitos no válido ({code}): {value!r}")
+        self.value = value
+        self.code = code
+        #: Cuántos dígitos pedía. Va en el «no» porque es lo único que le dice a
+        #: quien escribió de más cuánto le sobra.
+        self.digits = digits

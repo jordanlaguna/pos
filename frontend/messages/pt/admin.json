@@ -186,6 +186,7 @@
 	"admin_action_suscripcion": "Mudou a assinatura",
 	"admin_action_plan_modulos": "Mudou os módulos de um plano",
 	"admin_action_entrar_como": "Entrou como a empresa",
+	"admin_action_fe_ambiente": "Alterou o ambiente de faturamento",
 
 	"$comentario_avisos": "Os avisos de assinatura que o cliente vê no POS (RF-11). O da tolerância e o de somente leitura são os que custam dinheiro, então dizem o que ainda se pode fazer e não só o que aconteceu.",
 

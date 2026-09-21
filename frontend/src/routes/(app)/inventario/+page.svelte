@@ -23,6 +23,12 @@
 		type CabysAnswer,
 		type CabysEntry
 	} from '$lib/domain/cabys';
+	import {
+		SELLABLE_TAX_CODES,
+		rateForTaxCode,
+		suggestedTaxCode
+	} from '$lib/domain/taxCodes';
+	import { taxCodeLabel } from '$lib/ui/taxCodes';
 	import { formatDateTime, formatInt } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Product } from '$lib/domain/types';
@@ -78,6 +84,16 @@
 	 * producto sí se consultaba, parecía intermitente.
 	 */
 	let codigoLeido = $state('');
+
+	/**
+	 * El código de tarifa de Hacienda del producto (T-715, RN-76).
+	 *
+	 * En blanco es «sin clasificar». Cuando tiene algo **manda sobre la
+	 * tarifa**: el campo de porcentaje pasa a ser de lectura y lo escribe este
+	 * desplegable. El servidor hace lo mismo, así que dejarlo editable solo
+	 * serviría para que alguien escribiera un número que después se pisa.
+	 */
+	let fTaxCode = $state('');
 
 	let cabysOpen = $state(false);
 
@@ -192,6 +208,7 @@
 		limpiarCabys();
 		fCabys = product.cabys_code ?? '';
 		fRatePct = product.tax_rate == null ? '' : ratePercentText(product.tax_rate);
+		fTaxCode = product.tax_code ?? '';
 		// `codigoLeido` se adelanta para que el vigilante no tome esto por una
 		// asignación: abrir la ficha lee el catálogo, pero no copia (ver
 		// `leerTarifaOficial`).
@@ -204,6 +221,7 @@
 	function limpiarCabys() {
 		fCabys = '';
 		fRatePct = '';
+		fTaxCode = '';
 		officialRate = null;
 		codigoLeido = '';
 		cabysOpen = false;
@@ -215,13 +233,62 @@
 		officialRate = entry.tax_rate;
 		codigoLeido = entry.code;
 		fRatePct = ratePercentText(entry.tax_rate);
+		proponerCodigo(entry.tax_rate);
 		cabysOpen = false;
 	}
+
+	/**
+	 * El código de Hacienda que le toca a una tarifa, cuando hay uno solo.
+	 *
+	 * El CABYS trae la tarifa, no el código. Con el 13 % no hay nada que elegir
+	 * —es el `08`— y con el 0 % hay tres, y la diferencia es el derecho a
+	 * crédito de quien compra: ahí se deja sin clasificar y lo elige quien sabe
+	 * a quién le vende (RN-76). Es la misma regla que aplica la asignación en
+	 * lote del backend.
+	 */
+	function proponerCodigo(rate: number) {
+		const sugerido = suggestedTaxCode(rate);
+		if (sugerido) fTaxCode = sugerido;
+	}
+
+	/** Elegir el código **es** fijar la tarifa: de un código sale un porcentaje. */
+	function elegirCodigo(code: string) {
+		fTaxCode = code;
+		const tarifa = rateForTaxCode(code);
+		if (tarifa !== null) fRatePct = ratePercentText(tarifa);
+	}
+
+	/**
+	 * Escribir una tarifa que el código no cobra lo deja sin clasificar.
+	 *
+	 * Son dos reglas que se cruzan y ninguna cede: la tarifa del catálogo se
+	 * puede cambiar y solo se avisa (RN-11), pero el código de Hacienda **es**
+	 * una tarifa —el `03` es el 2 % y nada más— así que un producto con código
+	 * `03` al 0 % es un comprobante que se contradice (RN-76).
+	 *
+	 * La salida no es bloquear el campo sino soltar el código: el último gesto
+	 * manda, y quien quiera el 0 % lo elige del desplegable, que es donde se
+	 * decide si ese cero da derecho a crédito o no.
+	 *
+	 * El `untrack` evita el bucle: el efecto escribe `fTaxCode` y no puede
+	 * depender de lo que escribe.
+	 */
+	$effect(() => {
+		const escrita = chosenRate;
+		const codigo = untrack(() => fTaxCode);
+		if (!codigo || escrita === null) return;
+		const suya = rateForTaxCode(codigo);
+		if (suya !== null && suya !== escrita) fTaxCode = '';
+	});
 
 	function quitarCabys() {
 		fCabys = '';
 		officialRate = null;
 		codigoLeido = '';
+		// Y con él el código de tarifa, porque lo propuso él. Dejarlo puesto
+		// mantendría la tarifa de solo lectura, y quitar el CABYS es justamente
+		// cómo se vuelve a heredar la tarifa configurada del negocio (RN-9).
+		fTaxCode = '';
 	}
 
 	/**
@@ -279,7 +346,10 @@
 		codigoLeido = code.trim();
 		// Un código que el catálogo no reconoce no tiene tarifa que copiar, y
 		// pisar la escrita con un blanco sería perder lo que había.
-		if (copiar && oficial !== null) fRatePct = ratePercentText(oficial);
+		if (copiar && oficial !== null) {
+			fRatePct = ratePercentText(oficial);
+			proponerCodigo(oficial);
+		}
 	}
 
 	/**
@@ -602,14 +672,38 @@
 		</div>
 
 		<!--
-			Impuesto del producto (T-504, T-505; RN-9 y RN-11).
+			Impuesto del producto (T-504, T-505, T-715; RN-9, RN-11 y RN-76).
 
-			Son dos campos y viajan los dos: el código del catálogo y la tarifa. En
-			blanco la tarifa significa «la configurada del negocio», que no es lo
-			mismo que 0 —un libro infantil paga 0 % de verdad—, y por eso el campo
-			no es obligatorio y su valor vacío se manda tal cual.
+			Son tres campos y viajan los tres: el código del catálogo CABYS, el
+			código de tarifa de Hacienda y la tarifa. En blanco la tarifa significa
+			«la configurada del negocio», que no es lo mismo que 0 —un libro
+			infantil paga 0 % de verdad—, y por eso el campo no es obligatorio y su
+			valor vacío se manda tal cual.
+
+			**El código de tarifa manda sobre el porcentaje**: elegirlo escribe la
+			tarifa, y el servidor la recalcula desde el código de todas formas
+			(RN-76). La tarifa sigue siendo escribible porque cambiarla es un
+			gesto legítimo (RN-11); lo que pasa entonces es que el producto queda
+			sin clasificar, porque un código `03` al 0 % no existe.
 		-->
 		<div class="sm:col-span-2 rounded-xl border border-[var(--border)] p-3">
+			<div class="mb-4">
+				<label class="label" for="product-tax-code">{m.inventory_label_tax_code()}</label>
+				<select
+					id="product-tax-code"
+					name="tax_code"
+					class="input"
+					value={fTaxCode}
+					onchange={(e) => elegirCodigo(e.currentTarget.value)}
+				>
+					<option value="">{m.inventory_tax_code_none()}</option>
+					{#each SELLABLE_TAX_CODES as tarifa (tarifa.code)}
+						<option value={tarifa.code}>{taxCodeLabel(tarifa.code)}</option>
+					{/each}
+				</select>
+				<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.inventory_tax_code_hint()}</p>
+			</div>
+
 			<div class="grid gap-4 sm:grid-cols-2">
 				<Field
 					label={m.inventory_label_cabys()}

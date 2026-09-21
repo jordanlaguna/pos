@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 
+from app.domain.fe_tax_codes import InvalidTaxCode, check_code, rate_for, suggested_code
+from app.domain.tax import TaxRate
 from app.models.model_categories import Category
 from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
@@ -8,11 +10,36 @@ from app.services.crud_categories import check_category_for_product
 from app.utils.api_errors import api_error
 
 
+def codigo_y_tarifa(codigo: object) -> tuple[str, float]:
+    """El código limpio y el porcentaje que le toca, o 400 (RN-76).
+
+    **El código manda sobre la tarifa y no al revés.** Guardar los dos y dejar
+    que cada uno venga por su lado es cómo se desincronizan: quedaría un
+    producto que dice tarifa general y cobra 4 %, y el comprobante saldría con
+    los dos datos peleados. De un código sale siempre un porcentaje; del
+    porcentaje no siempre sale un código.
+
+    Los dos salen de la misma llamada para que la validación ocurra una sola
+    vez: con dos llamadas, la que valida y la que convierte pueden quedar en
+    distinto orden y el «no» del dominio se escapa como un 500.
+    """
+    try:
+        return check_code(codigo), float(rate_for(codigo).value)
+    except InvalidTaxCode:
+        raise api_error(400, "invalid_tax_code", tax_code=str(codigo)) from None
+
+
 def create_product(db: Session, product: ProductRegister):
     # RN-6: el producto va en la hoja del árbol. Con la categoría convertida en
     # raíz de una rama, colgarle un producto lo dejaría fuera de la grilla de
     # ventas —que en una raíz con hijas muestra fichas, no productos—.
     check_category_for_product(db, product.category_id)
+
+    # Con código de Hacienda la tarifa sale de él; sin código, de lo que mande
+    # el POS (RN-76).
+    codigo, tarifa = (
+        codigo_y_tarifa(product.tax_code) if product.tax_code else (None, product.tax_rate)
+    )
 
     db_product = Product(
         name=product.name,
@@ -27,7 +54,8 @@ def create_product(db: Session, product: ProductRegister):
         # ficha propone la configurada al crear, y eso pasa en el POS: acá se
         # guarda lo que venga, incluido el nulo.
         cabys_code=product.cabys_code,
-        tax_rate=product.tax_rate,
+        tax_rate=tarifa,
+        tax_code=codigo,
         # `unit_of_measure` tiene valor por omisión en la base; mandar None lo
         # dejaría en NULL y la columna es NOT NULL.
         **({"unit_of_measure": product.unit_of_measure} if product.unit_of_measure else {}),
@@ -74,7 +102,7 @@ def get_product_by_barcode(db: Session, term: str) -> Product | None:
 #: En el resto de las columnas la regla contraria es la correcta —`name=None`
 #: pondría el nombre en NULL y la columna no lo admite—, y por eso la lista es
 #: corta y explícita en vez de al revés.
-VACIABLES = {"cabys_code", "tax_rate"}
+VACIABLES = {"cabys_code", "tax_rate", "tax_code"}
 
 
 def update_product_information(db: Session, id_product: int, product_data: dict):
@@ -101,6 +129,13 @@ def update_product_information(db: Session, id_product: int, product_data: dict)
     if nueva_categoria is not None and nueva_categoria != db_product.category_id:
         check_category_for_product(db, nueva_categoria)
 
+    # El código de Hacienda manda sobre la tarifa (RN-76): si viene, la reescribe
+    # aunque el formulario haya mandado otra. Vaciarlo **no** toca la tarifa —el
+    # producto sigue cobrando lo que cobraba, solo deja de estar clasificado—.
+    if product_data.get("tax_code"):
+        codigo, tarifa = codigo_y_tarifa(product_data["tax_code"])
+        product_data = {**product_data, "tax_code": codigo, "tax_rate": tarifa}
+
     for key, value in product_data.items():
         if not hasattr(db_product, key):
             continue
@@ -109,6 +144,11 @@ def update_product_information(db: Session, id_product: int, product_data: dict)
         # salta. En `VACIABLES` no: ahí el nulo **es** el valor.
         if value is None and key not in VACIABLES:
             continue
+        # Y la cadena vacía en uno de esos **es el nulo**, no un valor: un
+        # `tax_code` de `''` no es un código sin clasificar, es un código
+        # imposible. Guardarlo así deja una fila que no es ni lo uno ni lo otro.
+        if value == "" and key in VACIABLES:
+            value = None
         setattr(db_product, key, value)
 
     db.commit()
@@ -145,9 +185,16 @@ def assign_cabys(db: Session, product_ids: list[int], cabys_code: str, tax_rate:
         faltante = next(i for i in unicos if i not in encontrados)
         raise api_error(404, "product_not_found", product_id=faltante)
 
+    # El CABYS trae una tarifa, no un código de Hacienda. Cuando esa tarifa deja
+    # **una sola** posibilidad en la nota 8.1 —el 13 % es `08` y no hay otro— se
+    # pone, porque no hay nada que elegir. En el 0 % hay tres y la diferencia es
+    # el derecho a crédito del cliente, así que se queda sin clasificar y lo
+    # elige quien sabe a quién le vende (RN-76).
+    codigo = suggested_code(TaxRate(tax_rate))
     for producto in productos:
         producto.cabys_code = cabys_code
         producto.tax_rate = tax_rate
+        producto.tax_code = codigo
 
     db.commit()
     return len(productos)

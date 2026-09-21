@@ -78,5 +78,19 @@
   "inventory_classify_done": "{count} productos clasificados.",
   "inventory_classify_all_done": "Todo el catálogo está clasificado.",
   "inventory_cabys_code_partial": "Un código son {length} dígitos y lleva {typed}: el catálogo solo resuelve el exacto.",
-  "inventory_cabys_code_unknown": "Ese código no está en el catálogo."
+  "inventory_cabys_code_unknown": "Ese código no está en el catálogo.",
+  "inventory_label_tax_code": "Código de tarifa (Hacienda)",
+  "inventory_tax_code_none": "Sin clasificar",
+  "inventory_tax_code_hint": "El que Hacienda pide en cada línea del comprobante. Fija la tarifa.",
+  "inventory_tax_code_01": "0 % con derecho a crédito pleno",
+  "inventory_tax_code_02": "Reducida 1 %",
+  "inventory_tax_code_03": "Reducida 2 %",
+  "inventory_tax_code_04": "Reducida 4 %",
+  "inventory_tax_code_05": "Transitoria 0 %",
+  "inventory_tax_code_06": "Transitoria 4 %",
+  "inventory_tax_code_07": "Transitoria 8 %",
+  "inventory_tax_code_08": "General 13 %",
+  "inventory_tax_code_09": "Reducida 0,5 %",
+  "inventory_tax_code_10": "Exenta",
+  "inventory_tax_code_11": "0 % sin derecho a crédito"
 }

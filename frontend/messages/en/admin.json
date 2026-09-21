@@ -186,6 +186,7 @@
 	"admin_action_suscripcion": "Changed the subscription",
 	"admin_action_plan_modulos": "Changed a plan's modules",
 	"admin_action_entrar_como": "Entered as the company",
+	"admin_action_fe_ambiente": "Changed the e-invoicing environment",
 
 	"$comentario_avisos": "The subscription notices the customer sees in the POS (RF-11). The grace one and the read-only one are the ones that cost money, so they say what can still be done and not just what happened.",
 

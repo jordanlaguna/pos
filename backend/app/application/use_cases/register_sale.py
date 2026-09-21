@@ -175,6 +175,11 @@ class RegisterSale:
                             if producto.tax_rate is not None
                             else tasa_del_negocio
                         ),
+                        # El código de tarifa viaja tal cual, sin resolverse
+                        # contra nada: no hay «el código configurado del
+                        # negocio» porque del porcentaje no se vuelve al código
+                        # (RN-76). Nulo es «sin clasificar», y así se guarda.
+                        tax_code=producto.tax_code,
                         # El costo también se congela (RN-63). En cero significa
                         # «nunca se compró» —así nace `products.cost`— y eso se
                         # guarda como nulo: cero diría que fue gratis.

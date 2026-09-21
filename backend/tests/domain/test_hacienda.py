@@ -18,6 +18,7 @@ from app.domain.hacienda import (
     check_identification_type,
     endpoints,
     identification_type_for,
+    needs_confirmation,
     signing_key_name,
 )
 
@@ -36,6 +37,30 @@ class TestElAmbiente:
     def test_cualquier_otro_se_rechaza(self, malo):
         with pytest.raises(InvalidEnvironment):
             check_environment(malo)
+
+
+class TestCuandoHayQueConfirmar:
+    """RN-35, T-611."""
+
+    def test_pasar_a_produccion_si(self):
+        # Es el momento en que los documentos dejan de ser un ensayo.
+        assert needs_confirmation(PRODUCTION) is True
+
+    def test_volver_a_pruebas_no(self):
+        """La asimetría es a propósito.
+
+        Exigir confirmación para deshacer convierte la salida de un error en un
+        segundo trámite, justo cuando alguien acaba de darse cuenta de que
+        emitió en el ambiente equivocado. De ese lado lo que importa es que
+        quede en bitácora, y eso pasa igual.
+        """
+        assert needs_confirmation(SANDBOX) is False
+
+    def test_un_ambiente_inventado_no_llega_a_la_pregunta(self):
+        # Se rechaza antes: «¿hay que confirmar 'qa'?» no tiene respuesta buena,
+        # y devolver False lo dejaría pasar sin confirmación ni ambiente válido.
+        with pytest.raises(InvalidEnvironment):
+            needs_confirmation("qa")
 
 
 class TestDondeViveHacienda:

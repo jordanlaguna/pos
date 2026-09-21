@@ -103,7 +103,7 @@ class SqlAlchemyFeCredentialsRepository:
         # sobre una contraseña que se cambió hoy y que nadie probó.
         fila.atv_verified_at = None
 
-    def mark_verified(self, *, environment: str, at: datetime) -> None:
+    def set_verified(self, *, environment: str, at: datetime | None) -> None:
         fila = self.get(environment)
         if fila is None:
             return

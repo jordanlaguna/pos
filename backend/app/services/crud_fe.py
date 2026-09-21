@@ -25,29 +25,39 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from app.application.ports.secrets import SecretUnreadable
 from app.application.ports.signing import (
     InvalidCertificate,
     SigningKeyMissing,
     SigningUnavailable,
 )
+from app.application.ports.transmission import CredentialsRejected, IdpUnreachable
 from app.application.use_cases.fe_credentials import (
+    AtvNotConfigured,
     AtvUserRequired,
     ReadFeStatus,
     RemoveCertificate,
     SaveAtvCredentials,
     UploadCertificate,
+    VerifyAtvCredentials,
 )
 from app.domain.errors import InvalidEnvironment
 from app.domain.fe_credentials import EnvironmentStatus
-from app.domain.hacienda import SANDBOX, check_environment
+from app.domain.hacienda import SANDBOX, check_environment, needs_confirmation
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.crypto.fe_crypto import secret_box
 from app.infrastructure.crypto.pkcs12_reader import Pkcs12CertificateReader
 from app.infrastructure.crypto.vault_signer import document_signer
+from app.infrastructure.external.hacienda_idp import endpoints_for, hacienda_idp
 from app.infrastructure.persistence.sqlalchemy_fe import SqlAlchemyFeCredentialsRepository
 from app.infrastructure.persistence.sqlalchemy_repositories import SqlAlchemyUnitOfWork
-from app.services import crud_settings
+from app.services import crud_membership, crud_settings
 from app.utils.api_errors import api_error
+
+#: Dónde vive el ambiente activo. Es un campo protegido de la configuración
+#: (`crud_settings.PROTECTED_PATHS`): se lee por ahí y **solo se escribe** por
+#: `cambiar_ambiente`, que confirma y deja bitácora.
+ACTIVE_PATH = ("eInvoicing", "environment")
 
 #: Lo máximo que puede pesar un `.p12`. Uno de Hacienda no pasa de 5 KB; el
 #: techo está para que subir un ISO por equivocación no se lea entero en memoria
@@ -156,6 +166,119 @@ def guardar_atv(
     return estado(db)
 
 
+def verificar_atv(db: Session, ambiente: str, *, user_id: int, company_id: int) -> dict:
+    """RF-31. Pide un token y lo tira: comprueba sin emitir nada.
+
+    Los cuatro «no» son cuatro códigos distintos porque mandan a hacer cuatro
+    cosas distintas, y el que más importa es el último: **«no se pudo
+    comprobar» no es «no sirven»**. Quien reciba el segundo va a rotar su
+    contraseña en ATV, y hacerlo el día que Hacienda está en mantenimiento es
+    trabajo perdido sobre una credencial que estaba bien.
+
+    **Queda en bitácora que se usaron, con su desenlace y sin su contenido**
+    (T-609b, plan §7.1). Los cuatro desenlaces se anotan y no solo el bueno: la
+    pregunta que se hace de verdad seis meses después no es «probó alguna vez»
+    sino «desde cuándo esto no funciona», y esa la contestan los «no».
+    """
+    entorno = _ambiente(ambiente)
+    caso = VerifyAtvCredentials(
+        credentials=_credenciales(db),
+        secrets=secret_box(),
+        idp=hacienda_idp(),
+        clock=SystemClock(),
+        uow=SqlAlchemyUnitOfWork(db),
+    )
+    try:
+        caso(
+            company_id=company_id,
+            environment=entorno,
+            endpoints=endpoints_for(entorno),
+        )
+    except AtvNotConfigured:
+        # El único que NO se anota: no había credenciales, así que no se usó
+        # ninguna. Una línea acá diría que se probó algo que no existe.
+        raise api_error(409, "atv_not_configured", environment=entorno) from None
+    except SecretUnreadable:
+        _anotar_uso(db, user_id, company_id, entorno, "no se pudo descifrar")
+        raise api_error(409, "atv_password_unreadable", environment=entorno) from None
+    except CredentialsRejected:
+        _anotar_uso(db, user_id, company_id, entorno, "rechazadas por Hacienda")
+        raise api_error(400, "atv_invalid_credentials", environment=entorno) from None
+    except IdpUnreachable:
+        _anotar_uso(db, user_id, company_id, entorno, "sin respuesta de Hacienda")
+        # 503 y no 502: dice «reintentá», que es lo único cierto que se sabe.
+        raise api_error(503, "atv_unreachable", environment=entorno) from None
+
+    _anotar_uso(db, user_id, company_id, entorno, "aceptadas")
+    return estado(db)
+
+
+def _anotar_uso(
+    db: Session, user_id: int, company_id: int, entorno: str, desenlace: str
+) -> None:
+    """La mitad positiva de la bitácora (T-609b): se usaron, y cómo salió.
+
+    **El detalle no lleva ni el usuario de ATV ni un fragmento de la
+    contraseña**, y eso no es prudencia sino la regla: lo que se registra es el
+    hecho, no el secreto. El usuario se puede ver en la pantalla, que es donde
+    corresponde; en una bitácora que soporte lee de todas las compañías, no.
+
+    Confirma acá y no lo deja al endpoint porque tres de los cuatro desenlaces
+    terminan en una excepción: sin `commit`, la línea que explica el fallo se
+    iría con la sesión justo en el caso que hacía falta narrar.
+    """
+    crud_membership.registrar(
+        db,
+        user_id=user_id,
+        company_id=company_id,
+        accion="fe_credenciales_probadas",
+        detalle=f"{entorno}: {desenlace}",
+        ip=None,
+    )
+    db.commit()
+
+
+def cambiar_ambiente(
+    db: Session, ambiente: str, *, confirmado: bool, user_id: int, company_id: int
+) -> dict:
+    """RF-30, RN-35. Elige el ambiente en uso, con confirmación y bitácora.
+
+    **El aviso de la certificación de Hacienda lo da el POS**, no esto (RN-46,
+    RN-30): la confirmación enumera la factura, el tiquete y la nota de crédito
+    que §12 exige haber emitido en pruebas, y el backend **no lo impide** porque
+    todavía no hay comprobantes que contar. La puerta dura es T-713, en F7.
+
+    Cambiar al mismo ambiente que ya estaba no escribe ni registra nada: no
+    hubo cambio, y una bitácora con líneas que dicen «de producción a
+    producción» es una bitácora que nadie lee.
+    """
+    entorno = _ambiente(ambiente)
+    anterior = _activo(db)
+    if entorno == anterior:
+        return estado(db)
+
+    if needs_confirmation(entorno) and not confirmado:
+        raise api_error(400, "confirmation_required", environment=entorno)
+
+    crud_settings.write_protected(db, *ACTIVE_PATH, entorno)
+    crud_membership.registrar(
+        db,
+        user_id=user_id,
+        company_id=company_id,
+        accion="fe_ambiente",
+        # El antes y el después, como la entrada de T-305. «Cambió el ambiente»
+        # no sirve para nada dentro de seis meses, que es justo cuando alguien
+        # va a preguntar desde cuándo estas facturas tienen efecto fiscal.
+        detalle=f"{anterior} → {entorno}",
+        ip=None,
+    )
+    # Un solo `commit` para el cambio y su línea: no puede quedar uno sin la
+    # otra. Es la misma razón por la que `registrar` no confirma.
+    db.commit()
+
+    return estado(db)
+
+
 # --------------------------------------------------------------------- común
 
 
@@ -174,11 +297,11 @@ def _activo(db: Session) -> str:
 
     Por omisión `sandbox`: una compañía que nunca lo configuró **no** está
     emitiendo en producción, y suponer lo contrario sería suponer efecto fiscal
-    donde no lo hay.
+    donde no lo hay. Lo mismo con un valor que no se entiende — cae al ambiente
+    inofensivo, no al que tiene consecuencias.
     """
-    guardado = (crud_settings.get_settings(db) or {}).get("eInvoicing") or {}
     try:
-        return check_environment(guardado.get("environment"))
+        return check_environment(crud_settings.read_protected(db, *ACTIVE_PATH))
     except InvalidEnvironment:
         return SANDBOX
 

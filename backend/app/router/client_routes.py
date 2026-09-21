@@ -71,8 +71,11 @@ def update_client(
         if clash:
             raise api_error(400, "client_identification_taken")
 
+    # `exclude_unset` y no `.dict()`: es lo que distingue «no mandé este campo»
+    # de «ponelo en nulo», y sin eso la exoneración no se podría quitar —los
+    # ocho campos llegarían en nulo igual que si no se hubieran mandado—.
     updated = crud_client.update_client_information(
-        db=db, id_client=id_client, client_data=client_data.dict()
+        db=db, id_client=id_client, client_data=client_data.model_dump(exclude_unset=True)
     )
     if not updated:
         raise api_error(400, "client_update_failed")

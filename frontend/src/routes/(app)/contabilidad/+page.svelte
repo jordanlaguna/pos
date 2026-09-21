@@ -34,22 +34,27 @@
 		</p>
 
 		<form method="POST" action="?/activar" use:enhance={submit()} class="mt-5 grid gap-4">
+			<!--
+				`min-w-0` en cada columna: un elemento de rejilla no se encoge por
+				debajo de su contenido salvo que se le diga, y el contenido de un
+				`<select>` es su opción más larga. Ver la nota de `.input`.
+			-->
 			<div class="grid gap-4 sm:grid-cols-2">
-				<div>
-	<label class="label" for="template">{m.accounting_template()}</label>
-<select id="template" name="template" class="input">
+				<div class="min-w-0">
+					<label class="label" for="template">{m.accounting_template()}</label>
+					<select id="template" name="template" class="input">
 						{#each data.status.templates as plantilla (plantilla)}
 							<option value={plantilla}>{m.accounting_template_commerce()}</option>
 						{/each}
 					</select>
-	{#if form?.errors?.template}
-		<p class="mt-1 text-xs text-[var(--negative)]">{form?.errors?.template}</p>
-	{/if}
-</div>
+					{#if form?.errors?.template}
+						<p class="mt-1 text-xs text-[var(--negative)]">{form?.errors?.template}</p>
+					{/if}
+				</div>
 
-				<div>
-	<label class="label" for="start_date">{m.accounting_start_date()}</label>
-<input
+				<div class="min-w-0">
+					<label class="label" for="start_date">{m.accounting_start_date()}</label>
+					<input
 						id="start_date"
 						name="start_date"
 						type="date"
@@ -57,20 +62,20 @@
 						value={hoy.slice(0, 8) + '01'}
 						required
 					/>
-	{#if form?.errors?.start_date}
-		<p class="mt-1 text-xs text-[var(--negative)]">{form?.errors?.start_date}</p>
-	{/if}
-	<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.accounting_start_date_hint()}</p>
-</div>
+					{#if form?.errors?.start_date}
+						<p class="mt-1 text-xs text-[var(--negative)]">{form?.errors?.start_date}</p>
+					{/if}
+					<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.accounting_start_date_hint()}</p>
+				</div>
 			</div>
 
-			<div>
+			<div class="min-w-0">
 				<h3 class="text-sm font-semibold">{m.accounting_opening_title()}</h3>
 				<p class="mt-1 max-w-3xl text-xs text-[var(--text-subtle)]">
 					{m.accounting_opening_hint()}
 				</p>
 
-				<div class="mt-3 overflow-x-auto">
+				<div class="mt-3 min-w-0 overflow-x-auto">
 					<table class="w-full min-w-[34rem] text-sm">
 						<thead>
 							<tr class="text-left text-xs text-[var(--text-subtle)] uppercase">
@@ -134,13 +139,13 @@
 				</div>
 			</div>
 
-			<div>
-	<label class="label" for="description">{m.accounting_opening_description()}</label>
-<input id="description" name="description" type="text" class="input" maxlength="255" />
-	{#if form?.errors?.description}
-		<p class="mt-1 text-xs text-[var(--negative)]">{form?.errors?.description}</p>
-	{/if}
-</div>
+			<div class="min-w-0">
+				<label class="label" for="description">{m.accounting_opening_description()}</label>
+				<input id="description" name="description" type="text" class="input" maxlength="255" />
+				{#if form?.errors?.description}
+					<p class="mt-1 text-xs text-[var(--negative)]">{form?.errors?.description}</p>
+				{/if}
+			</div>
 
 			{#if form?.errors?.form}
 				<p class="text-sm text-[var(--danger)]">{form.errors.form}</p>

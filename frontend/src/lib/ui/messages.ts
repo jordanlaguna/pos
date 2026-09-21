@@ -286,6 +286,7 @@ export const API_CODES = [
 	// catálogo
 	'product_has_sales',
 	'category_name_taken',
+	'invalid_tax_code',
 	// categorías de dos niveles (F4)
 	'category_not_found',
 	'category_too_deep',
@@ -320,8 +321,8 @@ export const API_CODES = [
 	'purchase_has_payments',
 	'void_reason_required',
 	'client_update_failed',
+	'invalid_exemption',
 	'invalid_role',
-	'account_not_found',
 	'user_not_found',
 	'user_not_yours',
 	'last_admin',
@@ -335,6 +336,9 @@ export const API_CODES = [
 	'accounting_already_active',
 	'invalid_opening_balance',
 	'accounting_failed',
+	// Lo levantan dos sitios que hablan de cosas distintas —la cuenta del
+	// catálogo y la cuenta de una persona— y por eso estaba también arriba,
+	// entre los de usuarios. Ver T-925.
 	'account_not_found',
 	'account_code_taken',
 	'account_is_system',
@@ -347,7 +351,29 @@ export const API_CODES = [
 	'journal_missing_description',
 	'invalid_journal_line',
 	'entry_not_balanced',
-	'accounting_not_active'
+	'accounting_not_active',
+	// factura electrónica (F6)
+	'invalid_certificate',
+	'certificate_too_large',
+	'invalid_environment',
+	'atv_user_required',
+	'signing_unavailable',
+	// comprobar la transmisión y pasar a producción (T-612, T-611)
+	'atv_not_configured',
+	'atv_invalid_credentials',
+	'atv_unreachable',
+	'atv_password_unreadable',
+	'confirmation_required',
+	// sucursales y terminales (T-608)
+	'invalid_office_code',
+	'branch_code_taken',
+	'terminal_code_taken',
+	'branch_not_found',
+	'terminal_not_found',
+	'branch_in_use',
+	'terminal_in_use',
+	'last_active_branch',
+	'last_active_terminal'
 ] as const;
 
 export type ApiCode = (typeof API_CODES)[number];
@@ -386,6 +412,42 @@ const numero = (valor: unknown): number => {
 };
 
 /**
+ * Qué le falta a la exoneración del cliente (T-717, RN-78).
+ *
+ * Es el único código que trae un motivo dentro, y es a propósito: los ocho
+ * motivos se arreglan en el mismo formulario y con el mismo gesto —completar el
+ * campo que falta—, así que ocho códigos de API serían ocho nombres para una
+ * sola conversación. Lo que sí cambia es qué campo señalar, y eso es el motivo.
+ *
+ * Un motivo que no esté acá sale como el genérico. No es exhaustivo como el
+ * `switch` de los códigos porque el motivo viaja como texto libre del dominio:
+ * lo que garantiza que se entienda es que el caso de abajo diga algo útil.
+ */
+function exoneracionInvalida(reason: string): string {
+	switch (reason) {
+		case 'unknown_document_type':
+			return m.api_exemption_unknown_document_type();
+		case 'document_type_only_in_notes':
+			return m.api_exemption_only_in_notes();
+		case 'missing_document_number':
+			return m.api_exemption_missing_document_number();
+		case 'unknown_institution':
+			return m.api_exemption_unknown_institution();
+		case 'missing_institution_name':
+			return m.api_exemption_missing_institution_name();
+		case 'missing_date':
+		case 'bad_date':
+			return m.api_exemption_bad_date();
+		case 'missing_article':
+			return m.api_exemption_missing_article();
+		case 'points_out_of_range':
+			return m.api_exemption_points_out_of_range();
+		default:
+			return m.api_exemption_invalid();
+	}
+}
+
+/**
  * Cómo se nombra el producto del que habla el error.
  *
  * El backend manda el nombre cuando puede leerlo y solo el id cuando la fila ya
@@ -398,6 +460,25 @@ function producto(d: Failure['data']): string {
 		return m.api_product_by_id({ product_id: String(d.product_id) });
 	}
 	return m.api_product_unknown();
+}
+
+/**
+ * El ambiente de factura electrónica, dicho como palabra.
+ *
+ * El backend manda `'sandbox'` y `'production'`, que son códigos y viajan así a
+ * propósito (RN-30). Lo desconocido sale tal cual en vez de en blanco: un hueco
+ * en medio de la frase es peor que una palabra rara, y además delata que el
+ * backend aprendió un ambiente que este POS no conoce.
+ */
+function ambiente(valor: unknown): string {
+	switch (texto(valor)) {
+		case 'sandbox':
+			return m.api_environment_sandbox();
+		case 'production':
+			return m.api_environment_production();
+		default:
+			return texto(valor);
+	}
 }
 
 /** El campo del cotejo de totales, dicho como palabra. */
@@ -642,6 +723,8 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_product_has_sales();
 		case 'category_name_taken':
 			return m.api_category_name_taken({ name: texto(d.name) });
+		case 'invalid_tax_code':
+			return m.api_invalid_tax_code({ tax_code: texto(d.tax_code) });
 
 		// ------------------------------------------ categorías de dos niveles
 		case 'category_not_found':
@@ -731,10 +814,10 @@ function frase(code: ApiCode, d: Failure['data']): string {
 
 		case 'client_update_failed':
 			return m.api_client_update_failed();
+		case 'invalid_exemption':
+			return exoneracionInvalida(texto(d.reason));
 		case 'invalid_role':
 			return m.api_invalid_role();
-		case 'account_not_found':
-			return m.api_account_not_found();
 		case 'user_not_found':
 			return m.api_user_not_found();
 		case 'user_not_yours':
@@ -799,6 +882,88 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			});
 		case 'accounting_not_active':
 			return m.api_accounting_not_active();
+
+		// ---------------------------------------------- factura electrónica (F6)
+		case 'invalid_certificate':
+			// Los cuatro motivos son cuatro frases y no una: el backend los separa
+			// justamente porque lo que hay que hacer es distinto en cada uno
+			// —volver a escribir el PIN, o ir a buscar otro archivo—, y
+			// colapsarlos acá tiraría esa distinción en el último metro.
+			switch (texto(d.reason)) {
+				case 'bad_pin':
+					return m.api_invalid_certificate_bad_pin();
+				case 'not_a_p12':
+					return m.api_invalid_certificate_not_a_p12();
+				case 'no_private_key':
+					return m.api_invalid_certificate_no_private_key();
+				case 'no_certificate':
+					return m.api_invalid_certificate_no_certificate();
+				default:
+					return m.api_invalid_certificate();
+			}
+		case 'certificate_too_large':
+			// `limit` viene en bytes, que es lo que el backend cuenta. Nadie piensa
+			// en bytes mirando un archivo, así que la frase dice KB.
+			return m.api_certificate_too_large({ kb: Math.round(numero(d.limit) / 1024) });
+		case 'invalid_environment':
+			return m.api_invalid_environment({ environment: texto(d.environment) });
+		case 'atv_user_required':
+			return m.api_atv_user_required();
+		case 'signing_unavailable':
+			return m.api_signing_unavailable();
+		case 'atv_not_configured':
+			return m.api_atv_not_configured({ environment: ambiente(d.environment) });
+		case 'atv_invalid_credentials':
+			return m.api_atv_invalid_credentials({ environment: ambiente(d.environment) });
+		case 'atv_unreachable':
+			// Sin `environment` a propósito: la frase no habla del ambiente sino
+			// de Hacienda, y sobre todo **no puede echarle la culpa a las
+			// credenciales** (RF-31). Quien lea «no sirven» va a rotar su
+			// contraseña en ATV, y eso no es un clic.
+			return m.api_atv_unreachable();
+		case 'atv_password_unreadable':
+			return m.api_atv_password_unreadable({ environment: ambiente(d.environment) });
+		case 'confirmation_required':
+			return m.api_confirmation_required({ environment: ambiente(d.environment) });
+
+		// --------------------------------------- sucursales y terminales (T-608)
+		case 'invalid_office_code':
+			// Los cuatro motivos son cuatro frases, como en `invalid_certificate`:
+			// «escriba un número» no es «ese número no cabe». `digits` va en la
+			// frase porque es lo único que le dice a quien escribió de más cuánto
+			// le sobra.
+			switch (texto(d.reason)) {
+				case 'not_digits':
+					return m.api_invalid_office_code_not_digits();
+				case 'too_long':
+					return m.api_invalid_office_code_too_long({ digits: numero(d.digits) });
+				case 'empty':
+					return m.api_invalid_office_code_empty();
+				default:
+					return m.api_invalid_office_code();
+			}
+		case 'branch_code_taken':
+			return m.api_branch_code_taken({ code: texto(d.branch_code) });
+		case 'terminal_code_taken':
+			return m.api_terminal_code_taken({ code: texto(d.terminal_code) });
+		case 'branch_not_found':
+			return m.api_branch_not_found();
+		case 'terminal_not_found':
+			return m.api_terminal_not_found();
+		case 'branch_in_use':
+			return m.api_branch_in_use({
+				sales: numero(d.sales),
+				terminals: numero(d.terminals)
+			});
+		case 'terminal_in_use':
+			return m.api_terminal_in_use({
+				sessions: numero(d.sessions),
+				sales: numero(d.sales)
+			});
+		case 'last_active_branch':
+			return m.api_last_active_branch();
+		case 'last_active_terminal':
+			return m.api_last_active_terminal();
 		default:
 			// Acá `code` ya es `never`: si falta un caso, esto no compila. Es lo
 			// único que impide que un código nuevo salga en blanco en la pantalla.
@@ -980,7 +1145,12 @@ export function auditActionLabel(accion: string): string {
 			return m.admin_action_plan_modulos();
 		case 'entrar_como':
 			return m.admin_action_entrar_como();
+		case 'fe_ambiente':
+			return m.admin_action_fe_ambiente();
 		default:
+			// Una acción que este POS no conoce sale con su código. No es bonito y
+			// es lo correcto: la bitácora tiene que sobrevivir a lo que narra, y una
+			// línea en blanco esconde justo la que nadie previó.
 			return accion;
 	}
 }

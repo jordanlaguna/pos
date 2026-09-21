@@ -15,6 +15,7 @@ Se buscan a propósito, que es distinto de mirar el esquema y confiar.
 from __future__ import annotations
 
 import datetime as dt
+import subprocess
 
 import pytest
 from cryptography import x509
@@ -23,7 +24,16 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 
-from tests.conftest import API, Api, afiliado_unico, bootstrap, codigo, entrar, marca_unica
+from tests.conftest import (
+    API,
+    BACKEND,
+    Api,
+    afiliado_unico,
+    bootstrap,
+    codigo,
+    entrar,
+    marca_unica,
+)
 
 pytestmark = pytest.mark.characterization
 
@@ -31,7 +41,7 @@ PIN = "pin-secreto-del-p12"
 CONTRASENA = "contrasena-secreta-de-atv"
 
 
-def p12(nombre: str, *, dias: int = 365) -> bytes:
+def p12(nombre: str, *, dias: int = 365, pin: str = PIN) -> bytes:
     privada = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     sujeto = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, nombre)])
     hasta = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=dias)
@@ -50,7 +60,7 @@ def p12(nombre: str, *, dias: int = 365) -> bytes:
         key=privada,
         cert=certificado,
         cas=None,
-        encryption_algorithm=serialization.BestAvailableEncryption(PIN.encode()),
+        encryption_algorithm=serialization.BestAvailableEncryption(pin.encode()),
     )
 
 
@@ -262,3 +272,316 @@ class TestNiElPINNiLaContrasenaSalenPorNingunLado:
         # es justo donde apetece escribir el valor que no sirvió.
         respuesta = subir(empresa, "production", p12("X"), pin="pin-que-no-abre")
         assert "pin-que-no-abre" not in str(respuesta[1])
+
+
+# --------------------------------------------------------------------- T-609
+
+#: Busca dos valores en **todas** las columnas de texto de **todas** las tablas.
+#:
+#: Corre dentro del contenedor porque la base de la pila de pruebas no publica
+#: puerto —vive en tmpfs— y es el mismo camino que ya usa
+#: `test_respaldo_compania.py`. Se recorre el esquema entero y no las tres tablas
+#: que uno esperaría: lo que hay que descubrir es justamente la columna en la que
+#: nadie pensó, y una lista escrita a mano no puede contener la que todavía no
+#: existe.
+_BUSCADOR = """
+import sys
+from sqlalchemy import text
+from app.database.database import engine
+
+agujas = sys.argv[1:]
+# Los tipos binarios quedan fuera: un LIKE sobre bytes arbitrarios revienta por
+# la intercalación, y las columnas de F6 son VARCHAR y TEXT por decisión de
+# T-601 —el modelo y la migración no podían decir lo mismo con VARBINARY—.
+TIPOS = ("char", "varchar", "text", "tinytext", "mediumtext", "longtext", "json")
+
+encontrados = []
+with engine.connect() as con:
+    base = con.execute(text("SELECT DATABASE()")).scalar()
+    columnas = con.execute(
+        text(
+            "SELECT table_name, column_name FROM information_schema.columns "
+            "WHERE table_schema = :base AND data_type IN :tipos"
+        ).bindparams(base=base, tipos=TIPOS)
+    ).all()
+    for tabla, columna in columnas:
+        for aguja in agujas:
+            cuantas = con.execute(
+                text(f"SELECT COUNT(*) FROM `{tabla}` WHERE `{columna}` LIKE :patron"),
+                {"patron": f"%{aguja}%"},
+            ).scalar()
+            if cuantas:
+                encontrados.append(f"{tabla}.{columna} x{cuantas}")
+
+print("|".join(encontrados))
+"""
+
+
+def buscar_en_la_base(*agujas: str) -> list[str]:
+    """Dónde aparece cada valor en la base, o una lista vacía."""
+    resultado = subprocess.run(
+        [
+            "docker", "compose", "-f", "docker-compose.test.yml",
+            "exec", "-T", "fastapi", "python", "-", *agujas,
+        ],
+        cwd=BACKEND,
+        input=_BUSCADOR,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if resultado.returncode != 0:
+        pytest.skip(f"no se pudo consultar la base de pruebas: {resultado.stderr[-300:]}")
+    return [x for x in resultado.stdout.strip().split("|") if x]
+
+
+def trazas_del_servidor() -> str:
+    """Lo que el contenedor escribió, que es donde va a parar un `traceback`."""
+    resultado = subprocess.run(
+        [
+            "docker", "compose", "-f", "docker-compose.test.yml",
+            "logs", "--no-color", "--tail", "2000", "fastapi",
+        ],
+        cwd=BACKEND,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if resultado.returncode != 0:
+        pytest.skip("no se pudieron leer las trazas del contenedor")
+    return resultado.stdout
+
+
+class TestSeBuscanAPropositoEnTodaLaBase:
+    """T-609, la mitad que no se ve por HTTP.
+
+    Las pruebas de arriba comprueban que los secretos no **salgan**; estas, que
+    no **estén**. Son cosas distintas y la segunda es la que de verdad protege:
+    un valor que no está en ninguna columna no se puede filtrar por un endpoint
+    que nadie ha escrito todavía.
+
+    Con el PIN además cambió el carácter de la pregunta el 2026-09-13. Desde que
+    la llave privada vive en Vault **no hay columna donde ponerlo**, así que lo
+    que se verifica no es que esté bien guardado sino que **no sobreviva a la
+    petición que lo trajo**.
+    """
+
+    def test_despues_de_una_subida_buena_el_PIN_no_esta_en_ninguna_columna(
+        self, empresa: Api
+    ):
+        # El `.p12` se cifra CON ese PIN: buscar uno que nunca abrió nada no
+        # probaría nada, porque el camino que lo podría guardar es el que
+        # termina bien.
+        pin = f"pin-unico-{marca_unica()}"
+        estado, _ = subir(empresa, "sandbox", p12("SIN RASTRO", pin=pin), pin=pin)
+        assert estado == 200
+
+        assert buscar_en_la_base(pin) == []
+
+    def test_la_contrasena_de_ATV_no_esta_en_claro_en_ninguna_columna(self, empresa: Api):
+        # Esta sí se guarda —hay que reenviarla al IdP en cada token— pero
+        # cifrada. Que esté y no se vea es justo lo que hay que comprobar.
+        clave = f"clave-unica-{marca_unica()}"
+        empresa.call("PUT", "/fe/sandbox/atv", {"user": "u@x.cr", "password": clave})
+
+        assert buscar_en_la_base(clave) == []
+
+    def test_el_buscador_encuentra_lo_que_SI_esta(self, empresa: Api):
+        """La prueba de la prueba.
+
+        Sin esto, un buscador roto —una consulta que no devuelve nada nunca—
+        dejaría las dos de arriba en verde para siempre, que es exactamente la
+        forma en que un guardián deja de guardar sin que nadie se entere.
+
+        Se busca el **usuario** de ATV, que sí se guarda en claro a propósito
+        (RN-16): es un identificador y la pantalla lo muestra.
+        """
+        usuario = f"cpf-01-{marca_unica()}@pruebas.cr"
+        empresa.call("PUT", "/fe/production/atv", {"user": usuario, "password": CONTRASENA})
+
+        assert any("fe_credentials" in d for d in buscar_en_la_base(usuario))
+
+    def test_ni_en_las_trazas_del_servidor(self, empresa: Api):
+        """El sitio que se olvida: un `traceback` con el valor en un argumento.
+
+        Se provoca el fallo más propenso a contarlo —un PIN que no abre el
+        archivo— y después se lee lo que el contenedor escribió.
+        """
+        pin = f"pin-que-no-abre-{marca_unica()}"
+        clave = f"clave-que-no-sirve-{marca_unica()}"
+        subir(empresa, "production", p12("PARA FALLAR"), pin=pin)
+        empresa.call("PUT", "/fe/production/atv", {"user": "u@x.cr", "password": clave})
+        empresa.call("POST", "/fe/production/atv/verify")
+
+        trazas = trazas_del_servidor()
+        assert pin not in trazas
+        assert clave not in trazas
+
+
+class TestLaBitacoraDiceQueSeUsaron:
+    """T-609b: la mitad positiva. Se registra el hecho, nunca el contenido."""
+
+    def test_probar_la_conexion_deja_su_linea_con_el_desenlace(
+        self, empresa: Api, soporte: Api
+    ):
+        clave = f"clave-{marca_unica()}"
+        empresa.call("PUT", "/fe/sandbox/atv", {"user": "u@x.cr", "password": clave})
+        # Sin red hacia Hacienda desde la pila de pruebas, el desenlace es «no se
+        # pudo comprobar». Da igual cuál sea: lo que se comprueba es que **quede
+        # anotado**, y el que no se anotaría sería el bueno.
+        empresa.call("POST", "/fe/sandbox/atv/verify")
+
+        estado, bitacora = soporte.call(
+            "GET", "/support/audit?accion=fe_credenciales_probadas&limit=50"
+        )
+        if estado != 200:
+            pytest.skip("el panel de soporte no está disponible en esta corrida")
+
+        detalles = [linea["detalle"] for linea in bitacora["lineas"]]
+        assert any(d and d.startswith("sandbox:") for d in detalles)
+        # Y ninguna línea lleva la contraseña.
+        assert clave not in str(bitacora)
+
+    def test_sin_credenciales_no_se_anota_nada(self, empresa: Api, soporte: Api):
+        # No había nada que usar, así que no hubo uso. Una línea acá diría que se
+        # probó algo que no existe.
+        antes = soporte.call("GET", "/support/audit?accion=fe_credenciales_probadas&limit=200")
+        if antes[0] != 200:
+            pytest.skip("el panel de soporte no está disponible en esta corrida")
+        cuantas = len(antes[1]["lineas"])
+
+        assert codigo(empresa.call("POST", "/fe/production/atv/verify"), 409) == (
+            "atv_not_configured"
+        )
+
+        despues = soporte.call("GET", "/support/audit?accion=fe_credenciales_probadas&limit=200")
+        assert len(despues[1]["lineas"]) == cuantas
+
+
+class TestElAmbienteActivo:
+    """RF-30, RN-35, T-611."""
+
+    def test_por_omision_es_pruebas(self, empresa: Api):
+        # Suponer producción sería suponer efecto fiscal donde no lo hay.
+        _, cuerpo = empresa.call("GET", "/fe")
+        assert cuerpo["active"] == "sandbox"
+
+    def test_pasar_a_produccion_sin_confirmar_no_cambia_nada(self, empresa: Api):
+        respuesta = empresa.call("PUT", "/fe/active", {"environment": "production"})
+        assert codigo(respuesta, 400) == "confirmation_required"
+
+        _, cuerpo = empresa.call("GET", "/fe")
+        assert cuerpo["active"] == "sandbox"
+
+    def test_confirmado_si(self, empresa: Api):
+        estado, cuerpo = empresa.call(
+            "PUT", "/fe/active", {"environment": "production", "confirm": True}
+        )
+        assert estado == 200
+        assert cuerpo["active"] == "production"
+
+    def test_volver_a_pruebas_no_pide_confirmacion(self, empresa: Api):
+        """La asimetría de RN-35, comprobada.
+
+        Exigir confirmación para deshacer convierte la salida de un error en un
+        segundo trámite, justo cuando alguien acaba de darse cuenta de que
+        emitió en el ambiente equivocado.
+        """
+        empresa.call("PUT", "/fe/active", {"environment": "production", "confirm": True})
+        estado, cuerpo = empresa.call("PUT", "/fe/active", {"environment": "sandbox"})
+        assert estado == 200
+        assert cuerpo["active"] == "sandbox"
+
+    def test_un_ambiente_inventado(self, empresa: Api):
+        respuesta = empresa.call(
+            "PUT", "/fe/active", {"environment": "produccion", "confirm": True}
+        )
+        assert codigo(respuesta, 400) == "invalid_environment"
+
+    def test_un_cajero_no_lo_cambia(self, cajero: Api):
+        respuesta = cajero.call(
+            "PUT", "/fe/active", {"environment": "production", "confirm": True}
+        )
+        assert codigo(respuesta, 403) == "admin_only"
+
+    def test_cada_compania_tiene_el_suyo(self, empresa: Api, otra_empresa: Api):
+        empresa.call("PUT", "/fe/active", {"environment": "production", "confirm": True})
+        _, cuerpo_b = otra_empresa.call("GET", "/fe")
+        assert cuerpo_b["active"] == "sandbox"
+
+    def test_queda_en_bitacora_con_el_antes_y_el_despues(self, empresa: Api, soporte: Api):
+        """«Cambió el ambiente» no sirve para nada dentro de seis meses.
+
+        La pregunta que se hace de verdad es desde cuándo estas facturas tienen
+        efecto fiscal, y eso solo lo contesta el antes y el después.
+        """
+        empresa.call("PUT", "/fe/active", {"environment": "production", "confirm": True})
+
+        estado, bitacora = soporte.call("GET", "/support/audit?accion=fe_ambiente&limit=20")
+        if estado != 200:
+            pytest.skip("el panel de soporte no está disponible en esta corrida")
+        detalles = [linea["detalle"] for linea in bitacora["lineas"]]
+        assert "sandbox → production" in detalles
+
+
+class TestLaPuertaLateral:
+    """Que el ambiente no se pueda cambiar por `PUT /settings` (T-611).
+
+    Sin esto, la confirmación y la bitácora de RN-35 serían decoración:
+    bastaría con guardar la pantalla de Configuración para pasar a producción
+    sin que quedara rastro. Esconder el campo no es control de acceso.
+    """
+
+    def test_guardar_la_configuracion_no_mueve_el_ambiente(self, empresa: Api):
+        estado, actual = empresa.call("GET", "/settings/")
+        assert estado == 200
+
+        datos = dict(actual["data"])
+        datos["eInvoicing"] = {**datos.get("eInvoicing", {}), "environment": "production"}
+        empresa.call("PUT", "/settings/", {"data": datos, "keep_logo": True})
+
+        _, cuerpo = empresa.call("GET", "/fe")
+        assert cuerpo["active"] == "sandbox"
+
+    def test_y_tampoco_lo_borra(self, empresa: Api):
+        # El caso simétrico y más fácil de pasar por alto: el POS manda la
+        # configuración completa, y una versión suya que no conozca el campo lo
+        # dejaría fuera. Devolver a pruebas por omisión sería peor que el hueco.
+        empresa.call("PUT", "/fe/active", {"environment": "production", "confirm": True})
+
+        _, actual = empresa.call("GET", "/settings/")
+        datos = {k: v for k, v in actual["data"].items() if k != "eInvoicing"}
+        empresa.call("PUT", "/settings/", {"data": datos, "keep_logo": True})
+
+        _, cuerpo = empresa.call("GET", "/fe")
+        assert cuerpo["active"] == "production"
+
+
+class TestComprobarLaConexion:
+    """RF-31, T-612.
+
+    **Sin salir a internet.** Lo que se ejercita acá es el borde: quién puede
+    pedirlo y qué contesta cuando no hay nada que comprobar. Los tres desenlaces
+    con el IdP contestando viven en `test_idp_fe.py` —contra un Keycloak de
+    mentira— y en `tests/application/test_credenciales_fe.py`.
+    """
+
+    def test_sin_credenciales_no_hay_nada_que_comprobar(self, empresa: Api):
+        respuesta = empresa.call("POST", "/fe/sandbox/atv/verify", {})
+        # No es «no sirven»: no hay nada que corregir, hay algo que escribir.
+        assert codigo(respuesta, 409) == "atv_not_configured"
+
+    def test_el_usuario_sin_contrasena_tampoco(self, empresa: Api):
+        # No se puede llegar por el API —`password` es obligatoria— pero sí
+        # restaurando un respaldo: el usuario viaja y la contraseña no (RN-47).
+        respuesta = empresa.call("POST", "/fe/production/atv/verify", {})
+        assert codigo(respuesta, 409) == "atv_not_configured"
+
+    def test_un_ambiente_inventado(self, empresa: Api):
+        respuesta = empresa.call("POST", "/fe/qa/atv/verify", {})
+        assert codigo(respuesta, 400) == "invalid_environment"
+
+    def test_un_cajero_no_puede_comprobar(self, cajero: Api):
+        respuesta = cajero.call("POST", "/fe/sandbox/atv/verify", {})
+        assert codigo(respuesta, 403) == "admin_only"

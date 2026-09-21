@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, Numeric
+from sqlalchemy import CHAR, Column, ForeignKey, Integer, Numeric
 
 from app.database.database import Base
 from app.utils.tenancy import TenantMixin
@@ -28,6 +28,16 @@ class SaleDetail(TenantMixin, Base):
     # verdad, con su redondeo, y una factura tiene que reimprimirse igual dentro
     # de cinco años aunque cambie cómo se redondea.
     tax_amount = Column(Numeric(10, 2), nullable=True)
+
+    # El código de tarifa de Hacienda, congelado igual que la tarifa y por lo
+    # mismo (F7, RN-76). Y con una razón más: **del porcentaje no se puede
+    # volver al código**. Una línea al 0 % pudo ser una venta a la CCSS con
+    # derecho a crédito pleno (`01`) o un bien no sujeto sin ninguno (`11`); si
+    # no se guarda el código, la nota de crédito de dentro de un año tiene que
+    # adivinar cuál era.
+    #
+    # NULL es «anterior a F7» o «el producto no estaba clasificado».
+    tax_code = Column(CHAR(2), nullable=True)
 
     # El costo promedio del producto AL MOMENTO DE VENDERSE (RN-63), congelado
     # igual que la tarifa y por la misma razón. Vender hoy con costo ₡110 y

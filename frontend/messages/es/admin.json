@@ -186,6 +186,7 @@
 	"admin_action_suscripcion": "Cambió la suscripción",
 	"admin_action_plan_modulos": "Cambió los módulos de un plan",
 	"admin_action_entrar_como": "Entró como la compañía",
+	"admin_action_fe_ambiente": "Cambió el ambiente de facturación",
 
 	"$comentario_avisos": "Los avisos de suscripción que ve el cliente en el POS (RF-11). El de la gracia y el de solo lectura son los que cuestan plata, así que dicen qué se puede hacer todavía y no solo qué pasó.",
 

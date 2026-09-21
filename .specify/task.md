@@ -8,7 +8,7 @@
 > importe para quien retome va a `progress.json`; este archivo es la lista de
 > trabajo, no el registro histórico.
 >
-> Actualizado: 2026-09-11
+> Actualizado: 2026-09-19
 
 ---
 
@@ -1378,6 +1378,30 @@ estaban en el camino que una persona recorre el primer día.
 >    ya no tiene un camino sin Vault, así que **un Vault sellado no firma** y el
 >    despliegue tiene que abrirlo al arrancar.
 
+> **Dónde va la fase — al 2026-09-19.** Está hecho **todo el backend hasta el
+> certificado**: los dos contenedores (T-622, T-623), la migración y los
+> secretos (T-601, T-602a, T-602, T-602b, T-603, T-603b, T-604, T-605, T-606,
+> T-613, T-618) y la mitad de columna de T-621 y T-617. 1 623 pruebas del
+> backend con cobertura 100 % en dominio y aplicación.
+>
+> **Y el 2026-09-19, T-611, T-612, T-615, T-610 y las pantallas.** Los seis
+> endpoints están completos —estado, subir, quitar, ATV, comprobar la conexión
+> y el ambiente activo—, el simulado los reproduce y la pestaña de factura
+> electrónica de `/configuracion` los recorre entera. 1 672 pruebas del backend,
+> 617 del POS y 11 nuevas de punta a punta.
+>
+> **Y el mismo día, la segunda tanda**: T-608b (el objeto de valor de los
+> códigos), T-609 y T-609b (los guardianes de los secretos) y **el backend de
+> T-608** —`crud_office.py` y las seis rutas de `/offices`—. 1 731 pruebas del
+> backend, 626 del POS.
+>
+> **Y la tercera: T-608 cerrada.** Las siete rutas de `/offices` en el simulado,
+> la pestaña «Sucursales y cajas» de `/configuracion` y cinco pruebas de punta a
+> punta. 1 733 pruebas del backend, 626 del POS, 72 de punta a punta.
+>
+> Falta: T-607 (actividad económica), T-616 (el consecutivo), T-620 (unidad de
+> medida), las mitades de pantalla de T-621 y T-617, y T-619, que cierra.
+
 **Costes medidos antes de empezar** —lo que la fase va a hacer saltar, para que
 no aparezca a mitad de camino como en F5—:
 
@@ -1422,13 +1446,20 @@ columnas en español, así que la columna nueva deja `identificacion` e
 migración, o esa mezcla queda escrita — y es la única decisión que sigue
 abierta.
 
-- [ ] **T-621** `companies.identification_type` con la lista de Hacienda
+- [~] **T-621** `companies.identification_type` con la lista de Hacienda
       (01/02/03/04), y la identificación **de solo lectura** en Configuración,
       diciendo quién la cambia. RN-45, RF-37.
 
       Va con T-601, que es la migración de la fase. `business.taxId` y
       `business.taxIdType` quedan como lo que son —dos campos muertos más— y se
       resuelven con los otros cinco en T-614.
+
+      **La columna, hecha el 2026-09-13** en la migración 011, con
+      `check_identification_type` en `domain/hacienda.py`. **Falta la pantalla**:
+      Configuración sigue mostrando la identificación como un campo editable de
+      `settings`, y RF-37 pide que sea la de `companies` y de solo lectura. El
+      panel de factura electrónica del 2026-09-19 no la tocó: es la pestaña de
+      Negocio, no la de electrónica.
 
       **Verificación:** un `POST` a `/settings` que traiga `business.taxId`
       **no** cambia la identificación de la compañía. Esconder el campo no es
@@ -1475,7 +1506,7 @@ Van primero porque todo lo de la fase se apoya en ellos y porque un adaptador
 que nunca corrió contra el servicio de verdad no está entregado —es lo que
 T-602b ya decía de Vault, ahora vale para los dos—.
 
-- [ ] **T-622** **MinIO y Vault en las dos pilas**: `docker-compose.yml` y
+- [x] **T-622** **MinIO y Vault en las dos pilas**: `docker-compose.yml` y
       `docker-compose.test.yml`, con sus variables en `.env.example` y el
       procedimiento en el README de despliegue. Plan §7.1 y §7.3.
 
@@ -1496,7 +1527,20 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       creado y Vault desellado, comprobado desde el contenedor de FastAPI y no
       desde la máquina.
 
-- [ ] **T-623** Puerto `DocumentStore` y adaptador de S3 (`boto3`), con la
+      **Hecha el 2026-09-13.** MinIO `RELEASE.2025-09-07` y Vault `1.20` en las
+      dos pilas, con `fe_minio` y `fe_vault` como volúmenes **con nombre** en la
+      de trabajo y sin persistencia en la de pruebas.
+
+      **La pila de pruebas monta `transit` sola, desde el compose**
+      (`vault-init`). Su Vault es en memoria, así que cada reinicio lo dejaba sin
+      motor y la batería de la firma fallaba señalando el adaptador. Habilitarlo
+      a mano es justo la clase de paso que nadie recuerda hasta que rompe.
+
+      **Los puertos publicados se parametrizan**, como ya estaba `API_PORT`: en
+      la VM de un negocio el 9000 está libre, pero en una máquina de desarrollo
+      suele haber otro MinIO y sin eso los dos stacks no conviven.
+
+- [x] **T-623** Puerto `DocumentStore` y adaptador de S3 (`boto3`), con la
       **derivación de la llave en el dominio**. Plan §7.3.
 
       La ruta es `{company_id}/{environment}/{kind}/{yyyy}/{mm}/{clave}.{ext}` y
@@ -1516,9 +1560,30 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       es **byte por byte** lo que subió. Esto último no es una obviedad: es la
       propiedad de la que depende que una firma verifique cinco años después.
 
+      **Hecha el 2026-09-13**, en `infrastructure/storage/s3_documents.py`, con
+      una sola batería (`test_almacen_documentos.py`) que corren **las dos
+      implementaciones** —el doble en memoria y el MinIO de verdad—. Es el patrón
+      de T-106: sin eso nadie sabría si el puerto admite dos hasta el día de
+      escribir la segunda.
+
+      **«Se escribe una vez» es del almacén y no del código.** Con
+      `IfNoneMatch="*"` la segunda escritura devuelve **412** y el contenido
+      original no se toca. Un `head_object` antes del `put` tiene carrera; esto
+      no.
+
+      **El año y el mes salen de la propia clave**, no de un parámetro, para que
+      el mismo documento no pueda quedar archivado en dos meses según quién lo
+      guarde. Y **el ambiente va en la ruta** porque la clave se arma con el
+      consecutivo y pruebas y producción se numeran aparte: sin ese tramo, un
+      tiquete de ensayo pisa una factura de verdad.
+
+      **El puerto no lleva `delete`, y la ausencia es la decisión.** Estos
+      documentos se custodian por ley: borrar uno es mantenimiento con su propio
+      plazo, no una operación de la aplicación.
+
 ### Secretos
 
-- [ ] **T-601** Tabla `fe_credentials` con llave primaria
+- [x] **T-601** Tabla `fe_credentials` con llave primaria
       **`(company_id, ambiente)`** (plan §7.1). Guarda las dos credenciales: la
       de firma y la de transmisión. RN-33.
 
@@ -1554,7 +1619,35 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       importarla al Vault de destino, y eso solo pasa volviendo a subir el
       `.p12`.
 
-- [ ] **T-602a** Cifrado en reposo: AES-256-GCM, `FE_CRYPTO_KEY`, con
+      **Hecha el 2026-09-13**, migración `011-factura-electronica.sql`. Dos
+      tablas y dos columnas: `fe_credentials`, `fe_sequences`, y el tipo de
+      identificación del emisor (T-621) y del receptor (T-617).
+      Corrida **completa contra MySQL de verdad**, que es lo que `create_all` no
+      comprueba.
+
+      **`fe_sequences` tiene cinco dimensiones y no menos.** La secuencia es
+      dentro del tipo de comprobante: con un contador por terminal, emitir
+      tiquete, factura, tiquete deja los tiquetes en 1, 3, 5 y las facturas en
+      2, 4 — y «consecutivo fuera de orden» es rechazo. El ambiente entra en la
+      llave porque pruebas y producción son dos series.
+
+      **`company_dump.py` aprendió a clasificar por columna**, que es lo que no
+      sabía hacer (`COLUMNAS_DESCARTADAS`). Viaja todo menos
+      `atv_password_encrypted`.
+
+      **El `VARBINARY` y el `LONGTEXT` del boceto se cambiaron por `VARCHAR` y
+      `TEXT`**: `LargeBinary(512)` compila a BLOB y no a VARBINARY, así que el
+      modelo y la migración no podían decir lo mismo sin un tipo propietario, y
+      eso es lo que `test_esquema.py` exige desde T-915. El certificado PEM son
+      2 KB: en TEXT caben de sobra.
+
+      **El tipo de los clientes que ya existen se deduce de la longitud.** El 04
+      (NITE) también son diez dígitos y no hay forma de distinguirlo del 02
+      mirando el número; se elige jurídica porque es órdenes de magnitud más
+      común y quien tenga un NITE lo corrige una vez. NULL sería más honesto
+      pero dejaría a todos los clientes de empresa sin tipo el día de facturar.
+
+- [x] **T-602a** Cifrado en reposo: AES-256-GCM, `FE_CRYPTO_KEY`, con
       `(company_id, environment)` como dato asociado.
 
       **Le queda un solo cliente: la contraseña de ATV.** No es un digest que se
@@ -1566,7 +1659,12 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       la misma— **no descifra**. Es lo que verifica RF-22 y RNF-5, y lo necesita
       T-603b en esta fase.
 
-- [ ] **T-602** Puerto `DocumentSigner` —`sign(digest, company_id, environment)`
+      **Hecho el 2026-09-13** en `infrastructure/crypto/fe_crypto.py`, con
+      `test_cifrado_fe.py`. El dato asociado es `(company_id, environment)`, así
+      que la fila copiada no descifra y el fallo es de autenticación, no de
+      formato.
+
+- [x] **T-602** Puerto `DocumentSigner` —`sign(digest, company_id, environment)`
       e `import_key(pkcs8, company_id, environment)`— con **prueba de
       contrato**.
 
@@ -1583,7 +1681,12 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       el adaptador de T-602b, la misma batería para los dos. El precedente es
       T-106.
 
-- [ ] **T-602b** Adaptador de **Vault transit**: la llave privada se importa al
+      **Hecho el 2026-09-13** (`application/ports/signing.py`,
+      `test_firma_fe.py`). **La prueba no comprueba que devuelva bytes sino que
+      la firma verifique con el certificado público**, que es lo único que le
+      importa a Hacienda y lo único que delata una llave equivocada.
+
+- [x] **T-602b** Adaptador de **Vault transit**: la llave privada se importa al
       subir el `.p12` y **nunca entra en memoria de la aplicación** después.
       Entra **dentro** de la fase —ya no «puede ir después»—: desde el
       2026-09-13 es el único adaptador, así que sin él no se firma.
@@ -1598,7 +1701,34 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       **firmar con la llave de la compañía 1 y verificar con el certificado
       público de la 2 falla**.
 
-- [ ] **T-603** Subida del `.p12` y el PIN, browser → BFF → FastAPI. RF-22.
+      **Hecho el 2026-09-13** en `infrastructure/crypto/vault_signer.py`, contra
+      Vault 1.20.4 de verdad.
+
+      **El BYOK es de tres pasos y hay que hacerlo completo**: se pide la llave
+      de envoltura de Vault, se sortea una AES-256 efímera, se envuelve la
+      privada con ella (AES-KWP) y se cifra la efímera con la RSA-4096 de Vault.
+      La efímera existe porque una RSA-4096 **no puede cifrar directamente** una
+      PKCS#8 de 2048 bits: OAEP deja unos 446 bytes útiles y la llave pasa de
+      1 200.
+
+      Tres cosas aparecieron corriéndolo y ninguna se deduce de la
+      documentación:
+
+      - **Firmar sin llave contesta 400 y no 404**, con el texto «signing key
+        not found». Se resuelve **preguntando si la llave existe** en vez de
+        leer ese texto, que puede cambiar entre versiones. La diferencia no es
+        cosmética: `SigningUnavailable` significa «reintentá» y
+        `SigningKeyMissing` significa «andá a cargar el certificado», y
+        confundirlas deja la cola reintentando para siempre un documento que no
+        va a firmarse nunca.
+      - **Configurar una llave que no existe también contesta 400**, así que
+        quitar dos veces parecía una falla de Vault. Se consulta antes.
+      - **Reemplazar el certificado va por `import_version` y no por `import`**:
+        importar sobre una llave que ya está es un error, y tratarlo como tal
+        obligaría a borrar antes — o sea a dejar una ventana en la que la
+        compañía no puede firmar.
+
+- [x] **T-603** Subida del `.p12` y el PIN, browser → BFF → FastAPI. RF-22.
       Es de **administrador**: así el bloqueo por suscripción la alcanza sin
       tocar nada.
 
@@ -1618,15 +1748,54 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       encuentra en ninguna columna**. T-606 abre el archivo igual para leer el
       vencimiento, así que la validación sale gratis y evita enterarse el día de
       facturar.
-- [ ] **T-603b** Usuario y contraseña de ATV, por ambiente. La contraseña recibe
+
+      **Hecha el 2026-09-13**, el backend: `POST /fe/{ambiente}/certificate`,
+      con `infrastructure/crypto/pkcs12_reader.py` y `test_lector_p12.py`. Que
+      el PIN no se guarde **dejó de ser disciplina**: no hay columna donde
+      ponerlo.
+
+      **`cryptography` no distingue un PIN malo de un archivo corrupto**: lanza
+      el mismo `ValueError`. Lo que sí se distingue —y es lo que importa, porque
+      lo que hay que hacer es distinto— es **haber subido otra cosa**: un
+      `.cer`, un ZIP, un PDF. Se mira el primer byte, que en DER es siempre una
+      SEQUENCE.
+
+      **La pantalla, hecha el 2026-09-19.** El mismo formulario sube y
+      reemplaza, porque `import_version` de Vault deja la llave nueva en uso sin
+      una ventana en la que la compañía no pueda firmar: dos caminos habrían
+      sido dos nombres para lo mismo.
+
+      **El campo del PIN se vacía al enviarlo** (`reset: true`). Lo encontró la
+      prueba de punta a punta buscando la contraseña de ATV: el servidor no la
+      devuelve nunca —no la tiene— pero el navegador se quedaba con lo tecleado,
+      y eso es guardar en la pantalla justo lo que el sistema entero se ocupa de
+      no guardar en ningún lado.
+- [x] **T-603b** Usuario y contraseña de ATV, por ambiente. La contraseña recibe
       **el mismo trato que el PIN**; el usuario sí se muestra, porque es un
       identificador y sin verlo nadie puede comprobar que escribió el que era.
       RF-29, RN-16.
-- [ ] **T-604** `GET` devuelve solo `{ambiente, certificado_configurado,
+
+      **Hecha el 2026-09-13**, el backend: `PUT /fe/{ambiente}/atv`, con la
+      contraseña cifrada por T-602a.
+
+      **Cambiar la contraseña invalida la verificación anterior.** Sin eso, la
+      pantalla seguiría diciendo «verificadas el 3 de septiembre» sobre algo que
+      se cambió hoy y que nadie probó — y eso es peor que no decir nada: invita
+      a no probarla.
+- [x] **T-604** `GET` devuelve solo `{ambiente, certificado_configurado,
       nombre_archivo, vence_el, subido_el, atv_usuario, atv_configurado}`.
       **No existe** endpoint que devuelva el archivo, el PIN ni la contraseña.
       RF-23, RN-16.
-- [ ] **T-605** Reemplazar y quitar el certificado. RF-24. De administrador.
+
+      **Hecho el 2026-09-13**: `GET /fe` devuelve el estado de **los dos
+      ambientes** de una vez, que es lo que T-610 va a pintar.
+
+      **«Listo» son tres condiciones y la tercera se olvida.** Un certificado
+      vencido está configurado y no sirve; una pantalla que mostrara
+      «certificado ✓ · ATV ✓» sin mirar la fecha diría que todo está listo el
+      día que dejó de estarlo. Lo decide `domain/fe_credentials.py`, para que la
+      pantalla no tenga una segunda definición.
+- [x] **T-605** Reemplazar y quitar el certificado. RF-24. De administrador.
 
       Quitar **también quita la llave de Vault**, y ese es el orden inverso al
       de T-603: primero el `COMMIT` de la fila, después Vault. Una llave
@@ -1638,7 +1807,17 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       las marcas de ATV; quitar no borra las credenciales de transmisión; y
       después de quitar, firmar con esa compañía falla **por no haber llave**,
       no por una firma inválida.
-- [ ] **T-606** Leer el vencimiento del propio `.p12` al subirlo, y avisar 30
+
+      **Hecha el 2026-09-13**: `DELETE /fe/{ambiente}/certificate`, y reemplazar
+      es la misma subida de T-603 sobre una fila que ya está.
+
+      **El orden entre los dos sistemas es el inverso al de T-603**, por el
+      mismo criterio: acá primero el `COMMIT` y después Vault. Una llave
+      huérfana en Vault no firma nada —no hay fila que la nombre—; una fila que
+      dice «tiene certificado» sobre una llave ya borrada vuelve al mismo fallo
+      al firmar. En los dos sentidos se trata de que **nunca exista una fila que
+      prometa más de lo que hay**.
+- [x] **T-606** Leer el vencimiento del propio `.p12` al subirlo, y avisar 30
       días antes. Sin dependencia nueva: `cryptography` ya está y sabe leer
       PKCS#12 —comprobado el 2026-09-05 en el contenedor, versión 50.0.1—.
 
@@ -1646,11 +1825,31 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       `date.today()`: es dominio y tiene cobertura obligatoria.
       **Verificación:** con el reloj falso en el día 31 no avisa y en el 30 sí.
 
+      **Hecha el 2026-09-13** en `domain/fe_credentials.py` (`days_left`,
+      `certificate_status`).
+
+      **El vencimiento hay que convertirlo a hora local.** `cryptography`
+      devuelve UTC con zona y todo el resto del sistema trabaja en hora local
+      sin zona: compararlo con `Clock.now()` lanzaría `TypeError`, y guardarlo
+      en UTC haría que un certificado que vence a las 18:00 se mostrara
+      venciendo al día siguiente.
+
 ### Ambiente
 
-- [ ] **T-610** Elegir ambiente y ver, para cada uno, si ya tiene certificado y
+- [x] **T-610** Elegir ambiente y ver, para cada uno, si ya tiene certificado y
       credenciales. RF-30.
-- [ ] **T-611** Pasar a producción **se confirma y queda en bitácora** (RN-35).
+
+      **Hecha el 2026-09-19.** Una tarjeta por ambiente con su certificado, su
+      vencimiento, sus credenciales y un distintivo de «listo» o «incompleto»;
+      arriba, cuál está en uso y con qué consecuencia. El estado lo decide el
+      dominio (`ready`) y la pantalla lo pinta: una segunda definición de
+      «listo» en el marcado es cómo se acaba diciendo que todo está bien el día
+      que el certificado venció.
+
+      **Los dos ambientes se ven siempre**, tenga fila o no. Con solo los
+      configurados, «pruebas no está configurado» sería indistinguible de «no
+      vino el dato», que es la mitad de lo que RF-30 pide.
+- [x] **T-611** Pasar a producción **se confirma y queda en bitácora** (RN-35).
       Es el momento en que los documentos dejan de ser un ensayo.
 
       **Avisa de la certificación de Hacienda y no la impide** (RN-46, decidido
@@ -1662,7 +1861,40 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       production»—, como la de T-305, y no «cambió el ambiente». Volver a
       pruebas también se registra: es el cambio que hace que las facturas dejen
       de tener efecto fiscal sin que nadie lo note.
-- [ ] **T-613** `client_id`, realm y URL base **se derivan del ambiente en un
+
+      **Hecha el 2026-09-19**, las dos mitades: `PUT /fe/active`, con
+      `needs_confirmation` en el dominio y la línea de bitácora `fe_ambiente` en
+      el mismo `commit` que el cambio, y el diálogo con el aviso de RN-46 —la
+      factura, el tiquete y la nota de crédito que §12 exige haber emitido en
+      pruebas—, que **avisa y no impide**.
+
+      **La confirmación es del servidor y no de la pantalla.** Un `confirm` que
+      solo viviera en un modal no cumple RN-35: lo que la regla dice es que esto
+      «no puede ocurrir por haber tocado un desplegable sin querer», y un
+      desplegable que hace `PUT` es exactamente eso.
+
+      **Y hubo que cerrar la puerta lateral, que era la mitad del trabajo.**
+      `save_settings` reemplaza el JSON entero con lo que manda el POS, así que
+      el ambiente se podía cambiar guardando la pantalla de Configuración — sin
+      confirmar y sin bitácora. Con eso, RN-35 era decoración. Ahora hay
+      `PROTECTED_PATHS` en `crud_settings` y una sola puerta que escribe:
+      `write_protected`, que además **exige que el campo esté en la lista**, así
+      que sacarlo de ahí rompe en vez de convertirse en una segunda vía
+      silenciosa.
+
+      **Se conserva lo guardado en vez de rechazar la petición**, y esa
+      diferencia importa: el POS manda la configuración completa en cada
+      guardado, así que rechazar obligaría a la pantalla a conocer la lista para
+      no incluirlos. Hay prueba de los dos lados —mandarlo no lo cambia, y
+      **omitirlo no lo borra**—; lo segundo es lo que pasaría con una versión
+      del POS que no conozca el campo.
+
+      **Defecto encontrado de paso:** `_activo` leía
+      `get_settings(db).get("eInvoicing")`, pero ese diccionario tiene el JSON
+      adentro de `data`, así que **siempre** devolvía `sandbox`. Era invisible
+      porque hasta hoy no había forma de poner otra cosa; T-611 lo hizo visible
+      el mismo día que lo habría hecho falso.
+- [x] **T-613** `client_id`, realm y URL base **se derivan del ambiente en un
       solo sitio**, y salen de configuración y no del código. Mitigación del
       riesgo TRIBU-CR (plan §7.1 y §10).
 
@@ -1673,7 +1905,18 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       **Verificación:** una prueba tumba `pytest` si `comprobanteselectronicos.go.cr`
       aparece escrito fuera de ese módulo. Mismo patrón que `test_error_codes.py`.
 
-- [ ] **T-612** Comprobar que las credenciales del ambiente sirven, **sin emitir
+      **Hecho el 2026-09-13** en `domain/hacienda.py`, con
+      `test_dominio_de_hacienda.py`.
+
+      **El guardián se cazó a sí mismo al escribirlo**: `/realms/rut` no
+      aparecía en el texto porque el realm estaba partido entre dos literales y
+      escrito dos veces —en su campo y dentro de la URL—. Ahora la URL se
+      construye a partir del realm, así que hay un solo sitio donde cambiarlo.
+
+      Y cazó de paso el correo de ejemplo de ATV escrito completo en dos
+      docstrings: un ejemplo también envejece.
+
+- [x] **T-612** Comprobar que las credenciales del ambiente sirven, **sin emitir
       nada**. RF-31.
 
       Es la única comprobación que no produce un documento, y sin ella la
@@ -1686,6 +1929,76 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       explícito, como el adaptador de CABYS. Más una comprobación en vivo
       anotada, como se hizo con T-502.
 
+      **Hecha el 2026-09-19**: puerto `HaciendaIdp`, adaptador
+      `HaciendaKeycloakIdp`, caso de uso `VerifyAtvCredentials`,
+      `POST /fe/{ambiente}/atv/verify` y el botón, que queda deshabilitado
+      mientras no haya credenciales que comprobar.
+
+      **Comprobar es pedir un token y tirarlo.** No hay otra forma —Hacienda
+      autentica con `grant_type=password`— y es justo lo que hace que la
+      comprobación no emita nada. El puerto **devuelve el token** aunque T-612
+      no lo use: F7 lo necesita para transmitir, y un puerto que devolviera
+      `bool` habría que cambiarlo entonces.
+
+      **El 400 de Keycloak es un rechazo y no una avería.** `invalid_grant`
+      —una contraseña mal escrita, que es el caso más común de todos— viaja con
+      **400**, no con 401. Leerlo como avería lo habría convertido en «no se
+      pudo comprobar», y nadie se habría enterado nunca de que su contraseña
+      está mal.
+
+      **Pero decidir por el código de estado estaba mal, y la comprobación en
+      vivo del 2026-09-19 lo destapó.** El IdP de Hacienda está detrás de
+      **Cloudflare**, que tiene baneada la firma por omisión de `urllib` y
+      contesta **403, «Error 1010: browser_signature_banned»**, sin que la
+      petición llegue a Keycloak. Con `exc.code in (400, 401, 403)` eso se leía
+      como «Hacienda rechazó sus credenciales» —con credenciales buenas— y
+      encima el caso de uso borra la verificación anterior al recibir un
+      rechazo: un bloqueo de red tiraba una comprobación buena. Es exactamente
+      el error que RF-31 existe para no cometer.
+
+      Ahora **decide el cuerpo**: solo `{"error": "invalid_grant"}` es un
+      rechazo. Un 403 de Cloudflare, un 500 de Hacienda y un `invalid_client`
+      —que sería culpa nuestra— son los tres «no se pudo comprobar». Ante la
+      duda se elige ese lado: equivocarse ahí cuesta reintentar, y hacia el otro
+      cuesta que alguien cambie una credencial que estaba bien. Y se manda
+      `User-Agent`, configurable con `FE_HACIENDA_USER_AGENT`.
+
+      **La batería no podía ver ninguno de los dos.** Su Keycloak de mentira
+      contesta lo que uno le dice que conteste, así que las ocho pruebas del
+      rechazo pasaban: el problema no estaba en Keycloak ni en el código que le
+      habla, sino en un intermediario cuya existencia no se sabía. Un servidor
+      de mentira prueba la traducción; no prueba el trayecto. La regresión usa
+      ahora el cuerpo exacto que contestó Cloudflare —JSON válido y **sin**
+      campo `error`—, que es lo que hay que saber distinguir.
+
+      **Son cuatro códigos y no tres**, porque antes de los tres desenlaces hay
+      dos cosas que pueden fallar sin llegar a preguntarle a Hacienda:
+      `atv_not_configured` —no hay nada que comprobar todavía, que no es «no
+      sirven»: no hay nada que corregir, hay algo que escribir— y
+      `atv_password_unreadable`, cuando la guardada no descifra porque la llave
+      se rotó o la fila vino de otra instalación.
+
+      **Un rechazo borra la verificación anterior; una avería no.** El «no» de
+      Hacienda es más fuerte que cualquier marca vieja, y dejarla haría que la
+      pantalla dijera «verificadas el 13 de septiembre» sobre unas credenciales
+      que acaban de demostrar que no sirven — que es el letrero que hace que
+      nadie las vuelva a probar. Con «no se pudo comprobar» es al revés: no se
+      aprendió nada, y tirar una verificación buena porque Hacienda estaba caída
+      sería convertir su caída en un problema del cliente. Por eso el puerto pasó
+      de `mark_verified` a `set_verified`, que admite `None`.
+
+      **La traducción de HTTP a desenlace se prueba contra un Keycloak de
+      mentira** (`test_idp_fe.py`, con `http.server`): es lo único que no se
+      puede provocar en vivo —un 500 de Hacienda hay que esperar a que ocurra—
+      y es donde el error cuesta caro. La comprobación en vivo queda **anotada y
+      pendiente** en la cabecera de ese archivo, con qué mirar: que el 400 traiga
+      `invalid_grant`, y cuánto tarda, para saber si 15 s sobra o falta.
+
+      **`endpoints()` estrena consumidor.** Lo escribió T-613 y hasta hoy no lo
+      usaba nadie; `endpoints_for` es la mitad que faltaba —leer los *overrides*
+      del entorno—, y va en el adaptador para que la derivación pura se siga
+      probando sin tocar variables.
+
 ### El resto de la preparación
 
 - [ ] **T-607** Consulta de actividad económica contra
@@ -1694,17 +2007,76 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       **Verificación:** el 404 de Hacienda viene **con un mensaje en inglés**
       (plan §6.1). Mostrarlo tal cual viola RN-30, así que se traduce a código y
       la frase se arma en el POS.
-- [ ] **T-608** Administración de sucursales y terminales: ABM con los límites
+- [x] **T-608** Administración de sucursales y terminales: ABM con los límites
       del plan (`max_sucursales`, `max_terminales`), y una sucursal con ventas
       **se desactiva, no se borra** —RN-7 aplicada acá—. RF-26.
 
       **Verificación:** crear una sucursal de más responde `plan_limit_reached`
       con su cuenta, como ya hace `domain/limits.py` desde T-309.
 
-- [ ] **T-608b** Los códigos de 3 y 5 dígitos como **objeto de valor**, con su
+      **Hecha el 2026-09-19.** El backend: `crud_office.py`, siete rutas bajo
+      `/offices` y `tests/test_sucursales.py` con 25 pruebas. El POS: las siete
+      rutas en `mock/handler.ts`, la pestaña «Sucursales y cajas» de
+      `/configuracion` y `tests/e2e/sucursales.spec.ts` con cinco pruebas.
+
+      **La pestaña va en Configuración y no en el menú.** Es configuración de la
+      empresa y vive donde se busca; un ítem propio en el menú sería una sección
+      más para algo que se toca dos veces al año.
+
+      **En esa pestaña no se ofrece «Guardar cambios».** Las otras cuatro son un
+      solo formulario y acá cada sucursal y cada caja se guardan en su diálogo:
+      un botón que promete guardar lo que se está mirando y guarda otra cosa es
+      peor que no tenerlo.
+
+      **Defecto encontrado desde la pantalla**: `_ultima_terminal_no` no miraba
+      si la caja ya estaba apagada, así que borrar la de repuesto respondía
+      `last_active_terminal` —había que encenderla para poder borrarla—. Desde
+      el API no se nota; borrar algo que ya no está en uso es lo que se pide con
+      la lista delante. Corregido, con sus dos pruebas.
+
+      **En el simulado la historia se atribuye por código**, porque las ventas
+      de ahí no llevan `branch_id`: una sucursal arrastra historia si su código
+      es el que declara la sesión (`companies.branch_code`), y una caja si
+      coinciden **los dos** códigos, el suyo y el de su sucursal. Con uno solo,
+      el «00001» de un local nuevo heredaba las ventas del «00001» de la casa
+      matriz y nacía imposible de borrar.
+
+      **Se cuentan las activas, no las filas**, y la contrapartida está escrita
+      y aplicada: **reactivar consume cupo**. Contar las desactivadas castigaría
+      al que ordena sus locales; no contarlas sin la otra mitad haría que
+      desactivar y reactivar fuera la forma de tener cinco con un plan de tres.
+
+      **Dos puertas más que no pedía la tarea y hacen falta**: no se deja a la
+      compañía sin sucursal activa ni a una sucursal sin caja activa. Una
+      compañía sin caja no puede vender, y el POS lo descubriría con un cliente
+      enfrente en vez de con alguien configurando.
+
+      **Desactivar una sucursal apaga sus cajas.** Si no, el POS las ofrecería y
+      el consecutivo saldría de un local cerrado.
+
+      **El código no se puede cambiar después de creado** y por eso no está en
+      los esquemas de actualización: moverlo cambiaría el número de todos los
+      comprobantes ya emitidos desde esa sucursal.
+
+      **El dato del «no» se llama `branch_code`, no `code`.** Es la segunda vez
+      que el proyecto tropieza con lo mismo —`code` es el nombre del parámetro
+      de `api_error`— y la primera vez costó un 500 en vez de un 409. Ya estaba
+      escrito en `api_errors.py` para `account_code`; ahora también acá.
+
+- [x] **T-608b** Los códigos de 3 y 5 dígitos como **objeto de valor**, con su
       UNIQUE por compañía. RN-15. Es dominio: `Barcode` es el precedente.
 
       **Verificación:** «1» se guarda como «001» y «abc» no se guarda.
+
+      **Hecho el 2026-09-19** en `domain/office.py`, con 25 pruebas. El UNIQUE
+      ya existía desde F2; lo que faltaba era que el valor llegara normalizado,
+      que es de lo que sirve: sin rellenar, «1» y «001» son dos filas distintas
+      con el mismo número en el comprobante, y el índice no las ve iguales.
+
+      **Se miden los dígitos significativos, no la longitud del texto.**
+      «00001» con tres dígitos es 1 y cabe; «1234» no cabe de ninguna manera y
+      **no se recorta** — recortar en silencio sería cambiarle el número a
+      alguien, que es justo el defecto que el tipo existe para no tener.
 
 - [ ] **T-616** Arranque del consecutivo: la oficina y la última secuencia **por
       tipo de comprobante**, para el negocio que ya venía facturando con otro
@@ -1717,7 +2089,7 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       **Verificación:** el valor **solo sube**. Bajarlo significa volver a
       emitir números ya usados —rechazo seguro— así que se rechaza y queda en
       bitácora el intento.
-- [ ] **T-609** Comprobar que el PIN **y la contraseña de ATV** no aparecen en
+- [x] **T-609** Comprobar que el PIN **y la contraseña de ATV** no aparecen en
       respuestas, ni en bitácora, ni en trazas de error. Buscarlos a propósito.
 
       Va como prueba y no como revisión a mano, por lo mismo que el resto de los
@@ -1731,10 +2103,81 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       tres tablas y en las trazas después de una subida buena. Lo que no está no
       se filtra; lo que hay que verificar es que de verdad no está.
 
-- [ ] **T-609b** La mitad positiva de la bitácora: **se registra que se usaron**,
+      **Hecho el 2026-09-19**, y **no en tres tablas sino en todas**: el
+      buscador recorre cada columna de texto de cada tabla del esquema. Una
+      lista escrita a mano no puede contener la columna en la que nadie pensó,
+      que es justamente la que hay que descubrir. Corre dentro del contenedor,
+      como `test_respaldo_compania.py`, porque la base de la pila de pruebas no
+      publica puerto.
+
+      **Con su prueba de la prueba**: se busca el **usuario** de ATV, que sí se
+      guarda en claro a propósito (RN-16), y tiene que aparecer. Sin eso, un
+      buscador roto —una consulta que no devuelve nada nunca— dejaría las otras
+      dos en verde para siempre.
+
+      Y las trazas: se provoca el fallo más propenso a contarlo —un PIN que no
+      abre el archivo— y después se leen los registros del contenedor.
+
+- [x] **T-609b** La mitad positiva de la bitácora: **se registra que se usaron**,
       nunca su contenido (plan §7.1). Hoy el único uso es T-612.
 
-- [ ] **T-615** El simulado responde los seis endpoints de FE con contrato
+      **Hecho el 2026-09-19**: `fe_credenciales_probadas`, con el ambiente y el
+      desenlace —«aceptadas», «rechazadas por Hacienda», «sin respuesta de
+      Hacienda», «no se pudo descifrar»— y sin el usuario ni un fragmento de la
+      contraseña.
+
+      **Se anotan los cuatro desenlaces y no solo el bueno.** La pregunta que se
+      hace seis meses después no es «probó alguna vez» sino «desde cuándo esto
+      no funciona», y esa la contestan los «no». El único que **no** se anota es
+      «no había credenciales»: no se usó ninguna, y una línea ahí diría que se
+      probó algo que no existe.
+
+      Confirma dentro del propio servicio y no en el endpoint, porque tres de
+      los cuatro desenlaces terminan en excepción: sin `commit`, la línea que
+      explica el fallo se iría con la sesión justo en el caso que hacía falta
+      narrar.
+
+- [x] **T-624** Los cinco códigos de error de F6 del lado del POS:
+      `invalid_certificate`, `certificate_too_large`, `invalid_environment`,
+      `atv_user_required` y `signing_unavailable`.
+
+      Apareció al cerrar la mitad de backend de la fase: **`npm test` estuvo en
+      rojo a propósito** entre el 2026-09-13 y el 2026-09-19.
+      `messages.test.ts` compara las dos listas de códigos entre sí y estos
+      cinco solo existían en `api_errors.py`.
+
+      **Hecha el 2026-09-19** en los tres sitios de siempre —`API_CODES`, los
+      catálogos `errors.json` de los tres idiomas, y el `switch` de
+      `$lib/ui/messages.ts` que termina en `never`—. El cuarto, el simulado, es
+      T-615.
+
+      **`invalid_certificate` son cinco frases y no una.** El backend separa los
+      cuatro motivos (`bad_pin`, `not_a_p12`, `no_private_key`,
+      `no_certificate`) justamente porque lo que hay que hacer es distinto en
+      cada uno, y colapsarlos en el POS tiraría esa distinción en el último
+      metro: «el certificado no sirve» no le dice a nadie si vuelve a escribir
+      el PIN o va a buscar otro archivo. La quinta es la red para un motivo que
+      este POS todavía no conozca — el precedente es el `switch` sobre `state`
+      de `company_blocked`.
+
+      **`limit` viene en bytes y la frase dice KB.** Nadie piensa en 262 144
+      mirando un archivo.
+
+      **Verificación:** `npm test` en verde —613 pruebas, cobertura 100 %— y
+      `npm run check` en 0/0. La paridad de `catalogs.test.ts` pasa con los tres
+      idiomas.
+
+      **Y otros cinco el mismo día**, con el backend de T-611 y T-612:
+      `atv_not_configured`, `atv_invalid_credentials`, `atv_unreachable`,
+      `atv_password_unreadable` y `confirmation_required`. La frase de
+      `atv_unreachable` va **sin el ambiente y sin culpar a las credenciales**
+      (RF-31): quien lea «no sirven» va a rotar su contraseña en ATV, y eso no
+      es un clic. Entraron además `api_environment_sandbox` y
+      `api_environment_production`, que vuelven palabra el código del ambiente;
+      viven en `errors.json` hasta que T-610 tenga pantalla de dónde
+      compartirlos.
+
+- [x] **T-615** El simulado responde los seis endpoints de FE con contrato
       idéntico, incluida **la negativa** a devolver el archivo, el PIN y la
       contraseña.
 
@@ -1742,7 +2185,32 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       punta corre con `POS_MOCK=1`. Es el agujero que en F5 hizo que el simulado
       reembolsara cero durante dos días.
 
-- [ ] **T-617** `clients.identification_type` con la lista de Hacienda
+      **Hecha el 2026-09-19**, con `SEED_VERSION` en 11 y `fe_credentials` como
+      tabla por compañía que **nace vacía**: un negocio recién dado de alta no
+      tiene certificado, y eso es lo que la pantalla tiene que saber pintar.
+
+      **Le faltaba una pieza al camino y no era del simulado**: `api()` no sabía
+      mandar `multipart`, así que la subida del `.p12` no tenía por dónde pasar.
+      Se le agregó `upload`, con el `Content-Type` **sin escribir a mano** —lo
+      pone `fetch` con su `boundary`, y ponerlo uno deja al servidor sin
+      encontrar ninguna parte—.
+
+      **Los tres desenlaces de RF-31 se piden por la contraseña.** Una que
+      empieza por `mal-` la rechazan y una que empieza por `caido-` no contesta;
+      la convención vive en `veredictoDe` y en ningún otro sitio. Hacía falta
+      porque «Hacienda caída» no se puede provocar contra nada de verdad, y sin
+      poder pedirlo, el desenlace que RF-31 separa a propósito no tendría
+      ninguna prueba que lo recorra. El veredicto se deduce al llegar y **la
+      contraseña se descarta**, igual que el de verdad la cifra.
+
+      Dos choques de nombre al escribirlo, los dos del mismo tipo: ya había
+      `DIAS_DE_AVISO` (7, de la suscripción) y `diasHasta` (días de calendario).
+      Los nuevos son `DIAS_DE_AVISO_DEL_CERTIFICADO` y
+      `diasHastaElVencimiento`, y la distinción no es cosmética: el `notAfter`
+      de un certificado tiene hora, y redondearlo a medianoche diría que sirve
+      durante catorce horas en que no sirve.
+
+- [~] **T-617** `clients.identification_type` con la lista de Hacienda
       (01/02/03/04). Hoy `clients` tiene `identification` y `email` pero **no el
       tipo**, y el XML lo exige para el receptor. Está en spec §5.4 desde el
       principio y nunca tuvo tarea.
@@ -1751,12 +2219,20 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       **Verificación:** un cliente nuevo no se guarda sin tipo, y los existentes
       quedan en el que diga su cédula por longitud.
 
-- [ ] **T-618** `FE_CRYPTO_KEY` en el compose, en `.env.example` y en el README
+      **La columna y el relleno, hechos el 2026-09-13** en la migración 011
+      (`identification_type_for`, por longitud de la cédula). **Falta la otra
+      mitad**: exigir el tipo al dar de alta un cliente, que es pantalla y
+      validación.
+
+- [x] **T-618** `FE_CRYPTO_KEY` en el compose, en `.env.example` y en el README
       de despliegue. RNF-5.
 
       **Verificación:** el arranque **falla** si no está o no mide 32 bytes
       —enterarse al firmar es tarde—, y una prueba comprueba que la llave no
       aparece en ningún volcado de `company_dump`.
+
+      **Hecho el 2026-09-13**, y el arranque que se cae está comprobado **dentro
+      del contenedor**, no con un `import` desde la máquina.
 
 - [ ] **T-620** Unidad de medida en la ficha del producto, del catálogo de
       Hacienda. La columna existe desde T-507 y **no hay campo que la llene**:
@@ -1786,11 +2262,248 @@ de ejemplo y la normativa de PIN y llaves. La ruta directa deja de depender de
 deducir el formato.
 
 - [ ] **T-701** Decidir la ruta.
-- [ ] **T-702** Leer los XSD 4.4 y los 9 comprobantes de ejemplo, y contrastar
-      el modelo de datos de F5/F6 contra los campos obligatorios reales. Es lo
-      que dice si falta algo antes de escribir código. **Incluye comprobar
-      RN-34**: que el contador de cinco dimensiones cubre lo que el XSD exige.
+- [x] **T-702** Leer los XSD 4.4 y los comprobantes de ejemplo, y contrastar el
+      modelo de datos de F5/F6 contra los campos obligatorios reales. Es lo que
+      dice si falta algo antes de escribir código. **Incluye comprobar RN-34**:
+      que el contador de cinco dimensiones cubre lo que el XSD exige.
+
+      **Hecha el 2026-09-19** en
+      [`docs/hacienda/costa-rica/casos-de-emision.md`](../docs/hacienda/costa-rica/casos-de-emision.md):
+      los 23 ejemplos —no 9; aparecieron los de `normativa/protocolos/`—, las
+      notas del anexo con sus catálogos completos, y los 25 protocolos de
+      comprador de SWS con sus códigos exactos.
+
+      **Lo que falta salió de ahí y son RF-65 a RF-71**: el código de tarifa por
+      línea, los medios de pago múltiples, la exoneración por cliente, el IVA
+      devuelto, la unidad de medida, los datos de protocolo y los tres tipos de
+      comprobante que no existen (FEE, FEC, REP). Cada uno tiene su tarea abajo.
+
+      **Tres hallazgos que cambian decisiones ya tomadas:**
+
+      1. **`OtroContenido` es `simpleContent`**: no admite elementos hijos. Los
+         protocolos de Gessa y PriceSmart, que meten un `retail:Complemento`
+         adentro, **no son válidos en 4.4** —probado contra el sandbox: rechazo
+         `cvc-complex-type.2.2`—. Esos complementos tienen que salir por fuera
+         del XML fiscal.
+      2. **El «009» del BCCR no es un código del XML**: es el número de
+         protocolo interno de SWS. Lo que va en el XML son `BCCR_CUENTA_CLIENTE`,
+         `BCCR_ORDEN_PEDIDO` y `BCCR_CODIGO_FACTURA`.
+      3. **El documento de protocolos es de 4.3**: los cuatro que usan
+         referencia escriben `TipoDoc` y `FechaEmision`, y 4.4 pide `TipoDocIR` y
+         `FechaEmisionIR`. Copiarlo tal cual produce un XML que no valida.
+
 - [ ] **T-703** Definir la interfaz `EmisorFE` y dejar la implementación detrás.
+
+### El contenido del comprobante
+
+Antes de transmitir nada hay que poder **armarlo**. Estas siete son lo que el
+modelo de F5/F6 no tiene, y ninguna depende de la ruta de T-701.
+
+- [x] **T-714** El **armador del XML** como dominio: de una venta a un
+      comprobante 4.4, sin base ni red. RF-65 a RF-68.
+
+      **Verificación:** valida contra el XSD oficial de `docs/…/esquemas/` y la
+      comparación elemento por elemento contra un ejemplo real no deja ninguna
+      diferencia sin explicar. **Hecho el 2026-09-20**: los siete tipos validan
+      contra su propio esquema, y las únicas diferencias contra los ejemplos
+      reales son los nodos de la firma y lo que cada caso trae de más.
+
+      Es dominio y no un adaptador porque no depende de nada: entra una
+      estructura y sale texto. Si para probarlo hiciera falta levantar la base,
+      estaría en la capa equivocada.
+
+      `domain/fe_xml.py`, 118 pruebas y cobertura 100 %. Once de esas pruebas
+      **validan contra el XSD oficial** con una firma de mentira, porque firmar
+      es del adaptador de Vault.
+
+      **Las diferencias entre los siete tipos son datos, no ramas**: viven en
+      `PERFILES`, sacadas de los siete XSD uno por uno, y el armador las
+      consulta con `Perfil.tiene`. Con un `if tipo == "10"` repartido por el
+      archivo, agregar un tipo sería releerlo entero.
+
+      **El validador y los ejemplos encontraron ocho cosas que no se habrían
+      deducido leyendo**, y cada una es una prueba:
+
+      1. `ProveedorSistemas` es obligatorio.
+      2. La `Ubicacion` del emisor también, y del receptor no.
+      3. En esa ubicación **`OtrasSenas` es lo obligatorio y `Barrio` lo
+         opcional**, al revés de lo que parecía. Motiva T-722.
+      4. El **correo del emisor** es obligatorio.
+      5. **Los baldes del resumen van antes del descuento** (RN-84).
+      6. **Una exoneración parcial reparte la línea** entre gravado y exonerado
+         en proporción a lo perdonado, no la muda entera (RN-78).
+      7. **`TotalComprobante` resta el IVA devuelto** (RN-79).
+      8. Con **dos o más medios de pago**, la suma tiene que dar el total o
+         Hacienda rechaza (RN-77).
+
+      Y una que salió del propio módulo: `Decimal("10.00").normalize()` vale
+      `1E+1`, así que diez puntos exonerados salían escritos «1E+1».
+
+- [x] **T-715** **Código de tarifa por línea** (`CodigoTarifaIVA`). RF-65, RN-76.
+      El producto guarda `tax_rate` desde T-506 y eso no alcanza: hay once
+      códigos para nueve porcentajes y dos de ellos —`01` y `11`, los dos 0 %—
+      dan derechos opuestos.
+
+      **Verificación:** un producto al 0 % con derecho a crédito y otro al 0 %
+      sin derecho salen con códigos distintos. **Hecho el 2026-09-20.**
+
+      `domain/fe_tax_codes.py` con la nota 8.1 entera, `products.tax_code` y
+      `sale_details.tax_code` (migración 012), el desplegable en la ficha del
+      producto y el código congelado al cobrar.
+
+      **El código manda sobre la tarifa**, y esa es la decisión: guardar los dos
+      y dejar que cada uno venga por su lado es cómo se desincronizan. De un
+      código sale siempre un porcentaje; del porcentaje **no siempre** sale un
+      código, y en el 0 % no sale ninguno —hay tres y la diferencia es el
+      derecho a crédito de quien compra—. Por eso la asignación en lote de CABYS
+      propone el código cuando la tarifa deja uno solo y lo deja sin clasificar
+      cuando no.
+
+      Los transitorios `05`, `06` y `07` no se le ofrecen a un producto: existen
+      para corregir con una nota una factura de cuando esas tarifas regían.
+
+- [~] **T-716** **Medios de pago múltiples**, hasta cuatro con su monto. RF-66,
+      RN-77. Y el mapeo desde `payment_method`, que hoy guarda nombres propios
+      (`Efectivo`, `Tarjeta de crédito`, `Transferencia bancaria`, `Pago móvil`).
+
+      **Verificación:** con condición de venta 02, 08 o 10 **no se emite ningún
+      `MedioPago`**; la suma de los montos es el total del comprobante.
+
+      **Hecho el 2026-09-20 — la mitad del armador**: las dos reglas están en
+      `domain/fe_xml.py` y probadas (nada de medio de pago en las tres
+      condiciones de crédito; con dos o más, la suma tiene que dar el total o
+      Hacienda rechaza), y el mapeo vive en `domain/fe_payment_methods.py` con
+      una prueba que **obliga a que esté completo**: agregar una forma de cobrar
+      al POS sin decidir su código de la nota 6 rompe la construcción.
+
+      **Falta la mitad cara**, y no es cara por el XML: hoy una venta guarda
+      **un** medio de pago, y partirla en varios toca el arqueo —`expected_amount`
+      cuenta como efectivo el total de las ventas cuyo método es «Efectivo», y
+      con un pago mixto contaría de más— y el reporte por método de pago. Hace
+      falta una tabla hija `sale_payments`, y el arqueo y el libro tienen que
+      leer de ahí **antes** de que exista el primer cobro partido.
+
+- [x] **T-717** **Exoneración por cliente**: tipo de documento, número,
+      institución, artículo, inciso, fecha y **puntos exonerados**. RF-67, RN-78.
+
+      **Verificación:** 13 % con 9 puntos exonerados deja `ImpuestoNeto` en el
+      4 % de la base, y la línea va al balde exonerado del resumen, no al
+      gravado. **Hecho el 2026-09-20**, con una corrección: el balde no se lleva
+      la línea entera sino su parte —69 230.76923 de 100 000— (RN-78, RN-84).
+
+      `domain/fe_exemptions.py` con las notas 10.1 y 23, ocho columnas en
+      `clients` (migración 013) y el bloque en la ficha del cliente, que solo
+      pide el artículo cuando el tipo lo exige y avisa cuando Hacienda va a
+      cruzar el documento contra su registro.
+
+      **Se guarda entera o no se guarda**: los ocho campos van juntos y los ocho
+      vacíos es cómo se le quita. Guardar la mitad dejaría un cliente con número
+      de documento y sin institución, y eso no se descubre hasta el rechazo.
+
+      `Articulo` es obligatorio con los tipos 02, 03, 06, 07 y 08, e `Inciso` en
+      cuanto el artículo remita a uno. Con los tipos 04 y 11 Hacienda comprueba
+      que el número exista, esté vigente y que la tarifa exonerada no exceda la
+      autorizada: conviene comprobarlo antes de transmitir, porque el rechazo
+      llega minutos después y con el cliente ya ido.
+
+- [~] **T-718** **IVA devuelto** en servicios de salud pagados con tarjeta.
+      RF-68, RN-79.
+
+      **Verificación:** una venta de servicios médicos cobrada con tarjeta
+      declara `TotalIVADevuelto`; la misma cobrada en efectivo, no. **Probado el
+      2026-09-20** dentro del dominio, hasta el XML.
+
+      Las dos cosas que faltaban están en `domain/fe_vat_refund.py`:
+
+      * **qué CABYS es servicio médico.** Hacienda no publica esa lista como
+        archivo; publica el CABYS, donde el grupo **931** son los servicios de
+        salud humana —el ejemplo real factura un `9310100000100`—. Se usa `931`
+        y no la división 93 entera porque `932` es atención residencial y `933`
+        asistencia social, que no son el servicio del que habla la ley. Está en
+        una constante: el día que Hacienda publique su lista, cambia esa línea.
+      * **el prorrateo.** El campo es el impuesto pagado *en tarjeta*: con la
+        mitad en efectivo se devuelve la mitad, y declararlo entero es un
+        rechazo. Con un solo medio de pago la proporción es 1 o 0 y no se nota;
+        existe para cuando no lo es.
+
+      Y una tercera que no estaba anotada: **`TotalComprobante` lo resta**
+      (anexo p. 55). Sin eso, la factura de salud con tarjeta totaliza de más.
+
+      **Falta** conectarlo: quien arme el comprobante desde una venta tiene que
+      llamar a `vat_refund`, y ese armador todavía no existe.
+
+- [~] **T-719** **Protocolo de comprador por cliente**: qué datos exige y dónde
+      van, en `Otros` o en `InformacionReferencia`. RF-70, RN-80.
+
+      **Verificación:** los 25 de `SWS-Procolols_XML.docx` se pueden expresar sin
+      tocar código, salvo los tres que ya no son válidos (Gessa y PriceSmart).
+
+      **Hecho el 2026-09-20 — el armador**: `domain/fe_protocols.py`. Un
+      protocolo es una lista de **entradas**, y cada entrada dice dónde va
+      —`OtroTexto`, `OtroContenido` o `InformacionReferencia`—, con qué código, y
+      una plantilla con marcadores (`BCCR_ORDEN_PEDIDO={orden_compra}`). Las
+      tres formas que existen están probadas con los protocolos reales: Walmart
+      en `OtroTexto` con sus tres códigos, el ICE en `InformacionReferencia` con
+      su prefijo `MM-`, el BCCR en `OtroContenido` con pares nombre=valor. No
+      hay una cuarta: el complemento anidado de Gessa y PriceSmart **no es
+      válido** —`OtroContenido` es `simpleContent`— y se probó contra el sandbox.
+
+      **RN-80 por los dos lados**: una entrada a la que le falta un dato **no se
+      emite** —un `WMNumeroOrden` vacío es un dato falso— y el marcador que
+      faltó **se reporta**, porque callarlo sería emitir una factura que el
+      comprador va a rechazar semanas después. Un marcador mal escrito revienta
+      al guardar el protocolo, no al emitir.
+
+      **Falta capturar los datos**: código de proveedor y GLN por cliente, orden
+      de compra con su fecha y número de recepción por documento, y la pantalla
+      donde se arma el protocolo de cada cliente.
+
+- [ ] **T-721** **La pantalla de facturas enseña el expediente completo** de
+      cada comprobante: el XML que se envió, la respuesta de Hacienda, por dónde
+      va el proceso con la hora de cada paso, y un botón que **genera la
+      representación impresa al vuelo**. RF-72, RN-82.
+
+      **Verificación:** el XML que se muestra es **byte por byte** el que se
+      firmó —no uno regenerado— y la firma verifica sobre esos bytes. El PDF se
+      arma en la petición y no se guarda en ninguna parte.
+
+      Los dos XML son el documento fiscal y hay que poder verlos, no solo
+      descargarlos: cuando Hacienda rechaza, lo primero que alguien quiere leer
+      es qué mandó y qué le contestaron, uno al lado del otro.
+
+      **El PDF al vuelo y no guardado**, porque un PDF archivado puede
+      contradecir al XML sin que nadie se entere, y el que manda es el XML.
+      Regenerarlo garantiza que lo que se imprime es lo que se emitió. El molde
+      ya existe: las tres plantillas de documento de F4.
+
+- [ ] **T-722** **La ubicación del emisor con los códigos de Hacienda** en
+      Configuración y en el alta de compañía, y el **correo obligatorio**.
+      RF-73, RN-83.
+
+      **Verificación:** una compañía dada de alta hoy produce un `Emisor` que
+      valida contra el XSD. Hoy **no**: falta la ubicación codificada y el correo
+      puede quedar vacío.
+
+      Son cuatro campos nuevos —provincia, cantón, distrito y barrio— con los
+      códigos de la nota 14 del anexo (`Codificacionubicacion_V4.4`), y **no
+      reemplazan a la dirección de texto libre**: esa se sigue imprimiendo en el
+      tiquete. Son dos datos distintos para dos lectores distintos.
+
+- [~] **T-720** **FEE, FEC y REP.** RF-71, RN-81. Cada uno con su tipo en el
+      consecutivo —09, 08 y 10—, su esquema y sus diferencias: la FEE lleva
+      partida arancelaria y dirección extranjera y no admite tarifa 01; el REP
+      no admite `Otros` y solo va con condición 09 u 11.
+
+      **El armado está hecho** (2026-09-20): los siete tipos salen de
+      `domain/fe_xml.py` y los siete validan contra su XSD. El recibo de pago es
+      el que más se aparta —su línea son siete campos, su resumen no lleva
+      baldes y su emisor no lleva ni ubicación ni teléfono— y sale idéntico,
+      elemento por elemento, al ejemplo real de `docs/`.
+
+      **Falta la otra mitad**: el consecutivo y la clave de cada tipo (T-704 y
+      T-705), y desde dónde se emiten. Una FEC nace de una compra a un no
+      contribuyente y un REP de cobrar una factura a crédito: son flujos, no
+      botones.
 
 ### El recorrido, que no depende de la ruta
 
@@ -3799,6 +4512,95 @@ y el guardián que los vigila.
       mudarlo cueste una ronda de fallos ajenos al cambio.
 
       **Verificación:** 580 del POS, 54 de punta a punta, `npm run check` 0/0.
+
+- [x] **T-927** **Contabilidad arrastraba la página de lado en un teléfono.**
+      RNF: el POS se usa en pantallas chicas.
+
+      **Verificación:** a 390 px, `main.scrollWidth == main.clientWidth` en las
+      siete pantallas de `/contabilidad`.
+
+      **Hecha el 2026-09-19.** La causa no estaba en contabilidad sino en dos
+      clases de `app.css`: ni `.input` ni `.table-wrap` tenían `min-width: 0`.
+      Dentro de una rejilla o un flex el ancho mínimo por omisión es el del
+      contenido, y el contenido de un `<select>` es su opción más larga: el
+      desplegable de cuentas —«1.1.01.001 · Efectivo en caja»— estiraba la
+      columna a 544 px dentro de un hueco de 316 y el desbordamiento subía hasta
+      `main`, que se desplazaba con el encabezado incluido. Lo mismo le pasa a un
+      contenedor con `overflow-x: auto`: sin `min-width: 0` crece hasta la tabla
+      en vez de desplazarla, y entonces el `overflow-x` no se usa nunca.
+
+      **Se midió antes de tocar nada**, con un guion de Playwright que compara
+      `scrollWidth` contra `clientWidth` a 390 px y nombra al elemento más
+      externo que se sale. Sin eso habría arreglado a ciegas: los
+      `overflow-x-auto` ya estaban puestos y la pantalla *parecía* correcta.
+
+      **Y destapó que nueve pantallas más se arrastran** —`/caja`, `/facturas`,
+      `/dashboard`, `/inventario`, `/inventario/entradas`, `/clientes`,
+      `/usuarios`, `/compras/proveedores`, `/compras/cuentas-por-pagar`—, que es
+      anterior y queda como T-928.
+
+- [ ] **T-928** **Nueve pantallas se arrastran de lado en un teléfono.** Las de
+      arriba. Medido el 2026-09-19 con el mismo guion que T-927, antes y después
+      de su arreglo: la lista no cambió, así que es anterior.
+
+      En las que arrastra el documento, el único contenedor que se desplaza es
+      `div.table-wrap`, y **se desplaza bien** (356→712 con `overflow-x: auto`):
+      el desbordamiento viene de otro lado y hay que encontrarlo antes de
+      arreglar. En `/caja` y `/dashboard` el que se desplaza es `main`.
+
+      **Verificación:** una prueba de punta a punta que recorra las pantallas a
+      390 px y exija `scrollWidth == clientWidth` en `main` y en el documento.
+      Hoy no se puede escribir sin lista de excepciones —por eso esta tarea—, y
+      una prueba con lista de excepciones es la que después nadie limpia.
+
+- [ ] **T-926** **La prueba de punta a punta de F11 pasa sola y falla en la
+      suite completa.** `contabilidad.spec.ts › de la activación al mes cerrado`
+      falla en el cierre de caja: el asiento «Cierre de caja n.º …» no aparece.
+      Corrida aislada —una vez o dos seguidas— pasa siempre.
+
+      **Es anterior a F6**, medido el 2026-09-19: con el árbol en `HEAD` y sin
+      ninguno de los cambios de la sesión, la suite da **55 pasan y esta falla**.
+      Con los cambios da 66 y 1, la misma. Se anota para que nadie la atribuya
+      a lo último que tocó, que es justo lo que hace una prueba que falla por
+      estado ajeno.
+
+      La pista está en el registro del servidor: durante el envío del cierre
+      aparece un `TypeError: Failed to fetch` en el `update()` de
+      `$lib/ui/forms.ts`, precedido de `[vite] The next HMR update will cause
+      the page to reload`. **El simulado guarda su estado en `.data/`, que está
+      dentro del proyecto, y `vite` lo vigila**: una escritura del simulado
+      dispara HMR y recarga la página a mitad del envío. Aislada casi no pasa
+      porque hay pocas escrituras; en la suite entera hay cientos.
+
+      Si eso se confirma, la salida es sacar `.data/` de lo que vigila `vite`
+      (`server.watch.ignored`) y no reintentar el clic: un reintento escondería
+      el mismo problema en las otras cincuenta y seis.
+
+- [ ] **T-925** **`account_not_found` sirve para dos cosas.** Lo levantan
+      `crud_accounting` en seis sitios, con `account_id`, sobre una cuenta del
+      catálogo contable, y `/users/membership` en uno, sin datos, cuando no
+      existe cuenta con ese correo.
+
+      Salió el 2026-09-19 al quitar el duplicado que el código tenía en las dos
+      listas: **no era copia y pega, era el síntoma**. Estaba anotado una vez en
+      el bloque de usuarios y otra en el de contabilidad porque de verdad
+      pertenece a los dos, y como las listas se comparan como conjuntos nadie
+      lo notaba.
+
+      La frase que sale hoy es «Esa cuenta no existe.», que es la contable. Al
+      administrador que escribe un correo equivocado para dar una membresía le
+      dice algo casi cierto y nada útil: no le dice que el problema es el correo
+      ni que la persona tiene que tener cuenta antes.
+
+      Lo que hay que decidir es **si se parte en dos códigos** —el de
+      `/users/membership` pasaría a uno propio, con el correo como dato— o si se
+      deja. Partirlo son los cuatro sitios de siempre (`api_errors.py`,
+      `API_CODES`, los tres `errors.json` y el simulado) y toca un endpoint que
+      ya existe, así que no es gratis.
+
+      Relacionado: T-903 dice que ese alta debería ser una invitación que se
+      acepta, y eso reescribe el endpoint entero. Si T-903 se hace antes, esto
+      se resuelve de paso.
 
 - [x] **T-919** `tests/test_esquema.py` compara **índices y restricciones, no
       columnas**. El defecto 19 fue justo de columnas —cinco con un tipo en el

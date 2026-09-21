@@ -88,10 +88,22 @@ class FeCredentialsRepository(Protocol):
         """Guarda la mitad de transmisión, creando la fila si no estaba."""
         ...
 
-    def mark_verified(self, *, environment: str, at: datetime) -> None:
-        """Anota que el IdP entregó un token con estas credenciales (T-612).
+    def set_verified(self, *, environment: str, at: datetime | None) -> None:
+        """Cuándo el IdP entregó un token con estas credenciales (T-612).
 
         Es lo que permite decir «verificadas el 3 de septiembre» en vez de
         obligar a probar a ciegas cada vez que alguien abre la pantalla.
+
+        **`None` es la otra mitad y hace falta**: cuando el IdP *rechaza* las
+        credenciales, la marca anterior deja de ser cierta. Sin borrarla, la
+        pantalla seguiría diciendo «verificadas el 3 de septiembre» sobre unas
+        que acaban de demostrar que no sirven — y ese es el letrero que hace que
+        nadie las vuelva a probar. Es la misma razón por la que `save_atv` la
+        borra al cambiar la contraseña, con una evidencia más fuerte.
+
+        No se borra cuando **no se pudo comprobar** (RF-31): ahí no se aprendió
+        nada nuevo sobre las credenciales, y tirar una verificación buena porque
+        Hacienda estaba caída sería convertir su caída en un problema del
+        cliente.
         """
         ...

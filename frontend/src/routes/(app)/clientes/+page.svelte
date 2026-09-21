@@ -9,6 +9,15 @@
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatDate, fullName, toDateInput } from '$lib/ui/format';
+	import {
+		EXEMPTION_INSTITUTIONS,
+		EXEMPTION_OTHER,
+		MAX_EXEMPTION_POINTS,
+		SELLABLE_EXEMPTION_TYPES,
+		exemptionNeedsArticle,
+		exemptionVerifiedByHacienda
+	} from '$lib/domain/exemptions';
+	import { exemptionInstitutionLabel, exemptionTypeLabel } from '$lib/ui/exemptions';
 	import type { Client } from '$lib/domain/types';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
@@ -20,6 +29,18 @@
 	let editing = $state<Client | null>(null);
 	let submitting = $state(false);
 
+	/** Los ocho campos de la exoneración en blanco: «este cliente no tiene». */
+	const SIN_EXONERACION = {
+		exo_document_type: '',
+		exo_document_number: '',
+		exo_institution: '',
+		exo_institution_other: '',
+		exo_article: '',
+		exo_subsection: '',
+		exo_date: '',
+		exo_points: ''
+	};
+
 	let f = $state({
 		identification: '',
 		name: '',
@@ -28,7 +49,17 @@
 		email: '',
 		telephone: '',
 		address: '',
-		register_date: ''
+		register_date: '',
+		// La exoneración (T-717, RN-78). Los ocho viajan siempre, aun vacíos:
+		// es lo que permite quitársela a un cliente que la tenía.
+		exo_document_type: '',
+		exo_document_number: '',
+		exo_institution: '',
+		exo_institution_other: '',
+		exo_article: '',
+		exo_subsection: '',
+		exo_date: '',
+		exo_points: ''
 	});
 
 	const filtered = $derived.by(() => {
@@ -53,7 +84,8 @@
 			email: '',
 			telephone: '',
 			address: '',
-			register_date: toDateInput(new Date())
+			register_date: toDateInput(new Date()),
+			...SIN_EXONERACION
 		};
 		modalOpen = true;
 	}
@@ -68,7 +100,15 @@
 			email: client.email,
 			telephone: String(client.telephone ?? ''),
 			address: client.address ?? '',
-			register_date: toDateInput(client.register_date)
+			register_date: toDateInput(client.register_date),
+			exo_document_type: client.exo_document_type ?? '',
+			exo_document_number: client.exo_document_number ?? '',
+			exo_institution: client.exo_institution ?? '',
+			exo_institution_other: client.exo_institution_other ?? '',
+			exo_article: client.exo_article == null ? '' : String(client.exo_article),
+			exo_subsection: client.exo_subsection == null ? '' : String(client.exo_subsection),
+			exo_date: client.exo_date ? toDateInput(client.exo_date) : '',
+			exo_points: client.exo_points == null ? '' : String(client.exo_points)
 		};
 		modalOpen = true;
 	}
@@ -244,6 +284,98 @@
 			required
 			error={form?.errors?.register_date}
 		/>
+
+		<!--
+			La exoneración del cliente (T-717, RF-67, RN-78).
+
+			**Se llena entera o se deja vacía**: los ocho campos viajan siempre, aun
+			en blanco, y los ocho en blanco es cómo se le quita a un cliente que la
+			tenía. El servidor los trata como uno solo.
+
+			Los puntos son **puntos de tarifa**, no un porcentaje del precio: nueve
+			sobre el 13 % dejan la línea pagando 4 %. No existe ninguna tarifa del
+			9 %, así que guardar «4» sería guardar el resultado en vez del dato.
+		-->
+		<div class="sm:col-span-2 rounded-xl border border-[var(--border)] p-3">
+			<p class="mb-1 text-sm font-medium text-[var(--text)]">{m.clients_exemption()}</p>
+			<p class="mb-3 text-xs text-[var(--text-subtle)]">{m.clients_exemption_hint()}</p>
+
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div>
+					<label class="label" for="exo-type">{m.clients_label_exo_type()}</label>
+					<select id="exo-type" name="exo_document_type" class="input" bind:value={f.exo_document_type}>
+						<option value="">{m.clients_exemption_none()}</option>
+						{#each SELLABLE_EXEMPTION_TYPES as tipo (tipo.code)}
+							<option value={tipo.code}>{exemptionTypeLabel(tipo.code)}</option>
+						{/each}
+					</select>
+				</div>
+
+				{#if f.exo_document_type}
+					<Field
+						label={m.clients_label_exo_number()}
+						name="exo_document_number"
+						bind:value={f.exo_document_number}
+						icon="receipt"
+					/>
+
+					<div>
+						<label class="label" for="exo-inst">{m.clients_label_exo_institution()}</label>
+						<select id="exo-inst" name="exo_institution" class="input" bind:value={f.exo_institution}>
+							<option value=""></option>
+							{#each EXEMPTION_INSTITUTIONS as institucion (institucion)}
+								<option value={institucion}>{exemptionInstitutionLabel(institucion)}</option>
+							{/each}
+						</select>
+					</div>
+
+					{#if f.exo_institution === EXEMPTION_OTHER}
+						<Field
+							label={m.clients_label_exo_institution_other()}
+							name="exo_institution_other"
+							bind:value={f.exo_institution_other}
+						/>
+					{/if}
+
+					{#if exemptionNeedsArticle(f.exo_document_type)}
+						<Field
+							label={m.clients_label_exo_article()}
+							name="exo_article"
+							bind:value={f.exo_article}
+							inputmode="numeric"
+						/>
+						<Field
+							label={m.clients_label_exo_subsection()}
+							name="exo_subsection"
+							bind:value={f.exo_subsection}
+							inputmode="numeric"
+						/>
+					{/if}
+
+					<Field
+						label={m.clients_label_exo_date()}
+						name="exo_date"
+						type="date"
+						bind:value={f.exo_date}
+					/>
+					<Field
+						label={m.clients_label_exo_points()}
+						name="exo_points"
+						bind:value={f.exo_points}
+						inputmode="decimal"
+						hint={m.clients_exo_points_hint()}
+						max={MAX_EXEMPTION_POINTS}
+					/>
+				{/if}
+			</div>
+
+			{#if exemptionVerifiedByHacienda(f.exo_document_type)}
+				<p class="mt-3 flex items-start gap-1.5 text-xs text-[var(--warning)]">
+					<Icon name="alert" size={13} />
+					{m.clients_exo_verified()}
+				</p>
+			{/if}
+		</div>
 	</form>
 
 	{#snippet footer()}

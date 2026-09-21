@@ -36,6 +36,11 @@ class ProductSnapshot(Protocol):
     #: el día que alguien devuelva (RN-12).
     tax_rate: TaxRate | None
 
+    #: El código de tarifa de Hacienda (RN-76). `None` es «no está clasificado
+    #: para factura electrónica»: del porcentaje no se vuelve al código, así que
+    #: acá no se deduce nada. Se congela en la línea tal como venga.
+    tax_code: str | None
+
     #: Lo que cuesta, que no es lo que vale (RN-54). Promedio ponderado móvil.
     #: Cero en los productos anteriores a F10 y en los que nunca se compraron:
     #: de esos no se sabe cuánto costaron, y la primera compra lo establece.

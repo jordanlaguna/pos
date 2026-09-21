@@ -59,7 +59,13 @@ function readProduct(v: Validator, form: FormData) {
 				min: CABYS_CODE_LENGTH,
 				max: CABYS_CODE_LENGTH
 			}) || null,
-		tax_rate: readTaxRate(v, form)
+		tax_rate: readTaxRate(v, form),
+		// El código de tarifa de Hacienda (T-715, RN-76). En blanco es «sin
+		// clasificar», que es lo que tiene un catálogo heredado. No se valida
+		// contra la lista acá: el desplegable solo ofrece los ocho vendibles y
+		// el servidor la comprueba igual, así que repetir la tabla en un tercer
+		// sitio sería un lugar más donde desincronizarse.
+		tax_code: String(form.get('tax_code') ?? '').trim() || null
 	};
 }
 

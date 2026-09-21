@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 
-import { api } from '$lib/server/api';
+import { api, apiSafe } from '$lib/server/api';
 import { requireAdmin, setSessionCookie } from '$lib/server/auth';
 import { invalidateSettings, loadSettings, saveSettings } from '$lib/server/settings';
 import { formError, Validator } from '$lib/application/validation';
@@ -29,9 +29,82 @@ const MAX_LOGO_BYTES = 250 * 1024;
  */
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
+/** El mismo techo que `crud_fe.MAX_P12_BYTES`. Se rechaza acá para no subirlo. */
+const MAX_P12_BYTES = 256 * 1024;
+
+const AMBIENTES = ['sandbox', 'production'] as const;
+
+/**
+ * El estado de los dos ambientes, tal como lo devuelve `GET /fe` (RF-23, RF-30).
+ *
+ * **No lleva el archivo, ni el PIN, ni la contraseña**, y eso no es una elección
+ * de esta pantalla: no existe ningún endpoint que los devuelva (RN-16).
+ */
+export interface EstadoDeAmbiente {
+	environment: string;
+	certificate_configured: boolean;
+	certificate_name: string | null;
+	expires_at: string | null;
+	days_left: number | null;
+	certificate_status: string;
+	uploaded_at: string | null;
+	atv_user: string | null;
+	atv_configured: boolean;
+	atv_verified_at: string | null;
+	ready: boolean;
+}
+
+export interface EstadoFe {
+	environments: EstadoDeAmbiente[];
+	active: string;
+}
+
+/**
+ * Sucursales, cajas y el cupo del plan, tal como los devuelve `/offices` (RF-26).
+ *
+ * Las cuatro escrituras devuelven **esto mismo** y no la fila que tocaron: una
+ * sola forma de respuesta significa que la pantalla no mezcla lo que tenía con lo
+ * que le llega. Acá hace falta de verdad, porque apagar una sucursal apaga sus
+ * cajas y crear una consume cupo.
+ */
+export interface Sucursal {
+	id: number;
+	codigo: string;
+	nombre: string;
+	activa: boolean;
+}
+
+export interface Caja extends Sucursal {
+	branch_id: number;
+}
+
+export interface Cupo {
+	branches: number;
+	max_branches: number;
+	terminals: number;
+	max_terminals: number;
+}
+
+export interface EstadoOficinas {
+	branches: Sucursal[];
+	terminals: Caja[];
+	quota: Cupo;
+}
+
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const admin = requireAdmin(locals, url.pathname);
 	const stored = await loadSettings(locals.token, admin.company_id);
+
+	/*
+	 * `apiSafe` y no `api`: la factura electrónica es una de las cuatro pestañas,
+	 * y un backend que tropiece pidiéndola no puede dejar sin moneda ni sin
+	 * documentos a quien vino a cambiar otra cosa. Sin dato, la pestaña lo dice.
+	 */
+	const fe = await apiSafe<EstadoFe | null>('/fe', null, { token: locals.token });
+	// Por lo mismo que `/fe`: es una pestaña más y no puede tumbar las otras.
+	const oficinas = await apiSafe<EstadoOficinas | null>('/offices', null, {
+		token: locals.token
+	});
 
 	return {
 		configuracion: stored.settings,
@@ -44,7 +117,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		 * pasan a la pantalla, que las muestra sin dejar editarlas.
 		 */
 		branchCode: admin.branch_code,
-		terminalCode: admin.terminal_code
+		terminalCode: admin.terminal_code,
+		fe,
+		oficinas
 	};
 };
 
@@ -94,6 +169,7 @@ async function readLogo(form: FormData, v: Validator): Promise<LogoSettings | un
 export const actions: Actions = {
 	guardar: async ({ request, cookies, locals, url }) => {
 		const admin = requireAdmin(locals, url.pathname);
+		const { settings: stored } = await loadSettings(locals.token, admin.company_id);
 
 		const form = await request.formData();
 		const v = new Validator(form);
@@ -142,10 +218,6 @@ export const actions: Actions = {
 		const colorDocumento = hex(v, form, 'documento_color', m.settings_field_document_color(), '#0e7490');
 		const colorAcento = hex(v, form, 'apariencia_color', m.settings_field_accent_color(), '#0e7490');
 
-		const ambiente = v.oneOf('electronica_ambiente', F.einvoicingEnvironment(), [
-			'sandbox',
-			'production'
-		] as const);
 		const actividad = v.text('electronica_actividad', F.einvoicingActivity(), {
 			required: false,
 			max: 10
@@ -212,7 +284,15 @@ export const actions: Actions = {
 				// La emisión todavía no está implementada; ver la nota de la pantalla.
 				// Se guarda la intención, no se activa nada.
 				enabled: checked(form, 'electronica_activa'),
-				environment: ambiente || 'sandbox',
+				/*
+				 * El ambiente **no** sale del formulario (T-611): se cambia por
+				 * `PUT /fe/active`, que confirma y deja bitácora. Va el guardado, no
+				 * uno por omisión, para que el cuerpo diga la verdad — el backend lo
+				 * conserva de todos modos, pero mandarle «sandbox» a un negocio que
+				 * está en producción sería escribir una mentira y confiar en que la
+				 * ignoren.
+				 */
+				environment: stored.eInvoicing.environment,
 				economicActivity: actividad
 			}
 		});
@@ -250,5 +330,242 @@ export const actions: Actions = {
 		}
 
 		return { success: m.settings_saved() };
+	},
+
+	/*
+	 * ------------------------------------------- factura electrónica (F6)
+	 *
+	 * Cinco acciones aparte y no campos del formulario grande, y no es una
+	 * decisión de maquetado: **cada una habla con un endpoint propio que hace algo
+	 * irreversible o auditado**. Subir un certificado importa una llave a Vault,
+	 * quitarlo la borra, probar la conexión sale a internet y cambiar el ambiente
+	 * queda en bitácora. Meterlas en el «Guardar cambios» de la pantalla haría que
+	 * corregir una coma en la dirección del negocio disparara las cuatro.
+	 *
+	 * Todas devuelven el «no» del backend tal cual —código y datos— y la frase la
+	 * arma `apiMessage` (RN-30).
+	 */
+
+	feCertificado: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const v = new Validator(form);
+		const ambiente = v.oneOf('ambiente', F.einvoicingEnvironment(), AMBIENTES);
+		const pin = v.text('pin', F.certificatePin(), { max: 200 });
+
+		const archivo = form.get('certificado');
+		if (!(archivo instanceof File) || archivo.size === 0) {
+			v.add('certificado', m.settings_fe_certificate_required());
+		} else if (archivo.size > MAX_P12_BYTES) {
+			// Se rechaza acá para no gastar la subida: el backend lo rechaza igual,
+			// y esta comprobación es una cortesía, no el control.
+			v.add('certificado', m.settings_fe_certificate_too_big({ kb: MAX_P12_BYTES / 1024 }));
+		}
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		const bytes = new Uint8Array(await (archivo as File).arrayBuffer());
+		try {
+			await api(`/fe/${ambiente}/certificate`, {
+				method: 'POST',
+				token: locals.token,
+				/*
+				 * `multipart` y no base64 en un JSON: el navegador ya sabe mandarlo y
+				 * de paso no se infla un tercio por el camino. **En ningún punto del
+				 * trayecto toca el disco**: un temporal con una llave privada adentro
+				 * sobrevive al proceso que lo creó.
+				 */
+				upload: {
+					field: 'archivo',
+					filename: (archivo as File).name || 'certificado.p12',
+					contentType: 'application/x-pkcs12',
+					bytes,
+					fields: { pin }
+				}
+			});
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_fe_certificate_saved() };
+	},
+
+	feQuitarCertificado: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const v = new Validator(form);
+		const ambiente = v.oneOf('ambiente', F.einvoicingEnvironment(), AMBIENTES);
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		try {
+			await api(`/fe/${ambiente}/certificate`, { method: 'DELETE', token: locals.token });
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_fe_certificate_removed() };
+	},
+
+	feAtv: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const v = new Validator(form);
+		const ambiente = v.oneOf('ambiente', F.einvoicingEnvironment(), AMBIENTES);
+		const usuario = v.text('atv_usuario', F.atvUser(), { max: 160 });
+		const clave = v.text('atv_clave', F.atvPassword(), { max: 200 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		try {
+			await api(`/fe/${ambiente}/atv`, {
+				method: 'PUT',
+				token: locals.token,
+				body: { user: usuario, password: clave }
+			});
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_fe_atv_saved() };
+	},
+
+	feProbar: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const v = new Validator(form);
+		const ambiente = v.oneOf('ambiente', F.einvoicingEnvironment(), AMBIENTES);
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		try {
+			await api(`/fe/${ambiente}/atv/verify`, { method: 'POST', token: locals.token });
+		} catch (error) {
+			/*
+			 * Los tres desenlaces de RF-31 llegan acá como tres códigos distintos y
+			 * salen como tres frases distintas. La del tercero **no culpa a las
+			 * credenciales**: quien lea «no sirven» va a rotar su contraseña en ATV,
+			 * y hacerlo el día que Hacienda está caída es trabajo perdido.
+			 */
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_fe_connection_ok() };
+	},
+
+	feAmbiente: async ({ request, locals, url }) => {
+		const admin = requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const v = new Validator(form);
+		const ambiente = v.oneOf('ambiente', F.einvoicingEnvironment(), AMBIENTES);
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		try {
+			await api('/fe/active', {
+				method: 'PUT',
+				token: locals.token,
+				/*
+				 * La confirmación viaja al servidor y no se queda en el modal. RN-35
+				 * dice que esto «no puede ocurrir por haber tocado un desplegable sin
+				 * querer», y un desplegable que hace `PUT` es exactamente eso: sin
+				 * este campo, el backend responde `confirmation_required`.
+				 */
+				body: { environment: ambiente, confirm: checked(form, 'confirmar') }
+			});
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		// El ambiente vive en la configuración, así que la copia en caché de esta
+		// compañía quedó vieja (T-224).
+		invalidateSettings(admin.company_id);
+		return { success: m.settings_fe_environment_changed() };
+	},
+
+	/*
+	 * ------------------------------------------ sucursales y cajas (T-608)
+	 *
+	 * Cuatro acciones y no seis: el alta y la edición comparten formulario porque
+	 * comparten campos, y lo único que las distingue es si llega `id`.
+	 *
+	 * **El código solo viaja al crear.** No es una omisión: no existe en los
+	 * esquemas de actualización del backend, porque cambiarlo movería el número de
+	 * todos los comprobantes ya emitidos desde esa sucursal. Mandarlo igual sería
+	 * ofrecer en la pantalla algo que el servidor va a ignorar.
+	 */
+
+	sucursalGuardar: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const v = new Validator(form);
+		const id = Number(form.get('id') ?? 0) || null;
+		const nombre = v.text('nombre', F.officeName(), { max: 120 });
+		// Se valida solo al crear: al editar el campo ni se dibuja.
+		const codigo = id ? '' : v.text('codigo', F.branchCode(), { max: 10 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		try {
+			await api(id ? `/offices/branches/${id}` : '/offices/branches', {
+				method: id ? 'PUT' : 'POST',
+				token: locals.token,
+				body: id ? { nombre, activa: checked(form, 'activa') } : { codigo, nombre }
+			});
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_offices_branch_saved() };
+	},
+
+	sucursalBorrar: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const id = Number(form.get('id') ?? 0);
+		try {
+			await api(`/offices/branches/${id}`, { method: 'DELETE', token: locals.token });
+		} catch (error) {
+			/*
+			 * Acá llega `branch_in_use` con sus dos cuentas, y la frase las dice: quien
+			 * borra necesita saber qué mover primero. La alternativa —«no se puede
+			 * borrar»— deja a alguien buscando qué es lo que la retiene.
+			 */
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_offices_branch_removed() };
+	},
+
+	cajaGuardar: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const v = new Validator(form);
+		const id = Number(form.get('id') ?? 0) || null;
+		const nombre = v.text('nombre', F.officeName(), { max: 120 });
+		const codigo = id ? '' : v.text('codigo', F.terminalCode(), { max: 10 });
+		const sucursal = id ? 0 : v.integer('branch_id', F.branch(), { min: 1 });
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		try {
+			await api(id ? `/offices/terminals/${id}` : '/offices/terminals', {
+				method: id ? 'PUT' : 'POST',
+				token: locals.token,
+				body: id
+					? { nombre, activa: checked(form, 'activa') }
+					: { branch_id: sucursal, codigo, nombre }
+			});
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_offices_terminal_saved() };
+	},
+
+	cajaBorrar: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+
+		const form = await request.formData();
+		const id = Number(form.get('id') ?? 0);
+		try {
+			await api(`/offices/terminals/${id}`, { method: 'DELETE', token: locals.token });
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_offices_terminal_removed() };
 	}
 };

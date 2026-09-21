@@ -12,7 +12,7 @@
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-09-13",
+  "actualizado": "2026-09-20",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -488,6 +488,66 @@
       "sintoma": "`afiliado=int(marca[-6:])` toma dos dígitos del segundo y cuatro del contador. La base de pruebas sobrevive entre corridas y `bootstrap.py` con un par (afiliado, compañía) que ya existe **no crea nada**: le agrega el administrador a la que está. La prueba fallaba diciendo que la contabilidad ya estaba activa, que era cierto, pero de la corrida anterior.",
       "arreglo": "`afiliado_unico()` en `conftest.py`, con nueve dígitos: repite cada 27 horas.",
       "fecha": "2026-09-13"
+    },
+    {
+      "defecto": "El 403 de Cloudflare se reportaba como «Hacienda rechazó sus credenciales»",
+      "sintoma": "El IdP de Hacienda está detrás de Cloudflare, que tiene baneada la firma por omisión de `urllib` y contesta 403 «Error 1010: browser_signature_banned» sin que la petición llegue a Keycloak. `hacienda_idp` decidía por el código de estado —`exc.code in (400, 401, 403)`— así que lo traducía a `atv_invalid_credentials`. Con credenciales buenas. Y el caso de uso borra la verificación anterior al recibir un rechazo, así que un bloqueo de red tiraba una comprobación buena. Es el error que RF-31 existe para no cometer: quien lee «Hacienda rechazó su contraseña» va a ATV a rotar una que estaba perfecta.",
+      "arreglo": "Se manda `User-Agent` (configurable con `FE_HACIENDA_USER_AGENT`) y **decide el cuerpo, no el código**: solo `{\"error\": \"invalid_grant\"}` es un rechazo; un 403 de Cloudflare, un 500 y un `invalid_client` son «no se pudo comprobar». La regresión usa el cuerpo exacto que contestó Cloudflare, que es JSON válido y sin campo `error`.",
+      "fecha": "2026-09-19"
+    },
+    {
+      "defecto": "Contabilidad arrastraba la página de lado en un teléfono",
+      "sintoma": "A 390 px, `main` se desplazaba 390→581 en `/contabilidad`, con el encabezado incluido. Los `overflow-x-auto` estaban puestos y la pantalla parecía correcta, así que arreglar a ojo habría sido tocar lo que no era.",
+      "arreglo": "`min-width: 0` en `.input` y en `.table-wrap` de `app.css`. Dentro de una rejilla el ancho mínimo por omisión es el del contenido, y el de un `<select>` es su opción más larga: el desplegable de cuentas estiraba la columna a 544 px dentro de un hueco de 316. Un contenedor con `overflow-x: auto` tiene el mismo problema: sin `min-width: 0` crece hasta la tabla en vez de desplazarla.",
+      "fecha": "2026-09-19"
+    },
+    {
+      "defecto": "Una caja apagada de repuesto no se podía borrar",
+      "sintoma": "`crud_office._ultima_terminal_no` contaba las cajas activas de la sucursal sin mirar si la que se va **ya estaba apagada**, y `borrar_terminal` la llamaba igual. Con una caja activa y una apagada, borrar la apagada respondía 409 `last_active_terminal`: había que encenderla para poder borrarla. Las 23 pruebas del backend no lo vieron porque estaban escritas desde el mismo lado que el código; apareció al tener la lista de cajas delante en la pantalla.",
+      "arreglo": "`if not terminal.activa: return` al principio de la comprobación, con dos pruebas: la apagada se borra y la última encendida sigue sin borrarse.",
+      "fecha": "2026-09-19"
+    },
+    {
+      "defecto": "Los baldes del resumen se llenaban con el subtotal, o sea después del descuento",
+      "sintoma": "`TotalGravado` 97 500 en una venta de 100 000 con 2 500 de descuento",
+      "causa": "El anexo pide el monto total de la línea; el subtotal ya viene descontado. Se descubrió comparando contra dos comprobantes aceptados de `docs/`, que declaran 100 000.",
+      "arreglo": "`_sumar_baldes` acumula `monto_total` y `TotalVentaNeta` resta los descuentos una sola vez (RN-84).",
+      "sesion": 70
+    },
+    {
+      "defecto": "Una exoneración parcial mandaba la línea entera al balde exonerado",
+      "sintoma": "100 000 al 13 % con 9 puntos exonerados declaraban 100 000 de `TotalExonerado` y nada de gravado",
+      "causa": "Parecía razonable y el XSD lo acepta. El anexo (pp. 50-52) define la proporción como exonerado/impuesto: 69 230.76923 exonerados y 30 769.23077 gravados.",
+      "arreglo": "`_reparto_de` reparte la línea y devuelve un balde por parte (RN-78).",
+      "sesion": 70
+    },
+    {
+      "defecto": "`TotalComprobante` no restaba el IVA devuelto",
+      "sintoma": "Una consulta médica de 100 000 pagada con tarjeta totalizaba 104 000",
+      "causa": "El término está en la página 55 del anexo y es el único que resta.",
+      "arreglo": "`_cuentas` lo resta, y hay una prueba que emite el caso entero (RN-79).",
+      "sesion": 70
+    },
+    {
+      "defecto": "Diez puntos exonerados salían escritos «1E+1»",
+      "sintoma": "`<TarifaExonerada>1E+1</TarifaExonerada>` con `puntos=Decimal(\"10\")`",
+      "causa": "`Decimal(\"10.00\").normalize()` vale `1E+1`, y `str()` lo escribe en notación científica.",
+      "arreglo": "Se formatea con `f\"{...:f}\"`, que nunca usa exponente. Hay una prueba con el 10.",
+      "sesion": 70
+    },
+    {
+      "defecto": "Una `Ubicacion` con solo barrio se dejaba construir",
+      "sintoma": "El XSD contesta «Missing child element(s)» después de firmar",
+      "causa": "Se creía que pedía «barrio u otras señas»; pide `OtrasSenas` siempre y el barrio es el opcional. Comprobado cambiando el nodo en un ejemplo real.",
+      "arreglo": "`Ubicacion.__post_init__` exige `otras_senas`; corregidos RN-83 y T-722.",
+      "sesion": 70
+    },
+    {
+      "defecto": "Un `tax_code` vacío se guardaba como cadena vacía en vez de nulo",
+      "sintoma": "`products.tax_code = ''`, que no es ni un código ni «sin clasificar»",
+      "causa": "El bucle de `update_product_information` solo trataba el nulo como valor vaciable.",
+      "arreglo": "La cadena vacía en un campo vaciable se guarda como nulo.",
+      "sesion": 70
     }
   ],
   "decisiones": [
@@ -1358,13 +1418,15 @@
     "codigos_de_error": {
       "$comentario": "T-802 y T-803. Si estas cifras se mueven, se movió el contrato entre el backend y el POS: hay un código nuevo, o uno que dejó de levantarse.",
       "$deriva": "Este bloque llevaba dos fases sin actualizarse: decía 64 códigos del backend cuando ya eran 126, porque F10 y F11 agregaron los suyos y nadie volvió acá. Lo que enseña es que un invariante que ninguna prueba comprueba es un comentario. Las dos LISTAS no se desincronizan —messages.test.ts las compara entre sí— pero a este NÚMERO no lo mira nadie. Recontado el 2026-09-13.",
-      "codigos_del_backend": 126,
+      "codigos_del_backend": 140,
       "codigos_propios_del_pos": 4,
       "mensajes_de_exito": 14,
-      "$en_vuelo": "Al 2026-09-13 el POS va en 125 y le faltan los cinco de F6 —invalid_certificate, certificate_too_large, invalid_environment, atv_user_required, signing_unavailable—, así que messages.test.ts está en rojo A PROPÓSITO: es la mitad del POS de F6, que todavía no se escribió.",
       "raise_migrados": 81,
       "$raise_migrados": "Histórico de T-802: cuántos raise se convirtieron entonces. No es una cifra viva.",
-      "sitios_del_simulado": 70
+      "sitios_del_simulado": 113,
+      "$sitios_del_simulado": "Códigos DISTINTOS que el simulado puede devolver, no llamadas: `grep -oE \"fail\\([0-9]+, '[a-z_]+'\" src/lib/server/mock/*.ts | sed -E \"s/.*'([a-z_]+)'/\\\\1/\" | sort -u | wc -l`. Decía 76 sin decir cómo se contaba, que es lo que hace que un número no se pueda actualizar: nadie sabe si subió o si se contaba otra cosa. Recontado el 2026-09-19, con `/offices` adentro.",
+      "codigos_del_pos": 144,
+      "$en_vuelo": "Al día el 2026-09-19. Los cinco de F6 entraron del lado del POS (T-624) y enseguida otros cinco con T-611 y T-612, así que el backend va en 131 y el POS en 135. La diferencia de cuatro es vieja: son códigos del POS que ningún endpoint levanta, y la prueba los tolera porque solo exige que el backend no mande ninguno que el POS no sepa decir. Ese mismo día se quitó un duplicado que las dos listas tenían (account_not_found), síntoma de T-925."
     },
     "catalogos_de_idioma": {
       "$comentario": "T-804 terminada. Si el total baja sin que se borre una pantalla, alguien volvió a escribir texto dentro de un componente.",
@@ -2225,6 +2287,106 @@
       ],
       "lo_que_falta_de_la_fase": "T-607 (actividad económica), T-608 y T-608b (ABM de sucursales y terminales, ya sin puerta), T-610 y T-611 (ambiente activo y paso a producción con bitácora), T-612 (probar la conexión sin emitir), T-616 (arranque del consecutivo), T-609 y T-609b (la bitácora de los secretos), T-615 (el simulado), T-617 (la otra mitad: exigir el tipo al dar de alta un cliente), T-620 (unidad de medida) y T-619 (punta a punta). Más las pantallas.\n\nnpm test ESTÁ EN ROJO A PROPÓSITO: messages.test.ts compara la lista de códigos de error del backend con la del POS, y los cinco de F6 todavía no están del lado del POS. Es la primera cosa que hay que hacer al retomar.",
       "aprendido": "Las tres cosas que más costaron no estaban en ninguna documentación y salieron de correr el adaptador contra el servicio de verdad: Vault contesta 400 y no 404 cuando no hay llave, y eso borraba la distinción entre «reintentá» y «andá a cargar el certificado» —confundirlas deja la cola reintentando para siempre algo que no va a firmarse nunca—; el mismo 400 para configurar una llave que no existe hacía que «quitar dos veces» pareciera una falla; y cryptography no distingue un PIN malo de un archivo corrupto, así que lo único separable es haber subido otra cosa —se mira el primer byte, que en DER siempre es una SEQUENCE—.\n\nDos guardianes se dispararon sobre código escrito en esta misma sesión, que es para lo que están. El de Hacienda cazó el correo de ejemplo de ATV escrito completo en dos docstrings —un ejemplo también envejece— y antes se había cazado a sí mismo: no encontraba /realms/rut porque el realm estaba partido entre dos literales Y escrito dos veces, en su campo y dentro de la URL.\n\nY la trampa de CLAUDE.md en su forma clásica, ahora en el backend: las pruebas HTTP de credenciales pasaban solas y fallaban en la SEGUNDA corrida completa, porque la base de pruebas sobrevive y la compañía A quedaba con certificado. La salida no es limpiar mejor —una prueba que falla a mitad no limpia nada— sino que cada prueba dé de alta su propia compañía. Se comprueba corriendo la batería entera dos veces seguidas, que es lo único que lo detecta."
+    },
+    {
+      "fecha": "2026-09-19",
+      "titulo": "task.md al día con F6, y los cinco códigos del lado del POS",
+      "hecho": [
+        "task.md estaba seis días atrás del código: quince tareas de F6 hechas y commiteadas seguían en `[ ]`. Marcadas T-622, T-623, T-601, T-602a, T-602, T-602b, T-603, T-603b, T-604, T-605, T-606, T-613 y T-618, con lo que se aprendió en cada una; T-621 y T-617 quedan en `[~]` porque de las dos solo entró la columna y les falta la pantalla.",
+        "T-624 (nueva): los cinco códigos de error de F6 del lado del POS. `invalid_certificate` se abre en cinco frases —los cuatro motivos del backend más la red de seguridad—, porque el backend los separa justamente porque lo que hay que hacer es distinto en cada uno.",
+        "Quitado el duplicado de `account_not_found` en las dos listas y el `case` inalcanzable del switch. No era copia y pega: el código lo levantan seis sitios de contabilidad, con `account_id`, y uno de `/users/membership`, sin datos. Queda anotado como T-925, que es la decisión de partirlo o no.",
+        "Verde en los dos lados: 1 623 pruebas del backend con cobertura 100 %, 612 del POS con cobertura 100 %, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Un `task.md` sin marcar es peor que uno vacío, porque CLAUDE.md dice que manda sobre progress.json cuando los dos se contradicen.** La sesión del 13 dejó cinco commits de backend y actualizó progress.json, pero no las casillas; quien retomara habría leído «T-601 pendiente» en el documento que manda y habría vuelto a escribir la migración. El registro de lo que pasó y la lista de lo que falta se desincronizan por caminos distintos: el primero se escribe porque hay algo que contar, la segunda solo si alguien se acuerda. La regla de desempate no arregla eso, lo empeora — le da autoridad al archivo que más se olvida."
+    },
+    {
+      "fecha": "2026-09-19",
+      "titulo": "F6: los dos endpoints que faltaban —probar la conexión y pasar a producción",
+      "hecho": [
+        "T-612, el backend: puerto `HaciendaIdp`, adaptador contra el Keycloak de Hacienda, caso de uso `VerifyAtvCredentials` y `POST /fe/{ambiente}/atv/verify`. Comprobar es pedir un token y tirarlo —no hay otra forma, Hacienda usa `grant_type=password`— y es justo lo que hace que no emita nada.",
+        "T-611, el backend: `PUT /fe/active`, con `needs_confirmation` en el dominio y la línea de bitácora en el mismo `commit` que el cambio. Y la puerta lateral cerrada: `PROTECTED_PATHS` en `crud_settings`, porque guardar la pantalla de Configuración cambiaba el ambiente sin confirmar ni registrar.",
+        "Diez códigos de error del lado del POS en total —los cinco de T-624 más los cinco de hoy— con sus tres catálogos. `npm test` volvió al verde.",
+        "Defecto: `_activo` leía `get_settings(db).get(\"eInvoicing\")` y ese diccionario tiene el JSON dentro de `data`, así que el ambiente activo era SIEMPRE sandbox.",
+        "Cifras: 1 672 pruebas del backend con cobertura 100 %, 617 del POS con cobertura 100 %, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Una regla que otro endpoint puede saltarse no es una regla.** RN-35 pide confirmación y bitácora para pasar a producción, y las dos estaban bien puestas en la ruta nueva — pero `save_settings` reemplaza el JSON entero con lo que manda el POS, así que el mismo cambio se podía hacer guardando Configuración, sin confirmar y sin dejar rastro. Escribir la puerta auditada era la mitad visible del trabajo; la otra mitad era buscar por dónde más se escribe ese dato. Es la misma forma del filtro por compañía y del bloqueo por suscripción: lo que protege es que haya UN solo sitio por donde se pasa, no que el sitio correcto esté bien hecho. El corolario barato es el guardián: `write_protected` exige que el campo esté en la lista, así que sacarlo de ahí rompe en vez de abrir un hueco.",
+      "y_algo_mas": "El 400 de Keycloak es un rechazo y no una avería: `invalid_grant` —la contraseña mal escrita, el caso más común— viaja con 400 y no con 401. Tratarlo como avería lo habría convertido en «no se pudo comprobar», que es el desenlace de RF-31 que no hay que dar de más: manda a esperar en vez de a corregir."
+    },
+    {
+      "fecha": "2026-09-19",
+      "titulo": "F6: el simulado, la pantalla y el recorrido completo de las credenciales",
+      "hecho": [
+        "T-615: los seis endpoints de `/fe` en el simulado, con `SEED_VERSION` en 11 y `fe_credentials` como tabla por compañía que nace vacía. Los tres desenlaces de RF-31 se piden por la contraseña —`mal-` la rechazan, `caido-` no contesta— porque «Hacienda caída» no se puede provocar contra nada de verdad.",
+        "A `api()` le faltaba `multipart`: la subida del `.p12` no tenía por dónde pasar. Se le agregó `upload`, sin escribir el `Content-Type` a mano —lo pone `fetch` con su `boundary`—.",
+        "T-610 y las pantallas de T-603, T-605, T-606, T-611 y T-612: la pestaña de factura electrónica de `/configuracion`, con una tarjeta por ambiente. Va FUERA del formulario grande porque cada botón habla con un endpoint que hace algo irreversible o auditado.",
+        "Once pruebas de punta a punta en `factura-electronica.spec.ts`, cada una con su propia compañía dada de alta desde el panel.",
+        "Cifras: 617 del POS con cobertura 100 %, `npm run check` en 0/0, 66 de punta a punta en verde y una en rojo que YA lo estaba (T-926, medida contra HEAD)."
+      ],
+      "lo_que_ensena": "**El campo de la contraseña se quedaba con lo tecleado, y solo lo vio la prueba de punta a punta.** El backend nunca la devuelve —no la tiene— así que por el lado del servidor RN-16 estaba cumplida, y las pruebas de contrato lo confirmaban. Pero el navegador se queda con lo que la persona escribió hasta que alguien lo borre, y ahí seguía: en el DOM, toda la sesión, listo para reenviarse en el siguiente clic. La lección no es «poner `reset: true`» sino que **el secreto tiene un sitio más del que uno cuenta**: se piensa en la base, en la respuesta, en la bitácora y en las trazas —que es lo que T-609 va a buscar— y el quinto es la pantalla. Lo encontró una prueba que miraba el valor del campo, no el cuerpo de la respuesta.",
+      "y_algo_mas": "Dos choques de nombre en el simulado, los dos de la misma familia: ya había `DIAS_DE_AVISO` (7, de la suscripción) y `diasHasta` (días de calendario). El vencimiento de un certificado tiene HORA —uno que vence a las 10:00 no sirve a las 11:00— así que compartir la función habría dicho que sirve durante catorce horas en que no sirve. Quedaron `DIAS_DE_AVISO_DEL_CERTIFICADO` y `diasHastaElVencimiento`."
+    },
+    {
+      "fecha": "2026-09-19",
+      "titulo": "F6: los guardianes de los secretos y el ABM de sucursales",
+      "hecho": [
+        "T-609: el buscador recorre TODAS las columnas de texto de TODAS las tablas, no las tres que uno esperaría — una lista escrita a mano no puede contener la columna en la que nadie pensó. Con su prueba de la prueba: el usuario de ATV, que sí se guarda en claro a propósito, tiene que aparecer.",
+        "T-609b: `fe_credenciales_probadas` con el ambiente y el desenlace, los cuatro. El único que no se anota es «no había credenciales»: no se usó ninguna.",
+        "T-608b: `domain/office.py`, 25 pruebas. «1» entra como «001» y «1234» NO se recorta.",
+        "T-608, el backend: `crud_office.py`, seis rutas bajo `/offices`, 23 pruebas. Se cuentan las activas y reactivar consume cupo; desactivar una sucursal apaga sus cajas; no se deja a la compañía sin sucursal activa ni a una sucursal sin caja activa.",
+        "Cifras: 1 731 pruebas del backend con cobertura 100 %, 626 del POS con cobertura 100 %, `npm run check` en 0/0."
+      ],
+      "lo_que_ensena": "**Dos guardianes del proyecto cobraron el mismo día, y los dos por algo escrito.** El de `tenancy.py` tumbó la batería por las letras `.count()` dentro de un DOCSTRING que explicaba por qué no usarlo — es intolerante a propósito, y `crud_company` ya daba el rodeo «no tolera esas cuatro letras ni en una explicación». Y `api_error` reventó con «got multiple values for argument code» porque le pasé el dato llamado `code`, que es el nombre de su propio parámetro; `api_errors.py` ya lo tenía escrito para `account_code`. Los dos avisos estaban en el código, en el sitio correcto, y los dos se pagaron igual. Lo que enseña no es que hay que leer más: es que un guardián que falla en el minuto cuesta un minuto, y la alternativa —enterarse en producción de que un `.count()` cruza compañías— no tiene precio comparable."
+    },
+    {
+      "fecha": "2026-09-19",
+      "titulo": "F6: T-608 cerrada — la pantalla de sucursales y cajas",
+      "hecho": [
+        "Las siete rutas de `/offices` en `mock/handler.ts`, con el contrato de `office_routes.py`: todas devuelven el estado completo —sucursales, cajas y cupo— y no la fila que tocaron.",
+        "La pestaña «Sucursales y cajas» de `/configuracion`: el cupo del plan antes de abrir el formulario, una tarjeta por sucursal con sus cajas dentro, y tres diálogos —la ficha de la sucursal, la de la caja y el borrado, que es uno solo para las dos—.",
+        "`tests/e2e/sucursales.spec.ts`, cinco pruebas: el recorrido de un local nuevo (abrir, poner caja, cerrar, borrar), los tres «no» del código, que el código no se puede cambiar, las dos puertas que no se pueden cerrar y el techo del plan.",
+        "Defecto: `_ultima_terminal_no` no miraba si la caja ya estaba apagada, así que borrar la de repuesto respondía `last_active_terminal`. Corregido con sus dos pruebas.",
+        "Cifras: 1 733 pruebas del backend con cobertura 100 %, 626 del POS con cobertura 100 %, 72 de punta a punta (una falla, T-926, de antes), `npm run check` en 0/0."
+      ],
+      "$siguiente": "La sesión continuó: ver la entrada de la comprobación en vivo contra Hacienda.",
+      "lo_que_ensena": "**El defecto de T-608 no lo encontró el API: lo encontró tener la lista delante.** `borrar_terminal` llamaba a la comprobación de «no dejes la sucursal sin caja activa» sin mirar si la caja que se va **ya estaba apagada**, y una apagada no deja a nadie sin nada al irse. Contra el API nadie lo pide: uno borra lo que acaba de crear. Con la pantalla el gesto natural es otro —se crea una caja de más, se apaga, y después se limpia— y el sistema contestaba «tiene que quedar al menos una caja activa», mandando a encenderla para poder borrarla. Las 23 pruebas del backend no lo vieron porque estaban escritas desde el mismo lado desde el que se escribió el código. La pantalla no es el barniz que se le pone encima a un backend terminado: es el segundo par de ojos, y hace las preguntas que desde adentro no se hacen."
+    },
+    {
+      "fecha": "2026-09-19",
+      "titulo": "La primera comprobación en vivo contra Hacienda, y lo que rompió",
+      "hecho": [
+        "Vault inicializado en la pila de desarrollo —nunca lo había estado; F6 se había probado solo contra la de pruebas—, con `transit` montado y el token en el `.env`.",
+        "Comprobación en vivo del IdP con un certificado y credenciales de ATV reales: `access_token` de 1 523 bytes, en menos de dos segundos. Los 15 s de espera sobran.",
+        "Dos defectos del adaptador corregidos (ver `defectos_corregidos`): faltaba el `User-Agent` y la traducción decidía por el código de estado.",
+        "T-927: contabilidad dejó de arrastrarse de lado en un teléfono. T-928 anotada: nueve pantallas más lo hacen, y es anterior.",
+        "`docs/hacienda/costa-rica/casos-de-emision.md`: los casos de emisión con la regla citada y el ejemplo que la demuestra, incluidos los 25 protocolos de comprador de SWS con sus códigos exactos.",
+        "El certificado y las credenciales del cliente se borraron al terminar, y se comprobó con el buscador de T-609 que no quedó rastro en ninguna columna de texto de ninguna tabla."
+      ],
+      "lo_que_ensena": "**Un servidor de mentira prueba la traducción; no prueba el trayecto.** El adaptador del IdP tenía ocho pruebas del rechazo contra un Keycloak local, y las ocho pasaban. El primer intento contra Hacienda de verdad falló, y no por Keycloak: falló por el **Cloudflare que Hacienda tiene delante**, que banea la firma de `urllib` y contesta 403 antes de que la petición llegue a ningún lado. El código leía ese 403 como «credenciales rechazadas» —el error exacto que RF-31 se escribió para no cometer— y quien lo vio iba camino de rotar en ATV una contraseña que estaba perfecta. Lo que lo destapó no fue una prueba sino una persona diciendo «eso está raro, en otro ambiente eso sí me sirve». Dos lecciones: un doble de prueba solo cubre lo que uno ya sabe que existe, y **la duda de quien usa el sistema es evidencia**. La segunda vale más: el sistema estaba afirmando algo falso con toda seguridad, y lo único que se le opuso fue que el usuario conocía sus propias credenciales."
+    },
+    {
+      "fecha": "2026-09-19",
+      "titulo": "F7 tiene requisitos, y el primer XML válido",
+      "hecho": [
+        "RF-65 a RF-73 y RN-76 a RN-83 en el spec, y T-714 a T-722 en F7: es lo que salió de leer el anexo y los 23 comprobantes (T-702, cerrada).",
+        "`domain/fe_xml.py`: de una venta a un comprobante 4.4. Arma FE y TE con 57 pruebas y cobertura 100 %.",
+        "Tres comprobantes emitidos y **validados contra el XSD oficial**: la venta del invariante `venta_arroz_cafe`, un servicio médico con tarjeta que declara `TotalIVADevuelto`, y una línea al 13 % con 9 puntos exonerados que deja el neto en 4 %.",
+        "Los espacios de nombres de los siete tipos de comprobante se mudaron a `domain/hacienda.py`, donde vive todo lo que dice quién es Hacienda (T-613).",
+        "Cifras: 1 802 pruebas del backend con cobertura 100 %."
+      ],
+      "lo_que_ensena": "**Cuatro campos obligatorios que no se habrían encontrado leyendo.** El anexo son 98 páginas y el XSD 115 KB; se leyeron los dos con cuidado y aun así el armador salió sin `ProveedorSistemas`, sin exigir la `Ubicacion` del emisor, sin notar que esa ubicación necesita barrio u otras señas, y sin el correo del emisor. Los cuatro los encontró el validador en cuatro corridas de segundos, uno por vuelta. Y encontró además la asimetría que ninguna lectura sugiere: del emisor esos cuatro son obligatorios y **del receptor no lo es ninguno**. La lección no es que hay que validar —eso ya se sabía— sino **cuándo**: validar contra el esquema fue más barato que leer el esquema, y se hizo antes de escribir una sola pantalla. Si el mismo descubrimiento hubiera esperado a la primera transmisión, cada vuelta habría costado un rechazo de Hacienda en vez de medio segundo."
+    },
+    {
+      "fecha": "2026-09-20",
+      "titulo": "Los siete comprobantes, y los casos que los llenan",
+      "hecho": [
+        "`domain/fe_xml.py` arma **los siete tipos** —FE, ND, NC, TE, FEC, FEE y REP— y los siete validan contra su propio XSD. Las diferencias entre ellos son datos en `PERFILES`, sacadas de los siete esquemas uno por uno, y no ramas repartidas por el archivo (T-714 cerrada, T-720 a medias).",
+        "Emitidos y comparados contra los ejemplos reales de `docs/`: diez comprobantes, diez válidos, y la única diferencia sin explicar que quedó son los nodos de la firma. El recibo de pago sale **elemento por elemento** igual al real.",
+        "T-715 cerrada: el código de tarifa de Hacienda por producto y congelado en la línea de la venta, con la nota 8.1 entera en `domain/fe_tax_codes.py` (migración 012).",
+        "T-717 cerrada: la exoneración del cliente con las notas 10.1 y 23, ocho columnas en `clients` y su bloque en la ficha (migración 013).",
+        "T-718 y T-719, el dominio: el IVA devuelto de salud con su prorrateo (`fe_vat_refund.py`) y el protocolo de comprador como datos (`fe_protocols.py`), con Walmart, el ICE y el BCCR expresados sin tocar código.",
+        "Cifras: 2 018 pruebas del backend con cobertura 100 %, 670 del POS con cobertura 100 %, `npm run check` en 0 y 0."
+      ],
+      "lo_que_ensena": "**Cuatro reglas de plata que el anexo dice y el XSD no.** El esquema valida la forma; la aritmética la valida Hacienda contra sí misma, y ahí es donde un comprobante bien formado se rechaza sin decir por qué. Las cuatro salieron de leer las páginas 50 a 55 y de mirar dos comprobantes aceptados al lado del mío: los baldes del resumen van **antes** del descuento (100 000 gravado con 2 500 de descuento, no 97 500); una exoneración parcial **reparte** la línea entre gravado y exonerado en proporción a lo perdonado, no la muda entera; `TotalComprobante` **resta** el IVA devuelto; y con dos o más medios de pago la suma tiene que dar el total. Ninguna de las cuatro la habría encontrado el validador: las cuatro producen XML válido y cuentas equivocadas."
     }
   ],
   "$reparto": {

@@ -39,6 +39,10 @@ class ProductData:
     #: `None` es «la tasa configurada del negocio» (RN-9). Lo resuelve el caso de
     #: uso, no este adaptador: acá solo se transporta lo que dice la fila.
     tax_rate: TaxRate | None = None
+    #: El código de tarifa de Hacienda (RN-76). `None` es «sin clasificar para
+    #: factura electrónica». No se deduce de `tax_rate`: del porcentaje no se
+    #: vuelve al código.
+    tax_code: str | None = None
     #: Lo que cuesta (RN-54). Cero es «no se sabe»: los productos anteriores a
     #: F10 y los que nunca se compraron. La primera compra lo establece.
     cost: Money = Money.zero()
@@ -53,6 +57,7 @@ def _a_producto(fila: Product) -> ProductData:
         price=Money(fila.price) if fila.price is not None else None,
         stock=fila.stock,
         tax_rate=TaxRate(fila.tax_rate) if fila.tax_rate is not None else None,
+        tax_code=fila.tax_code,
         cost=Money(fila.cost) if fila.cost is not None else Money.zero(),
     )
 
@@ -359,6 +364,9 @@ class SqlAlchemySaleRepository:
                     # una sola tarifa no se calcule con el promedio de la venta.
                     tax_rate=linea.tax_rate.value,
                     tax_amount=linea.tax_rate.apply(linea.subtotal).amount,
+                    # El código de Hacienda, congelado igual (RN-76). NULL es
+                    # «el producto no estaba clasificado».
+                    tax_code=linea.tax_code,
                     # El costo, congelado igual que la tarifa y por lo mismo
                     # (RN-63). NULL cuando el producto no tiene: es «no se sabe»,
                     # y esa línea no asienta el par costo / inventario.

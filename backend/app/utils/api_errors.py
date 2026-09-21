@@ -133,6 +133,10 @@ CODES: frozenset[str] = frozenset(
         # ------------------------------------------------------- catálogo
         "product_has_sales",
         "category_name_taken",
+        # `tax_code` es el código que llegó. Los válidos son los once de la nota
+        # 8.1 del anexo de Hacienda, y no se corrigen solos: un `"8"` puede ser
+        # el `08` general o un dedazo (RN-76).
+        "invalid_tax_code",
         # ------------------------------------------- categorías de dos niveles
         "category_not_found",
         # `category_id` es la madre que ya es hija: colgar de ella haría un
@@ -170,8 +174,12 @@ CODES: frozenset[str] = frozenset(
         "client_identification_taken",
         "client_not_found",
         "client_update_failed",
+        # `reason` dice qué le falta a la exoneración, con el código del dominio
+        # (`missing_article`, `points_out_of_range`, …). Es un solo código y no
+        # ocho porque los ocho motivos se arreglan en el mismo formulario y con
+        # el mismo gesto: completar el campo que falta (RN-78).
+        "invalid_exemption",
         "invalid_role",
-        "account_not_found",
         "user_not_found",
         "user_not_yours",
         "last_admin",
@@ -227,6 +235,13 @@ CODES: frozenset[str] = frozenset(
         # rompió y la unidad de trabajo ya revirtió. `cause` va para el registro,
         # no para mostrar.
         "accounting_failed",
+        # Estaba dos veces —acá y arriba, entre los de usuarios— porque lo
+        # levantan dos sitios que hablan de cosas distintas: seis de
+        # `crud_accounting`, con `account_id`, sobre una cuenta del catálogo, y
+        # uno de `/users/membership`, sin datos, cuando no hay cuenta con ese
+        # correo. Como conjunto daba igual y la segunda entrada no hacía nada.
+        # Queda una sola; que un código sirva para dos cosas es otro asunto y
+        # está anotado en T-925.
         "account_not_found",
         # `account_code`: dos cuentas con el mismo código harían ambiguo todo
         # asiento que las nombre, y el código es justo lo que el contador lee.
@@ -289,6 +304,60 @@ CODES: frozenset[str] = frozenset(
         # 503 dice «reintentá», que es exactamente el caso de alguien que
         # reinició la VM y no abrió Vault.
         "signing_unavailable",
+        # --------------------------- comprobar la transmisión (T-612, RF-31)
+        # Los tres desenlaces de RF-31 son tres códigos y no uno con un dato
+        # adentro: cada uno manda a hacer algo distinto, y el POS tiene que
+        # poder decir cuál sin leer un campo.
+        #
+        # `atv_not_configured` es el paso previo: no hay nada que comprobar
+        # todavía. No es «no sirven» —no hay nada que corregir, hay algo que
+        # escribir— y por eso no se responde lo mismo.
+        "atv_not_configured",
+        # El IdP contestó y dijo que no. Esto sí es «no sirven».
+        "atv_invalid_credentials",
+        # `atv_unreachable` NO puede reportarse como el anterior (RF-31): decirle
+        # a un cliente que su contraseña está mal el día que Hacienda está en
+        # mantenimiento lo lleva a rotar en ATV una credencial buena, y eso no
+        # es un clic. Va con 503, igual que Vault sellado, por lo mismo.
+        "atv_unreachable",
+        # La contraseña guardada no se pudo descifrar: la llave se rotó, o la
+        # fila vino de un respaldo de otra instalación. Ni siquiera se llegó a
+        # preguntarle a Hacienda, así que no es ninguno de los tres.
+        "atv_password_unreadable",
+        # ------------------- sucursales y terminales (T-608, RF-26, RN-15)
+        # `reason` ('not_text', 'empty', 'not_digits', 'too_long') y `digits`:
+        # los códigos van dentro de la clave de 50 dígitos del comprobante, en
+        # posiciones fijas. El motivo viaja porque «escriba un número» no es lo
+        # mismo que «ese número no cabe».
+        "invalid_office_code",
+        # `branch_code`: dos sucursales con el mismo código producen dos
+        # facturas con la misma numeración ante Hacienda.
+        #
+        # El dato NO se llama `code`, por lo mismo que `account_code`: `code` es
+        # el nombre del parámetro de `api_error` y pasarlo como dato choca con
+        # él. Es la segunda vez que el proyecto tropieza con esto.
+        "branch_code_taken",
+        # `terminal_code`: por sucursal, no por compañía. Dos locales pueden
+        # tener los dos su caja «00001».
+        "terminal_code_taken",
+        "branch_not_found",
+        "terminal_not_found",
+        # `sales` y `terminals`: tiene historia o cajas colgando, así que se
+        # desactiva en vez de borrarse (RN-7). Van las dos cuentas porque quien
+        # lo lee necesita saber qué mover primero.
+        "branch_in_use",
+        # `sessions`: la caja tiene arqueos. Lo mismo.
+        "terminal_in_use",
+        # Queda una sola sucursal activa, o una sola caja en la sucursal:
+        # desactivar la última deja a la compañía sin poder vender.
+        "last_active_branch",
+        "last_active_terminal",
+        # ------------------------------- pasar a producción (T-611, RN-35)
+        # `environment`: se pidió el cambio sin confirmarlo. Es el único sitio
+        # del backend donde una confirmación es obligatoria, y está acá y no
+        # solo en la pantalla porque un desplegable sin querer no puede darle
+        # efecto fiscal a lo que se emita después.
+        "confirmation_required",
     }
 )
 

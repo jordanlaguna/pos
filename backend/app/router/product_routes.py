@@ -66,6 +66,7 @@ def get_all_products(
             # Sale como número para el POS: la base lo guarda con seis
             # decimales y `Decimal` no viaja en JSON.
             tax_rate=float(product.tax_rate) if product.tax_rate is not None else None,
+            tax_code=product.tax_code,
             unit_of_measure=product.unit_of_measure,
         )
         for product, _category in products

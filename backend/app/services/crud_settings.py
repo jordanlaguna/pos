@@ -25,6 +25,46 @@ MAX_DATA_BYTES = 20_000
 # el mismo que traía fijo el WinForms.
 DEFAULT_TAX_RATE = Decimal("0.13")
 
+#: Campos de la configuración que **tienen su propia puerta** y que esta no
+#: puede mover (T-611).
+#:
+#: `save_settings` reemplaza el JSON entero con lo que manda el POS, así que sin
+#: esta lista el ambiente de factura electrónica se podría cambiar por acá — y
+#: entonces la confirmación y la bitácora de RN-35 serían decoración: bastaría
+#: con guardar la pantalla de Configuración para pasar a producción sin que
+#: quedara rastro. Es la misma frase que el proyecto ya aplica a los permisos:
+#: esconder el campo no es control de acceso.
+#:
+#: Se guarda **lo que ya estaba**, no se rechaza la petición: el POS manda la
+#: configuración completa en cada guardado y rechazarla obligaría a la pantalla
+#: a conocer esta lista para no incluirlos. Ignorarlos es lo que hace que el
+#: campo sea de solo lectura de verdad, venga de donde venga la petición.
+PROTECTED_PATHS: tuple[tuple[str, str], ...] = (("eInvoicing", "environment"),)
+
+
+def _conservar_protegidos(nuevo: dict, anterior: dict) -> dict:
+    """Devuelve `nuevo` con los campos protegidos como estaban en `anterior`.
+
+    Un campo que no existía sigue sin existir: si nadie eligió ambiente todavía,
+    esto no inventa uno.
+    """
+    for contenedor, campo in PROTECTED_PATHS:
+        vieja = anterior.get(contenedor)
+        guardado = vieja.get(campo) if isinstance(vieja, dict) else None
+
+        seccion = nuevo.get(contenedor)
+        if not isinstance(seccion, dict):
+            if guardado is None:
+                continue
+            seccion = {}
+            nuevo[contenedor] = seccion
+
+        if guardado is None:
+            seccion.pop(campo, None)
+        else:
+            seccion[campo] = guardado
+    return nuevo
+
 
 def _row(db: Session) -> Settings:
     """La fila de ESTA compañía.
@@ -98,6 +138,11 @@ def save_settings(
     keep_logo: bool,
     user_id: int,
 ) -> dict:
+    # Lo protegido se restaura ANTES de medir el tamaño y de validar: lo que se
+    # mide tiene que ser lo que se va a guardar.
+    row = _row(db)
+    data = _conservar_protegidos(dict(data), _parse(row.data))
+
     serialized = json.dumps(data, ensure_ascii=False)
     if len(serialized.encode("utf-8")) > MAX_DATA_BYTES:
         raise api_error(400, "settings_too_large", max_bytes=MAX_DATA_BYTES)
@@ -117,7 +162,6 @@ def save_settings(
         if rate < 0 or rate > 1:
             raise api_error(400, "tax_rate_out_of_range", value=float(rate))
 
-    row = _row(db)
     try:
         row.data = serialized
         if logo is not None:
@@ -135,6 +179,43 @@ def save_settings(
         raise api_error(500, "settings_save_failed", cause=str(exc))
 
     return get_settings(db)
+
+
+def read_protected(db: Session, contenedor: str, campo: str) -> object | None:
+    """Lo que hay guardado en un campo protegido, sin valor por omisión.
+
+    Devuelve `None` cuando nadie lo ha elegido nunca, y decidir qué significa
+    eso es de quien pregunta: para el ambiente significa «pruebas» (`crud_fe`),
+    y suponer lo contrario sería suponer efecto fiscal donde no lo hay.
+    """
+    seccion = _parse(_row(db).data).get(contenedor)
+    return seccion.get(campo) if isinstance(seccion, dict) else None
+
+
+def write_protected(db: Session, contenedor: str, campo: str, valor: object) -> None:
+    """La **única** puerta que escribe un campo protegido. No confirma.
+
+    No hace `commit` a propósito: quien la llama tiene que poder meter en la
+    misma transacción la anotación de bitácora que explica el cambio. Un campo
+    que se cambia por su puerta auditada y se confirma aparte podría quedar
+    cambiado sin su línea de bitácora, que es la mitad de lo que RN-35 pide.
+
+    Exige que el campo **esté** en `PROTECTED_PATHS`: si alguien lo saca de la
+    lista, esto deja de funcionar en vez de convertirse en una segunda forma
+    silenciosa de escribir la configuración.
+    """
+    if (contenedor, campo) not in PROTECTED_PATHS:
+        raise ValueError(f"«{contenedor}.{campo}» no es un campo protegido")
+
+    row = _row(db)
+    data = _parse(row.data)
+    seccion = data.get(contenedor)
+    if not isinstance(seccion, dict):
+        seccion = {}
+        data[contenedor] = seccion
+    seccion[campo] = valor
+    row.data = json.dumps(data, ensure_ascii=False)
+    row.updated_at = clock.now()
 
 
 def get_tax_rate(db: Session) -> Decimal:

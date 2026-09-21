@@ -147,6 +147,64 @@ export interface MockCompanyData {
 	journal_entries: JournalEntry[];
 	journal_lines: MockJournalLine[];
 	settings?: MockSettings;
+	/**
+	 * Las credenciales de Hacienda (F6). Una fila por ambiente, como la tabla
+	 * `fe_credentials`, y **nace vacío**: un negocio recién dado de alta no tiene
+	 * certificado, que es lo que la pantalla tiene que saber pintar.
+	 */
+	fe_credentials?: MockFeCredentials[];
+	/**
+	 * Sucursales y cajas (F6, T-608). **Nunca vacías**: una compañía nace con
+	 * una de cada, porque sin ellas no se puede vender — lo mismo que hace
+	 * `crud_company.dar_de_alta` en el backend de verdad.
+	 */
+	branches?: MockBranch[];
+	terminals?: MockTerminal[];
+}
+
+/** Una sucursal. El código son tres dígitos y va en el consecutivo (RN-15). */
+export interface MockBranch {
+	id: number;
+	codigo: string;
+	nombre: string;
+	activa: boolean;
+}
+
+/** Una caja. Cinco dígitos, y su código es único **por sucursal**. */
+export interface MockTerminal {
+	id: number;
+	branch_id: number;
+	codigo: string;
+	nombre: string;
+	activa: boolean;
+}
+
+/**
+ * Una fila de `fe_credentials`, por ambiente (F6).
+ *
+ * **No hay `p12` ni `pin` ni contraseña en claro**, igual que en la tabla de
+ * verdad: la llave privada vive en Vault y el PIN no se guarda en ninguna parte.
+ * Lo que el simulado guarda de la contraseña es una marca de que la hay, para
+ * poder contestar `atv_configured` sin inventarse un secreto que nadie debería
+ * poder leer.
+ */
+export interface MockFeCredentials {
+	environment: 'sandbox' | 'production';
+	certificate_name: string | null;
+	expires_at: string | null;
+	cert_uploaded_at: string | null;
+	atv_user: string | null;
+	atv_configured: boolean;
+	atv_verified_at: string | null;
+	/**
+	 * Solo del simulado: qué va a contestar el IdP al comprobar.
+	 *
+	 * Los tres desenlaces de RF-31 no se pueden provocar contra un servicio de
+	 * verdad —«Hacienda caída» hay que esperar a que pase— así que la prueba de
+	 * punta a punta necesita poder pedirlos. Se deduce de la contraseña que se
+	 * guardó, sin guardarla: ver `veredictoDe` en el manejador.
+	 */
+	atv_verdict: 'ok' | 'rejected' | 'unreachable';
 }
 
 /** Una fila del mapeo: qué cuenta usa cada papel de cada evento. */
@@ -255,7 +313,13 @@ const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
 // Los dos proveedores son a propósito **distintos** del emisor de
 // `tests/fixtures/factura-proveedor-v43.xml`: así el XML del demo muestra el
 // caso que importa de RF-42, el del proveedor que todavía no existe.
-const SEED_VERSION = 10;
+// 13 (F6, T-608): los contadores de `branches` y `terminals`. Sin ellos la
+// primera sucursal creada desde la pantalla nace con el id 1, que ya es el de la
+// sembrada, y editar una editaba la otra.
+// 14 (F7, T-715): los productos llevan `tax_code`, el código de tarifa de
+// Hacienda. Los tres sin clasificar siguen sin él, que es lo cierto: su tarifa
+// es la del negocio y del porcentaje no se vuelve al código (RN-76).
+const SEED_VERSION = 14;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -360,7 +424,13 @@ export function empresaVacia(): MockCompanyData {
 		accounting_periods: [],
 		journal_entries: [],
 		journal_lines: [],
-		settings: { data: {}, logo: null, updated_at: null, updated_by: null }
+		settings: { data: {}, logo: null, updated_at: null, updated_by: null },
+		fe_credentials: [],
+		// Una sucursal y una caja, como las que crea `dar_de_alta`: sin ellas no
+		// se puede vender, así que no pueden ser un paso que alguien tenga que
+		// acordarse de dar.
+		branches: [{ id: 1, codigo: '001', nombre: 'Casa matriz', activa: true }],
+		terminals: [{ id: 1, branch_id: 1, codigo: '00001', nombre: 'Caja 1', activa: true }]
 	};
 }
 
@@ -609,6 +679,13 @@ function seed(): MockRoot {
 		...p,
 		id_product: i + 1,
 		created_at: created,
+		// El código de tarifa de Hacienda (RN-76). Se deriva acá y no se escribe
+		// en cada fila porque el demo usa dos tarifas y las dos tienen un solo
+		// código posible: 1 % es `02` y 13 % es `08`. Lo que **no** se deriva es
+		// el 0 % —ahí hay tres códigos y la diferencia es el derecho a crédito—,
+		// y por eso los productos sin tarifa nacen sin clasificar, igual que en
+		// la base de verdad.
+		tax_code: p.tax_rate === 0.01 ? '02' : p.tax_rate === 0.13 ? '08' : null,
 		// Un margen aproximado del 30 % hacia atrás, para que el demo tenga un
 		// costo de dónde partir (RN-54). Cero sería «no se sabe», que es lo que
 		// tiene un catálogo antes de su primera compra, y dejaría la pantalla de
@@ -708,7 +785,15 @@ function seed(): MockRoot {
 				accounting_periods: [],
 				journal_entries: [],
 				journal_lines: [],
-				settings: { data: {}, logo: null, updated_at: null, updated_by: null }
+				settings: { data: {}, logo: null, updated_at: null, updated_by: null },
+				// Sin certificado, igual que el libro. La factura electrónica se
+				// configura (F6) y sembrar un certificado sería sembrar uno que no
+				// existe: la pantalla nace teniendo que decir qué falta.
+				fe_credentials: [],
+				branches: [{ id: 1, codigo: '001', nombre: 'Casa matriz', activa: true }],
+				terminals: [
+					{ id: 1, branch_id: 1, codigo: '00001', nombre: 'Caja 1', activa: true }
+				]
 			},
 			2: empresaVacia()
 		},
@@ -732,7 +817,11 @@ function seed(): MockRoot {
 			journal_lines: 0,
 			audit: 0,
 			companies: 2,
-			plans: PLAN_SEED.length
+			plans: PLAN_SEED.length,
+			// En 1 porque `empresaVacia` siembra la sucursal y la caja con ese id;
+			// en 0, la primera que se cree desde la pantalla nacería repetida.
+			branches: 1,
+			terminals: 1
 		}
 	};
 

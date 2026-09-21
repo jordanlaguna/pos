@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
-from app.schemas.schemas_fe import AtvIn, FeStatusOut
+from app.schemas.schemas_fe import ActiveEnvironmentIn, AtvIn, FeStatusOut
 from app.services import crud_fe
 from app.utils.auth_dependency import Sesion, get_db, require_admin
 
@@ -83,4 +83,43 @@ def guardar_atv(
     """
     return crud_fe.guardar_atv(
         db, ambiente, payload, user_id=admin.user.id_user, company_id=admin.company_id
+    )
+
+
+@router.post("/{ambiente}/atv/verify", response_model=FeStatusOut)
+def verificar_atv(
+    ambiente: str,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """Comprueba las credenciales **sin emitir nada** (RF-31).
+
+    Es `POST` aunque parezca una consulta, y por dos razones: pide un token al
+    IdP de Hacienda —un efecto afuera, que no se repite a la ligera— y escribe
+    cuándo se comprobó. Un `GET` invitaría a que un navegador, un precargador o
+    un reintento lo dispararan solos contra un servicio ajeno.
+    """
+    return crud_fe.verificar_atv(
+        db, ambiente, user_id=admin.user.id_user, company_id=admin.company_id
+    )
+
+
+@router.put("/active", response_model=FeStatusOut)
+def cambiar_ambiente(
+    payload: ActiveEnvironmentIn,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """Elige el ambiente en uso (RF-30, RN-35).
+
+    Va en `/active` y no en `/{ambiente}/…` porque **el ambiente activo es uno
+    solo de la compañía**, no un atributo de cada ambiente: las otras rutas
+    dicen «hacé esto en pruebas» y esta dice «pasate a pruebas».
+    """
+    return crud_fe.cambiar_ambiente(
+        db,
+        payload.environment,
+        confirmado=payload.confirm,
+        user_id=admin.user.id_user,
+        company_id=admin.company_id,
     )

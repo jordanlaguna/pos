@@ -53,6 +53,17 @@ class Product(TenantMixin, Base):
     # crear un producto, que es lo que RN-9 llama «valor por omisión».
     tax_rate = Column(Numeric(7, 6), nullable=True)
 
+    # El código de tarifa de Hacienda (F7, RN-76). **No es el porcentaje**: hay
+    # once códigos para nueve porcentajes, y el 0 % con derecho a crédito pleno
+    # (`01`) y el 0 % sin derecho (`11`) son el mismo número con derechos
+    # opuestos. Por eso es una columna y no algo que se deduzca de `tax_rate`.
+    #
+    # Manda sobre la tarifa: cuando está, `tax_rate` sale de él
+    # (`fe_tax_codes.rate_for`). NULL es «no está clasificado para Hacienda»,
+    # que es lo que tiene todo lo anterior a F7 y lo que no se puede facturar
+    # electrónicamente hasta que alguien lo elija.
+    tax_code = Column(CHAR(2), nullable=True)
+
     # La pide Hacienda en cada línea del comprobante (F6/F7). 'Unid' es el
     # código de «unidad», que es lo que vende un punto de venta salvo aviso.
     #

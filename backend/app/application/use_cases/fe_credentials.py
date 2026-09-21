@@ -36,9 +36,25 @@ from app.application.ports.fe_credentials import FeCredentialsRepository
 from app.application.ports.repositories import UnitOfWork
 from app.application.ports.secrets import SecretBox
 from app.application.ports.signing import CertificateReader, DocumentSigner
+from app.application.ports.transmission import CredentialsRejected, HaciendaIdp
 from app.domain.errors import DomainError
 from app.domain.fe_credentials import EnvironmentStatus, environment_status
-from app.domain.hacienda import ENVIRONMENTS, check_environment
+from app.domain.hacienda import ENVIRONMENTS, HaciendaEndpoints, check_environment
+
+
+class AtvNotConfigured(DomainError):
+    """Se quiso comprobar un ambiente que no tiene credenciales que comprobar.
+
+    Es distinto de «no sirven» y por eso no se responde lo mismo: quien no ha
+    guardado nada todavía no tiene nada que corregir, tiene algo que escribir.
+    Y es distinto de que falte el certificado: se puede transmitir mal con un
+    certificado perfecto, que es justo lo que T-612 existe para descubrir antes
+    del día de facturar.
+    """
+
+    def __init__(self, environment: str) -> None:
+        super().__init__(f"«{environment}» no tiene credenciales de ATV")
+        self.environment = environment
 
 
 class AtvUserRequired(DomainError):
@@ -168,6 +184,65 @@ class SaveAtvCredentials:
             updated_at=ahora,
             updated_by=user_id,
         )
+        self.uow.commit()
+
+        return _estado(self.credentials, environment, ahora)
+
+
+@dataclass(frozen=True)
+class VerifyAtvCredentials:
+    """Pide un token al IdP con las credenciales guardadas (RF-31, T-612).
+
+    **No emite nada**, que es la razón de existir: es la única comprobación del
+    sistema que no produce un documento. Sin ella, la primera noticia de que la
+    contraseña está mal llega el día que hay que facturar.
+
+    Escribe una sola cosa —cuándo se comprobó— y solo en dos de los tres
+    desenlaces. El tercero, «no se pudo comprobar», **no toca nada**: no se
+    aprendió nada sobre las credenciales y borrar una verificación buena porque
+    Hacienda estaba caída convertiría su caída en un problema del cliente.
+    """
+
+    credentials: FeCredentialsRepository
+    secrets: SecretBox
+    idp: HaciendaIdp
+    clock: Clock
+    uow: UnitOfWork
+
+    def __call__(
+        self,
+        *,
+        company_id: int,
+        environment: str,
+        endpoints: HaciendaEndpoints,
+    ) -> EnvironmentStatus:
+        check_environment(environment)
+
+        fila = self.credentials.get(environment)
+        if fila is None or not fila.atv_user or not fila.atv_password_encrypted:
+            raise AtvNotConfigured(environment)
+
+        # Descifrar puede fallar —la llave se rotó, la fila vino de un respaldo
+        # de otra instalación— y `SecretUnreadable` sube tal cual: es «hay que
+        # volver a cargarla», que no es ninguno de los tres desenlaces de RF-31
+        # porque ni siquiera se llegó a preguntar.
+        clave = self.secrets.decrypt(
+            fila.atv_password_encrypted,
+            company_id=company_id,
+            environment=environment,
+        )
+
+        ahora = self.clock.now()
+        try:
+            self.idp.token(endpoints, user=fila.atv_user, password=clave)
+        except CredentialsRejected:
+            # El «no» de Hacienda es más fuerte que cualquier marca anterior, así
+            # que la borra. Ver `set_verified` en el puerto.
+            self.credentials.set_verified(environment=environment, at=None)
+            self.uow.commit()
+            raise
+
+        self.credentials.set_verified(environment=environment, at=ahora)
         self.uow.commit()
 
         return _estado(self.credentials, environment, ahora)

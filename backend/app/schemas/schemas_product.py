@@ -20,6 +20,13 @@ class ProductRegister(BaseModel):
     tax_rate: float | None = None
     unit_of_measure: str | None = None
 
+    # --- F7: el código de tarifa de Hacienda (RN-76) ------------------------
+    #
+    # No es el porcentaje: hay once códigos para nueve porcentajes y el 0 % con
+    # derecho a crédito (`01`) y el 0 % sin derecho (`11`) son el mismo número.
+    # Cuando viene, **manda sobre `tax_rate`**: la tarifa se deriva de él.
+    tax_code: str | None = None
+
 class ProductUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
@@ -37,6 +44,13 @@ class ProductUpdate(BaseModel):
     cabys_code: str | None = None
     tax_rate: float | None = None
     unit_of_measure: str | None = None
+
+    # --- F7: el código de tarifa de Hacienda (RN-76) ------------------------
+    #
+    # No es el porcentaje: hay once códigos para nueve porcentajes y el 0 % con
+    # derecho a crédito (`01`) y el 0 % sin derecho (`11`) son el mismo número.
+    # Cuando viene, **manda sobre `tax_rate`**: la tarifa se deriva de él.
+    tax_code: str | None = None
 
 class ProductResponse(BaseModel):
     id_product: int
@@ -56,6 +70,13 @@ class ProductResponse(BaseModel):
     cabys_code: str | None = None
     tax_rate: float | None = None
     unit_of_measure: str | None = None
+
+    # --- F7: el código de tarifa de Hacienda (RN-76) ------------------------
+    #
+    # No es el porcentaje: hay once códigos para nueve porcentajes y el 0 % con
+    # derecho a crédito (`01`) y el 0 % sin derecho (`11`) son el mismo número.
+    # Cuando viene, **manda sobre `tax_rate`**: la tarifa se deriva de él.
+    tax_code: str | None = None
 
     # --- F10: lo que cuesta, no lo que vale (RN-54) -------------------------
     #

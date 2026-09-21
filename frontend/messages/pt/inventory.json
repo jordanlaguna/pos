@@ -78,5 +78,19 @@
   "inventory_classify_done": "{count} produtos classificados.",
   "inventory_classify_all_done": "Todo o catálogo está classificado.",
   "inventory_cabys_code_partial": "Um código tem {length} dígitos e este tem {typed}: o catálogo só resolve o exato.",
-  "inventory_cabys_code_unknown": "Esse código não está no catálogo."
+  "inventory_cabys_code_unknown": "Esse código não está no catálogo.",
+  "inventory_label_tax_code": "Código de tarifa (Fazenda)",
+  "inventory_tax_code_none": "Sem classificar",
+  "inventory_tax_code_hint": "O que a Fazenda exige em cada linha do comprovante. Define a tarifa.",
+  "inventory_tax_code_01": "0 % com direito a crédito pleno",
+  "inventory_tax_code_02": "Reduzida 1 %",
+  "inventory_tax_code_03": "Reduzida 2 %",
+  "inventory_tax_code_04": "Reduzida 4 %",
+  "inventory_tax_code_05": "Transitória 0 %",
+  "inventory_tax_code_06": "Transitória 4 %",
+  "inventory_tax_code_07": "Transitória 8 %",
+  "inventory_tax_code_08": "Geral 13 %",
+  "inventory_tax_code_09": "Reduzida 0,5 %",
+  "inventory_tax_code_10": "Isenta",
+  "inventory_tax_code_11": "0 % sem direito a crédito"
 }

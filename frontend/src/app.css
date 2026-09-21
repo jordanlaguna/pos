@@ -131,6 +131,23 @@
 
 	.input {
 		width: 100%;
+		/*
+		 * Sin esto, un `<select>` no cabe en un teléfono y **arrastra la página
+		 * entera** (T-927).
+		 *
+		 * `width: 100%` no alcanza: dentro de una rejilla o un flex, el ancho
+		 * mínimo por omisión es `auto`, o sea el contenido — y el contenido de un
+		 * `<select>` es su opción más larga. El desplegable de cuentas dice
+		 * «1.1.01.001 · Efectivo en caja», así que la columna de la rejilla se
+		 * estiraba a 544 px dentro de un hueco de 316 y el desbordamiento subía
+		 * hasta `main`, que terminaba desplazándose de lado con el encabezado
+		 * incluido.
+		 *
+		 * Va acá y no en la pantalla porque es una propiedad del control, no de
+		 * contabilidad: el mismo `<select>` en cualquier otra rejilla hace lo
+		 * mismo. Un ancho explícito (`w-24`, `w-32`) sigue ganando.
+		 */
+		min-width: 0;
 		background-color: var(--surface-raised);
 		color: var(--text);
 		border: 1px solid var(--border);
@@ -223,6 +240,14 @@
 
 	.table-wrap {
 		overflow-x: auto;
+		/*
+		 * Por lo mismo que `.input`: un contenedor que se desplaza tiene que poder
+		 * ser más angosto que lo que lleva adentro. Como elemento de una rejilla o
+		 * de un flex, su ancho mínimo por omisión es el de su contenido, así que
+		 * crece hasta la tabla en vez de desplazarla — y entonces el `overflow-x`
+		 * no se usa nunca y quien desborda es la página.
+		 */
+		min-width: 0;
 	}
 	.data-table {
 		width: 100%;

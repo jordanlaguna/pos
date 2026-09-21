@@ -78,5 +78,19 @@
   "inventory_classify_done": "{count} products classified.",
   "inventory_classify_all_done": "The whole catalogue is classified.",
   "inventory_cabys_code_partial": "A code is {length} digits and this has {typed}: the catalogue only resolves the exact one.",
-  "inventory_cabys_code_unknown": "That code is not in the catalogue."
+  "inventory_cabys_code_unknown": "That code is not in the catalogue.",
+  "inventory_label_tax_code": "Tax rate code (Hacienda)",
+  "inventory_tax_code_none": "Unclassified",
+  "inventory_tax_code_hint": "The one Hacienda requires on every invoice line. It sets the rate.",
+  "inventory_tax_code_01": "0 % with full credit entitlement",
+  "inventory_tax_code_02": "Reduced 1 %",
+  "inventory_tax_code_03": "Reduced 2 %",
+  "inventory_tax_code_04": "Reduced 4 %",
+  "inventory_tax_code_05": "Transitional 0 %",
+  "inventory_tax_code_06": "Transitional 4 %",
+  "inventory_tax_code_07": "Transitional 8 %",
+  "inventory_tax_code_08": "Standard 13 %",
+  "inventory_tax_code_09": "Reduced 0.5 %",
+  "inventory_tax_code_10": "Exempt",
+  "inventory_tax_code_11": "0 % without credit entitlement"
 }

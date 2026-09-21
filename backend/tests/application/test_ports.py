@@ -26,6 +26,7 @@ from app.application.ports import (
     secrets,
     security,
     signing,
+    transmission,
 )
 
 PUERTOS = [
@@ -88,6 +89,10 @@ PUERTOS = [
     # Todo lo demás que era secreto se fue a Vault, donde no se guarda nada que
     # se pueda leer de vuelta.
     (secrets.SecretBox, {"encrypt", "decrypt"}),
+    # F6: quién le pide el token a Hacienda. Un solo método, y devuelve el token
+    # aunque T-612 lo tire: F7 lo necesita para transmitir, y un puerto que
+    # devolviera `bool` habría que cambiarlo entonces.
+    (transmission.HaciendaIdp, {"token"}),
     (repositories.ProductSnapshot, set()),
     (repositories.SupplierSnapshot, set()),
 ]
@@ -124,6 +129,9 @@ def test_ProductSnapshot_dice_que_necesita_la_venta_de_un_producto():
         "stock",
         # Desde F5: la tarifa del producto, o `None` si usa la configurada.
         "tax_rate",
+        # Desde F7: el código de tarifa de Hacienda. No se deduce de `tax_rate`
+        # —once códigos para nueve porcentajes— y por eso viaja aparte (RN-76).
+        "tax_code",
         # Desde F10: lo que cuesta, que no es lo que vale. Cero es «no se sabe»
         # —los productos que nunca se compraron— y la primera compra lo fija.
         "cost",
@@ -152,7 +160,15 @@ def test_los_puertos_no_conocen_la_persistencia_ni_HTTP():
     """
     import inspect
 
-    for modulo in (clock, documents, repositories, secrets, security, signing):
+    for modulo in (
+        clock,
+        documents,
+        repositories,
+        secrets,
+        security,
+        signing,
+        transmission,
+    ):
         fuente = inspect.getsource(modulo)
         for prohibido in ("sqlalchemy", "fastapi", "pydantic", "app.models"):
             assert prohibido not in fuente, f"{modulo.__name__} importa {prohibido}"

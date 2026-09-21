@@ -73,6 +73,15 @@ class SaleLine:
     quantity: int
     tax_rate: TaxRate | None = None
 
+    #: El código de tarifa de Hacienda con el que se cobró (RN-76). Se congela
+    #: como la tarifa y por una razón más: del porcentaje no se vuelve al
+    #: código, así que sin él la nota de crédito de dentro de un año tendría que
+    #: adivinar si aquel 0 % daba derecho a crédito o no.
+    #:
+    #: `None` es «el producto no estaba clasificado para factura electrónica».
+    #: Acá no se deduce ninguno: eso es de quien clasifica el catálogo.
+    tax_code: str | None = None
+
     #: Lo que costó **al momento de venderse** (RN-63), congelado como la tarifa
     #: y por lo mismo: vender hoy con costo ₡110 y comprar mañana a ₡150 no puede
     #: cambiar el costo de lo que ya salió. Leerlo de `products.cost` al armar el

@@ -45,6 +45,7 @@ from app.router import (
     categories_routes,
     client_routes,
     fe_routes,
+    office_routes,
     payable_routes,
     person_routes,
     product_routes,
@@ -110,6 +111,7 @@ app.include_router(purchase_routes.router, prefix="/purchases", tags=["Purchases
 app.include_router(payable_routes.router, prefix="/payables", tags=["Payables"])
 app.include_router(accounting_routes.router, prefix="/accounting", tags=["Accounting"])
 app.include_router(fe_routes.router, prefix="/fe", tags=["Factura electronica"])
+app.include_router(office_routes.router, prefix="/offices", tags=["Branches and terminals"])
 app.include_router(settings_routes.router, prefix="/settings", tags=["Settings"])
 # El panel de soporte va bajo /support y no bajo /admin: `admin` ya es el rol del
 # administrador de una compañía, y dos cosas distintas con el mismo nombre en el

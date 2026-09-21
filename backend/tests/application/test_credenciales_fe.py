@@ -14,22 +14,27 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from app.application.ports.secrets import SecretUnreadable
 from app.application.ports.signing import InvalidCertificate, SigningKeyMissing
+from app.application.ports.transmission import CredentialsRejected, IdpUnreachable
 from app.application.use_cases.fe_credentials import (
+    AtvNotConfigured,
     AtvUserRequired,
     ReadFeStatus,
     RemoveCertificate,
     SaveAtvCredentials,
     UploadCertificate,
+    VerifyAtvCredentials,
 )
 from app.domain.errors import InvalidEnvironment
 from app.domain.fe_credentials import EXPIRED, EXPIRING, MISSING, VALID
-from app.domain.hacienda import PRODUCTION, SANDBOX
+from app.domain.hacienda import PRODUCTION, SANDBOX, endpoints
 from app.infrastructure.clock import FixedClock
 from tests.application.fakes import (
     FakeCertificateReader,
     FakeDocumentSigner,
     FakeFeCredentialsRepository,
+    FakeHaciendaIdp,
     FakeSecretBox,
     FakeUnitOfWork,
 )
@@ -95,6 +100,16 @@ def escenario():
         @property
         def estado(self):
             return ReadFeStatus(credentials=self.credenciales, clock=self.reloj)
+
+        def verificar(self, *, falla: Exception | None = None):
+            self.idp = FakeHaciendaIdp(falla=falla)
+            return VerifyAtvCredentials(
+                credentials=self.credenciales,
+                secrets=self.cajita,
+                idp=self.idp,
+                clock=self.reloj,
+                uow=self.uow,
+            )
 
     return Escenario()
 
@@ -461,7 +476,7 @@ class TestLaVerificacionNoSobrevive:
             password="la-de-antes",
             user_id=USUARIO,
         )
-        escenario.credenciales.mark_verified(environment=PRODUCTION, at=AHORA)
+        escenario.credenciales.set_verified(environment=PRODUCTION, at=AHORA)
         assert escenario.estado()[1].atv_verified_at == AHORA
 
         escenario.guardar_atv(
@@ -472,3 +487,141 @@ class TestLaVerificacionNoSobrevive:
             user_id=USUARIO,
         )
         assert escenario.estado()[1].atv_verified_at is None
+
+
+class TestComprobarLaTransmision:
+    """RF-31, T-612. La única comprobación que no produce un documento."""
+
+    ENDPOINTS = endpoints(PRODUCTION)
+
+    def con_credenciales(self, escenario, *, password: str = "la-de-ATV") -> None:
+        escenario.guardar_atv(
+            company_id=COMPANIA,
+            environment=PRODUCTION,
+            user="cpf-01-1234-5678@x.cr",
+            password=password,
+            user_id=USUARIO,
+        )
+
+    # ------------------------------------------------- 1 de 3: sirven
+
+    def test_un_token_bueno_deja_la_marca_de_cuando_se_comprobo(self, escenario):
+        self.con_credenciales(escenario)
+        estado = escenario.verificar()(
+            company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS
+        )
+        assert estado.atv_verified_at == AHORA
+        assert escenario.uow.committed is True
+
+    def test_al_IdP_le_llega_la_contrasena_DESCIFRADA(self, escenario):
+        """La mitad del trabajo del caso de uso, y la que no se ve en el estado.
+
+        Si se le mandara el valor sellado, el IdP diría que no y el sistema
+        reportaría «sus credenciales no sirven» sobre unas que sí sirven — el
+        peor de los desenlaces posibles, porque manda a rotar en ATV.
+        """
+        self.con_credenciales(escenario, password="la-de-verdad")
+        caso = escenario.verificar()
+        caso(company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS)
+
+        (_, usuario, clave) = escenario.idp.llamadas[0]
+        assert usuario == "cpf-01-1234-5678@x.cr"
+        assert clave == "la-de-verdad"
+
+    def test_no_emite_nada(self, escenario):
+        # Es la razón de existir de RF-31, y acá se comprueba por donde se puede:
+        # el caso de uso no toca el firmante ni el almacén de documentos.
+        self.con_credenciales(escenario)
+        escenario.verificar()(
+            company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS
+        )
+        assert escenario.firmante.llaves == {}
+
+    # -------------------------------------------- 2 de 3: NO sirven
+
+    def test_un_rechazo_sube_tal_cual(self, escenario):
+        self.con_credenciales(escenario)
+        with pytest.raises(CredentialsRejected):
+            escenario.verificar(falla=CredentialsRejected("401"))(
+                company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS
+            )
+
+    def test_y_borra_la_verificacion_anterior(self, escenario):
+        """El «no» de Hacienda es más fuerte que cualquier marca vieja.
+
+        Sin esto, la pantalla mostraría «verificadas el 13 de septiembre» sobre
+        unas credenciales que acaban de demostrar que no sirven, y ese letrero
+        es justo lo que hace que nadie las vuelva a probar.
+        """
+        self.con_credenciales(escenario)
+        escenario.verificar()(
+            company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS
+        )
+        assert escenario.estado()[1].atv_verified_at == AHORA
+
+        escenario.reloj.set(AHORA + timedelta(days=1))
+        with pytest.raises(CredentialsRejected):
+            escenario.verificar(falla=CredentialsRejected("401"))(
+                company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS
+            )
+        assert escenario.estado()[1].atv_verified_at is None
+
+    # ------------------------------ 3 de 3: no se pudo comprobar
+
+    def test_si_no_se_pudo_preguntar_no_se_toca_nada(self, escenario):
+        """RF-31: el tercero no es el segundo, y acá se ve en el estado.
+
+        No se aprendió nada nuevo sobre las credenciales, así que tirar una
+        verificación buena porque Hacienda estaba caída sería convertir su caída
+        en un problema del cliente.
+        """
+        self.con_credenciales(escenario)
+        escenario.verificar()(
+            company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS
+        )
+
+        escenario.reloj.set(AHORA + timedelta(days=1))
+        with pytest.raises(IdpUnreachable):
+            escenario.verificar(falla=IdpUnreachable("timeout"))(
+                company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS
+            )
+        assert escenario.estado()[1].atv_verified_at == AHORA
+
+    # ------------------------------------------ lo que pasa antes
+
+    def test_un_ambiente_sin_credenciales_no_se_comprueba(self, escenario):
+        with pytest.raises(AtvNotConfigured):
+            escenario.verificar()(
+                company_id=COMPANIA, environment=SANDBOX, endpoints=self.ENDPOINTS
+            )
+
+    def test_el_usuario_sin_contrasena_tampoco(self, escenario):
+        # Se llega ahí restaurando un respaldo: el usuario viaja y la contraseña
+        # no (RN-47). No hay nada que comprobar todavía.
+        escenario.credenciales._fila(PRODUCTION).atv_user = "u@x.cr"
+        with pytest.raises(AtvNotConfigured):
+            escenario.verificar()(
+                company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS
+            )
+
+    def test_una_contrasena_que_no_descifra_ni_llega_a_preguntar(self, escenario):
+        """La llave se rotó, o la fila vino de otra instalación.
+
+        Ni siquiera es uno de los tres desenlaces: no se le preguntó a Hacienda.
+        Lo que hay que hacer es volver a escribirla.
+        """
+        self.con_credenciales(escenario)
+        # Como si la fila hubiera sido copiada desde otra compañía.
+        fila = escenario.credenciales.get(PRODUCTION)
+        fila.atv_password_encrypted = f"99:{PRODUCTION}|la-de-otro"
+
+        caso = escenario.verificar()
+        with pytest.raises(SecretUnreadable):
+            caso(company_id=COMPANIA, environment=PRODUCTION, endpoints=self.ENDPOINTS)
+        assert escenario.idp.llamadas == []
+
+    def test_un_ambiente_inventado(self, escenario):
+        with pytest.raises(InvalidEnvironment):
+            escenario.verificar()(
+                company_id=COMPANIA, environment="qa", endpoints=self.ENDPOINTS
+            )

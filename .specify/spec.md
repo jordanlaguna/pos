@@ -645,6 +645,80 @@ que ninguno de los dos cuadre.
 gasto de salarios, gasto de cargas patronales, retenciones por pagar a la CCSS
 y a Hacienda, y salarios por pagar. Sin contabilidad, no pasa nada más.
 
+### Lo que Hacienda exige del contenido del comprobante
+
+Cada una está citada, con su página del anexo v4.4 y el ejemplo que la
+demuestra, en `docs/hacienda/costa-rica/casos-de-emision.md`.
+
+**RN-76.** **La tarifa se declara con su código, no con su porcentaje.** El
+catálogo tiene once códigos para nueve porcentajes: el 0 % con derecho a crédito
+pleno (`01`) y el 0 % sin derecho a crédito (`11`) son el mismo número y dan
+derechos opuestos, y los transitorios `05`, `06` y `07` solo valen en notas de
+crédito y de débito. Deducir el código desde el porcentaje es perder esa
+diferencia.
+
+**RN-77.** **El medio de pago no va cuando la venta es a crédito.** Es
+obligatorio en todos los casos **salvo** con las condiciones de venta `02`
+(crédito), `08` (servicios prestados al Estado) y `10` (crédito con IVA a 90
+días). Y admite hasta cuatro, con su monto cada uno: **desde el segundo,
+Hacienda comprueba que los montos sumen el total del comprobante** y rechaza si
+no. Con uno solo no lo comprueba, y el monto es hasta opcional.
+
+**RN-78.** **Una exoneración son puntos de tarifa, no una tarifa.** Lo que se
+declara es cuántos puntos se perdonan: una línea al 13 % con nueve puntos
+exonerados paga 4 %. No existe ninguna tarifa del 9 %, así que modelarla como
+tarifa da un total equivocado. El monto exonerado es esos puntos por la base, y
+el impuesto neto es el monto menos el exonerado.
+
+Y **en el resumen la línea se reparte, no se muda**: la proporción es «monto
+exonerado entre monto del impuesto», y lo que no se perdonó sigue contando como
+gravado. De 100 000 al 13 % con nueve puntos exonerados, 69 230.76923 van al
+balde exonerado y 30 769.23077 al gravado. Mandarla entera al exonerado —que es
+lo que parece razonable— descuadra el resumen contra sí mismo.
+
+**RN-79.** **Servicios de salud pagados con tarjeta declaran el IVA devuelto**, y
+Hacienda lo valida cruzando el CABYS de la línea contra su lista de servicios
+médicos y el medio de pago contra `02`. Si no cuadra, **rechaza el
+comprobante**. No es una exoneración ni un descuento: el impuesto se cobra y el
+campo solo declara cuánto se le devuelve a quien pagó — y por eso **el total del
+comprobante lo resta**.
+
+**RN-84.** **Los baldes del resumen los decide el CABYS y se llenan antes del
+descuento.** Un código que empieza con 5 a 9 es un servicio y uno de 0 a 4 una
+mercancía: el catálogo ya lo dice, así que guardarlo aparte sería abrir la
+puerta a un comprobante donde el código y el balde se contradicen. Y el monto
+que va al balde es el de la línea **sin descontar**: dos comprobantes aceptados
+declaran `TotalGravado` 100 000 con 2 500 de descuento y `TotalVentaNeta`
+97 500. Llenarlos con el subtotal es un resumen que no cuadra contra su propio
+`TotalVenta`.
+
+**RN-80.** **El sistema nunca inventa un dato de protocolo de comprador.** Lo
+que cada gran comprador exige —un número de proveedor, un GLN, una orden de
+compra— se copia tal como lo dio quien vende. Un código inventado no lo rechaza
+Hacienda: lo rechaza el comprador, semanas después, cuando no encuentra contra
+qué conciliar la factura.
+
+**RN-82.** **El documento fiscal es el XML; el PDF se puede volver a hacer.**
+Por eso los dos XML —el enviado y la respuesta firmada de Hacienda— se guardan
+**byte por byte** y se muestran tal cual, y el PDF se genera cada vez que se
+pide. Guardar el PDF sería guardar una copia que puede contradecir al original
+sin que nadie se entere; regenerarlo garantiza que lo que se imprime es lo que
+se emitió. Lo que sí no se puede regenerar es la firma: el XML enviado se
+devuelve idéntico o la firma deja de verificar (RN-44).
+
+**RN-83.** **La dirección del emisor son códigos, no una frase.** Hacienda pide
+provincia, cantón y distrito **numerados**, más **otras señas** —esas sí en
+texto, obligatorias y de al menos cinco caracteres; el barrio es el opcional, al
+revés de lo que parece— y los cruza contra el Registro Único Tributario. La
+dirección de texto libre que se usa para el tiquete no sirve para el XML, así
+que son dos datos distintos y los dos se piden. El correo del emisor deja de ser
+opcional por lo mismo: el XSD lo exige.
+
+**RN-81.** **El REP no se corrige: se corrige la factura.** Las condiciones de
+venta van en pares —`08` con `09`, `10` con `11`—: la factura difiere el IVA y
+el recibo de pago lo reconoce al cobrar. Cualquier nota de crédito o de débito
+va **contra la factura original**, nunca contra el recibo.
+
 ## 6. Requisitos funcionales
 
 ### Multiempresa
@@ -734,6 +808,44 @@ y a Hacienda, y salarios por pagar. Sin contabilidad, no pasa nada más.
   motivo y el tiempo que lleva esperando.
 - **RF-36** Reintentar a mano un documento detenido, después de arreglar lo que
   lo detuvo.
+
+### Lo que el comprobante tiene que poder decir
+
+Sale de leer el anexo y los 23 comprobantes de ejemplo; el detalle, con la cita
+de cada regla, está en
+[`docs/hacienda/costa-rica/casos-de-emision.md`](../docs/hacienda/costa-rica/casos-de-emision.md).
+Son los campos sin los cuales hay negocios enteros que no se pueden facturar.
+
+- **RF-65** Cada línea declara **el código de tarifa de Hacienda**, no solo el
+  porcentaje. El 4 % de un servicio de salud y el 4 % transitorio de una nota de
+  crédito son el mismo número y códigos distintos (`04` y `06`), y el POS hoy
+  solo guarda el número. RN-76.
+- **RF-66** Un comprobante lleva **hasta cuatro medios de pago** con su monto
+  cada uno. Hoy la venta guarda uno solo. RN-77.
+- **RF-67** Un cliente puede tener una **exoneración** con su tipo de documento,
+  número, institución, artículo e inciso, fecha y **puntos de tarifa
+  exonerados**; al facturarle, la línea la aplica. RN-78.
+- **RF-68** Cuando se facturan **servicios de salud pagados con tarjeta**, el
+  comprobante declara el **IVA devuelto**. RN-79.
+- **RF-69** Cada producto tiene su **unidad de medida** del catálogo de Hacienda,
+  que no son solo unidades del SI: incluye `Os` (otro tipo de servicio), `Al` y
+  `Alc` (alquileres) y `Acv` (activo virtual). Ya es T-620; acá queda su
+  requisito.
+- **RF-70** Un cliente puede tener un **protocolo de comprador**: los datos que
+  ese comprador exige en el comprobante —código de proveedor, GLN, orden de
+  compra, número de recepción— y dónde van. El sistema los **copia**, no los
+  deduce. RN-80.
+- **RF-71** Además de FE, TE, NC y ND, el sistema emite **FEE** (exportación),
+  **FEC** (compra a no contribuyente) y **REP** (recibo de pago). RN-81.
+- **RF-72** La pantalla de facturas muestra, de cada comprobante: **el XML que
+  se envió**, **la respuesta de Hacienda**, **por dónde va** —numerado, firmado,
+  enviado, aceptado o rechazado, con la hora de cada paso— y un botón que
+  **genera la representación impresa al vuelo**. Los dos XML se ven y se
+  descargan; el PDF no se guarda. RN-82.
+- **RF-73** La ubicación del emisor se registra **con los códigos de Hacienda**
+  —provincia, cantón y distrito numerados, otras señas obligatorias y barrio
+  opcional—, en Configuración y en el alta de una compañía. Y el **correo del
+  emisor es obligatorio**. RN-83.
 
 ### Módulos por plan
 

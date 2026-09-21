@@ -46,6 +46,27 @@ export class ApiError extends Error implements ApiFailure {
 	}
 }
 
+/**
+ * Un archivo que sube como `multipart/form-data`, con sus campos al lado.
+ *
+ * Existe por el `.p12` de F6 (T-603): es un archivo binario y mandarlo como
+ * base64 dentro de un JSON lo infla un tercio para nada — el navegador ya sabe
+ * hacer `multipart` y FastAPI ya sabe leerlo.
+ *
+ * `bytes` es lo que llegó, sin tocar. **No se guarda en disco en ningún punto
+ * del camino**: un temporal con una llave privada adentro sobrevive al proceso
+ * que lo creó.
+ */
+export interface ApiUpload {
+	/** Nombre del campo del archivo, tal como lo espera FastAPI. */
+	field: string;
+	filename: string;
+	contentType: string;
+	bytes: Uint8Array;
+	/** Los campos de texto que viajan en la misma petición, como el PIN. */
+	fields?: Record<string, string>;
+}
+
 export interface ApiOptions {
 	method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 	body?: unknown;
@@ -53,6 +74,8 @@ export interface ApiOptions {
 	/** Query string ya normalizado. */
 	query?: Record<string, string | number | boolean | null | undefined>;
 	signal?: AbortSignal;
+	/** Sube un archivo en vez de un JSON. Excluyente con `body`. */
+	upload?: ApiUpload;
 }
 
 /**
@@ -112,27 +135,44 @@ function buildUrl(path: string, query?: ApiOptions['query']): string {
  * Lanza ApiError en cualquier respuesta no 2xx, o si el backend no responde.
  */
 export async function api<T = unknown>(path: string, options: ApiOptions = {}): Promise<T> {
-	const { method = 'GET', body, token, query, signal } = options;
+	const { method = 'GET', body, token, query, signal, upload } = options;
 	const url = buildUrl(path, query);
 
 	if (USE_MOCK) {
-		return (await mockRequest<T>({ method, path: url, body, token })) as T;
+		return (await mockRequest<T>({ method, path: url, body, token, upload })) as T;
 	}
 
 	const headers: Record<string, string> = { Accept: 'application/json' };
-	if (body !== undefined) headers['Content-Type'] = 'application/json';
+	// Con `multipart` el `Content-Type` NO se pone a mano: lleva el `boundary`
+	// que genera `fetch` al serializar el `FormData`, y escribirlo sin él hace
+	// que el servidor no encuentre ninguna parte.
+	if (body !== undefined && !upload) headers['Content-Type'] = 'application/json';
 	if (token) headers['Authorization'] = `Bearer ${token}`;
 
 	// AbortSignal.any encadena el timeout con la cancelación del propio request de Kit.
 	const timeout = AbortSignal.timeout(API_TIMEOUT_MS);
 	const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
+	let cuerpo: BodyInit | undefined;
+	if (upload) {
+		const form = new FormData();
+		for (const [campo, valor] of Object.entries(upload.fields ?? {})) form.set(campo, valor);
+		form.set(
+			upload.field,
+			new Blob([upload.bytes as BlobPart], { type: upload.contentType }),
+			upload.filename
+		);
+		cuerpo = form;
+	} else if (body !== undefined) {
+		cuerpo = JSON.stringify(body);
+	}
+
 	let response: Response;
 	try {
 		response = await fetch(`${API_BASE_URL}${url}`, {
 			method,
 			headers,
-			body: body === undefined ? undefined : JSON.stringify(body),
+			body: cuerpo,
 			signal: combined
 		});
 	} catch (error) {

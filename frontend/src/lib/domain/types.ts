@@ -308,6 +308,29 @@ export interface Client {
 	telephone: number;
 	address: string;
 	register_date: string;
+
+	// --- F7: la exoneración del cliente (RF-67, RN-78) -----------------------
+	//
+	// **Son puntos de tarifa, no una tarifa**: `exo_points` en 9 quiere decir
+	// nueve puntos perdonados, así que una línea al 13 % pasa a pagar 4 %. No
+	// existe ninguna tarifa del 9 %.
+	//
+	// Los ocho se ponen y se quitan juntos: si viaja cualquiera, viajan todos, y
+	// los ocho vacíos es cómo se le quita la exoneración a un cliente.
+
+	/** Nota 10.1 del anexo: qué clase de autorización es. */
+	exo_document_type?: string | null;
+	exo_document_number?: string | null;
+	/** Nota 23: quién la emitió. El `'99'` obliga a escribir cuál. */
+	exo_institution?: string | null;
+	exo_institution_other?: string | null;
+	/** Obligatorios cuando el tipo de documento remite a una ley. */
+	exo_article?: number | null;
+	exo_subsection?: number | null;
+	/** La fecha de emisión del documento, `YYYY-MM-DD`. */
+	exo_date?: string | null;
+	/** Los **puntos** perdonados: 9, no 0.09 ni 4. */
+	exo_points?: number | null;
 }
 
 export type ClientInput = Omit<Client, 'id_client'>;
@@ -338,6 +361,20 @@ export interface Product {
 	tax_rate?: number | null;
 	/** Unidad de medida del comprobante de Hacienda. 'Unid' por omisión. */
 	unit_of_measure?: string;
+
+	// --- F7: el código de tarifa de Hacienda (RN-76) -------------------------
+
+	/**
+	 * El código de la nota 8.1 del anexo: `'08'` es la tarifa general del 13 %.
+	 *
+	 * **No es el porcentaje.** Hay once códigos para nueve porcentajes: el 0 %
+	 * con derecho a crédito pleno (`'01'`) y el 0 % sin derecho (`'11'`) son el
+	 * mismo número y dan derechos opuestos. Cuando se manda, **la tarifa sale
+	 * de él**: el servidor reescribe `tax_rate`.
+	 *
+	 * `null` o ausente es «sin clasificar para factura electrónica».
+	 */
+	tax_code?: string | null;
 
 	// --- F10: lo que cuesta, no lo que vale (RN-54) --------------------------
 

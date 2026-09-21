@@ -753,6 +753,17 @@ FUERA_DE_LA_BATERIA = {
     "/fe": "sin id; el aislamiento se prueba en test_credenciales_fe_http.py",
     "/fe/{ambiente}/certificate": "idem",
     "/fe/{ambiente}/atv": "idem",
+    "/fe/{ambiente}/atv/verify": "idem",
+    "/fe/active": "sin id; el ambiente activo es de la compañía de la sesión",
+    # T-608. Estas SÍ llevan id, y el aislamiento se prueba en
+    # `test_sucursales.py`: con el token de A, tocar la sucursal de B da 404 por
+    # el filtro automático, que es lo mismo que comprueba esta batería. Se
+    # declaran acá porque viven en su propio archivo, no porque no apliquen.
+    "/offices": "el ABM completo se prueba en test_sucursales.py",
+    "/offices/branches": "idem",
+    "/offices/branches/{branch_id}": "idem",
+    "/offices/terminals": "idem",
+    "/offices/terminals/{terminal_id}": "idem",
 }
 
 

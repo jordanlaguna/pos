@@ -1,4 +1,4 @@
-import { ApiError } from '../api';
+import { ApiError, type ApiUpload } from '../api';
 import {
 	CHART,
 	COMMERCE,
@@ -29,7 +29,10 @@ import {
 	nextId,
 	persist,
 	resetDb,
+	type MockBranch,
+	type MockFeCredentials,
 	type MockPlan,
+	type MockTerminal,
 	type MockSale,
 	type MockSettings,
 	type MockUser
@@ -74,6 +77,7 @@ interface MockRequest {
 	path: string;
 	body?: unknown;
 	token?: string | null;
+	upload?: ApiUpload;
 }
 
 type Handler = (ctx: {
@@ -92,6 +96,8 @@ type Handler = (ctx: {
 	 * (RN-26).
 	 */
 	token: string | null | undefined;
+	/** El archivo, cuando la ruta es `multipart`. Hoy solo el `.p12` de F6. */
+	upload?: ApiUpload;
 }) => unknown;
 
 const routes: { method: string; pattern: RegExp; handler: Handler }[] = [];
@@ -679,6 +685,75 @@ route('PUT', '/persons/update/:id', ({ params, body, companyId }) => {
 
 // ------------------------------------------------------------------- clientes
 
+/**
+ * Los ocho campos de la exoneración, espejo de `crud_client.CAMPOS_EXONERACION`.
+ *
+ * **Se tratan como uno solo**: si viene cualquiera, vienen los ocho, y los ocho
+ * vacíos es cómo se le quita la exoneración a un cliente (RN-78).
+ */
+const CAMPOS_EXONERACION = [
+	'exo_document_type',
+	'exo_document_number',
+	'exo_institution',
+	'exo_institution_other',
+	'exo_article',
+	'exo_subsection',
+	'exo_date',
+	'exo_points'
+] as const;
+
+/** Los cuatro tipos de la nota 10.1 que solo valen en notas de crédito y débito. */
+const EXO_SOLO_EN_NOTAS = new Set(['01', '05', '06', '07']);
+/** Los que obligan a decir el artículo de la ley. */
+const EXO_CON_ARTICULO = new Set(['02', '03', '06', '07', '08']);
+const EXO_TIPOS = new Set([
+	'01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '99'
+]);
+const EXO_INSTITUCIONES = new Set([
+	'01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', '99'
+]);
+
+/** Los ocho comprobados, los ocho en nulo, o 400. Espejo de `revisar_exoneracion`. */
+function revisarExoneracion(body: Record<string, unknown> | null): Record<string, unknown> {
+	if (!body || !CAMPOS_EXONERACION.some((k) => k in body)) return {};
+	const crudo = (k: string) => {
+		const v = body[k];
+		return v == null || v === '' ? null : v;
+	};
+	if (!CAMPOS_EXONERACION.some((k) => crudo(k) !== null))
+		return Object.fromEntries(CAMPOS_EXONERACION.map((k) => [k, null]));
+
+	const no = (reason: string) => fail(400, 'invalid_exemption', { reason });
+	const tipo = String(crudo('exo_document_type') ?? '');
+	if (!EXO_TIPOS.has(tipo)) no('unknown_document_type');
+	if (EXO_SOLO_EN_NOTAS.has(tipo)) no('document_type_only_in_notes');
+	if (crudo('exo_document_number') === null) no('missing_document_number');
+	const institucion = String(crudo('exo_institution') ?? '');
+	if (!EXO_INSTITUCIONES.has(institucion)) no('unknown_institution');
+	if (institucion === '99' && crudo('exo_institution_other') === null)
+		no('missing_institution_name');
+	const fecha = crudo('exo_date');
+	if (fecha === null) no('missing_date');
+	if (Number.isNaN(Date.parse(String(fecha)))) no('bad_date');
+	const articulo = crudo('exo_article');
+	if (EXO_CON_ARTICULO.has(tipo) && articulo === null) no('missing_article');
+	const puntos = Number(crudo('exo_points'));
+	if (!Number.isFinite(puntos) || puntos <= 0 || puntos > 99.99) no('points_out_of_range');
+
+	return {
+		exo_document_type: tipo,
+		exo_document_number: String(crudo('exo_document_number')),
+		exo_institution: institucion,
+		exo_institution_other: crudo('exo_institution_other')
+			? String(crudo('exo_institution_other'))
+			: null,
+		exo_article: articulo === null ? null : Number(articulo),
+		exo_subsection: crudo('exo_subsection') === null ? null : Number(crudo('exo_subsection')),
+		exo_date: String(fecha).slice(0, 10),
+		exo_points: puntos
+	};
+}
+
 route('GET', '/clients/clients_list', ({ companyId }) => getDb(companyId).clients);
 
 route('POST', '/clients/register_client', ({ body, companyId }) => {
@@ -696,7 +771,8 @@ route('POST', '/clients/register_client', ({ body, companyId }) => {
 		email: String(body?.email ?? ''),
 		telephone: Number(body?.telephone ?? 0),
 		address: String(body?.address ?? ''),
-		register_date: String(body?.register_date ?? nowIso().slice(0, 10))
+		register_date: String(body?.register_date ?? nowIso().slice(0, 10)),
+		...revisarExoneracion(body)
 	});
 	persist();
 	return { message: 'client_registered', id_client: id };
@@ -707,7 +783,12 @@ route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
 	const id = Number(params[0]);
 	const client = db.clients.find((c) => c.id_client === id);
 	if (!client) fail(404, 'client_not_found');
+	// La exoneración se comprueba y se asigna entera, antes del bucle: sus ocho
+	// campos se ponen y se quitan juntos, y el nulo en ellos **es** un valor.
+	for (const [key, value] of Object.entries(revisarExoneracion(body)))
+		(client as any)[key] = value;
 	for (const [key, value] of Object.entries(body ?? {})) {
+		if ((CAMPOS_EXONERACION as readonly string[]).includes(key)) continue;
 		if (value == null || value === '') continue;
 		if (key === 'telephone') client.telephone = Number(value);
 		else if (key in client) (client as any)[key] = value;
@@ -719,7 +800,49 @@ route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
 // ------------------------------------------------------------------ productos
 
 /** Columnas donde el nulo **es un valor**. Espejo de `crud_product.VACIABLES`. */
-const VACIABLES = new Set(['cabys_code', 'tax_rate']);
+const VACIABLES = new Set(['cabys_code', 'tax_rate', 'tax_code']);
+
+/**
+ * La nota 8.1 del anexo de Hacienda: once códigos para nueve porcentajes.
+ * Espejo de `app/domain/fe_tax_codes.py`.
+ *
+ * El `01` (0 % con derecho a crédito pleno) y el `11` (0 % sin derecho) son el
+ * mismo número con derechos opuestos, así que **el código no se deduce de la
+ * tarifa**; la tarifa sí se deduce del código, y eso es lo que hace esta tabla.
+ */
+const TARIFAS_IVA: Record<string, { rate: number; onlyInNotes: boolean }> = {
+	'01': { rate: 0, onlyInNotes: false },
+	'02': { rate: 0.01, onlyInNotes: false },
+	'03': { rate: 0.02, onlyInNotes: false },
+	'04': { rate: 0.04, onlyInNotes: false },
+	'05': { rate: 0, onlyInNotes: true },
+	'06': { rate: 0.04, onlyInNotes: true },
+	'07': { rate: 0.08, onlyInNotes: true },
+	'08': { rate: 0.13, onlyInNotes: false },
+	'09': { rate: 0.005, onlyInNotes: false },
+	'10': { rate: 0, onlyInNotes: false },
+	'11': { rate: 0, onlyInNotes: false }
+};
+
+/** El código limpio y su tarifa, o 400. Espejo de `crud_product.codigo_y_tarifa`. */
+function codigoYTarifa(crudo: unknown): [string, number] {
+	const codigo = String(crudo ?? '').trim();
+	const fila = TARIFAS_IVA[codigo];
+	if (!fila) fail(400, 'invalid_tax_code', { tax_code: String(crudo) });
+	return [codigo, fila.rate];
+}
+
+/**
+ * El código que le toca a una tarifa, o `null` si hay más de uno.
+ * Espejo de `fe_tax_codes.suggested_code`: en el 0 % hay tres y la diferencia
+ * es el derecho a crédito del cliente, así que no se propone ninguno.
+ */
+function codigoSugerido(tarifa: number): string | null {
+	const posibles = Object.entries(TARIFAS_IVA).filter(
+		([, f]) => !f.onlyInNotes && f.rate === tarifa
+	);
+	return posibles.length === 1 ? posibles[0][0] : null;
+}
 
 route('GET', '/products/products_list', ({ companyId }) => getDb(companyId).products);
 
@@ -741,7 +864,13 @@ route('POST', '/products/add_product', ({ body, companyId }) => {
 		category_id: Number(body?.category_id ?? 0),
 		// F5: en nulo significa «la tasa configurada del negocio» (RN-9).
 		cabys_code: body?.cabys_code != null ? String(body.cabys_code) : null,
-		tax_rate: body?.tax_rate != null ? Number(body.tax_rate) : null,
+		// F7: con código de Hacienda la tarifa sale de él (RN-76).
+		tax_rate: body?.tax_code
+			? codigoYTarifa(body.tax_code)[1]
+			: body?.tax_rate != null
+				? Number(body.tax_rate)
+				: null,
+		tax_code: body?.tax_code ? codigoYTarifa(body.tax_code)[0] : null,
 		unit_of_measure: String(body?.unit_of_measure ?? 'Unid')
 	});
 	persist();
@@ -761,6 +890,12 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 	const categoriaNueva = body?.category_id == null ? null : Number(body.category_id);
 	if (categoriaNueva !== null && categoriaNueva !== product.category_id)
 		categoriaParaProducto(companyId, categoriaNueva);
+	// El código de Hacienda manda sobre la tarifa (RN-76): si viene, la reescribe
+	// aunque el formulario haya mandado otra.
+	if (body?.tax_code) {
+		const [codigo, tarifa] = codigoYTarifa(body.tax_code);
+		body = { ...body, tax_code: codigo, tax_rate: tarifa };
+	}
 	for (const [key, value] of Object.entries(body ?? {})) {
 		// En casi todo el formulario un nulo significa «no mandé este campo», que
 		// es lo que hace que un PUT parcial no borre el resto. En `VACIABLES` no:
@@ -774,6 +909,8 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 		else if (key === 'tax_rate') product.tax_rate = value === '' || value == null ? null : Number(value);
 		else if (key === 'cabys_code')
 			product.cabys_code = value === '' || value == null ? null : String(value);
+		else if (key === 'tax_code')
+			product.tax_code = value === '' || value == null ? null : String(value);
 		else if (key in product) (product as any)[key] = value;
 	}
 	persist();
@@ -801,9 +938,13 @@ route('PUT', '/products/assign_cabys', ({ body, companyId }) => {
 	const faltante = pedidos.find((id, i) => productos[i] === undefined);
 	if (faltante !== undefined) fail(404, 'product_not_found', { product_id: faltante });
 
+	// El CABYS trae una tarifa, no un código de Hacienda. Se pone el de la nota
+	// 8.1 solo cuando esa tarifa deja una sola posibilidad (RN-76).
+	const codigoIVA = codigoSugerido(tarifa);
 	for (const producto of productos) {
 		producto!.cabys_code = codigo;
 		producto!.tax_rate = tarifa;
+		producto!.tax_code = codigoIVA;
 	}
 	persist();
 	return { message: 'cabys_assigned', updated: productos.length };
@@ -2302,6 +2443,13 @@ route('PUT', '/settings/', ({ userId, body, companyId }) => {
 	}
 	if (JSON.stringify(data).length > 20_000) fail(400, 'settings_too_large');
 
+	// El ambiente de factura electrónica **tiene su propia puerta** (T-611): se
+	// cambia por `PUT /fe/active`, que confirma y deja bitácora. Si se pudiera
+	// mover por acá, RN-35 sería decoración. Se conserva lo que ya estaba —no se
+	// rechaza la petición— porque el POS manda la configuración completa en cada
+	// guardado. Es el mismo `PROTECTED_PATHS` de `crud_settings.py`.
+	conservarAmbiente(data, settingsRow(companyId).data);
+
 	const rate = data?.impuesto?.rate;
 	if (rate !== undefined) {
 		const n = Number(rate);
@@ -2496,7 +2644,8 @@ export async function mockRequest<T>(request: MockRequest): Promise<T> {
 			body: request.body,
 			userId,
 			companyId,
-			token: request.token
+			token: request.token,
+			upload: request.upload
 		}) as T;
 	}
 
@@ -3614,4 +3763,604 @@ route('GET', '/reports/sales_by_rate', ({ query, companyId }) => {
 		returns_tax: round2(lineas.reduce((t, l) => t + l.returns_tax, 0)),
 		net_tax: round2(lineas.reduce((t, l) => t + l.net_tax, 0))
 	};
+});
+
+// ------------------------------------------- factura electrónica (F6, T-615)
+//
+// Los seis endpoints de `/fe`, con el contrato de `app/router/fe_routes.py`.
+// Sin esto la fase no tiene ninguna prueba de flujo: la batería de punta a punta
+// corre con `POS_MOCK=1`. Es el agujero que en F5 hizo que el simulado
+// reembolsara cero durante dos días.
+//
+// **Acá tampoco existe el camino que devuelve el archivo, el PIN o la
+// contraseña** (RF-23, RN-16), y la ausencia es deliberada: un simulado que los
+// devolviera dejaría sin probar justo la propiedad que importa.
+
+const AMBIENTES = ['sandbox', 'production'] as const;
+type Ambiente = (typeof AMBIENTES)[number];
+
+/** Lo mismo que `crud_fe.MAX_P12_BYTES`. */
+const MAX_P12_BYTES = 256 * 1024;
+
+/**
+ * Los 30 días de `domain/fe_credentials.WARNING_DAYS`.
+ *
+ * No se llama `DIAS_DE_AVISO` a secas porque ya hay uno: el de la suscripción,
+ * que son 7. Son dos avisos distintos sobre dos cosas distintas y el día que
+ * alguien los unifique por el nombre, un certificado avisará con una semana.
+ */
+const DIAS_DE_AVISO_DEL_CERTIFICADO = 30;
+
+function ambienteValido(valor: string): Ambiente {
+	if (!(AMBIENTES as readonly string[]).includes(valor))
+		fail(400, 'invalid_environment', { environment: valor });
+	return valor as Ambiente;
+}
+
+function feFilas(companyId: number): MockFeCredentials[] {
+	const empresa = getEmpresa(companyId);
+	// Se escribe en la porción de la compañía y no en la vista, por lo mismo que
+	// `settingsRow`: la vista es una copia superficial.
+	if (!empresa.fe_credentials) empresa.fe_credentials = [];
+	return empresa.fe_credentials;
+}
+
+function feFila(companyId: number, environment: Ambiente): MockFeCredentials {
+	const filas = feFilas(companyId);
+	let fila = filas.find((f) => f.environment === environment);
+	if (!fila) {
+		fila = {
+			environment,
+			certificate_name: null,
+			expires_at: null,
+			cert_uploaded_at: null,
+			atv_user: null,
+			atv_configured: false,
+			atv_verified_at: null,
+			atv_verdict: 'ok'
+		};
+		filas.push(fila);
+	}
+	return fila;
+}
+
+/**
+ * El ambiente en uso, con el mismo respaldo que `crud_fe._activo`.
+ *
+ * Por omisión pruebas: una compañía que nunca lo configuró **no** está emitiendo
+ * en producción, y suponer lo contrario sería suponer efecto fiscal donde no lo
+ * hay. Lo mismo con un valor que no se entiende.
+ */
+function ambienteActivo(companyId: number): Ambiente {
+	const data = settingsRow(companyId).data as { eInvoicing?: { environment?: unknown } };
+	const guardado = String(data?.eInvoicing?.environment ?? '');
+	return (AMBIENTES as readonly string[]).includes(guardado) ? (guardado as Ambiente) : 'sandbox';
+}
+
+/**
+ * Días enteros hasta el vencimiento del certificado.
+ *
+ * Aparte de `diasHasta`, que cuenta días de calendario para la suscripción: el
+ * `notAfter` de un certificado **tiene hora**, y uno que vence a las 10:00 no
+ * sirve a las 11:00. Redondear a medianoche diría que sirve durante catorce
+ * horas en que no sirve, y esas catorce horas son un día de facturación entero.
+ */
+function diasHastaElVencimiento(iso: string | null): number | null {
+	if (!iso) return null;
+	// Truncado hacia abajo con signo, como `timedelta.days`: lo que vence en
+	// veintitrés horas devuelve 0, porque no alcanza para un día más de trabajo.
+	return Math.floor((new Date(iso).getTime() - Date.now()) / 86_400_000);
+}
+
+function estadoDelCertificado(iso: string | null): string {
+	if (!iso) return 'missing';
+	if (new Date(iso).getTime() <= Date.now()) return 'expired';
+	return diasHastaElVencimiento(iso)! <= DIAS_DE_AVISO_DEL_CERTIFICADO ? 'expiring' : 'valid';
+}
+
+/**
+ * El espejo de `crud_settings._conservar_protegidos`, para el único campo
+ * protegido que hay hoy.
+ *
+ * Un campo que no estaba sigue sin estar: si nadie eligió ambiente todavía, esto
+ * no inventa uno.
+ */
+function conservarAmbiente(nuevo: any, anterior: any): void {
+	const guardado = anterior?.eInvoicing?.environment;
+	if (guardado === undefined || guardado === null) {
+		if (nuevo?.eInvoicing && typeof nuevo.eInvoicing === 'object')
+			delete nuevo.eInvoicing.environment;
+		return;
+	}
+	if (!nuevo.eInvoicing || typeof nuevo.eInvoicing !== 'object') nuevo.eInvoicing = {};
+	nuevo.eInvoicing.environment = guardado;
+}
+
+function feSalida(fila: MockFeCredentials) {
+	const estado = estadoDelCertificado(fila.expires_at);
+	return {
+		environment: fila.environment,
+		certificate_configured: estado !== 'missing',
+		certificate_name: fila.certificate_name,
+		expires_at: fila.expires_at,
+		days_left: diasHastaElVencimiento(fila.expires_at),
+		certificate_status: estado,
+		uploaded_at: fila.cert_uploaded_at,
+		atv_user: fila.atv_user,
+		atv_configured: fila.atv_configured,
+		atv_verified_at: fila.atv_verified_at,
+		// Las tres condiciones, y la tercera es la que se olvida: un certificado
+		// vencido está configurado y no sirve.
+		ready: (estado === 'valid' || estado === 'expiring') && fila.atv_configured
+	};
+}
+
+function feEstado(companyId: number) {
+	return {
+		environments: AMBIENTES.map((a) => feSalida(feFila(companyId, a))),
+		active: ambienteActivo(companyId)
+	};
+}
+
+/**
+ * Un administrador de **esta** compañía, o el «no» que corresponda.
+ *
+ * No se llama `feAdmin` aunque naciera con `/fe`: lo usan también las rutas de
+ * `/offices`, y allá el `require_admin` del backend es el que hace que el
+ * bloqueo por suscripción las alcance sin tocar nada.
+ */
+function exigirAdmin(userId: number | null, companyId: number): MockUser {
+	if (userId == null) fail(401, 'unauthorized');
+	const user = getDb(companyId).users.find((u) => u.id_user === userId);
+	if (!user) fail(401, 'unauthorized');
+	if ((rolEn(user.id_user, companyId) ?? user.role) !== 'admin') fail(403, 'admin_only');
+	return user;
+}
+
+/**
+ * Qué va a contestar el IdP, deducido de la contraseña **sin guardarla**.
+ *
+ * Los tres desenlaces de RF-31 no se pueden provocar contra un servicio de
+ * verdad —«Hacienda caída» hay que esperar a que pase— así que una prueba de
+ * punta a punta que quiera ver los tres necesita poder pedirlos. La convención
+ * vive acá y en ningún otro sitio: una contraseña que empieza por `mal-` la
+ * rechazan, y una que empieza por `caido-` no contesta.
+ *
+ * Lo que **no** hace es guardar la contraseña para mirarla después: se lee al
+ * llegar, se deja el veredicto y el valor se descarta — igual que el de verdad
+ * la cifra y no la vuelve a mostrar nunca.
+ */
+function veredictoDe(password: string): MockFeCredentials['atv_verdict'] {
+	if (password.startsWith('mal-')) return 'rejected';
+	if (password.startsWith('caido-')) return 'unreachable';
+	return 'ok';
+}
+
+route('GET', '/fe', ({ userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	return feEstado(companyId);
+});
+
+route('POST', '/fe/:ambiente/certificate', ({ params, userId, companyId, upload }) => {
+	exigirAdmin(userId, companyId);
+	const ambiente = ambienteValido(params[0]);
+
+	const bytes = upload?.bytes ?? new Uint8Array();
+	const pin = String(upload?.fields?.pin ?? '');
+	if (bytes.byteLength > MAX_P12_BYTES)
+		fail(413, 'certificate_too_large', { limit: MAX_P12_BYTES });
+
+	// El simulado no abre un PKCS#12 de verdad, pero sí reproduce los cuatro
+	// motivos por los que el de verdad se niega, que es lo que la pantalla tiene
+	// que saber distinguir.
+	//
+	// El primero se deduce igual que allá: un `.p12` verdadero empieza por 0x30,
+	// porque en DER siempre es una SEQUENCE. Los otros tres se piden por el
+	// contenido, como `veredictoDe`.
+	const texto = Buffer.from(bytes).toString('utf-8');
+	if (bytes.byteLength === 0 || bytes[0] !== 0x30)
+		fail(400, 'invalid_certificate', { reason: 'not_a_p12' });
+	if (!pin) fail(400, 'invalid_certificate', { reason: 'bad_pin' });
+	for (const motivo of ['bad_pin', 'no_private_key', 'no_certificate'])
+		if (texto.includes(motivo)) fail(400, 'invalid_certificate', { reason: motivo });
+
+	// El nombre sale del certificado y no del archivo: «llave (1).p12» no le dice
+	// nada a nadie seis meses después.
+	const sujeto = /SUJETO=([^|]+)/.exec(texto)?.[1]?.trim() || 'CERTIFICADO DE PRUEBA S.A.';
+	const dias = Number(/DIAS=(-?\d+)/.exec(texto)?.[1] ?? 365);
+
+	const fila = feFila(companyId, ambiente);
+	fila.certificate_name = sujeto;
+	fila.expires_at = new Date(Date.now() + dias * 86_400_000).toISOString();
+	fila.cert_uploaded_at = nowIso();
+	persist();
+	return feEstado(companyId);
+});
+
+route('DELETE', '/fe/:ambiente/certificate', ({ params, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const fila = feFila(companyId, ambienteValido(params[0]));
+	fila.certificate_name = null;
+	fila.expires_at = null;
+	fila.cert_uploaded_at = null;
+	// RF-24: quitar el certificado **no** toca las credenciales de transmisión.
+	persist();
+	return feEstado(companyId);
+});
+
+route('PUT', '/fe/:ambiente/atv', ({ params, body, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const ambiente = ambienteValido(params[0]);
+
+	const usuario = String(body?.user ?? '').trim();
+	const password = String(body?.password ?? '');
+	if (!usuario) fail(400, 'atv_user_required');
+
+	const fila = feFila(companyId, ambiente);
+	fila.atv_user = usuario;
+	fila.atv_configured = password.length > 0;
+	fila.atv_verdict = veredictoDe(password);
+	// La verificación anterior deja de valer: son otras credenciales.
+	fila.atv_verified_at = null;
+	persist();
+	return feEstado(companyId);
+});
+
+route('POST', '/fe/:ambiente/atv/verify', ({ params, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const ambiente = ambienteValido(params[0]);
+	const fila = feFila(companyId, ambiente);
+
+	if (!fila.atv_user || !fila.atv_configured)
+		fail(409, 'atv_not_configured', { environment: ambiente });
+
+	if (fila.atv_verdict === 'rejected') {
+		// El «no» de Hacienda es más fuerte que cualquier marca anterior.
+		fila.atv_verified_at = null;
+		persist();
+		fail(400, 'atv_invalid_credentials', { environment: ambiente });
+	}
+	if (fila.atv_verdict === 'unreachable') {
+		// **No se toca nada**: no se aprendió nada sobre las credenciales, y tirar
+		// una verificación buena porque Hacienda estaba caída sería convertir su
+		// caída en un problema del cliente (RF-31).
+		fail(503, 'atv_unreachable', { environment: ambiente });
+	}
+
+	fila.atv_verified_at = nowIso();
+	persist();
+	return feEstado(companyId);
+});
+
+route('PUT', '/fe/active', ({ body, userId, companyId }) => {
+	const user = exigirAdmin(userId, companyId);
+	const destino = ambienteValido(String(body?.environment ?? ''));
+	const anterior = ambienteActivo(companyId);
+	if (destino === anterior) return feEstado(companyId);
+
+	// Solo producción se confirma (RN-35). Volver a pruebas no: exigir
+	// confirmación para deshacer convierte la salida de un error en un segundo
+	// trámite, justo cuando alguien acaba de darse cuenta del error.
+	if (destino === 'production' && body?.confirm !== true)
+		fail(400, 'confirmation_required', { environment: destino });
+
+	const fila = settingsRow(companyId);
+	const data = (fila.data ?? {}) as { eInvoicing?: Record<string, unknown> };
+	data.eInvoicing = { ...(data.eInvoicing ?? {}), environment: destino };
+	fila.data = data;
+	fila.updated_at = nowIso();
+	fila.updated_by = user.id_user;
+
+	registrar(user.id_user, companyId, 'fe_ambiente', `${anterior} → ${destino}`);
+	persist();
+	return feEstado(companyId);
+});
+
+// ------------------------------------------ sucursales y cajas (F6, T-608)
+//
+// Las siete rutas de `/offices`, con el contrato de `app/router/office_routes.py`:
+// **todas devuelven el estado completo** —las sucursales, sus cajas y el cupo del
+// plan— y no la fila que tocaron. Una sola forma de respuesta significa que la
+// pantalla no mezcla lo que tenía con lo que le llega, y acá hace falta de
+// verdad, porque apagar una sucursal apaga sus cajas y crear una consume cupo.
+
+/** Los que fija Hacienda, como en `domain/office.py`. No se configuran. */
+const DIGITOS_DE_SUCURSAL = 3;
+const DIGITOS_DE_CAJA = 5;
+
+/** Lo que se escribe en el plan para decir «sin techo» (`domain/limits.py`). */
+const SIN_LIMITE = -1;
+
+/**
+ * El código normalizado, o el «no» con su motivo. El espejo de `_normalizar`.
+ *
+ * «1» entra como «001»: sin rellenar acá, la caja 1 y la caja 001 serían dos
+ * filas con el mismo número en el comprobante. Y **lo que no cabe no se
+ * recorta**: recortar en silencio sería cambiarle el número a alguien.
+ *
+ * Con una diferencia sabida: `\d` es ASCII y el `isdigit()` de Python acepta
+ * también «٣». La puerta de acá es más angosta, nunca más ancha, así que el
+ * simulado no deja pasar nada que el backend fuera a rechazar.
+ */
+function codigoDeOficina(valor: unknown, digitos: number): string {
+	if (typeof valor !== 'string' && typeof valor !== 'number')
+		fail(400, 'invalid_office_code', { reason: 'not_text', digits: digitos });
+
+	const limpio = String(valor).trim();
+	if (!limpio) fail(400, 'invalid_office_code', { reason: 'empty', digits: digitos });
+	if (!/^\d+$/.test(limpio))
+		fail(400, 'invalid_office_code', { reason: 'not_digits', digits: digitos });
+	// Los dígitos **significativos**: «00001» con tres es 1 y cabe; «1234» no.
+	if ((limpio.replace(/^0+/, '') || '0').length > digitos)
+		fail(400, 'invalid_office_code', { reason: 'too_long', digits: digitos });
+
+	return limpio.padStart(digitos, '0').slice(-digitos);
+}
+
+function sucursalesDe(companyId: number): MockBranch[] {
+	const empresa = getEmpresa(companyId);
+	// Se escribe en la porción de la compañía y no en la vista de `getDb`, por lo
+	// mismo que `feFilas`: la vista es una copia superficial.
+	if (!empresa.branches) empresa.branches = [];
+	return empresa.branches;
+}
+
+function cajasDe(companyId: number): MockTerminal[] {
+	const empresa = getEmpresa(companyId);
+	if (!empresa.terminals) empresa.terminals = [];
+	return empresa.terminals;
+}
+
+/** Cuántas **activas**. Lo que el plan vende es cuántas puede operar. */
+function cuantasActivas(filas: { activa: boolean }[]): number {
+	return filas.filter((f) => f.activa).length;
+}
+
+function hayLugar(actuales: number, maximo: number): boolean {
+	// `<` y no `<=`: la que se está creando todavía no está contada.
+	return maximo < 0 || actuales < maximo;
+}
+
+function cabeOtraSucursal(companyId: number): void {
+	const plan = planDe(companyId);
+	if (!plan) return;
+	const actuales = cuantasActivas(sucursalesDe(companyId));
+	if (!hayLugar(actuales, plan.max_sucursales))
+		fail(400, 'plan_limit_reached', {
+			resource: 'branches',
+			current: actuales,
+			max: plan.max_sucursales
+		});
+}
+
+function cabeOtraCaja(companyId: number): void {
+	const plan = planDe(companyId);
+	if (!plan) return;
+	// El máximo es **por compañía** y no por sucursal, igual que allá: un techo
+	// por sucursal dejaría que un plan de tres cajas tuviera treinta abriendo
+	// diez locales.
+	const actuales = cuantasActivas(cajasDe(companyId));
+	if (!hayLugar(actuales, plan.max_terminales))
+		fail(400, 'plan_limit_reached', {
+			resource: 'terminals',
+			current: actuales,
+			max: plan.max_terminales
+		});
+}
+
+function cupoDeOficinas(companyId: number) {
+	const plan = planDe(companyId);
+	return {
+		branches: cuantasActivas(sucursalesDe(companyId)),
+		max_branches: plan ? plan.max_sucursales : SIN_LIMITE,
+		terminals: cuantasActivas(cajasDe(companyId)),
+		max_terminals: plan ? plan.max_terminales : SIN_LIMITE
+	};
+}
+
+function officeEstado(companyId: number) {
+	return {
+		branches: [...sucursalesDe(companyId)].sort((a, b) => a.codigo.localeCompare(b.codigo)),
+		terminals: [...cajasDe(companyId)].sort(
+			(a, b) => a.branch_id - b.branch_id || a.codigo.localeCompare(b.codigo)
+		),
+		quota: cupoDeOficinas(companyId)
+	};
+}
+
+/**
+ * Cuántas filas de negocio nombran a esta sucursal (RN-7).
+ *
+ * En el simulado las ventas no llevan `branch_id` —nada más lo necesita— así que
+ * la historia se le atribuye a la sucursal **con la que la compañía vende**, que
+ * es la que declara su sesión (`companies.branch_code`, lo que allá resuelve
+ * `sucursal_actual()`). Es donde de verdad se hizo: el seed vende desde la única
+ * que hay.
+ *
+ * Con eso la pantalla tiene los dos casos que hay que poder distinguir: la que
+ * arrastra historia no se borra, y una creada desde la pantalla nace sin nada y
+ * sí se borra.
+ */
+function historiaDeLaSucursal(companyId: number, sucursal: MockBranch): number {
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	if (empresa?.branch_code !== sucursal.codigo) return 0;
+	const db = getDb(companyId);
+	// Las tres suman un número porque para quien decide son lo mismo: historial
+	// que se quedaría apuntando a la nada.
+	return db.sales.length + db.returns.length + db.stock_entries.length;
+}
+
+/**
+ * Lo mismo para una caja: arqueos y ventas, por separado.
+ *
+ * Se piden los **dos** códigos, el de la caja y el de su sucursal: el de caja es
+ * único por sucursal, así que el «00001» de un local nuevo no es el «00001» con
+ * el que la compañía vende, y atribuirle la historia de ese haría que una caja
+ * recién creada naciera imposible de borrar.
+ */
+function historiaDeLaCaja(companyId: number, caja: MockTerminal) {
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	const sucursal = sucursalesDe(companyId).find((s) => s.id === caja.branch_id);
+	const db = getDb(companyId);
+	const suya =
+		empresa?.terminal_code === caja.codigo && empresa?.branch_code === sucursal?.codigo;
+	return {
+		sessions: suya ? db.cash_sessions.length : 0,
+		sales: suya ? db.sales.length : 0
+	};
+}
+
+/** No se deja a la compañía sin sucursal activa: sin una no se puede vender. */
+function ultimaSucursalNo(companyId: number, sucursal: MockBranch): void {
+	if (!sucursal.activa) return;
+	if (cuantasActivas(sucursalesDe(companyId)) <= 1) fail(409, 'last_active_branch');
+}
+
+/**
+ * Ni a una sucursal activa sin caja activa.
+ *
+ * Con las dos salidas de `_ultima_terminal_no`: una caja ya apagada no deja a
+ * nadie sin caja al irse, y las de una sucursal apagada pueden estarlo todas
+ * —apagarla es justamente lo que las apaga—.
+ */
+function ultimaCajaNo(companyId: number, caja: MockTerminal): void {
+	if (!caja.activa) return;
+	const sucursal = sucursalesDe(companyId).find((s) => s.id === caja.branch_id);
+	if (!sucursal || !sucursal.activa) return;
+	const suyas = cajasDe(companyId).filter((c) => c.branch_id === caja.branch_id);
+	if (cuantasActivas(suyas) <= 1) fail(409, 'last_active_terminal');
+}
+
+/**
+ * El nombre tal como se guarda.
+ *
+ * El «no» sale con el código `unexpected` a propósito: allá lo rechaza el
+ * `min_length=1` del esquema, y el 422 de Pydantic no es un `{code, data}` —el
+ * POS lo pinta igual, como «algo salió mal»—. Inventar un código acá haría que
+ * el simulado contestara algo que el backend no contesta nunca.
+ */
+function nombreDeOficina(valor: unknown): string {
+	const limpio = String(valor ?? '').trim();
+	if (!limpio || limpio.length > 120) fail(422, 'unexpected', { field: 'nombre' });
+	return limpio;
+}
+
+route('GET', '/offices', ({ userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	return officeEstado(companyId);
+});
+
+route('POST', '/offices/branches', ({ body, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const codigo = codigoDeOficina(body?.codigo, DIGITOS_DE_SUCURSAL);
+	const nombre = nombreDeOficina(body?.nombre);
+	cabeOtraSucursal(companyId);
+
+	const filas = sucursalesDe(companyId);
+	if (filas.some((s) => s.codigo === codigo))
+		fail(409, 'branch_code_taken', { branch_code: codigo });
+
+	filas.push({ id: nextId('branches'), codigo, nombre, activa: true });
+	persist();
+	return officeEstado(companyId);
+});
+
+route('PUT', '/offices/branches/:id', ({ params, body, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const sucursal = sucursalesDe(companyId).find((s) => s.id === Number(params[0]));
+	if (!sucursal) fail(404, 'branch_not_found');
+
+	// El código **no** se cambia y por eso no se lee: moverlo cambiaría el número
+	// de todos los comprobantes ya emitidos desde esa sucursal.
+	if (body?.nombre !== undefined && body.nombre !== null)
+		sucursal.nombre = nombreDeOficina(body.nombre);
+
+	const activa = body?.activa;
+	if (typeof activa === 'boolean' && activa !== sucursal.activa) {
+		// Reactivar consume cupo: si no, apagar y encender sería la forma de tener
+		// cinco con un plan de tres.
+		if (activa) cabeOtraSucursal(companyId);
+		else ultimaSucursalNo(companyId, sucursal);
+		sucursal.activa = activa;
+		if (!activa) {
+			// Las cajas de una sucursal apagada no pueden quedar encendidas: el POS
+			// las ofrecería y el consecutivo saldría de un local cerrado.
+			for (const caja of cajasDe(companyId)) {
+				if (caja.branch_id === sucursal.id) caja.activa = false;
+			}
+		}
+	}
+
+	persist();
+	return officeEstado(companyId);
+});
+
+route('DELETE', '/offices/branches/:id', ({ params, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const filas = sucursalesDe(companyId);
+	const sucursal = filas.find((s) => s.id === Number(params[0]));
+	if (!sucursal) fail(404, 'branch_not_found');
+
+	const ventas = historiaDeLaSucursal(companyId, sucursal);
+	const cajas = cajasDe(companyId).filter((c) => c.branch_id === sucursal.id).length;
+	// Las dos cuentas, porque quien lo lee necesita saber qué mover primero.
+	if (ventas || cajas) fail(409, 'branch_in_use', { sales: ventas, terminals: cajas });
+
+	ultimaSucursalNo(companyId, sucursal);
+	filas.splice(filas.indexOf(sucursal), 1);
+	persist();
+	return officeEstado(companyId);
+});
+
+route('POST', '/offices/terminals', ({ body, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const codigo = codigoDeOficina(body?.codigo, DIGITOS_DE_CAJA);
+	const nombre = nombreDeOficina(body?.nombre);
+	const branchId = Number(body?.branch_id);
+
+	if (!sucursalesDe(companyId).some((s) => s.id === branchId)) fail(404, 'branch_not_found');
+	cabeOtraCaja(companyId);
+
+	const filas = cajasDe(companyId);
+	// El UNIQUE es **por sucursal**: dos locales pueden tener los dos su «00001».
+	if (filas.some((c) => c.branch_id === branchId && c.codigo === codigo))
+		fail(409, 'terminal_code_taken', { terminal_code: codigo });
+
+	filas.push({ id: nextId('terminals'), branch_id: branchId, codigo, nombre, activa: true });
+	persist();
+	return officeEstado(companyId);
+});
+
+route('PUT', '/offices/terminals/:id', ({ params, body, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const caja = cajasDe(companyId).find((c) => c.id === Number(params[0]));
+	if (!caja) fail(404, 'terminal_not_found');
+
+	if (body?.nombre !== undefined && body.nombre !== null)
+		caja.nombre = nombreDeOficina(body.nombre);
+
+	const activa = body?.activa;
+	if (typeof activa === 'boolean' && activa !== caja.activa) {
+		if (activa) cabeOtraCaja(companyId);
+		else ultimaCajaNo(companyId, caja);
+		caja.activa = activa;
+	}
+
+	persist();
+	return officeEstado(companyId);
+});
+
+route('DELETE', '/offices/terminals/:id', ({ params, userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const filas = cajasDe(companyId);
+	const caja = filas.find((c) => c.id === Number(params[0]));
+	if (!caja) fail(404, 'terminal_not_found');
+
+	const { sessions, sales } = historiaDeLaCaja(companyId, caja);
+	if (sessions || sales) fail(409, 'terminal_in_use', { sessions, sales });
+
+	ultimaCajaNo(companyId, caja);
+	filas.splice(filas.indexOf(caja), 1);
+	persist();
+	return officeEstado(companyId);
 });
