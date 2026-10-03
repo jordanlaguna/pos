@@ -35,7 +35,7 @@ function marca(): string {
  * La contraseña es siempre `dueno123`: lo que se prueba es el alta, no la
  * variedad de las claves.
  */
-async function altaDeCompania(page: Page, negocio: string, correo: string) {
+async function altaDeCompania(page: Page, negocio: string, correo: string, plan = 'Comercio') {
 	await page.getByRole('link', { name: /Nueva compañía/i }).click();
 	await expect(page).toHaveURL(/\/admin\/companias\/nueva/);
 
@@ -47,7 +47,7 @@ async function altaDeCompania(page: Page, negocio: string, correo: string) {
 	await page.locator('input[name="lastName"]').fill('Nueva');
 	// El plan se elige a mano: el primero del desplegable es el más barato y esta
 	// prueba no tiene por qué saber cuál es.
-	await page.locator('#plan_id').selectOption({ label: 'Comercio' });
+	await page.locator('#plan_id').selectOption({ label: plan });
 	await page.getByRole('button', { name: /Dar de alta/i }).click();
 
 	// Queda en la ficha de la compañía nueva, con el aviso de que se creó.
@@ -118,6 +118,104 @@ test.describe('alta de compañía y su primera venta (T-310, RF-6)', () => {
 
 		await page.goto('/ventas');
 		await expect(page.getByRole('button', { name: /Arroz/i })).toHaveCount(0);
+	});
+});
+
+test.describe('el alta propone la numeración (QA-04)', () => {
+	test('el siguiente afiliado libre, y la siguiente compañía del que se escriba', async ({ page }) => {
+		await entrarComoSoporte(page);
+		await page.goto('/admin/companias/nueva');
+		const afiliado = page.locator('input[name="afiliado"]');
+		const compania = page.locator('input[name="compania"]');
+
+		// Un afiliado nuevo, con su compañía 1.
+		const propuesto = Number(await afiliado.inputValue());
+		expect(propuesto).toBeGreaterThan(1);
+		await expect(compania).toHaveValue('1');
+
+		// El afiliado 1 ya tiene su compañía 1: la propuesta pasa a la siguiente.
+		// Con reintento: antes de hidratar, escribir no mueve la compañía.
+		await expect(async () => {
+			await afiliado.fill('1');
+			expect(Number(await compania.inputValue())).toBeGreaterThan(1);
+		}).toPass({ timeout: 10_000 });
+
+		// Y de vuelta al nuevo, otra vez la 1.
+		await afiliado.fill(String(propuesto));
+		await expect(compania).toHaveValue('1');
+	});
+});
+
+test.describe('Planes muestra las compañías de cada plan (QA-03)', () => {
+	test('una compañía se pasa a otro plan desde ahí', async ({ page }) => {
+		// Su propia compañía: mover la del demo le cambiaría los módulos a las
+		// demás pruebas.
+		const negocio = `Mudanza ${marca()}`;
+		await entrarComoSoporte(page);
+		await altaDeCompania(page, negocio, `mudanza${marca()}@ventasys.cr`);
+		const id = page.url().match(/companias\/(\d+)/)?.[1];
+
+		await page.goto('/admin/planes');
+		const fila = page.locator(`[data-compania="${id}"]`);
+		const tarjetaDe = (plan: string) =>
+			page.locator('section', { has: page.getByRole('heading', { name: plan, exact: true }) });
+		await expect(tarjetaDe('Comercio').locator(`[data-compania="${id}"]`)).toBeVisible();
+
+		// Con reintento: antes de hidratar, el clic manda el formulario sin
+		// JavaScript y la página vuelve a pintarse; elegir y pulsar otra vez es
+		// inofensivo.
+		await expect(async () => {
+			await fila.locator('select[name="plan_id"]').selectOption({ label: 'Cadena' });
+			await fila.getByRole('button', { name: /Cambiar de plan/i }).click();
+			await expect(tarjetaDe('Cadena').locator(`[data-compania="${id}"]`)).toBeVisible({ timeout: 2000 });
+		}).toPass({ timeout: 20_000 });
+		await expect(tarjetaDe('Comercio').locator(`[data-compania="${id}"]`)).toHaveCount(0);
+	});
+});
+
+test.describe('los paquetes de módulos (QA-01)', () => {
+	test('un restaurante no tiene caja hasta que se lo pasa a Completo', async ({ page }) => {
+		const correo = `fonda${marca()}@ventasys.cr`;
+		await entrarComoSoporte(page);
+
+		// El alta dice qué trae el paquete antes de guardarlo.
+		await page.goto('/admin/companias/nueva');
+		await expect(async () => {
+			await page.locator('#plan_id').selectOption({ label: 'Restaurante' });
+			await expect(page.locator('[data-modulo="cash"]')).toHaveAttribute('data-incluido', 'no', { timeout: 500 });
+		}).toPass({ timeout: 10_000 });
+		await expect(page.locator('[data-modulo="sales"]')).toHaveAttribute('data-incluido', 'si');
+
+		await page.goto('/admin');
+		await altaDeCompania(page, `Fonda ${marca()}`, correo, 'Restaurante');
+		const id = page.url().match(/companias\/(\d+)/)?.[1];
+		await salir(page);
+
+		// La dueña ve Caja con el candado del plan, y Ventas abierta.
+		await entrar(page, { email: correo, password: 'dueno123' });
+		const caja = page.getByRole('listitem').filter({ hasText: /^\s*Caja\s*$/ });
+		await expect(caja.getByRole('link')).toHaveCount(0);
+		await expect(caja.locator('[title]')).toHaveAttribute('title', /no está en su plan/i);
+		await expect(page.getByRole('link', { name: /Ventas/ }).first()).toBeVisible();
+		await salir(page);
+
+		// Soporte la pasa a Completo desde Planes…
+		await entrarComoSoporte(page);
+		await page.goto('/admin/planes');
+		const fila = page.locator(`[data-compania="${id}"]`);
+		const enCompleto = page
+			.locator('section', { has: page.getByRole('heading', { name: 'Completo', exact: true }) })
+			.locator(`[data-compania="${id}"]`);
+		await expect(async () => {
+			await fila.locator('select[name="plan_id"]').selectOption({ label: 'Completo' });
+			await fila.getByRole('button', { name: /Cambiar de plan/i }).click();
+			await expect(enCompleto).toBeVisible({ timeout: 2000 });
+		}).toPass({ timeout: 20_000 });
+		await salir(page);
+
+		// …y en la siguiente petición la caja se abre: el plan no viaja en el token.
+		await entrar(page, { email: correo, password: 'dueno123' });
+		await expect(page.getByRole('link', { name: /^\s*Caja\s*$/ })).toBeVisible();
 	});
 });
 

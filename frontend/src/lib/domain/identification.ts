@@ -5,13 +5,23 @@ import { ID_TYPES } from './settings';
  *
  * Espejo de `app/domain/hacienda.py`. El receptor del comprobante lleva su tipo
  * y la representación impresa lo nombra —«Cédula física 108840287»—, así que el
- * cliente lo guarda. La lista y sus nombres legales son los de `ID_TYPES`: son
- * los mismos cuatro para el emisor y para el receptor.
+ * cliente lo guarda. La lista y sus nombres legales son los de `ID_TYPES`: seis
+ * desde F7, y de esos el emisor solo puede ser de los cuatro primeros.
  */
 export type IdentificationType = (typeof ID_TYPES)[number]['code'];
 
+/** El extranjero no domiciliado: recibe la factura de exportación (T-727). */
+export const FOREIGN: IdentificationType = '05';
+/** El no contribuyente: como proveedor, da lugar a la factura de compra (T-728). */
+export const NON_TAXPAYER: IdentificationType = '06';
+
 export function isIdentificationType(value: unknown): value is IdentificationType {
 	return ID_TYPES.some((t) => t.code === value);
+}
+
+/** Si un cliente con este tipo es del extranjero, y por eso se le exporta. */
+export function isForeign(type: string | null | undefined): boolean {
+	return type === FOREIGN;
 }
 
 /**

@@ -9,6 +9,7 @@
 	"nav_reports": "Reports",
 	"nav_inventory": "Inventory",
 	"nav_purchases": "Purchasing",
+	"nav_suppliers": "Suppliers",
 	"nav_accounting": "Accounting",
 	"nav_clients": "Customers",
 	"nav_users": "Users",
@@ -36,5 +37,6 @@
 	"role_cashier": "Cashier",
 	"$comentario_rol": "In English the lower-case labels are the same words as the capitalized ones; they exist because Spanish and Portuguese need them inside a sentence.",
 	"role_admin_lower": "administrator",
-	"role_cashier_lower": "cashier"
+	"role_cashier_lower": "cashier",
+	"nav_payroll": "Payroll"
 }

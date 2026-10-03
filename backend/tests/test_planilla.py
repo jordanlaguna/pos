@@ -22,7 +22,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from tests.conftest import Api, afiliado_unico, bootstrap, codigo, entrar, marca_unica
+from tests.conftest import Api, afiliado_unico, bootstrap, codigo, entrar, fijar_cedula, marca_unica
 
 pytestmark = pytest.mark.characterization
 
@@ -49,7 +49,9 @@ def compania_propia(api: Api, etiqueta: str, *, modulos: str = "payroll,accounti
     )
     cliente = Api(api.base)
     entrar(cliente, correo, "prueba123")
-    cliente.user_id = cliente.ok("GET", "/users/me")["id_user"]  # type: ignore[attr-defined]
+    yo = cliente.ok("GET", "/users/me")
+    cliente.user_id = yo["id_user"]  # type: ignore[attr-defined]
+    cliente.company_id = yo["company_id"]  # type: ignore[attr-defined]
     return cliente
 
 
@@ -328,6 +330,54 @@ class TestLosEmpleados:
 # ---------------------------------------------------------------- acciones
 
 
+class TestElAltaConSuContrato:
+    """RF-55: el alta trae el contrato. Va en el mismo pedido y en la misma
+    transacción: si el contrato no pasa, tampoco queda el empleado, y no hay
+    una ficha a medias que después haya que encontrar para completarla."""
+
+    @pytest.fixture(scope="class")
+    def empresa(self, api: Api) -> Api:
+        return compania_propia(api, "alta-contrato")
+
+    @pytest.fixture(scope="class")
+    def catalogo(self, empresa: Api) -> dict:
+        return {"jornada": jornada_quincenal(empresa), "puesto": puesto(empresa), "poliza": poliza(empresa)}
+
+    def test_entra_con_su_contrato_desde_el_ingreso(self, empresa: Api, catalogo: dict):
+        contrato = {
+            "schedule_id": catalogo["jornada"]["id"],
+            "position_id": catalogo["puesto"]["id"],
+            "ins_policy_id": catalogo["poliza"]["id"],
+            "period_salary": "300000",
+            "solidarista_rate": "0.05",
+        }
+        fila = empresa.ok("POST", "/payroll/employees", ficha("109870654", contract=contrato))
+        c = fila["contract"]
+        assert (c["schedule_id"], c["position_id"], c["ins_policy_id"]) == (
+            catalogo["jornada"]["id"],
+            catalogo["puesto"]["id"],
+            catalogo["poliza"]["id"],
+        )
+        assert (c["valid_from"], c["valid_to"], c["period_salary"], c["solidarista_rate"]) == ("2025-06-01", None, 300000, 0.05)
+        assert [x["id"] for x in empresa.ok("GET", f"/payroll/contracts?employee={fila['id']}")] == [c["id"]]
+
+    def test_si_el_contrato_no_pasa_tampoco_queda_el_empleado(self, empresa: Api, catalogo: dict):
+        jornada, puesto_ = catalogo["jornada"]["id"], catalogo["puesto"]["id"]
+        sin_salario = {"schedule_id": jornada, "position_id": puesto_, "period_salary": "0"}
+        respuesta = empresa.call("POST", "/payroll/employees", ficha("109870655", contract=sin_salario))
+        assert codigo(respuesta, 400) == "invalid_contract"
+        assert respuesta[1]["detail"]["field"] == "period_salary"
+
+        sin_jornada = {"schedule_id": 99999, "position_id": puesto_, "period_salary": "300000"}
+        respuesta = empresa.call("POST", "/payroll/employees", ficha("109870655", contract=sin_jornada))
+        assert codigo(respuesta, 404) == "schedule_not_found"
+
+        cedulas = [e["identification"] for e in empresa.ok("GET", "/payroll/employees")]
+        assert "109870655" not in cedulas
+        # Y la cédula sigue libre: el alta corregida entra.
+        assert empresa.ok("POST", "/payroll/employees", ficha("109870655"))["contract"] is None
+
+
 class TestLasAcciones:
     @pytest.fixture(scope="class")
     def empresa(self, api: Api) -> Api:
@@ -567,6 +617,320 @@ class TestLasCorridas:
         corridas = empresa.ok("GET", "/payroll/runs")
         assert {c["status"] for c in corridas} >= {"paid", "draft"}
 
+    def test_la_boleta_sale_de_los_rubros_congelados(self, empresa: Api, mundo: dict, corrida: dict):
+        """RF-58: lo que imprime la boleta es lo que la corrida guardó, con nombres."""
+        boleta = empresa.ok("GET", f"/payroll/runs/{corrida['id']}/payslips/{mundo['empleada']['id']}")
+        pagada = empresa.ok("GET", f"/payroll/runs/{corrida['id']}")
+        [linea] = pagada["lines"]
+        assert (boleta["run"]["id"], boleta["run"]["status"], boleta["run"]["kind"]) == (corrida["id"], "paid", "regular")
+        assert (boleta["employee"]["first_name"], boleta["employee"]["position_name"], boleta["employee"]["frequency"]) == (
+            "Ana",
+            "Cajera",
+            "semimonthly",
+        )
+        assert boleta["employee"]["period_salary"] == 500000
+        assert boleta["line"] == {k: linea[k] for k in boleta["line"]}
+        sin_nombres = [{k: v for k, v in i.items() if k not in ("action_kind", "action_memo")} for i in boleta["items"]]
+        assert sin_nombres == linea["items"]
+        deduccion = next(i for i in boleta["items"] if i["concept"] == "deduction")
+        assert deduccion["action_kind"] == "deduction"
+        assert codigo(empresa.call("GET", f"/payroll/runs/{corrida['id']}/payslips/99999"), 404) == "employee_not_found"
+
+    def test_pagar_acumulo_vacaciones_y_el_disfrute_sale_del_saldo(self, empresa: Api, mundo: dict, corrida: dict):
+        """RN-70: quince días de calendario dan 0,51 días hábiles (art. 153)."""
+        saldo = empresa.ok("GET", f"/payroll/vacations/{mundo['empleada']['id']}")
+        assert saldo["balance"] == 0.51
+        [mov] = saldo["movements"]
+        assert (mov["kind"], mov["days"], mov["on_date"], mov["run_id"]) == ("accrual", 0.51, "2026-01-15", corrida["id"])
+        respuesta = empresa.call(
+            "POST",
+            "/payroll/actions",
+            {"employee_id": mundo["empleada"]["id"], "kind": "vacation", "starts_on": "2026-03-02", "ends_on": "2026-03-20", "days": "15"},
+        )
+        assert codigo(respuesta, 409) == "vacation_balance_exceeded"
+        assert (respuesta[1]["detail"]["balance"], respuesta[1]["detail"]["requested"]) == (0.51, 15)
+        assert codigo(empresa.call("GET", "/payroll/vacations/99999"), 404) == "employee_not_found"
+
+    def test_el_ajuste_escribe_la_diferencia_y_la_pagada_no_cambia(self, empresa: Api, mundo: dict, corrida: dict):
+        """RF-63, RN-68: el INS corrigió la prima después de pagar."""
+        antes = empresa.ok("GET", f"/payroll/runs/{corrida['id']}")
+        [poliza_] = empresa.ok("GET", "/payroll/policies")
+        empresa.ok("PUT", f"/payroll/policies/{poliza_['id']}", {"rt_rate": "0.0200"})
+
+        ajuste = empresa.ok("POST", f"/payroll/runs/{corrida['id']}/adjust")
+        assert (ajuste["kind"], ajuste["adjusts_run_id"], ajuste["status"], ajuste["period_from"], ajuste["period_to"]) == (
+            "adjustment",
+            corrida["id"],
+            "draft",
+            antes["period_from"],
+            antes["period_to"],
+        )
+        calculado = empresa.ok("POST", f"/payroll/runs/{ajuste['id']}/calculate")
+        [linea] = calculado["lines"]
+        [rubro] = linea["items"]
+        # 500 000 × (0,02 − 0,0146) = 2 700, solo del patrono.
+        assert (rubro["concept"], rubro["payer"], rubro["rate"], rubro["amount"]) == ("rt", "employer", 0.02, 2700)
+        assert (linea["gross"], linea["net"], linea["employer_charges"]) == (0, 0, 2700)
+        assert empresa.ok("GET", f"/payroll/runs/{corrida['id']}")["lines"] == antes["lines"]
+
+        borrador = next(c for c in empresa.ok("GET", "/payroll/runs") if c["status"] == "draft" and c["kind"] == "regular")
+        respuesta = empresa.call("POST", f"/payroll/runs/{borrador['id']}/adjust")
+        assert codigo(respuesta, 409) == "run_not_paid"
+        assert respuesta[1]["detail"]["status"] == "draft"
+
+    def test_el_informe_de_la_ccss_sale_de_lo_pagado(self, empresa: Api, mundo: dict, corrida: dict):
+        """RF-62, RN-96: solo la quincena pagada; la segunda sigue en borrador."""
+        respuesta = empresa.call("GET", "/payroll/exports/ccss?year=2026&month=1")
+        assert codigo(respuesta, 409) == "export_data_incomplete"
+        assert respuesta[1]["detail"] == {"code": "export_data_incomplete", "missing": [], "company": ["employer_number"]}
+        empresa.ok("PUT", "/payroll/settings", {"employer_number": "203101702934001001", "ina_exempt": False})
+
+        informe = empresa.ok("GET", "/payroll/exports/ccss?year=2026&month=1")
+        assert (informe["employer_number"], informe["period_from"], informe["period_to"]) == ("203101702934001001", "2026-01-01", "2026-01-31")
+        [fila] = informe["rows"]
+        assert (fila["identification"], fila["full_name"], fila["ccss_code"], fila["shift"], fila["salary"], fila["days"]) == (
+            "304560789",
+            "Ana Mora Solís",
+            "4211",
+            "diurna",
+            500000,
+            15,
+        )
+        assert fila["movements"] == [] and informe["total_salary"] == 500000
+        assert empresa.ok("GET", "/payroll/exports/ccss?year=2025&month=12")["rows"] == []
+
+    def test_la_renta_retenida_del_mes(self, empresa: Api, corrida: dict):
+        [linea] = empresa.ok("GET", f"/payroll/runs/{corrida['id']}")["lines"]
+        resumen = empresa.ok("GET", "/payroll/exports/income-tax?year=2026&month=1")
+        [fila] = resumen["rows"]
+        assert (fila["taxable"], fila["withheld"], resumen["total_withheld"]) == (500000, linea["income_tax"], linea["income_tax"])
+
+    def test_el_archivo_del_ins_es_de_una_poliza(self, empresa: Api, soporte: Api, corrida: dict):
+        """RF-85: ancho fijo V08D, una línea por trabajador de la póliza."""
+        [poliza_] = empresa.ok("GET", "/payroll/policies")
+        ruta = f"/payroll/exports/ins?year=2026&month=1&policy={poliza_['id']}"
+        respuesta = empresa.call("GET", ruta)
+        assert codigo(respuesta, 409) == "export_data_incomplete"
+        assert respuesta[1]["detail"]["company"] == ["identification"]
+        fijar_cedula(soporte, empresa.company_id, "3101222333")  # type: ignore[attr-defined]
+
+        r = empresa.http.get(f"{empresa.base}{ruta}", headers={"Authorization": f"Bearer {empresa.token}"}, timeout=30)
+        estado, texto, cabeceras = r.status_code, r.content.decode("iso-8859-1"), r.headers
+        assert estado == 200, texto
+        assert cabeceras["content-type"].startswith("text/plain") and "iso-8859-1" in cabeceras["content-type"]
+        assert 'filename="PL0000001M202601-V08D (Texto).txt"' in cabeceras["content-disposition"]
+        lineas = texto.split("\r\n")
+        assert lineas[0].startswith("0000001M202601 23101222333")
+        assert lineas[0].endswith(" V08D") and lineas[1].startswith("Email ") and lineas[2].startswith("Domicilio ")
+        trabajadora = lineas[3]
+        assert len(trabajadora) == 114
+        assert (trabajadora[0], trabajadora[1:20].strip(), trabajadora[40:55].strip(), trabajadora[55:70].strip()) == ("0", "304560789", "ANA", "MORA")
+        assert (trabajadora[85:98], trabajadora[98:101], trabajadora[101:105], trabajadora[105:107], trabajadora[107:109], trabajadora[110:114]) == (
+            "0000500000.00",
+            "015",
+            "0120",
+            "01",
+            "00",
+            "0052",
+        )
+        assert codigo(empresa.call("GET", "/payroll/exports/ins?year=2026&month=1&policy=99999"), 404) == "policy_not_found"
+
+
+# ----------------------------------------------- aguinaldo y liquidación
+
+
+class TestElAguinaldoYLaLiquidacion:
+    """Dos quincenas pagadas de 500 000 y, con eso, el aguinaldo y la baja."""
+
+    @pytest.fixture(scope="class")
+    def empresa(self, api: Api) -> Api:
+        return compania_propia(api, "aguinaldo")
+
+    @pytest.fixture(scope="class")
+    def empleada(self, empresa: Api) -> dict:
+        jornada = jornada_quincenal(empresa)
+        puesto_ = puesto(empresa)
+        poliza(empresa)
+        fila = empresa.ok("POST", "/payroll/employees", ficha("506780912", first_name="Rosa"))
+        contratar(empresa, fila["id"], jornada["id"], puesto_["id"], "500000")
+        for corte in ("2026-01-15", "2026-01-31"):
+            corrida = empresa.ok("POST", "/payroll/runs", {"schedule_id": jornada["id"], "cut_date": corte})
+            empresa.ok("POST", f"/payroll/runs/{corrida['id']}/calculate")
+            empresa.ok("POST", f"/payroll/runs/{corrida['id']}/approve")
+            empresa.ok("POST", f"/payroll/runs/{corrida['id']}/pay")
+        return fila
+
+    def test_el_aguinaldo_es_lo_pagado_entre_doce_sin_cargas(self, empresa: Api, empleada: dict):
+        """RF-59, RN-69."""
+        corrida = empresa.ok("POST", "/payroll/runs/aguinaldo", {"year": 2026})
+        assert (corrida["kind"], corrida["schedule_id"], corrida["period_from"], corrida["period_to"], corrida["pay_date"]) == (
+            "aguinaldo",
+            None,
+            "2025-12-01",
+            "2026-11-30",
+            "2026-12-20",
+        )
+        calculado = empresa.ok("POST", f"/payroll/runs/{corrida['id']}/calculate")
+        [linea] = calculado["lines"]
+        [rubro] = linea["items"]
+        assert (rubro["concept"], rubro["payer"], rubro["base"], rubro["amount"]) == ("aguinaldo", "earning", 1000000, 83333.33)
+        assert (linea["gross"], linea["employee_deductions"], linea["income_tax"], linea["net"], linea["employer_charges"]) == (
+            83333.33,
+            0,
+            0,
+            83333.33,
+            0,
+        )
+        assert codigo(empresa.call("POST", "/payroll/runs/aguinaldo", {"year": 2026}), 409) == "run_already_exists"
+        estado, _ = empresa.call("POST", "/payroll/runs/aguinaldo", {"year": 1999})
+        assert estado == 422
+
+    def test_la_baja_liquida_vacaciones_y_aguinaldo_proporcional(self, empresa: Api, empleada: dict):
+        """RF-61, RN-71: una renuncia a los ocho meses."""
+        saldo = empresa.ok("GET", f"/payroll/vacations/{empleada['id']}")
+        assert saldo["balance"] == 1.06  # 0,51 + 0,55: quince y dieciséis días de calendario
+        baja = empresa.ok(
+            "POST", f"/payroll/employees/{empleada['id']}/terminate", {"terminated_on": "2026-02-10", "cause": "resignation"}
+        )
+        liquidacion = empresa.ok("POST", f"/payroll/runs/{baja['settlement_run_id']}/calculate")
+        [linea] = liquidacion["lines"]
+        por_concepto = {i["concept"]: i for i in linea["items"]}
+        # Ocho meses: el piso de un día por mes (art. 153) le gana a lo acumulado.
+        # El promedio es el único mes pagado, enero: 1 000 000 → 33 333,33 el día.
+        assert set(por_concepto) == {"vacation_payout", "aguinaldo"}
+        assert (por_concepto["vacation_payout"]["quantity"], por_concepto["vacation_payout"]["amount"]) == (8, 266666.67)
+        assert (por_concepto["aguinaldo"]["base"], por_concepto["aguinaldo"]["amount"]) == (1000000, 83333.33)
+        assert (linea["gross"], linea["net"], linea["employee_deductions"]) == (350000, 350000, 0)
+
+        empresa.ok("POST", f"/payroll/runs/{baja['settlement_run_id']}/approve")
+        pagada = empresa.ok("POST", f"/payroll/runs/{baja['settlement_run_id']}/pay")
+        assert pagada["status"] == "paid"
+        saldo = empresa.ok("GET", f"/payroll/vacations/{empleada['id']}")
+        pagado = next(m for m in saldo["movements"] if m["kind"] == "paid")
+        assert (pagado["days"], pagado["run_id"]) == (8, baja["settlement_run_id"])
+        assert saldo["balance"] == round(1.06 - 8, 2)
+        boleta = empresa.ok("GET", f"/payroll/runs/{baja['settlement_run_id']}/payslips/{empleada['id']}")
+        assert (boleta["run"]["kind"], boleta["employee"]["terminated_on"]) == ("settlement", "2026-02-10")
+
+
+# -------------------------------------------------------------- importación
+
+
+class TestLaImportacion:
+    """RF-86, RN-97: con ensayo, fila por fila; sin él, todo o nada."""
+
+    @pytest.fixture(scope="class")
+    def empresa(self, api: Api) -> Api:
+        cliente = compania_propia(api, "importa")
+        jornada_quincenal(cliente)
+        poliza(cliente, "RT-7")
+        return cliente
+
+    def archivo(self, cedula_mala: bool) -> dict:
+        return {
+            "as_of": "2026-01-31",
+            "positions": [{"row": 2, "name": "Cajera", "ccss_code": "4211", "ins_code": "52"}],
+            "employees": [
+                {
+                    "row": 2,
+                    "identification_type": "national",
+                    "identification": "607890123",
+                    "first_name": "Elena",
+                    "last_name_1": "Rojas",
+                    "last_name_2": "Vega",
+                    "birth_date": "1988-02-14",
+                    "gender": "F",
+                    "marital_status": "married",
+                    "nationality": "CR",
+                    "hired_on": "2024-03-01",
+                    "schedule": "Quincenal",
+                    "position": "Cajera",
+                    "policy": "RT-7",
+                    "period_salary": "350000",
+                    "vacation_days": "6.5",
+                },
+                {
+                    "row": 3,
+                    "identification_type": "national",
+                    "identification": "7-0890-1234" if cedula_mala else "708901234",
+                    "first_name": "Mario",
+                    "last_name_1": "Castro",
+                    "birth_date": "1995-07-01",
+                    "gender": "M",
+                    "marital_status": "single",
+                    "nationality": "CR",
+                    "hired_on": "2025-09-15",
+                    "schedule": "Quincenal",
+                    "position": "Cajera",
+                    "period_salary": "300000",
+                },
+            ],
+            "earnings": [
+                {"row": 2, "identification": "607890123", "month": "2025-12-01", "gross": "700000"},
+                {"row": 3, "identification": "607890123", "month": "2026-01-01", "gross": "700000"},
+            ],
+            "deductions": [
+                {
+                    "row": 2,
+                    "identification": "607890123",
+                    "kind": "deduction",
+                    "amount": "20000",
+                    "balance": "120000",
+                    "starts_on": "2026-02-01",
+                    "is_recurring": True,
+                    "memo": "Préstamo",
+                }
+            ],
+        }
+
+    def test_el_ensayo_senala_la_fila_mala_y_no_escribe(self, empresa: Api):
+        resultado = empresa.ok("POST", "/payroll/import?dry_run=true", self.archivo(cedula_mala=True))
+        assert (resultado["dry_run"], resultado["ok"]) == (True, False)
+        assert resultado["errors"] == [
+            {"sheet": "employees", "row": 3, "code": "invalid_employee", "field": "identification", "reason": "not_digits"}
+        ]
+        assert (resultado["positions"], resultado["employees"], resultado["earnings"], resultado["deductions"]) == (1, 2, 2, 1)
+        assert empresa.ok("GET", "/payroll/employees") == []
+        assert empresa.ok("GET", "/payroll/positions") == []
+        # Sin ensayo tampoco: una fila mala no deja entrar a las demás.
+        respuesta = empresa.call("POST", "/payroll/import?dry_run=false", self.archivo(cedula_mala=True))
+        assert codigo(respuesta, 400) == "import_has_errors"
+        assert respuesta[1]["detail"]["errors"][0]["row"] == 3
+        assert empresa.ok("GET", "/payroll/employees") == []
+
+    def test_corregido_entra_entero_y_queda_como_de_apertura(self, empresa: Api):
+        assert empresa.ok("POST", "/payroll/import?dry_run=true", self.archivo(cedula_mala=False))["ok"] is True
+        resultado = empresa.ok("POST", "/payroll/import?dry_run=false", self.archivo(cedula_mala=False))
+        assert (resultado["dry_run"], resultado["ok"], resultado["employees"]) == (False, True, 2)
+
+        empleados = {e["identification"]: e for e in empresa.ok("GET", "/payroll/employees")}
+        assert set(empleados) == {"607890123", "708901234"}
+        elena = empleados["607890123"]
+        assert (elena["contract"]["period_salary"], elena["contract"]["valid_from"]) == (350000, "2024-03-01")
+        [puesto_] = empresa.ok("GET", "/payroll/positions")
+        assert (puesto_["name"], elena["contract"]["position_id"]) == ("Cajera", puesto_["id"])
+        poliza_ = next(p for p in empresa.ok("GET", "/payroll/policies") if p["number"] == "RT-7")
+        assert elena["contract"]["ins_policy_id"] == poliza_["id"]
+
+        vacaciones = empresa.ok("GET", f"/payroll/vacations/{elena['id']}")
+        assert vacaciones["balance"] == 6.5
+        assert (vacaciones["movements"][0]["kind"], vacaciones["movements"][0]["on_date"]) == ("opening", "2026-01-31")
+
+        [prestamo] = empresa.ok("GET", f"/payroll/employees/{elena['id']}/actions")
+        assert (prestamo["kind"], prestamo["source"], prestamo["amount"], prestamo["balance"]) == ("deduction", "import", 20000, 120000)
+
+        # Lo devengado de apertura cuenta para el aguinaldo como si se hubiera pagado acá (RN-97).
+        aguinaldo = empresa.ok("POST", "/payroll/runs/aguinaldo", {"year": 2026})
+        calculado = empresa.ok("POST", f"/payroll/runs/{aguinaldo['id']}/calculate")
+        por_empleado = {l["employee_id"]: l for l in calculado["lines"]}
+        assert por_empleado[elena["id"]]["gross"] == round(1400000 / 12, 2)
+        assert empleados["708901234"]["id"] not in por_empleado
+
+        # Repetir la importación no duplica a nadie.
+        respuesta = empresa.call("POST", "/payroll/import?dry_run=false", self.archivo(cedula_mala=False))
+        assert codigo(respuesta, 400) == "import_has_errors"
+        assert {e["code"] for e in respuesta[1]["detail"]["errors"]} == {"employee_identification_taken"}
+
 
 # -------------------------------------------------------------- aislamiento
 
@@ -617,6 +981,10 @@ class TestNoSeVeLaPlanillaDeLaOtra:
             ("POST", f"/payroll/runs/{propia['corrida']}/calculate", None),
             ("POST", f"/payroll/runs/{propia['corrida']}/approve", None),
             ("POST", f"/payroll/runs/{propia['corrida']}/pay", None),
+            ("POST", f"/payroll/runs/{propia['corrida']}/adjust", None),
+            ("GET", f"/payroll/runs/{propia['corrida']}/payslips/{propia['empleado']}", None),
+            ("GET", f"/payroll/vacations/{propia['empleado']}", None),
+            ("GET", f"/payroll/exports/ins?year=2026&month=1&policy={propia['poliza']}", None),
             ("POST", "/payroll/runs", {"schedule_id": propia["jornada"], "cut_date": "2026-01-15"}),
             ("POST", "/payroll/contracts", {"employee_id": propia["empleado"], "schedule_id": propia["jornada"], "position_id": propia["puesto"], "valid_from": "2026-05-01", "period_salary": "1"}),
         ]

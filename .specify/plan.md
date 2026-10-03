@@ -1139,6 +1139,10 @@ Hacienda exige emitir una factura, un tiquete y una nota de crédito en pruebas
 antes de producción (README §12). En F6 el paso a producción **avisa de los tres
 y deja pasar**, con la bitácora de RN-35; la puerta dura entra en F7 (RN-46).
 
+**Y entró (T-713, 2026-10-03):** `production_gate` cuenta los `accepted` en
+`sandbox` por tipo, `PUT /fe/active` a producción responde
+`production_gate_locked` con `missing`, y Configuración dice cuál falta.
+
 El motivo es que en F6 no existe nada que contar: no hay emisión todavía. Un
 candado construido acá nacería cerrado, sin forma de comprobar que abre, y la
 primera vez que se ejercitaría sería con un cliente esperando.
@@ -1152,9 +1156,13 @@ solo módulo**, y una prueba tumba `pytest` si el dominio de Hacienda aparece
 escrito en cualquier otro sitio. Es el mismo patrón que ya sostiene
 `test_error_codes.py`.
 
-### 7.2 Emisión (F7 — la ruta sigue sin decidir)
+### 7.2 Emisión (F7 — ruta directa, decidida el 2026-10-03)
 
-La ruta —firmar nosotros o pasar por un proveedor autorizado— sigue abierta:
+La ruta se decidió por la directa: VentaSys firma y transmite. Lo que pesó fue
+lo que ya había —la llave en Vault, el IdP probado, el certificado y las
+credenciales cargados por el usuario— y los comprobantes aceptados de
+`docs/hacienda/costa-rica/XML-Ejemplos/`, que dan la forma exacta de la firma.
+La tabla queda como registro de lo que se comparó:
 
 | | Directo | Vía proveedor autorizado |
 |---|---|---|
@@ -1166,8 +1174,29 @@ La ruta —firmar nosotros o pasar por un proveedor autorizado— sigue abierta:
 
 **Nada de lo que sigue depende de esa decisión.** El recorrido del documento, sus
 estados, la numeración, la contingencia y lo que se guarda son iguales por las
-dos rutas; lo que cambia es quién está del otro lado del puerto `EmisorFE`
-(`emitir(venta) → {clave, consecutivo, estado}`, `consultar(clave)`).
+dos rutas; lo que cambia es quién está del otro lado de los puertos. `EmisorFE`
+terminó siendo cinco: `DocumentSigner` (firma un resumen), `HaciendaIdp` (el
+token, de F6), `HaciendaReception` (`submit`, `status`), `CertificateParser` y
+`TransmissionRepository`, más la fuente del comprobante (`ComprobanteSource`).
+Con un proveedor autorizado cambian la firma, el IdP y la recepción, y el
+recorrido no se entera.
+
+#### Cómo quedó construida (2026-10-03)
+
+| Pieza | Dónde | Lo que importa |
+|---|---|---|
+| La firma XAdES-EPES | `domain/fe_signature.py` | Envuelta, exclusiva, SHA-256, RSA PKCS#1 v1.5, política de la 4.4. **No firma**: arma los resúmenes y le pide a Vault la firma del `SignedInfo`. Canonicaliza con la biblioteca estándar (C14N 2.0), que sobre estos documentos coincide con la exclusiva 1.0; se comprueba contra `lxml` byte por byte y contra el XSD |
+| El recorrido | `domain/fe_transmission.py` | Estados, pasos, las dos cadencias, qué falla detiene, la contingencia, la alarma y la puerta de producción. Sin base ni red |
+| Los pasos | `use_cases/fe_transmission.py` | `SignDocument` → `SubmitDocument` → `PollVerdict`, cada uno una transacción; `ProcessDue` los encadena cuando salen bien; `RetryDocument`, `QueueSummary`, `ObservedContingency`, `ProductionGate` |
+| El comprobante desde su origen | `persistence/sqlalchemy_fe_documents.py` | `SqlAlchemyComprobanteSource` lee la venta, la devolución, la nota o la compra (`_de_compra`, T-728) con el emisor de la configuración y el receptor de la ficha. Lo que falte es `document_invalid` con el código |
+| Hacienda | `external/hacienda_reception.py` | `urllib`, como el IdP. 202 recibido; 400 → `ReceptionRejected` con `X-Error-Cause`; 401 → otro token; 403 → detenido; 404 al consultar → todavía no; 429/5xx/red → transitorio |
+| El trabajador | `workers/fe_worker.py` | Un hilo del proceso de la API (`lifespan`), cada 5 s, una sesión y un `with compania(cid)` por compañía. `FE_WORKER=0` lo apaga |
+| Los datos | migración 020 | El recorrido cuelga de `fe_documents` (estado, intentos, horas, motivo, llaves del almacén) y la bitácora va en `fe_document_events`. Lo numerado antes de la migración entra a la cola |
+| El API | `/fe/queue`, `/fe/documents/{id}`, `/xml`, `/response`, `/retry` | Leer lo puede quien ve la factura; reintentar, el administrador |
+| La prueba contra el stack | `tests/test_emision.py` | Con la Hacienda de mentira de `tests/stub_hacienda.py` en la pila de pruebas: un tiquete recorre la cola entera con Vault y MinIO de verdad |
+
+**`ProveedorSistemas`** es `FE_PROVEEDOR_SISTEMAS` o, sin ella, la cédula del
+propio emisor, que es lo que traen los comprobantes aceptados.
 
 #### La numeración
 
@@ -1196,18 +1225,21 @@ emitir otro con consecutivo nuevo. El número del rechazado queda fuera de la
 serie aceptada por diseño de Hacienda, no por defecto nuestro, y hay que
 documentarlo o el primer rechazo va a parecer un contador roto.
 
-**Arranque de un negocio que ya facturaba** (RN-36 a RN-38): el cliente indica su
-oficina y la última secuencia por tipo, y el sistema continúa desde ahí. Solo se
-puede subir, queda en bitácora, y una vez que el sistema emitió el contador es
-suyo.
+**Arranque de un negocio que ya facturaba** (RN-36 a RN-38, RF-32): el cliente
+indica su oficina y la última secuencia por tipo, y el sistema continúa desde
+ahí. Solo se puede subir, queda en bitácora, y una vez que el sistema emitió el
+contador es suyo. **Es diseño y no está construido**: es T-616, en F6, y hasta
+que exista un negocio que viene de otro sistema empieza su serie en 1, que
+Hacienda rechaza por consecutivo repetido.
 
 **Y hay un consecutivo que ya existe y no sirve para esto.** `sale_number` lo
-fabrica hoy **el navegador**, con `yyyyMMddHHmmss` y el reloj del cliente. Dos
-cajas cobrando en el mismo segundo chocan contra `UNIQUE (company_id,
-sale_number)` y una de las dos ventas se rechaza en la cara del cliente; además
-contradice la regla de que la hora la pone el servidor. F7 tiene que decidir si
-`sale_number` pasa a ser el consecutivo o convive con él, y en los dos casos
-deja de venir del cliente.
+fabricaba **el navegador**, con `yyyyMMddHHmmss` y el reloj del cliente. Dos
+cajas cobrando en el mismo segundo chocaban contra `UNIQUE (company_id,
+sale_number)` y una de las dos ventas se rechazaba en la cara del cliente.
+**Decidido el 2026-10-03 (T-706): conviven.** El consecutivo es el número
+fiscal y `sale_number` el recibo interno; lo pone `RegisterSale` con el reloj
+del servidor —y un sufijo si ese segundo ya tiene venta— cuando no viene, y el
+POS dejó de mandarlo.
 
 #### La clave y la contingencia
 
@@ -1281,10 +1313,21 @@ regenerarlo da otra firma y deja de ser el documento— y la **respuesta de
 Hacienda**, que va firmada por ella y es la prueba de la aceptación. Los dos por
 **cinco años**, y los dos descargables (RF-34).
 
-Piezas que faltan en cualquiera de las dos rutas: clave de 50 dígitos,
-consecutivo de 20 sin huecos, envío asíncrono con consulta de estado, entrega al
-receptor por correo con XML y PDF, y modo contingencia para poder cobrar con
-Hacienda caída.
+Las piezas que hacían falta en cualquiera de las dos rutas —la clave de 50
+dígitos, el consecutivo de 20 sin huecos, el envío asíncrono con consulta de
+estado y el modo «sin internet» para cobrar con Hacienda caída— están desde F7.
+Quedan la entrega al receptor por correo (T-733) y el aviso por `callbackUrl`
+(T-734).
+
+**La situación es la 3, «sin internet», no la 2** (corregido al cerrar F7). El
+anexo 4.4 (nota 3, inciso g, p. 67) reserva la 2 para el comprobante
+electrónico que **sustituye uno físico** hecho a mano durante una caída —con la
+referencia a ese provisional—; la 3 es la del que se generó electrónicamente
+sin poder transmitirlo, que es el caso de VentaSys, y es la única con la que el
+anexo admite una fecha de emisión anterior a la validación (p. 19). Y la decide
+solo lo que es de Hacienda: `fe_documents.unreachable_at` anota cuándo no
+contestó Hacienda o su IdP; Vault sellado o el almacén caído son nuestros y no
+cambian la clave.
 
 #### El tipo de comprobante se guarda en la venta (RN-85, T-723)
 
@@ -1297,7 +1340,7 @@ Lo decide el dominio, `domain/fe_document_type.py`, con tres entradas —lo que
 pidió la caja, si la compañía factura electrónicamente y si hay receptor— y en
 este orden:
 
-1. Un valor que no es `'01'` ni `'04'` se rechaza con
+1. Un valor que no es `'01'`, `'04'` ni —desde T-727— `'09'` se rechaza con
    `invalid_sale_document_type`, esté o no activa la facturación: es un cliente
    roto, no una preferencia.
 2. Con la facturación apagada, nulo. **Se ignora, no se rechaza**: el dueño puede
@@ -1389,7 +1432,7 @@ RN-82 pide: se genera cada vez y no se guarda.
 CREATE TABLE fe_documents (
     id                INT AUTO_INCREMENT PRIMARY KEY,
     company_id        INT         NOT NULL,
-    source_type       VARCHAR(10) NOT NULL,     -- 'sale', 'return', 'note'
+    source_type       VARCHAR(10) NOT NULL,     -- 'sale', 'return', 'note', 'purchase'
     source_id         INT         NOT NULL,
     document_type     CHAR(2)     NOT NULL,
     environment       VARCHAR(12) NOT NULL,
@@ -1424,7 +1467,7 @@ transacción de la venta.
 | País, fecha | `506` y el día del sello del documento, que es hora de Costa Rica (`TZ` del contenedor) |
 | Emisor | `companies.identificacion`, completada a doce (nota 4.1) |
 | Consecutivo | los códigos de oficina de la sesión, el tipo y `fe_sequences` |
-| Situación | `1`, normal. La contingencia espera a que haya transmisiones que observar (RN-43) |
+| Situación | `1`, normal, o `3`, «sin internet», cuando lo último que se intentó contra Hacienda no contestó y no volvió a contestar (`ObservedContingency`, RN-43) |
 | Código de seguridad | ocho dígitos de `secrets`, detrás del puerto `SecurityCodes` |
 
 `NumberDocument` (aplicación) se usa en dos tiempos: `prepare()` **antes** de la
@@ -1461,11 +1504,25 @@ los pide**, y cada uno tiene su sitio:
 | Tipo | Se decide en | Se guarda en | Le falta al modelo |
 |---|---|---|---|
 | TE, FE | el cobro | `sales.document_type` | — (T-723) |
-| FEE `09` | el cobro, con cliente extranjero | `sales.document_type` | partida arancelaria por producto; dirección extranjera y tipo `05` del cliente |
+| FEE `09` | el cobro, con cliente extranjero | `sales.document_type` | **hecho (021, T-727)**: `products.tariff_heading`, `clients.foreign_address`, el tipo `05` y la partida congelada en `sale_details` |
 | NC `03` | la devolución | la devolución, con la referencia a la venta | — |
-| ND `02` | la factura abierta | una nota nueva, con la referencia | la nota misma: motivo, monto, líneas |
-| FEC `08` | la compra | la entrada de mercadería | el tipo `06` «no contribuyente» en proveedores |
+| ND `02` | la factura abierta | una nota nueva, con la referencia | **hecho (017, T-726)**: `sale_notes` y sus líneas |
+| FEC `08` | la compra | `stock_entries.document_type` | **hecho (021, T-728)**: el tipo `06` en proveedores; el negocio es el receptor del XML y el proveedor el emisor |
 | REP `10` | el cobro de una venta a crédito | el abono | **la venta a crédito entera** |
+
+**Cómo quedaron (2026-10-03).** La FEE exige la partida arancelaria solo a las
+**mercancías** —CABYS 0 a 4, o sin CABYS—: el XSD la deja opcional porque los
+servicios no la llevan. Rechaza las tarifas 01 y 11 (no tiene balde de no
+sujeto) y pone al receptor `05` tal como se escribió, sin `Ubicacion`, con sus
+`OtrasSenasExtranjero` y sin exoneración; el armador exige las dos cosas para
+cualquier origen. La FEC se arma como la aceptada de `docs/`: **el proveedor es
+el emisor y el negocio el receptor**, con la actividad del negocio en los dos
+campos, la condición y el medio de pago de la compra, y la referencia tipo 14
+—el respaldo del proveedor— con su número si lo dio. Su impuesto es el que se
+tecleó en la línea (RN-53), con el código del producto si dice la misma tarifa
+(`fe_tax_codes.purchase_line_code`); un 0 % sobre un producto del 13 % la
+detiene, y elegir el código en la entrada es T-735. Antes de numerar se exige la
+cédula del proveedor, que es el emisor del XML.
 
 **La FEE entra por la misma regla que TE y FE.** `COUNTER_TYPES` pasa a ser tres,
 y la sugerencia gana un caso: cliente con identificación de extranjero no
@@ -1476,10 +1533,12 @@ costarricense— y el tiquete sí, por lo mismo que con cualquier cliente.
 antes de T-705: sin clave no hay a qué referirse. Lo que sí se puede antes es que
 la devolución decida y guarde su tipo, igual que la venta.
 
-**Los identificadores de Hacienda son seis, no cuatro.** `check_identification_type`
-acepta `01` a `04`; la FEE necesita el `05` en el cliente y la FEC el `06` en el
-proveedor. Es el mismo par de columnas en `clients` y `suppliers`, y se amplía
-una vez para los dos.
+**Los identificadores de Hacienda son seis, no cuatro.** Desde T-727
+`check_identification_type` acepta los seis: la FEE necesita el `05` en el
+cliente y la FEC el `06` en el proveedor. Es el mismo par de columnas en
+`clients` y `suppliers`, y se amplió una vez para los dos. **El emisor sigue
+siendo de los cuatro primeros** (`fe_issuer`): un extranjero no domiciliado o
+un no contribuyente reciben comprobantes, no los emiten.
 
 **El REP no tiene sobre qué montarse.** Nace de cobrar una venta con condición
 `08` o `10` (RN-81), y el POS exige hoy el total en el mostrador (`check_payment`).
@@ -1493,13 +1552,16 @@ T-729, no dentro de ella.
 encendidos. Ausente es la de fábrica —TE, FE, NC, ND—. **No se valida al
 guardar: se sanea al leer**, en los dos lados y con la misma regla
 (`domain/fe_document_type.enabled_types` y `$lib/domain/documentType.ts`): se
-tiran los códigos desconocidos y los que todavía no tienen flujo, se agrega la
-NC si falta, y si no quedó ni TE ni FE se vuelve a la de fábrica. Es como el
+tiran los códigos desconocidos, se agrega la NC si falta, y si no quedó ni TE
+ni FE se vuelve a la de fábrica. Lo que no tiene flujo **no se tira**: se guarda
+y su casilla no se mueve, para que el día que llegue el flujo ya esté. Es como el
 resto de la configuración —`mergeSettings` nunca lanza— y hace imposible que una
 fila escrita a mano deje al negocio sin poder vender.
 
-Qué tiene flujo es **una lista del dominio** (`AVAILABLE`), no una casilla: cuando
-T-726 traiga la ND, se agrega ahí y la casilla empieza a moverse sola.
+Qué tiene flujo es **una lista del dominio** (`AVAILABLE`), no una casilla.
+Al cerrar F7 son todos menos el REP: la ND entró tarde —tenía flujo desde T-726
+y la lista no la traía, así que su casilla seguía bloqueada—, la FEE con T-727
+y la FEC con T-728.
 
 La regla de la venta gana una entrada, lo encendido: sin cliente sale TE si está
 encendido y, si no, la venta necesita cliente (`invoice_needs_receiver`); con
@@ -1558,7 +1620,12 @@ tienen de dónde salir en un mostrador de contado: la ND y la NC **financieras**
 (`10` y `09`) son intereses y descuentos por pronto pago, que solo existen con
 venta a crédito (T-729); la NC por **exoneración posterior** (`12`) necesita la
 exoneración en la línea de la nota y devolver solo el impuesto perdonado, y es su
-propia tarea (T-732).
+propia tarea (T-732). **Bloqueada al cerrar F7:** el anexo solo dice cuándo se
+usa el código 12, no cómo se arman sus líneas, y no hay una aceptada en
+`docs/`. Con la exoneración en la línea la aritmética del anexo acredita la base
+más el 4 %, no el 9 % que se devuelve; una línea exenta acredita el monto pero
+lo declara como venta; anular y refacturar usa solo lo que ya existe. Elegir una
+sin Hacienda o el contador es lo que RN-80 prohíbe.
 
 **Tres reglas de plata:**
 
@@ -1808,11 +1875,14 @@ la cadena adentro; convertirlas después, no.
 | **F4** Categorías | Dos niveles en catálogo, ventas e inventario | Un repuestero y un súper organizan su catálogo sin tocar código |
 | **F5** Impuesto y CABYS | Tarifa por producto, búsqueda de CABYS, totales por línea | Una venta con 13 %, 2 % y 0 % cuadra y desglosa bien |
 | **F6** Preparación FE | Certificado y credenciales ATV cifrados **por ambiente**, sucursales, terminales, actividad, arranque del consecutivo | Se suben el `.p12` y las credenciales de los dos ambientes, se ve el estado de cada uno, se prueba la conexión, se pasa a producción con confirmación y bitácora, y no hay forma de leer de vuelta ni el archivo ni el PIN ni la contraseña |
-| **F7** Emisión | La ruta sigue pendiente; **el recorrido no depende de ella**: numeración, estados, consulta, contingencia y archivo | Una venta se emite, se ve pasar por sus estados hasta aceptada, y su XML firmado y la respuesta de Hacienda se pueden descargar |
+| **F7** Emisión | Ruta directa (T-701). Numeración, firma, envío, veredicto, reintentos, «sin internet», archivo, puerta de producción, y la FEE y la FEC. Cerrada el 2026-10-03 con lo abierto escrito en `task.md` | Una venta se emite, se ve pasar por sus estados hasta aceptada, y su XML firmado y la respuesta de Hacienda se pueden descargar |
 | **F8** Multi-idioma | Español, inglés y portugués; el backend deja de escribir texto | Los tres catálogos tienen las mismas claves y la build se cae si alguien escribe una cadena dentro de un componente |
 | **F10** Compras y cuentas por pagar — **terminada el 2026-09-12** | Módulos por plan; proveedores; la compra como entrada con documento, condición de pago y crédito fiscal por línea; costo promedio; abonos y antigüedad | Una factura XML de un proveedor entra como compra a crédito, su IVA aparece en el reporte por tarifa, un abono en efectivo sale de la caja y el arqueo cuadra |
 | **F11** Contabilidad — **terminada el 2026-09-13** | Catálogo por compañía desde plantilla, asientos automáticos en la misma transacción, periodos con cierre, libros y borrador del D-104 | La venta 3×1450 deja un asiento que balancea, el mes se cierra, y una escritura con fecha adentro responde con código |
 | **F12** Planilla | Empleados, puestos, jornadas con cortes, acciones de personal, tasas con vigencia, corridas congeladas, aguinaldo, vacaciones, liquidación, archivos para la CCSS y el INS, importación desde Excel y asiento de la corrida | Una corrida de dos empleados se paga, una incapacidad que cruza la quincena se parte sola, se cambia una tasa con vigencia futura y la boleta reimpresa da lo mismo |
+| **F13** Proveedores — alcance decidido, va segunda | La ficha completa, los gastos por concepto, notas, adelantos, pagos a varias facturas, estado de cuenta y el buzón de comprobantes recibidos (task.md, F13) | Sus seis tareas de construcción verificadas (T-1302 a T-1306) |
+| **F14** Compras a fondo — alcance decidido, va tercera | Costos adicionales al costo, descuento por línea, unidades con factor, moneda, orden de compra, reabastecimiento (task.md, F14) | T-1402 a T-1406 verificadas; la proporcionalidad (T-1407) espera al contador |
+| **F15** Inventario — alcance decidido, va primera | Salidas con motivo, kárdex, toma física, mínimo por producto, existencias por sucursal, valorado y rotación (task.md, F15) | T-1502 a T-1507 verificadas, con marca, lote y vencimiento |
 
 **F1 fue primero y no era opcional.** Todo lo que sigue toca dinero, existencias o
 aislamiento entre compañías, y sin pruebas que fijen el comportamiento actual no
@@ -1832,7 +1902,9 @@ catálogos de inglés y portugués puede esperar; escribir con `t('…')` desde 
 primer día, no.
 
 **El orden de ejecución es F10 → F11 → F6 → F7 → F12**, y no el de los
-números. La tabla va numerada porque los números no se mueven —F8 ya sentó el
+números. **Después siguen F15 → F13 → F14** (decidido con el usuario el
+2026-10-03): inventario primero porque el kárdex y el mínimo por producto los
+usan proveedores y compras. La tabla va numerada porque los números no se mueven —F8 ya sentó el
 precedente: se ejecutó antes que F5 y se quedó en su casilla—; lo que manda es
 este párrafo.
 
@@ -1890,6 +1962,10 @@ tareas cerradas, no.
 | `FE_CRYPTO_KEY` se pierde | **El arranque falla si no está o no mide 32 bytes**, para no enterarse al firmar. `key_version` en la fila permite rotarla como trabajo de fondo en vez de pedirle a cada cliente que vuelva a subir su certificado. Se guarda fuera del repositorio y fuera de la base |
 | **Vault sellado con el backend arriba**: se sigue vendiendo y numerando, y la cola de transmisión crece sin que nada falle a la vista | La alarma de antigüedad de la cola (§7.2). No es el desellado: cualquier cosa que detenga la firma —Vault, un certificado vencido, un disco lleno— se ve por el mismo sitio, y avisa antes de que se acabe el plazo de contingencia |
 | **TRIBU-CR** cambia URLs o credenciales de ATV (README §12 lo deja pendiente de confirmar) | Ambiente, `client_id`, realm y URL base salen de **un solo módulo**, y una prueba tumba `pytest` si el dominio de Hacienda aparece escrito en otro sitio |
+| **Un comprobante rechazado no tiene salida**: el rechazo es final, la clave no se reusa y corregir el dato no llega al XML firmado | Abierto: T-736, que pide decisión. Hasta entonces el expediente lo muestra con lo que dijo Hacienda |
+| **La situación «sin internet» por fallas nuestras**: Vault sellado declararía ante Hacienda una caída que no hubo | `unreachable_at` anota solo lo que no contestó Hacienda o su IdP; la prueba de Vault sellado comprueba que no lo toca |
+| **Un turno de la cola sin presupuesto**: con Hacienda lenta y muchas compañías, el turno dura más que la cadencia | Abierto: T-737 |
+| **El recorrido solo se probó contra la Hacienda de mentira** | El XML real de la FEE y la FEC se valida contra su XSD en `test_emision.py`; lo que el XSD no ve —la política de firma, `ProveedorSistemas`— lo juzga el sandbox real, que hace el usuario con sus credenciales antes de pasar a producción |
 | **El certificado vence sin que nadie mire** y la emisión se detiene | Aviso 30 días antes (T-606) y estado `detenido` con su motivo en la lista de RF-35. `expires_at` guarda la hora, no solo el día |
 | Diferir la firma alarga la ventana entre emitir y transmitir, y la contingencia tiene plazo | El plazo se vigila explícitamente: la antigüedad de la cola es visible y alarma antes de los 8 días hábiles. Hacienda además rechaza por antigüedad mayor a 30 días |
 | El API de CABYS no responde | Caché local; la venta nunca depende de él |
@@ -1905,7 +1981,19 @@ tareas cerradas, no.
 
 ---
 
-## 11. Módulos por plan (F10–F12)
+## 11. Módulos por plan (F10–F12, QA-01)
+
+> **Desde QA-01 (2026-10-03) cada sección del POS es un módulo** y los planes
+> son paquetes: doce banderas en `plans` (migración 022, `domain/modules.py`
+> con `MODULES`, `BASE` y `PACKAGES`). Lo de abajo cuenta cómo nacieron las
+> tres primeras y sigue valiendo para las doce: el plan decide, se aplica en el
+> servidor solo a lo que escribe, y el menú muestra con candado. Lo que agregó
+> QA-01: `BASE` —lo que el POS tuvo siempre— nace encendido en los planes que
+> ya existían y en los que crea `bootstrap.py`; proveedores es su propio módulo
+> y la entrada de inventario pide inventario, proveedores si nombra uno y
+> compras si es a crédito; anular una factura es del módulo de facturas y
+> devolver, del de devoluciones; reportes solo se apaga en el menú, porque no
+> escribe.
 
 Compras, contabilidad y planilla se venden aparte, y el sistema ya tiene el
 lugar donde se dice qué se vende: `plans`. `factura_electronica` es una bandera
@@ -3004,6 +3092,7 @@ GET  /payroll/schedules · POST · PUT /{id}  jornadas (schedule_locked)        
 GET  /payroll/positions · POST · PUT /{id}  puestos                            admin
 GET  /payroll/policies · POST · PUT /{id}   pólizas del INS                    admin
 GET  /payroll/employees · POST · PUT /{id} · POST /{id}/terminate              admin
+     (el POST admite `contract`: el alta y su contrato en una transacción, desde el ingreso)
 GET  /payroll/contracts?employee= · POST                                       admin
 GET  /payroll/employees/{id}/actions        historial, con lo que aplicó cada corrida y el saldo
 POST /payroll/actions · /{id}/cancel · /{id}/suspend                           admin
@@ -3016,9 +3105,10 @@ GET  /payroll/runs · POST                   admin; POST con jornada y corte
 POST /payroll/runs/{id}/calculate · /approve · /pay · /adjust
 GET  /payroll/runs/{id}                     líneas y rubros
 GET  /payroll/runs/{id}/payslips/{employee} la boleta
+POST /payroll/runs/aguinaldo                la corrida de aguinaldo del año (T-1208)
 GET  /payroll/vacations/{employee}          saldo y movimientos
-GET  /payroll/exports/ccss?year=&month=     el archivo (RF-62)
-GET  /payroll/exports/ins?year=&month=&policy=
+GET  /payroll/exports/ccss?year=&month=     el informe del mes para Autogestión (RF-62; ver §14.6)
+GET  /payroll/exports/ins?year=&month=&policy=  el archivo de texto V08D (RF-85)
 GET  /payroll/exports/income-tax?year=&month=
 ```
 
@@ -3029,10 +3119,12 @@ tasas viejas, empleados a los que les falta un dato para los archivos),
 `/planilla/corridas` y `/planilla/corridas/{id}` con cálculo, aprobación,
 pago y boletas, `/planilla/vacaciones`, `/planilla/configuracion` (datos
 patronales, jornadas, puestos y pólizas), `/planilla/importar` (plantilla,
-vista previa fila por fila y confirmar) y `/planilla/tasas` (solo lectura,
-con fecha y fuente). La boleta es la **cuarta plantilla de documento** —T-922
+vista previa fila por fila y confirmar), `/planilla/tasas` (solo lectura,
+con fecha y fuente) y `/planilla/archivos` —agregada al cerrar la fase: el
+informe del mes para la CCSS con su CSV, la renta retenida y el archivo del
+INS por póliza—. La boleta es la **cuarta plantilla de documento** —T-922
 ya avisa que el PDF del backend no se cuenta—, con el idioma del documento
-(RN-29).
+(RN-29): `Boleta.svelte` con `payslipLabels(docLocale)`.
 
 ### 14.5 Códigos de error
 
@@ -3064,6 +3156,11 @@ error, es una que entra en otra corrida.
 | Salario por hora | Fuera | Pide un tipo «horas ordinarias» cada periodo | tomada 2026-09-27 |
 | Caja | La planilla no mueve la caja (RN-74) | Nómina y arqueo se descuadran juntos | tomada |
 | ¿Quién edita las tasas? | Soporte, para todos; la compañía las ve | Una tasa mal escrita por un cliente es un reclamo laboral; una fila con vigencia de soporte es un dato con fuente | tomada |
+| Archivo de la CCSS | Un **informe** con lo que pide el formulario de Autogestión (JSON y CSV), no un archivo de texto | La CCSS no publica el trazado del archivo de grandes clientes y el formato no se supone (§14.8); el 98 % de los patronos presenta por el formulario. El escritor queda como T-1222 para cuando la Dirección SICERE entregue la estructura | tomada 2026-10-02 |
+| Archivo del INS | El trazado V08D del generador público que reproduce la plantilla del INS, pendiente de cotejar (T-1223) | El INS publica la estructura solo dentro de RT-Virtual; el trazado es concreto y documentado (`docs/ins/README.md`) y un rechazo del INS se corrige en un sitio | tomada 2026-10-02 |
+| Ajuste | Recalcula el periodo con los datos de hoy sobre los **mismos tramos** que la pagada aplicó y escribe la diferencia rubro por rubro | Lo que la pagada no aplicó entra en la regular siguiente (RN-91); si el ajuste lo tomara, se pagaría dos veces. La renta se proyecta con el mes abierto y se liquida con el mes cerrado | tomada 2026-10-02 |
+| La liquidación sabe de quién es por su línea | Nace con una línea vacía del empleado | La corrida no tiene columna de empleado porque las demás son de muchos; la línea es el enlace y el cálculo la llena | tomada 2026-10-02 |
+| Lo devengado que cuenta | `EARNED_CONCEPTS` = lo que paga renta: sin subsidios de incapacidad | El subsidio no es salario (DAJ-AE-201-12). La maternidad cuenta lo que pagó el patrono; si el art. 95 pide el salario entero, se cambia en un sitio (pendiente con el usuario) | tomada 2026-10-02 |
 
 ### 14.7 Costes medidos antes de empezar
 
@@ -3115,8 +3212,8 @@ siembra, y esa fecha va en `verified_at`.
 | Licencia de maternidad | patrono y CCSS, por mitades | `payroll_rates` (`rule`) | art. 95: y se cotiza sobre la totalidad del salario durante la licencia |
 | Salario mínimo inembargable | — | `payroll_rates` (`rule`) | art. 172: el menor salario **mensual** del decreto; en el 45303-MTSS de 2026, el del servicio doméstico, ₡268 731,31 |
 | Licencia de maternidad | patrono y CCSS | `payroll_rates` (`rule`) | art. 95 y el reglamento de la CCSS |
-| Archivo de planilla para la CCSS | — | adaptador `CcssFileWriter` | La especificación del SICERE se lee **antes** de T-1211 y se guarda en `docs/ccss/`; el formato no se supone |
-| Archivo de planilla para el INS | — | adaptador `InsFileWriter` | La especificación de RT-Virtual se lee **antes** de T-1219 y se guarda en `docs/ins/` |
+| Archivo de planilla para la CCSS | — | `domain/payroll_files.ccss_report` | Se buscó (2026-10-02) y **no está publicada**: solo la guía del formulario de Autogestión (GF-DSCR-F004) y el formulario de ajuste (F071), en `docs/ccss/`. Por eso es un informe con los datos del formulario y no un archivo (§14.6); el archivo, cuando la Dirección SICERE lo entregue (T-1222) |
+| Archivo de planilla para el INS | — | `domain/payroll_files.ins_file` | Trazado V08D del generador público de la plantilla del INS más la charla oficial sobre identificaciones, en `docs/ins/README.md`; el documento del INS vive dentro de RT-Virtual y falta cotejarlo (T-1223) |
 
 Lo que el ERP muestra de los dos archivos sirve para saber **qué** piden, no
 **cómo** se escriben: el de la CCSS lleva un encabezado con el número

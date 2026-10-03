@@ -3,10 +3,14 @@
 	import Icon from '$lib/ui/components/Icon.svelte';
 	import PageHeader from '$lib/ui/components/PageHeader.svelte';
 	import Field from '$lib/ui/components/Field.svelte';
+	import Select from '$lib/ui/components/Select.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import IssuerLocationFields from '$lib/ui/components/IssuerLocationFields.svelte';
 	import { submit } from '$lib/ui/forms';
-	import { companyStateLabel } from '$lib/ui/messages';
+	import { untrack } from 'svelte';
+	import { nextAffiliate, nextCompanyOf } from '$lib/domain/affiliates';
+	import { companyStateLabel, moduleLabel } from '$lib/ui/messages';
+	import { MODULES } from '$lib/domain/types';
 	import { ID_TYPES } from '$lib/domain/settings';
 	import { EMPTY_LOCATION } from '$lib/domain/location';
 	import { m } from '$lib/paraglide/messages.js';
@@ -32,6 +36,44 @@
 	 * si soporte la tiene a mano, que quede desde el primer día.
 	 */
 	let ubicacion = $state({ ...EMPTY_LOCATION });
+
+	/*
+	 * La numeración que se propone (QA-04): el siguiente afiliado libre y, para
+	 * el afiliado que esté escrito, su siguiente compañía. Si soporte escribe un
+	 * afiliado que ya existe, la compañía lo sigue; si cambió la compañía a mano,
+	 * se respeta. Si el alta falló, vuelve lo que había escrito.
+	 */
+	const inicial = untrack(() => ({
+		afiliado: String(previo.afiliado ?? nextAffiliate(data.pares)),
+		compania: previo.compania == null ? null : String(previo.compania)
+	}));
+	let afiliado = $state<string | number>(inicial.afiliado);
+	let sugerida = untrack(() => String(nextCompanyOf(data.pares, Number(inicial.afiliado))));
+	let compania = $state<string | number>(inicial.compania ?? sugerida);
+
+	/*
+	 * El plan elegido: el que volvió si el alta falló, si no el primero.
+	 *
+	 * Las listas de esta ficha van **sin controlar** —`selected` en la opción y
+	 * no `value`—, como el idioma del menú: con `value`, Svelte las reinicia al
+	 * hidratar y se come lo que se eligió antes. La de plan se enlaza igual,
+	 * para mostrar lo que trae, pero nace en `undefined`: así `Select` toma la
+	 * opción marcada en vez de imponer la suya.
+	 */
+	const planInicial = untrack(() => String(previo.plan_id ?? data.plans[0]?.id ?? ''));
+	let planElegido = $state<string | undefined>(undefined);
+	const planActual = $derived(
+		data.plans.find((plan) => String(plan.id) === String(planElegido ?? planInicial))
+	);
+
+	$effect(() => {
+		const nueva = String(nextCompanyOf(data.pares, Number(afiliado)));
+		untrack(() => {
+			// `String`: con `type="number"` el campo puede devolver un número.
+			if (String(compania) === sugerida) compania = nueva;
+			sugerida = nueva;
+		});
+	});
 
 	const IDIOMAS = $derived(
 		data.locales.map((codigo) => ({
@@ -84,18 +126,16 @@
 				hint={m.admin_issuer_hint()}
 			/>
 			<div>
-				<label class="label" for="alta-tipo-identificacion">{m.settings_id_type()}</label>
-				<select
+				<Select
 					id="alta-tipo-identificacion"
 					name="tipo_identificacion"
-					class="input"
-					value={previo.tipo_identificacion ?? ''}
+					label={m.settings_id_type()}
 				>
-					<option value="">{m.admin_issuer_type_auto()}</option>
+					<option value="" selected={!previo.tipo_identificacion}>{m.admin_issuer_type_auto()}</option>
 					{#each ID_TYPES as tipo (tipo.code)}
-						<option value={tipo.code}>{tipo.label}</option>
+						<option value={tipo.code} selected={tipo.code === previo.tipo_identificacion}>{tipo.label}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 
 			<fieldset data-ubicacion-alta>
@@ -112,7 +152,7 @@
 					name="afiliado"
 					type="number"
 					min="1"
-					value={previo.afiliado ?? ''}
+					bind:value={afiliado}
 					error={errores.afiliado}
 				/>
 				<Field
@@ -120,36 +160,29 @@
 					name="compania"
 					type="number"
 					min="1"
-					value={previo.compania ?? ''}
+					bind:value={compania}
 					error={errores.compania}
 				/>
 			</div>
 			<p class="text-[11px] text-[var(--text-subtle)]">{m.admin_label_pair_hint()}</p>
 
 			<div class="grid gap-3 sm:grid-cols-2">
-				<div>
-					<label class="label" for="locale">{m.admin_label_locale()}</label>
-					<select id="locale" name="locale" class="input">
-						{#each IDIOMAS as idioma (idioma.value)}
-							<option value={idioma.value} selected={(previo.locale ?? 'es') === idioma.value}>
-								{idioma.label}
-							</option>
-						{/each}
-					</select>
-				</div>
-				<div>
-					<label class="label" for="document_locale">{m.admin_label_document_locale()}</label>
-					<select id="document_locale" name="document_locale" class="input">
-						{#each IDIOMAS as idioma (idioma.value)}
-							<option
-								value={idioma.value}
-								selected={(previo.document_locale ?? 'es') === idioma.value}
-							>
-								{idioma.label}
-							</option>
-						{/each}
-					</select>
-				</div>
+				<Select id="locale" name="locale" label={m.admin_label_locale()}>
+					{#each IDIOMAS as idioma (idioma.value)}
+						<option value={idioma.value} selected={(previo.locale ?? 'es') === idioma.value}>{idioma.label}</option>
+					{/each}
+				</Select>
+				<Select
+					id="document_locale"
+					name="document_locale"
+					label={m.admin_label_document_locale()}
+				>
+					{#each IDIOMAS as idioma (idioma.value)}
+						<option value={idioma.value} selected={(previo.document_locale ?? 'es') === idioma.value}>
+							{idioma.label}
+						</option>
+					{/each}
+				</Select>
 			</div>
 			<p class="text-[11px] text-[var(--text-subtle)]">{m.admin_label_document_locale_hint()}</p>
 		</div>
@@ -159,31 +192,48 @@
 		<h2 class="mb-3 text-sm font-bold text-[var(--text)]">{m.admin_section_subscription()}</h2>
 
 		<div class="grid gap-3">
-			<div>
-				<label class="label" for="plan_id">{m.admin_label_plan()}</label>
-				<select id="plan_id" name="plan_id" class="input" aria-invalid={errores.plan_id ? 'true' : undefined}>
-					{#each data.plans as plan (plan.id)}
-						<option value={plan.id} selected={String(previo.plan_id ?? '') === String(plan.id)}>
-							{plan.nombre}
-						</option>
-					{/each}
-				</select>
-				{#if errores.plan_id}
-					<p class="mt-1 text-xs text-[var(--negative)]">{errores.plan_id}</p>
-				{/if}
-			</div>
+			<Select
+				id="plan_id"
+				name="plan_id"
+				label={m.admin_label_plan()}
+				error={errores.plan_id}
+				bind:value={planElegido}
+			>
+				{#each data.plans as plan (plan.id)}
+					<option value={String(plan.id)} selected={String(plan.id) === planInicial}>{plan.nombre}</option>
+				{/each}
+			</Select>
+
+			<!--
+				Lo que trae el paquete elegido (QA-01). El plan decide los módulos
+				(RN-49): para cambiarlos se elige otro plan, no se marcan acá.
+			-->
+			{#if planActual}
+				<div data-modulos-del-plan>
+					<p class="label">{m.admin_new_plan_modules()}</p>
+					<ul class="flex flex-wrap gap-1.5">
+						{#each MODULES as nombre (nombre)}
+							<li
+								class="badge {planActual[nombre]
+									? 'bg-[var(--accent-soft)] text-[var(--text)]'
+									: 'bg-[var(--surface-sunken)] text-[var(--text-subtle)] line-through'}"
+								data-modulo={nombre}
+								data-incluido={planActual[nombre] ? 'si' : 'no'}
+							>
+								{moduleLabel(nombre)}
+							</li>
+						{/each}
+					</ul>
+					<p class="mt-1 text-[11px] text-[var(--text-subtle)]">{m.admin_new_plan_modules_hint()}</p>
+				</div>
+			{/if}
 
 			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<label class="label" for="estado">{m.admin_label_state()}</label>
-					<select id="estado" name="estado" class="input">
-						{#each data.estados as estado (estado)}
-							<option value={estado} selected={(previo.estado ?? 'prueba') === estado}>
-								{companyStateLabel(estado)}
-							</option>
-						{/each}
-					</select>
-				</div>
+				<Select id="estado" name="estado" label={m.admin_label_state()}>
+					{#each data.estados as estado (estado)}
+						<option value={estado} selected={(previo.estado ?? 'prueba') === estado}>{companyStateLabel(estado)}</option>
+					{/each}
+				</Select>
 				<Field
 					label={m.admin_label_expires()}
 					name="vence_el"

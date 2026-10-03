@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Icon from '$lib/ui/components/Icon.svelte';
 	import DocumentSheet from '$lib/ui/components/documents/DocumentSheet.svelte';
+	import FeExpediente from '$lib/ui/components/FeExpediente.svelte';
 	import { DEBIT_NOTE } from '$lib/domain/documentType';
 	import { businessName } from '$lib/domain/settings';
 	import { m } from '$lib/paraglide/messages.js';
@@ -55,6 +56,8 @@
 		{m.invoice_print()}
 	</button>
 </div>
+
+<FeExpediente document={data.nota.einvoice} file={data.expediente} canRetry={data.user?.role === 'admin'} />
 
 <!--
 	La nota sale de la plantilla configurada, como la factura (RN-86), y en el

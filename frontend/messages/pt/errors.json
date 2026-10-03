@@ -72,6 +72,15 @@
 				"module=purchases": "Seu plano não inclui Compras. Você pode consultar o que já tem, mas não adicionar.",
 				"module=accounting": "Seu plano não inclui Contabilidade. Você pode consultar o que já tem, mas não adicionar.",
 				"module=payroll": "Seu plano não inclui Folha de Pagamento. Você pode consultar o que já tem, mas não adicionar.",
+				"module=sales": "Seu plano não inclui Vendas. Você pode consultar o que já tem, mas não adicionar.",
+				"module=cash": "Seu plano não inclui Caixa. Você pode consultar o que já tem, mas não adicionar.",
+				"module=invoices": "Seu plano não inclui Faturas. Você pode consultar o que já tem, mas não adicionar.",
+				"module=returns": "Seu plano não inclui Devoluções. Você pode consultar o que já tem, mas não adicionar.",
+				"module=reports": "Seu plano não inclui Relatórios. Você pode consultar o que já tem, mas não adicionar.",
+				"module=inventory": "Seu plano não inclui Estoque. Você pode consultar o que já tem, mas não adicionar.",
+				"module=suppliers": "Seu plano não inclui Fornecedores. Você pode consultar o que já tem, mas não adicionar.",
+				"module=clients": "Seu plano não inclui Clientes. Você pode consultar o que já tem, mas não adicionar.",
+				"module=users": "Seu plano não inclui Usuários. Você pode consultar o que já tem, mas não adicionar.",
 				"module=*": "Seu plano não inclui este módulo. Você pode consultar o que já tem, mas não adicionar."
 			}
 		}
@@ -221,7 +230,6 @@
 
 	"api_unsupported_locale": "O POS não está traduzido para «{locale}».",
 	"api_settings_too_large": "As configurações são grandes demais.",
-	"api_tax_rate_not_a_number": "A alíquota do imposto não é um número.",
 	"api_tax_rate_out_of_range": "A alíquota do imposto se escreve entre 0 e 1: 13 % é 0,13.",
 	"api_settings_save_failed": "Não foi possível salvar as configurações.",
 
@@ -274,6 +282,9 @@
 	"api_terminal_code_taken": "Essa filial já tem um caixa com o código {code}.",
 	"api_branch_not_found": "Essa filial não existe.",
 	"api_terminal_not_found": "Esse caixa não existe.",
+	"api_invalid_sequence_start": "«{value}» não é um consecutivo: tem que ser um número inteiro de até dez dígitos.",
+	"api_sequence_in_use": "Este sistema já emitiu {document} com esse caixa, então essa numeração não se muda mais à mão.",
+	"api_sequence_cannot_go_down": "A numeração está em {current} e não pode descer para {requested}: números já usados se repetiriam.",
 	"api_branch_in_use": "A filial tem {sales} movimento(s) e {terminals} caixa(s). Desative-a em vez de apagá-la.",
 	"api_terminal_in_use": "O caixa tem {sessions} fechamento(s) e {sales} venda(s). Desative-o em vez de apagá-lo.",
 	"api_last_active_branch": "Tem de ficar ao menos uma filial ativa: sem nenhuma não há como vender.",
@@ -288,6 +299,14 @@
 	"api_exemption_missing_article": "Esse tipo de isenção exige o artigo da lei.",
 	"api_exemption_points_out_of_range": "Os pontos isentos vão de 0 a 99,99. São pontos de tarifa, não uma porcentagem do preço.",
 	"api_document_type_not_enabled": "Este negócio não emite {document}. Ative-o em Configurações ou escolha outro documento.",
+	"api_invoice_needs_resident": "Um cliente do exterior não recebe fatura eletrônica: emita uma fatura de exportação ou um tíquete.",
+	"api_export_needs_receiver": "A fatura de exportação precisa de um cliente do exterior.",
+	"api_export_needs_foreign_receiver": "A fatura de exportação é para clientes do exterior. Para este cliente, emita uma fatura ou um tíquete.",
+	"api_export_needs_foreign_address": "O cliente não tem endereço no exterior. Preencha-o no cadastro antes de exportar.",
+	"api_export_line_needs_tariff_heading": "{product} não tem posição tarifária. Preencha-a no cadastro do produto antes de exportar.",
+	"api_export_tariff_not_allowed": "{product} usa a alíquota {tax_code}, que a fatura de exportação não admite. Altere-a no cadastro do produto ou emita um tíquete.",
+	"api_invalid_tariff_heading": "A posição tarifária deve ter 12 dígitos.",
+	"api_invalid_foreign_address": "O endereço no exterior não pode passar de {max_length} caracteres.",
 	"api_annul_after_return": "Esta venda já tem devoluções e não pode ser anulada. Devolva o que resta.",
 	"api_annul_must_be_full": "Anular é devolver a venda inteira.",
 	"api_identification_type_required": "Escolha o tipo de identificação: não é possível saber por esse número.",
@@ -319,12 +338,8 @@
 	"api_payroll_rate_not_newer": "«{concept}» já tem uma taxa desde {latest}. Uma taxa não se corrige: adicione outra com uma data posterior.",
 	"api_payroll_field": [
 		{
-			"declarations": [
-				"input field"
-			],
-			"selectors": [
-				"field"
-			],
+			"declarations": ["input field"],
+			"selectors": ["field"],
 			"match": {
 				"field=identification_type": "Tipo de identificação",
 				"field=identification": "Identificação",
@@ -368,18 +383,22 @@
 				"field=total_amount": "Valor total",
 				"field=new_salary": "Novo salário",
 				"field=is_recurring": "Recorrência",
+				"field=schedule": "Jornada",
+				"field=position": "Cargo",
+				"field=policy": "Apólice",
+				"field=policy_number": "Número da apólice",
+				"field=vacation_days": "Dias de férias",
+				"field=gross": "Salário bruto",
+				"field=month": "Mês",
+				"field=insured_number": "Número de segurado",
 				"field=*": "Dado"
 			}
 		}
 	],
 	"api_payroll_reason": [
 		{
-			"declarations": [
-				"input reason"
-			],
-			"selectors": [
-				"reason"
-			],
+			"declarations": ["input reason"],
+			"selectors": ["reason"],
 			"match": {
 				"reason=unknown": "não está entre os valores aceitos",
 				"reason=required": "é obrigatório",
@@ -400,6 +419,7 @@
 				"reason=before_start": "é anterior à data de início",
 				"reason=too_many": "são mais dias do que o intervalo tem",
 				"reason=not_allowed": "não é admitido nesta ação",
+				"reason=duplicate": "está repetido",
 				"reason=*": "não é válido"
 			}
 		}
@@ -513,5 +533,18 @@
 	"api_run_not_calculated": "Calcule a folha antes de aprová-la.",
 	"api_run_not_approved": "A folha tem que estar aprovada para ser paga.",
 	"api_run_already_paid": "A folha já está paga e não muda. O que precisar de correção vai numa folha de ajuste.",
-	"api_rates_missing_for_date": "Na data de corte ({on}) faltam taxas: {missing}. Peça ao suporte que as carregue."
+	"api_rates_missing_for_date": "Na data de corte ({on}) faltam taxas: {missing}. Peça ao suporte que as carregue.",
+	"api_run_not_paid": "Só uma folha paga pode ser ajustada. Um rascunho é recalculado.",
+	"api_settlement_requires_termination": "Esta rescisão não tem um desligamento para liquidar.",
+	"api_vacation_balance_exceeded": "Pede {requested} dias de férias e o saldo é {balance}.",
+	"api_import_has_errors": "{count} linhas têm erros e nada foi importado. Corrija-as e tente de novo.",
+	"api_export_data_incomplete": "Faltam dados para montar o arquivo: {count} funcionários com dados pendentes{company}.",
+	"api_export_data_incomplete_company": " e da empresa: {fields}",
+	"api_document_not_found": "Esse documento não existe ou é de outra empresa.",
+	"api_document_not_stopped": "Só se tenta de novo o que está parado. O que está na fila será tentado sozinho, e uma rejeição se corrige com outro documento.",
+	"api_document_not_signed": "Ainda não há XML assinado: o documento não passou pela assinatura.",
+	"api_document_not_resolved": "A Hacienda ainda não respondeu: não há resposta para baixar.",
+	"api_document_file_missing": "O arquivo não está no repositório de documentos. Avise o suporte: a lei obriga a conservá-lo.",
+	"api_storage_unavailable": "O repositório de documentos não responde. Tente de novo em alguns minutos.",
+	"api_production_gate_locked": "Para passar à produção a Hacienda exige ter visto aceitos em testes uma fatura, um tíquete e uma nota de crédito. Falta: {missing}."
 }

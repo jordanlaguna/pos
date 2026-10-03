@@ -19,7 +19,8 @@
  */
 
 import { toLocalIso } from '$lib/domain/datetime';
-import { documentTypeFor } from '$lib/domain/documentType';
+import { EXPORT_INVOICE, documentTypeFor } from '$lib/domain/documentType';
+import { exportLineProblem, hasForeignAddress } from '$lib/domain/export';
 import { changeDue, computeTotals, round2, type Totals } from '$lib/domain/money';
 import type { Product } from '$lib/domain/types';
 
@@ -36,7 +37,8 @@ export interface CheckoutRequest {
 	paymentMethod: string;
 	cashReceived: number;
 	clientId: number | null;
-	saleNumber: string;
+	/** Opcional desde T-706. Si viene, 14 dígitos. */
+	saleNumber?: string;
 	userId: number;
 	/**
 	 * El comprobante que eligió el cajero (RN-85), tal como vino del formulario.
@@ -50,10 +52,18 @@ export interface CheckoutRequest {
 	 */
 	einvoicing: boolean;
 	enabledTypes: readonly string[];
+	/**
+	 * Quién es el cliente ante Hacienda (RN-87, T-727): si es del extranjero se
+	 * le exporta, y la exportación necesita su dirección. Lo lee el servidor de
+	 * la ficha del cliente, no el formulario.
+	 */
+	foreignReceiver: boolean;
+	foreignAddress?: string | null;
 }
 
 export interface SalePayload {
-	sale_number: string;
+	/** Opcional desde T-706: el número lo pone el servidor con su reloj. */
+	sale_number?: string;
 	client_id: number | null;
 	document_type: string | null;
 	user_id: number;
@@ -81,7 +91,13 @@ export type CheckoutRejection =
 	| { code: 'checkout_cash_short' }
 	| { code: 'checkout_invoice_needs_client' }
 	| { code: 'checkout_document_type_not_enabled' }
-	| { code: 'checkout_bad_document_type' };
+	| { code: 'checkout_bad_document_type' }
+	| { code: 'checkout_invoice_needs_resident' }
+	| { code: 'checkout_export_needs_client' }
+	| { code: 'checkout_export_needs_foreign_client' }
+	| { code: 'checkout_export_needs_foreign_address' }
+	| { code: 'checkout_export_line_needs_tariff_heading'; product: string }
+	| { code: 'checkout_export_tariff_not_allowed'; product: string; taxCode: string };
 
 export type CheckoutResult =
 	| { ok: false; reason: CheckoutRejection; field?: string }
@@ -100,9 +116,10 @@ export function prepareSale(
 	if (!Array.isArray(request.lines) || request.lines.length === 0) {
 		return no({ code: 'checkout_no_lines' });
 	}
-	// 14 dígitos, `yyyyMMddHHmmss`. Lo genera el POS; si llega otra cosa, algo
-	// se manipuló por el camino.
-	if (!/^\d{14}$/.test(request.saleNumber)) {
+	// Desde T-706 el número lo pone el servidor con su reloj, así que lo normal
+	// es que no venga. Si viene —una pantalla vieja—, tiene que ser el de
+	// siempre: 14 dígitos, `yyyyMMddHHmmss`; otra cosa es algo manipulado.
+	if (request.saleNumber && !/^\d{14}$/.test(request.saleNumber)) {
 		return no({ code: 'checkout_bad_sale_number' });
 	}
 	// El comprobante, con la misma regla que el servidor (RN-85, RN-88). La
@@ -112,17 +129,29 @@ export function prepareSale(
 	const comprobante = documentTypeFor(request.documentType, {
 		einvoicing: request.einvoicing,
 		enabled: request.enabledTypes,
-		hasReceiver: request.clientId !== null
+		hasReceiver: request.clientId !== null,
+		foreign: request.foreignReceiver
 	});
 	if (!comprobante.ok) {
 		switch (comprobante.code) {
 			case 'invoice_needs_receiver':
 				return no({ code: 'checkout_invoice_needs_client' });
+			case 'invoice_needs_resident':
+				return no({ code: 'checkout_invoice_needs_resident' });
+			case 'export_needs_receiver':
+				return no({ code: 'checkout_export_needs_client' });
+			case 'export_needs_foreign_receiver':
+				return no({ code: 'checkout_export_needs_foreign_client' });
 			case 'document_type_not_enabled':
 				return no({ code: 'checkout_document_type_not_enabled' });
 			default:
 				return no({ code: 'checkout_bad_document_type' });
 		}
+	}
+	// La exportación lleva las señas del receptor en vez de su ubicación (RF-78):
+	// se arregla en la ficha del cliente, y se dice antes de ir al servidor.
+	if (comprobante.type === EXPORT_INVOICE && !hasForeignAddress(request.foreignAddress)) {
+		return no({ code: 'checkout_export_needs_foreign_address' });
 	}
 
 	// `taxRate` en nulo es «la configurada del negocio» (RN-9); `computeTotals`
@@ -133,6 +162,8 @@ export function prepareSale(
 		quantity: number;
 		taxRate: number | null;
 	}[] = [];
+	/** Los productos de la venta, en su orden, para lo que la exportación exige de cada uno. */
+	const vendidos: Product[] = [];
 	for (const line of request.lines) {
 		const product = catalog.find((p) => p.id_product === Number(line.id_product));
 		if (!product) return no({ code: 'checkout_product_gone' });
@@ -156,6 +187,26 @@ export function prepareSale(
 			quantity,
 			taxRate: product.tax_rate ?? null
 		});
+		vendidos.push(product);
+	}
+
+	// Lo que una exportación exige de cada línea (RF-78, T-720): la partida de
+	// cada mercancía y una tarifa que la FEE admita. Con el producto, como el
+	// servidor: «falta la partida» sin decir de cuál obliga a revisar la venta.
+	if (comprobante.type === EXPORT_INVOICE) {
+		for (const product of vendidos) {
+			const problema = exportLineProblem(product);
+			if (problema?.code === 'export_tariff_not_allowed') {
+				return no({
+					code: 'checkout_export_tariff_not_allowed',
+					product: product.name,
+					taxCode: problema.taxCode
+				});
+			}
+			if (problema) {
+				return no({ code: 'checkout_export_line_needs_tariff_heading', product: product.name });
+			}
+		}
 	}
 
 	const totals = computeTotals(priced, taxRate);
@@ -172,7 +223,7 @@ export function prepareSale(
 		ok: true,
 		totals,
 		payload: {
-			sale_number: request.saleNumber,
+			...(request.saleNumber ? { sale_number: request.saleNumber } : {}),
 			client_id: request.clientId,
 			// El que decidió la regla, no el que vino del formulario: sin elección,
 			// viaja la sugerencia, que es lo mismo que el servidor aplicaría.

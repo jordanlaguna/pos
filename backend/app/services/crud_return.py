@@ -35,7 +35,6 @@ from app.infrastructure.persistence.sqlalchemy_repositories import (
     SqlAlchemyProductRepository,
     SqlAlchemyReturnRepository,
     SqlAlchemySaleRepository,
-    SqlAlchemySettingsRepository,
     SqlAlchemyUnitOfWork,
 )
 from app.models.model_person import Person
@@ -156,7 +155,6 @@ def create_return(db: Session, payload) -> dict:
         returns=SqlAlchemyReturnRepository(db),
         notes=SqlAlchemyNoteRepository(db),
         products=SqlAlchemyProductRepository(db),
-        settings=SqlAlchemySettingsRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
         ledger=crud_accounting.libro(db, user_id=payload.user_id),

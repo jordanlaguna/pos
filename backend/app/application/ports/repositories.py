@@ -51,6 +51,11 @@ class ProductSnapshot(Protocol):
     cabys_code: str | None
     unit_of_measure: str | None
 
+    #: La partida arancelaria (RF-78, T-727): lo que una mercancía necesita
+    #: para salir en una factura de exportación. `None` es «no tiene», y eso
+    #: solo es un problema el día que se le venda a alguien del extranjero.
+    tariff_heading: str | None
+
 
 class ProductRepository(Protocol):
     def get(self, product_id: int) -> ProductSnapshot | None: ...
@@ -102,12 +107,20 @@ class ProductRepository(Protocol):
 
 
 class SupplierSnapshot(Protocol):
+    """Lo justo para comprarle, y desde T-728 quién es ante Hacienda."""
+
     """Lo que la aplicación necesita saber de un proveedor para comprarle."""
 
     id: int
     name: str
     is_active: bool
     payment_terms_days: int
+    #: El tipo de identificación de Hacienda (T-728): un `06`, no contribuyente,
+    #: es a quien se le emite la factura de compra. `None` es «sin tipo», que
+    #: es el proveedor informal al que no se le pidió cédula. La cédula va con
+    #: él: la factura de compra lo lleva como emisor, y sin ella no se numera.
+    identification_type: str | None
+    identification: str | None
 
 
 class SupplierRepository(Protocol):
@@ -178,6 +191,8 @@ class StockEntryRepository(Protocol):
         due_date: date | None = None,
         subtotal: Money | None = None,
         tax: Money | None = None,
+        #: '08' cuando la compra sale como factura electrónica de compra (T-728).
+        document_type: str | None = None,
     ) -> int: ...
 
     def lines_of(self, entry_id: int) -> list:
@@ -187,14 +202,27 @@ class StockEntryRepository(Protocol):
     def mark_cancelled(self, entry_id: int) -> None: ...
 
 
+class ClientSnapshot(Protocol):
+    """Lo que la venta necesita saber del receptor: quién es ante Hacienda."""
+
+    id_client: int
+    #: `05` es el extranjero no domiciliado, y es lo que decide que la venta
+    #: salga como factura de exportación (RN-87, T-727). `None` es «no se
+    #: sabe», que es un cliente del país mientras nadie diga otra cosa.
+    identification_type: str | None
+    #: Las otras señas extranjeras del receptor de una exportación (RF-78).
+    foreign_address: str | None
+
+
 class ClientRepository(Protocol):
-    def exists(self, client_id: int) -> bool:
-        """Si hay un cliente con ese id **en esta compañía**.
+    def get(self, client_id: int) -> ClientSnapshot | None:
+        """El cliente con ese id **en esta compañía**, o nulo.
 
         La foránea de `sales.client_id` no sabe de compañías: sin esta pregunta,
         una venta podía colgar del cliente de otro negocio, y una factura
         electrónica habría salido a nombre de un receptor que no es de quien la
-        emite (RN-85).
+        emite (RN-85). Desde T-727 devuelve al cliente y no solo si existe: su
+        identificación decide el comprobante.
         """
         ...
 
@@ -343,15 +371,8 @@ class NoteRepository(Protocol):
 
 
 class SettingsRepository(Protocol):
-    def tax_rate(self) -> object:
-        """
-        La tasa configurada, como `TaxRate`.
-
-        Es un puerto y no una lectura directa de la tabla porque el caso de uso
-        de la venta la necesita para recalcular los totales, y ese cálculo tiene
-        que poder probarse sin base de datos.
-        """
-        ...
+    # Ya no tiene `tax_rate` (QA-05): la tarifa de respaldo es la general del
+    # IVA, `domain.tax.GENERAL_RATE`, y no se configura.
 
     def einvoicing_enabled(self) -> bool:
         """Si la compañía factura electrónicamente.

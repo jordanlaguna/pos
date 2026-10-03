@@ -6,7 +6,13 @@ import { invalidateSettings, loadSettings, saveSettings } from '$lib/server/sett
 import { formError, Validator } from '$lib/application/validation';
 import { F } from '$lib/ui/fields';
 import { m } from '$lib/paraglide/messages.js';
-import { apiMessage, issuerMissingMessage, locationMessage, validationErrors } from '$lib/ui/messages';
+import {
+	apiMessage,
+	firstError,
+	issuerMissingMessage,
+	locationMessage,
+	validationErrors
+} from '$lib/ui/messages';
 import {
 	isHexColor,
 	mergeSettings,
@@ -54,9 +60,25 @@ export interface EstadoDeAmbiente {
 	ready: boolean;
 }
 
+/** Una serie de numeración: una caja por un tipo de comprobante (T-616). */
+export interface Serie {
+	terminal_id: number;
+	branch_code: string;
+	branch_name: string;
+	terminal_code: string;
+	terminal_name: string;
+	document_type: string;
+	/** El último consecutivo emitido; el siguiente sale con uno más. */
+	last_number: number;
+	/** El sistema ya emitió con esta serie: desde ahí es suya (RN-38). */
+	in_use: boolean;
+}
+
 export interface EstadoFe {
 	environments: EstadoDeAmbiente[];
 	active: string;
+	/** T-713: si ya se puede pasar a producción y, si no, qué tipos faltan. */
+	production_gate?: { ready: boolean; missing: string[] } | null;
 }
 
 /**
@@ -101,6 +123,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	 * documentos a quien vino a cambiar otra cosa. Sin dato, la pestaña lo dice.
 	 */
 	const fe = await apiSafe<EstadoFe | null>('/fe', null, { token: locals.token });
+	// Las series, para el negocio que viene de otro sistema (T-616). `apiSafe`
+	// por lo mismo que `/fe`.
+	const series = await apiSafe<{ environment: string; items: Serie[] } | null>(
+		'/fe/sequences',
+		null,
+		{ token: locals.token }
+	);
 	// Por lo mismo que `/fe`: es una pestaña más y no puede tumbar las otras.
 	const oficinas = await apiSafe<EstadoOficinas | null>('/offices', null, {
 		token: locals.token
@@ -121,6 +150,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		// La cédula del emisor, de `companies` (RN-45): se muestra sin editarse.
 		issuer: stored.issuer,
 		fe,
+		series,
 		oficinas
 	};
 };
@@ -201,10 +231,6 @@ export const actions: Actions = {
 		const codigo = v.text('moneda_codigo', F.currencyCode(), { max: 8 });
 		const simbolo = v.text('moneda_simbolo', F.currencySymbol(), { max: 5 });
 		const decimales = v.integer('moneda_decimales', F.decimals(), { min: 0, max: 4 });
-
-		const impuestoNombre = v.text('impuesto_nombre', F.taxName(), { max: 20 });
-		// En pantalla se escribe 13, no 0.13: nadie piensa el IVA en fracciones.
-		const tasaPorcentaje = v.decimal('impuesto_tasa', F.taxRate(), { min: 0, max: 100 });
 
 		const plantilla = v.oneOf('documento_plantilla', F.documentTemplate(), [
 			'tiquete',
@@ -294,11 +320,6 @@ export const actions: Actions = {
 				decimalSeparator: separator(form, 'moneda_separador_decimal', ','),
 				symbolAtEnd: checked(form, 'moneda_simbolo_al_final'),
 				space: checked(form, 'moneda_espacio')
-			},
-			tax: {
-				nombre: impuestoNombre,
-				// 13 → 0.13, sin arrastrar el error binario de la división.
-				rate: Math.round((tasaPorcentaje / 100) * 1e6) / 1e6
 			},
 			document: {
 				template: plantilla || 'tiquete',
@@ -515,6 +536,34 @@ export const actions: Actions = {
 		// compañía quedó vieja (T-224).
 		invalidateSettings(admin.company_id);
 		return { success: m.settings_fe_environment_changed() };
+	},
+
+	/**
+	 * El último consecutivo de una serie, para el negocio que viene de otro
+	 * sistema (T-616, RN-36 a RN-38). Que solo suba y que una serie usada no se
+	 * mueva lo decide el servidor; acá solo se revisa que sea un número.
+	 */
+	feSerie: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+		const form = await request.formData();
+		const v = new Validator(form);
+		const terminalId = v.integer('terminal_id', F.terminal(), { min: 1 });
+		const ultimo = v.integer('last_number', F.lastSequence(), { min: 0, max: 9_999_999_999 });
+		if (!v.ok) return fail(400, { message: firstError(v.errors), errors: validationErrors(v.errors) });
+		try {
+			await api('/fe/sequences', {
+				method: 'PUT',
+				token: locals.token,
+				body: {
+					terminal_id: terminalId,
+					document_type: String(form.get('document_type') ?? ''),
+					last_number: ultimo
+				}
+			});
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_fe_sequence_saved() };
 	},
 
 	/*

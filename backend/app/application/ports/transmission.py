@@ -25,7 +25,8 @@ tercero, no necesita excepción: devuelve el token.
 
 from __future__ import annotations
 
-from typing import Protocol
+from dataclasses import dataclass
+from typing import Mapping, Protocol
 
 from app.domain.hacienda import HaciendaEndpoints
 
@@ -65,4 +66,101 @@ class HaciendaIdp(Protocol):
         entonces. Comprobar es pedir un token y no usarlo — que es justo lo que
         hace que la comprobación no emita nada.
         """
+        ...
+
+
+# --------------------------------------------------------------- la recepción
+#
+# La segunda mitad de hablar con Hacienda (T-709, T-708): entregarle el XML
+# firmado y preguntarle qué decidió. Las excepciones distinguen lo que RN-41
+# obliga a distinguir —lo que se reintenta de lo que detiene—, y el caso de uso
+# no mira códigos HTTP: mira cuál de estas le llegó.
+
+
+class ReceptionUnavailable(Exception):
+    """No se pudo preguntar: red, tiempo de espera, un 5xx, un 429.
+
+    Es transitorio y se reintenta con la cadencia del reenvío. Lleva el texto
+    crudo de lo que pasó, para la bitácora del documento; nadie lo traduce.
+    """
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+class ReceptionRejected(Exception):
+    """Hacienda contestó al envío que **no**, antes de procesarlo (400).
+
+    Estructura, clave duplicada, firma que no abre: son fallas del documento o
+    nuestras, y se detienen en el primer intento. `cause` es la cabecera
+    `X-Error-Cause` o el cuerpo, tal cual: es lo que una persona va a leer para
+    saber qué arreglar.
+    """
+
+    def __init__(self, cause: str = "") -> None:
+        super().__init__(cause)
+        self.cause = cause
+
+
+class ReceptionForbidden(Exception):
+    """403: las credenciales valen, pero no para este emisor. Se detiene.
+
+    `cause` es lo que contestó el servidor, como en `ReceptionRejected`: un 403
+    no siempre es de Hacienda. El Gateway que tiene delante contesta 403 a una
+    ruta que no existe, y sin el texto la pantalla culpaba a las credenciales
+    (2026-10-03).
+    """
+
+    def __init__(self, cause: str = "") -> None:
+        super().__init__(cause)
+        self.cause = cause
+
+
+class TokenRejected(Exception):
+    """401 en la recepción: el token venció entre pedirlo y usarlo.
+
+    No es `CredentialsRejected` —el IdP sí lo dio— y no detiene nada: se pide
+    otro y se vuelve a intentar una vez.
+    """
+
+
+class VerdictNotFound(Exception):
+    """404 al consultar: Hacienda todavía no registra esa clave.
+
+    Pasa en los segundos que siguen al 202, y la cadencia del veredicto ya lo
+    contempla: se vuelve a preguntar más tarde.
+    """
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Lo que devuelve `GET /recepcion/{clave}` (README §8).
+
+    `ind_estado` es la palabra de Hacienda tal cual —`recibido`, `procesando`,
+    `aceptado`, `rechazado`, `error`—; qué significa cada una lo decide
+    `domain/fe_transmission.py`. `respuesta_xml` es el `MensajeHacienda` ya
+    decodificado del base64, o nada si todavía no lo hay.
+    """
+
+    ind_estado: str
+    respuesta_xml: bytes | None = None
+
+
+class HaciendaReception(Protocol):
+    """La API de recepción de comprobantes, en los dos recursos que se usan."""
+
+    def submit(
+        self, endpoints: HaciendaEndpoints, *, token: str, payload: Mapping[str, object]
+    ) -> None:
+        """`POST /recepcion`. Vuelve sin más con el 202; si no, una de arriba.
+
+        `payload` lo arma `domain/fe_transmission.reception_payload`: acá no se
+        decide qué lleva el cuerpo, solo se manda.
+        """
+        ...
+
+    def status(self, endpoints: HaciendaEndpoints, *, token: str, clave: str) -> Verdict:
+        """`GET /recepcion/{clave}`, o `VerdictNotFound`, `TokenRejected`,
+        `ReceptionUnavailable`."""
         ...

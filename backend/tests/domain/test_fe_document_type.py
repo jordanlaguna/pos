@@ -14,8 +14,12 @@ import pytest
 
 from app.domain.errors import (
     DocumentTypeNotEnabled,
+    ExportNeedsForeignReceiver,
+    ExportNeedsReceiver,
     InvalidSaleDocumentType,
     InvoiceNeedsReceiver,
+    InvoiceNeedsResident,
+    SupplierNeedsIdentification,
 )
 from app.domain.fe_document_type import (
     ALL_TYPES,
@@ -25,18 +29,22 @@ from app.domain.fe_document_type import (
     CREDIT_NOTE,
     DEBIT_NOTE,
     DEFAULT_ENABLED,
+    DOMESTIC_COUNTER_TYPES,
     EXPORT_INVOICE,
     INVOICE,
     PAYMENT_RECEIPT,
     PURCHASE_INVOICE,
     TICKET,
     document_type_for,
+    check_purchase_issuer,
     enabled_types,
+    purchase_document_type,
     suggested_type,
 )
 from app.domain.hacienda import RAICES
 
 TODOS = DEFAULT_ENABLED
+CON_EXPORTACION = DEFAULT_ENABLED | {EXPORT_INVOICE}
 SOLO_FACTURA = frozenset({INVOICE, CREDIT_NOTE})
 SOLO_TIQUETE = frozenset({TICKET, CREDIT_NOTE})
 
@@ -53,13 +61,24 @@ class TestLosSiete:
             PAYMENT_RECEIPT: "ReciboElectronicoPago",
         } == {codigo: RAICES[codigo] for codigo in ALL_TYPES}
 
-    def test_de_una_venta_salen_la_factura_y_el_tiquete(self):
-        assert COUNTER_TYPES == (INVOICE, TICKET)
+    def test_de_una_venta_salen_la_factura_el_tiquete_y_la_exportacion(self):
+        assert COUNTER_TYPES == (INVOICE, TICKET, EXPORT_INVOICE)
 
-    def test_hoy_tienen_flujo_los_de_venta_y_la_nota_de_credito(self):
-        # La ND entra con T-726, la FEE con T-727, la FEC con T-728, el REP con
-        # T-729. Si esta prueba cambia es porque llegó uno de esos flujos.
-        assert AVAILABLE == {TICKET, INVOICE, CREDIT_NOTE}
+    def test_con_dos_de_esos_se_le_vende_a_la_gente_del_pais(self):
+        assert DOMESTIC_COUNTER_TYPES == (INVOICE, TICKET)
+
+    def test_hoy_tienen_flujo_todos_menos_el_recibo_de_pago(self):
+        # El REP espera la venta a crédito (T-729). Si esta prueba cambia es
+        # porque llegó ese flujo.
+        assert AVAILABLE == {
+            TICKET,
+            INVOICE,
+            CREDIT_NOTE,
+            DEBIT_NOTE,
+            EXPORT_INVOICE,
+            PURCHASE_INVOICE,
+        }
+        assert set(ALL_TYPES) - AVAILABLE == {PAYMENT_RECEIPT}
 
     def test_la_nota_de_credito_no_se_apaga(self):
         assert ALWAYS_ON == {CREDIT_NOTE}
@@ -108,10 +127,22 @@ class TestLaSugerencia:
         # Y la venta va a necesitar cliente: eso lo dice document_type_for.
         assert suggested_type(has_receiver=False, enabled=SOLO_FACTURA) == INVOICE
 
+    def test_con_cliente_del_extranjero_exportacion(self):
+        assert suggested_type(has_receiver=True, enabled=CON_EXPORTACION, foreign=True) == (
+            EXPORT_INVOICE
+        )
 
-def tipo(pedido, *, activa=True, encendidos=TODOS, cliente=False):
+    def test_con_cliente_del_extranjero_y_la_exportacion_apagada_tiquete(self):
+        # Nunca factura: la factura es para quien tiene cédula del país.
+        assert suggested_type(has_receiver=True, enabled=TODOS, foreign=True) == TICKET
+
+    def test_sin_cliente_el_extranjero_no_significa_nada(self):
+        assert suggested_type(has_receiver=False, enabled=CON_EXPORTACION, foreign=True) == TICKET
+
+
+def tipo(pedido, *, activa=True, encendidos=TODOS, cliente=False, extranjero=False):
     return document_type_for(
-        pedido, einvoicing=activa, enabled=encendidos, has_receiver=cliente
+        pedido, einvoicing=activa, enabled=encendidos, has_receiver=cliente, foreign=extranjero
     )
 
 
@@ -137,12 +168,46 @@ class TestConLaFacturacionActiva:
             tipo(None, encendidos=SOLO_FACTURA)
 
     @pytest.mark.parametrize(
-        "pedido, encendidos", [(TICKET, SOLO_FACTURA), (INVOICE, SOLO_TIQUETE)]
+        "pedido, encendidos",
+        [(TICKET, SOLO_FACTURA), (INVOICE, SOLO_TIQUETE), (EXPORT_INVOICE, TODOS)],
     )
     def test_un_tipo_apagado_no(self, pedido, encendidos):
         with pytest.raises(DocumentTypeNotEnabled) as e:
-            tipo(pedido, encendidos=encendidos, cliente=True)
+            tipo(pedido, encendidos=encendidos, cliente=True, extranjero=True)
         assert e.value.document_type == pedido
+
+
+class TestLaExportacion:
+    """RN-87, T-727: la distingue el receptor, como a las otras dos."""
+
+    def test_al_extranjero_sale_sola(self):
+        assert tipo(None, encendidos=CON_EXPORTACION, cliente=True, extranjero=True) == (
+            EXPORT_INVOICE
+        )
+
+    def test_pedida_al_extranjero_sale(self):
+        assert tipo(EXPORT_INVOICE, encendidos=CON_EXPORTACION, cliente=True, extranjero=True) == (
+            EXPORT_INVOICE
+        )
+
+    def test_el_cajero_puede_dejar_al_extranjero_en_tiquete(self):
+        assert tipo(TICKET, encendidos=CON_EXPORTACION, cliente=True, extranjero=True) == TICKET
+
+    def test_la_factura_al_extranjero_no(self):
+        # No tiene cédula del país: lo suyo es la exportación o el tiquete.
+        with pytest.raises(InvoiceNeedsResident):
+            tipo(INVOICE, encendidos=CON_EXPORTACION, cliente=True, extranjero=True)
+
+    def test_la_exportacion_sin_cliente_no(self):
+        with pytest.raises(ExportNeedsReceiver):
+            tipo(EXPORT_INVOICE, encendidos=CON_EXPORTACION)
+
+    def test_la_exportacion_a_uno_del_pais_no(self):
+        with pytest.raises(ExportNeedsForeignReceiver):
+            tipo(EXPORT_INVOICE, encendidos=CON_EXPORTACION, cliente=True)
+
+    def test_con_la_facturacion_apagada_tampoco_lleva_tipo(self):
+        assert tipo(EXPORT_INVOICE, activa=False, cliente=True, extranjero=True) is None
 
 
 class TestConLaFacturacionApagada:
@@ -154,6 +219,42 @@ class TestConLaFacturacionApagada:
     def test_ni_la_factura_sin_cliente_se_rechaza(self):
         # No hay comprobante que emitir, así que no hay receptor que exigir.
         assert tipo(INVOICE, activa=False) is None
+
+
+class TestLaFacturaDeCompra:
+    """RF-79, RN-87, T-728: nace de comprarle a un no contribuyente."""
+
+    CON_COMPRA = frozenset({TICKET, INVOICE, CREDIT_NOTE, PURCHASE_INVOICE})
+
+    def test_a_un_no_contribuyente_se_le_emite(self):
+        assert purchase_document_type(
+            einvoicing=True, enabled=self.CON_COMPRA, supplier_identification_type="06"
+        ) == PURCHASE_INVOICE
+
+    @pytest.mark.parametrize("inscrito", ["01", "02", "03", "04", "05", None, ""])
+    def test_a_un_proveedor_inscrito_o_sin_tipo_nada(self, inscrito):
+        # Él emite la suya; el extranjero no domiciliado es otro caso (T-729 lo
+        # dejó fuera: no hay con qué pagarle a crédito).
+        assert purchase_document_type(
+            einvoicing=True, enabled=self.CON_COMPRA, supplier_identification_type=inscrito
+        ) is None
+
+    def test_con_la_compra_apagada_nada(self):
+        assert purchase_document_type(
+            einvoicing=True, enabled=TODOS, supplier_identification_type="06"
+        ) is None
+
+    def test_con_la_facturacion_apagada_nada(self):
+        assert purchase_document_type(
+            einvoicing=False, enabled=self.CON_COMPRA, supplier_identification_type="06"
+        ) is None
+
+    def test_el_proveedor_es_el_emisor_y_necesita_cedula(self):
+        assert check_purchase_issuer(9, " 108880777 ") == "108880777"
+        for sin in (None, "", "  ", 7):
+            with pytest.raises(SupplierNeedsIdentification) as e:
+                check_purchase_issuer(9, sin)
+            assert e.value.supplier_id == 9
 
 
 @pytest.mark.parametrize("malo", ["03", "1", "", "FE", 1, 4])

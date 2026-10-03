@@ -134,6 +134,19 @@ def due_date(document_date: date, payment_terms_days: int) -> date:
     return document_date + timedelta(days=max(0, payment_terms_days))
 
 
+def credit_term_days(document_date: date | None, loaded_on: date, due_date: date | None) -> int | None:
+    """El plazo que declara el comprobante de una compra a crédito (T-728).
+
+    Es la inversa de `due_date`: los días desde la fecha del documento —o la
+    de carga, si no la trae— hasta el vencimiento. Nunca menos de uno: un
+    `PlazoCredito` en cero diría contado en un comprobante que dice crédito.
+    Nulo sin vencimiento, que es una compra de contado.
+    """
+    if due_date is None:
+        return None
+    return max((due_date - (document_date or loaded_on)).days, 1)
+
+
 def remaining_balance(total: Money, payments: list[Money]) -> Money:
     """Lo que falta por pagar de una compra (RN-55).
 

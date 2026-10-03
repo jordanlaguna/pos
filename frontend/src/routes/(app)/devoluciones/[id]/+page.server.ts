@@ -1,10 +1,11 @@
 import { error } from '@sveltejs/kit';
 import { m } from '$lib/paraglide/messages.js';
 import { api, apiSafe, ApiError } from '$lib/server/api';
-import { requireUser } from '$lib/server/auth';
+import { requireAdmin, requireUser, requireWrite } from '$lib/server/auth';
+import { reintentarComprobante } from '$lib/server/fe';
 import { creditNoteDocument } from '$lib/domain/documents';
-import type { Client, SaleReturn } from '$lib/domain/types';
-import type { PageServerLoad } from './$types';
+import type { Client, DocumentFile, SaleReturn } from '$lib/domain/types';
+import type { Actions, PageServerLoad } from './$types';
 
 /**
  * La nota de crédito de una devolución, lista para imprimir (RN-89, T-725).
@@ -39,6 +40,18 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		devolucion,
 		nota,
 		client: clients.find((c) => c.id_client === nota.client_id) ?? null,
+		// El expediente ante Hacienda de la nota (T-721), si el backend lo tiene.
+		expediente: devolucion.einvoice?.id
+			? await apiSafe<DocumentFile | null>(`/fe/documents/${devolucion.einvoice.id}`, null, { token })
+			: null,
 		isNew: url.searchParams.get('nueva') === '1'
 	};
+};
+
+export const actions: Actions = {
+	/** RF-36: vuelve a la cola la nota detenida. Solo el administrador. */
+	reintentar: async ({ request, locals, url }) => {
+		requireWrite(requireAdmin(locals, url.pathname));
+		return reintentarComprobante(locals.token, await request.formData());
+	}
 };

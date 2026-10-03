@@ -47,7 +47,7 @@ MOMENTO = datetime(2026, 8, 16, 22, 30, 0)
 IVA = TaxRate("0.13")
 
 
-def montar(tasa_configurada=IVA, tasa_de_la_venta=IVA, tipo=None):
+def montar(tasa_de_la_venta=IVA, tipo=None):
     """Una venta de 3 arroces a 1450, cobrada con la tasa que se indique.
 
     `tipo` es el comprobante con que salió: nulo es una venta sin facturación.
@@ -81,7 +81,6 @@ def montar(tasa_configurada=IVA, tasa_de_la_venta=IVA, tipo=None):
         returns=devoluciones,
         notes=FakeNoteRepository(),
         products=catalogo,
-        settings=FakeSettingsRepository(tasa_configurada),
         uow=uow,
         clock=FixedClock(MOMENTO),
     )
@@ -205,19 +204,19 @@ class TestDevolucionBuena:
 
 
 class TestLaTasaEsLaDeSuVenta:
-    def test_subir_el_iva_no_cambia_lo_que_se_reembolsa(self):
-        # Se cobró al 13 % y hoy la configuración dice 25 %.
-        caso, _, _, _, _ = montar(tasa_configurada=TaxRate("0.25"), tasa_de_la_venta=IVA)
-        assert caso(peticion([(1, 1)])).total == Money("1638.50")
+    def test_se_reembolsa_con_la_tarifa_cobrada_y_no_con_la_general(self):
+        # Se cobró al 4 %; la general del IVA es 13 %. Se devuelve al 4 %.
+        caso, _, _, _, _ = montar(tasa_de_la_venta=TaxRate("0.04"))
+        assert caso(peticion([(1, 1)])).total == Money(1508)
 
     def test_una_venta_exenta_se_devuelve_sin_impuesto(self):
-        caso, _, _, _, _ = montar(tasa_configurada=IVA, tasa_de_la_venta=TaxRate.zero())
+        caso, _, _, _, _ = montar(tasa_de_la_venta=TaxRate.zero())
         assert caso(peticion([(1, 1)])).total == Money(1450)
 
-    def test_una_venta_vieja_sin_desglose_usa_la_configurada(self):
+    def test_una_venta_vieja_sin_desglose_usa_la_general_del_iva(self):
         """
         Es el respaldo: las ventas del WinForms quedaron con subtotal en cero y
-        no hay de dónde reconstruir la tasa.
+        no hay de dónde reconstruir la tasa. Desde QA-05 es el 13 % de ley.
         """
         caso, _, ventas, _, _ = montar()
         ventas.ventas[0].subtotal = Money.zero()
@@ -340,7 +339,6 @@ class TestTarifasMezcladas:
             returns=devoluciones,
             notes=FakeNoteRepository(),
             products=catalogo,
-            settings=FakeSettingsRepository(IVA),
             uow=FakeUnitOfWork(),
             clock=FixedClock(MOMENTO),
         )
@@ -369,10 +367,8 @@ class TestTarifasMezcladas:
     def test_una_venta_vieja_sin_tarifa_en_la_linea_usa_la_del_encabezado(self):
         """RN-12 para lo cobrado antes de la migración 006: esas ventas llevan
         una sola tarifa y el cociente la reconstruye exacta."""
-        caso, _, _, devoluciones, _ = montar(
-            tasa_configurada=TaxRate("0.25"), tasa_de_la_venta=IVA
-        )
+        caso, _, _, devoluciones, _ = montar(tasa_de_la_venta=TaxRate("0.04"))
         hecha = caso(peticion([(1, 1)]))
 
-        assert hecha.total == Money("1638.50"), "usó la tasa de hoy y no la de su venta"
-        assert devoluciones.devoluciones[0].tax == Money("188.50")
+        assert hecha.total == Money(1508), "usó la general y no la de su venta"
+        assert devoluciones.devoluciones[0].tax == Money(58)

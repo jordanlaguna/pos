@@ -703,7 +703,7 @@ class TestLosLibros:
 
     @pytest.fixture(scope="class")
     def negocio(self, api: Api) -> Api:
-        cliente = compania_propia(api, "libros", modulos="accounting,purchases")
+        cliente = compania_propia(api, "libros", modulos="accounting,purchases,suppliers")
         activar(cliente)
 
         # Un catálogo mínimo y una venta del invariante: 3 × 1 450 al 13 %.

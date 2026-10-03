@@ -46,6 +46,10 @@ class SaleDetail(TenantMixin, Base):
     cabys_code = Column(CHAR(13), nullable=True)
     unit_of_measure = Column(String(15), nullable=True)
 
+    # La partida arancelaria con que se exportó (T-727), congelada por lo mismo.
+    # Solo la lleva la línea de una factura de exportación; en las demás es NULL.
+    tariff_heading = Column(CHAR(12), nullable=True)
+
     # El costo promedio del producto AL MOMENTO DE VENDERSE (RN-63), congelado
     # igual que la tarifa y por la misma razón. Vender hoy con costo ₡110 y
     # comprar mañana a ₡150 no cambia el costo de lo que ya salió; leerlo de

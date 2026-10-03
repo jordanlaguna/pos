@@ -11,5 +11,11 @@
 	"checkout_amount_insufficient": "Amount not enough.",
 	"checkout_invoice_needs_client": "An electronic invoice needs a customer. Choose one or issue a receipt.",
 	"checkout_document_type_not_enabled": "This business does not issue that document. Choose another.",
-	"checkout_bad_document_type": "That document is not issued at checkout."
+	"checkout_bad_document_type": "That document is not issued at checkout.",
+	"checkout_invoice_needs_resident": "A foreign customer cannot receive an electronic invoice: issue an export invoice or a ticket instead.",
+	"checkout_export_needs_client": "The export invoice needs a foreign customer.",
+	"checkout_export_needs_foreign_client": "The export invoice is for foreign customers. Issue this customer an invoice or a ticket.",
+	"checkout_export_needs_foreign_address": "The customer has no foreign address. Complete it in their record before exporting.",
+	"checkout_export_line_needs_tariff_heading": "{product} has no tariff heading. Complete it in the product record before exporting.",
+	"checkout_export_tariff_not_allowed": "{product} uses tax rate code {tax_code}, which the export invoice does not allow. Change it in the product record or issue a ticket."
 }

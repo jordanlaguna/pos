@@ -53,6 +53,10 @@ describe('el bloque fiscal (RN-86)', () => {
 		expect(es.fiscalActivity('523101')).toBe('Actividad económica 523101');
 	});
 
+	it('la de exportación tiene su título (T-727)', () => {
+		expect(es.title('eexport')).toBe('Factura electrónica de exportación');
+	});
+
 	it('las notas y su referencia al original (RN-89)', () => {
 		expect(es.title('ecredit')).toBe('Nota de crédito electrónica');
 		expect(es.title('edebit')).toBe('Nota de débito electrónica');
@@ -266,5 +270,33 @@ describe('el idioma del documento es independiente del de la pantalla', () => {
 		expect(es.numbered('invoice', '000123')).toBe('Factura 000123');
 		expect(en.numbered('invoice', '000123')).toBe('Invoice 000123');
 		expect(es.numbered('eticket', '000123')).toBe('Tiquete electrónico 000123');
+	});
+});
+
+describe('la boleta de pago habla el idioma del documento (RF-58, T-1207)', () => {
+	it('tiene sus rótulos en los tres idiomas y nombra los rubros', async () => {
+		const { payslipLabels } = await import('./documents');
+		const es = payslipLabels('es');
+		const en = payslipLabels('en');
+		const pt = payslipLabels('pt');
+		expect(es.title('regular')).toBe('Boleta de pago');
+		expect(es.title('aguinaldo')).toBe('Aguinaldo');
+		expect(es.title('settlement')).toBe('Liquidación');
+		expect(es.title('adjustment')).toBe('Ajuste de planilla');
+		expect(en.title('regular')).toBe('Payslip');
+		expect(pt.title('regular')).toBe('Holerite');
+		expect(es.concept('base')).toBe('Salario');
+		expect(en.concept('income_tax')).toBe('Salary income tax');
+		expect(pt.concept('sem')).toBe('SEM (saúde)');
+		// Un concepto que el catálogo no conoce sale tal cual, no en blanco.
+		expect(es.concept('prueba_x')).toBe('prueba_x');
+		expect(es.periodRange('1/1/2026', '15/1/2026')).toBe('1/1/2026 a 15/1/2026');
+		expect(es.hours(4)).toBe('4 h');
+		expect(es.causeName('resignation')).toBe('Renuncia');
+	});
+
+	it('un idioma que no existe cae al idioma base, sin lanzar', async () => {
+		const { payslipLabels } = await import('./documents');
+		expect(payslipLabels('zz').locale).toBe('es');
 	});
 });

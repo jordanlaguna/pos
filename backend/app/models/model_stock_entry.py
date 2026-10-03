@@ -69,6 +69,10 @@ class StockEntry(TenantMixin, Base):
     document_date = Column(Date, nullable=True)
     #: 'cash' | 'credit'
     payment_terms = Column(String(10), nullable=False, default="cash", server_default="cash")
+    # El comprobante que emite la compra (T-728): '08', factura electrónica de
+    # compra, cuando el proveedor es un no contribuyente y la compañía la emite.
+    # NULL es «ninguno», que es lo que tiene toda compra a un proveedor inscrito.
+    document_type = Column(CHAR(2), nullable=True)
     due_date = Column(Date, nullable=True)
     #: Sin impuesto, y el impuesto, los dos del documento del proveedor (RN-53).
     subtotal = Column(Numeric(12, 2), nullable=False, default=0, server_default=text("0"))

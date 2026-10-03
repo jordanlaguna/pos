@@ -18,7 +18,7 @@ Lo que sale son diccionarios con la plata ya en `float`: la frontera es acá.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Iterator
 
@@ -31,10 +31,12 @@ from app.application.use_cases.payroll import (
     ActionNotFound,
     ActionNotRecurring,
     ActionRequest,
+    AdjustRun,
     ApproveRun,
     CalculateRun,
     CancelAction,
     ContractMissing,
+    CreateAguinaldoRun,
     CreateRun,
     EmployeeNotFound,
     EmployeeTerminated,
@@ -47,12 +49,31 @@ from app.application.use_cases.payroll import (
     RunNotCalculated,
     RunNotEditable,
     RunNotFound,
+    RunNotPaid,
     ScheduleNotFound,
+    SettlementRequiresTermination,
     SuspendAction,
     TerminateEmployee,
     UpdateAction,
+    VacationBalanceExceeded,
+)
+from app.application.use_cases.payroll_exports import (
+    ExportCcssReport,
+    ExportInsFile,
+    IncomeTaxSummary,
+    PolicyNotFound,
+)
+from app.application.use_cases.payroll_import import (
+    DeductionRow,
+    EarningRow,
+    EmployeeRow,
+    ImportHasErrors,
+    ImportPayroll,
+    ImportRequest,
+    PositionRow,
 )
 from app.domain.errors import (
+    ExportDataIncomplete,
     InvalidAction,
     InvalidContract,
     InvalidCutDate,
@@ -62,6 +83,7 @@ from app.domain.errors import (
     RatesMissing,
 )
 from app.domain.money import Money
+from app.domain.payroll_benefits import vacation_balance
 from app.domain.payroll_calendar import SHIFT_HOURS, Schedule, check_schedule
 from app.domain.payroll_staff import (
     ContractData,
@@ -76,10 +98,14 @@ from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_payroll import (
     SqlAlchemyActionRepository,
     SqlAlchemyEmployeeRepository,
+    SqlAlchemyImportRepository,
+    SqlAlchemyOpeningRepository,
+    SqlAlchemyPayrollReports,
     SqlAlchemyPayrollRepository,
     SqlAlchemyPayrollSettings,
     SqlAlchemyRateTable,
     SqlAlchemyScheduleRepository,
+    SqlAlchemyVacationRepository,
 )
 from app.infrastructure.persistence.sqlalchemy_repositories import SqlAlchemyUnitOfWork
 from app.models.model_payroll import (
@@ -125,6 +151,15 @@ def traduciendo() -> Iterator[None]:
         raise api_error(404, "schedule_not_found", schedule_id=e.schedule_id) from None
     except PositionNotFound as e:
         raise api_error(404, "position_not_found", position_id=e.position_id) from None
+    except PolicyNotFound as e:
+        raise api_error(404, "policy_not_found", policy_id=e.policy_id) from None
+    except ExportDataIncomplete as e:
+        raise api_error(
+            409,
+            "export_data_incomplete",
+            missing=[{"employee_id": empleado, "fields": list(campos)} for empleado, campos in e.missing],
+            company=list(e.company),
+        ) from None
     except ActionNotFound as e:
         raise api_error(404, "action_not_found", action_id=e.action_id) from None
     except ActionNotEditable as e:
@@ -147,6 +182,20 @@ def traduciendo() -> Iterator[None]:
         raise api_error(409, "run_not_approved", run_id=e.run_id, status=e.status) from None
     except RunAlreadyPaid as e:
         raise api_error(409, "run_already_paid", run_id=e.run_id) from None
+    except RunNotPaid as e:
+        raise api_error(409, "run_not_paid", run_id=e.run_id, status=e.status) from None
+    except SettlementRequiresTermination as e:
+        raise api_error(
+            409, "settlement_requires_termination", run_id=e.run_id, employee_id=e.employee_id
+        ) from None
+    except VacationBalanceExceeded as e:
+        raise api_error(
+            409,
+            "vacation_balance_exceeded",
+            employee_id=e.employee_id,
+            balance=_float(e.balance),
+            requested=_float(e.requested),
+        ) from None
     except RatesMissing as e:
         raise api_error(409, "rates_missing_for_date", missing=list(e.missing), on=e.on.isoformat()) from None
     except InvalidCutDate as e:
@@ -429,9 +478,25 @@ def empleado(db: Session, employee_id: int) -> dict:
 
 
 def crear_empleado(db: Session, datos) -> dict:
-    e = Employee(**datos.model_dump(), is_active=True)
+    """El alta, y su contrato si viene (RF-55): los dos o ninguno. El contrato
+    rige desde el ingreso; si no pasa, el `commit` no llega y el empleado
+    tampoco queda."""
+    e = Employee(**datos.model_dump(exclude={"contract"}), is_active=True)
     _revisar_empleado(db, e)
     db.add(e)
+    if datos.contract is not None:
+        db.flush()
+        c = datos.contract
+        _contratar(
+            db,
+            e,
+            schedule_id=c.schedule_id,
+            position_id=c.position_id,
+            ins_policy_id=c.ins_policy_id,
+            valid_from=e.hired_on,
+            period_salary=c.period_salary,
+            solidarista_rate=c.solidarista_rate,
+        )
     db.commit()
     db.refresh(e)
     return _empleado_out(db, e)
@@ -476,15 +541,42 @@ def crear_contrato(db: Session, datos) -> dict:
         raise api_error(
             409, "employee_terminated", employee_id=e.id, terminated_on=e.terminated_on.isoformat()
         )
-    jornada = db.query(WorkSchedule).filter(WorkSchedule.id == datos.schedule_id).first()
+    nuevo = _contratar(
+        db,
+        e,
+        schedule_id=datos.schedule_id,
+        position_id=datos.position_id,
+        ins_policy_id=datos.ins_policy_id,
+        valid_from=datos.valid_from,
+        period_salary=datos.period_salary,
+        solidarista_rate=datos.solidarista_rate,
+    )
+    db.commit()
+    return _contrato_out(db.query(EmploymentContract).filter(EmploymentContract.id == nuevo).first())
+
+
+def _contratar(
+    db: Session,
+    e: Employee,
+    *,
+    schedule_id: int,
+    position_id: int,
+    ins_policy_id: int | None,
+    valid_from: date,
+    period_salary: Decimal,
+    solidarista_rate: Decimal | None,
+) -> int:
+    """Revisa y agrega el contrato, sin confirmar: lo usan el alta y el
+    contrato suelto, y cada uno confirma lo suyo."""
+    jornada = db.query(WorkSchedule).filter(WorkSchedule.id == schedule_id).first()
     if jornada is None:
-        raise api_error(404, "schedule_not_found", schedule_id=datos.schedule_id)
-    puesto = db.query(Position).filter(Position.id == datos.position_id).first()
+        raise api_error(404, "schedule_not_found", schedule_id=schedule_id)
+    puesto = db.query(Position).filter(Position.id == position_id).first()
     if puesto is None:
-        raise api_error(404, "position_not_found", position_id=datos.position_id)
-    if datos.ins_policy_id is not None:
-        if db.query(InsPolicy).filter(InsPolicy.id == datos.ins_policy_id).first() is None:
-            raise api_error(404, "policy_not_found", policy_id=datos.ins_policy_id)
+        raise api_error(404, "position_not_found", position_id=position_id)
+    if ins_policy_id is not None:
+        if db.query(InsPolicy).filter(InsPolicy.id == ins_policy_id).first() is None:
+            raise api_error(404, "policy_not_found", policy_id=ins_policy_id)
 
     repo = SqlAlchemyEmployeeRepository(db)
     previos = repo.contracts_of(e.id)
@@ -498,25 +590,23 @@ def crear_contrato(db: Session, datos) -> dict:
 
     with traduciendo():
         check_contract(
-            ContractData(datos.valid_from, Money(datos.period_salary), datos.solidarista_rate),
+            ContractData(valid_from, Money(period_salary), solidarista_rate),
             hired_on=e.hired_on,
             previous_from=tope,
             schedule_active=bool(jornada.is_active),
             position_active=bool(puesto.is_active),
         )
     if ultimo is not None and ultimo.valid_to is None:
-        repo.close_contract(ultimo.id, valid_to=datos.valid_from - UN_DIA)
-    nuevo = repo.add_contract(
+        repo.close_contract(ultimo.id, valid_to=valid_from - UN_DIA)
+    return repo.add_contract(
         employee_id=e.id,
-        schedule_id=datos.schedule_id,
-        position_id=datos.position_id,
-        ins_policy_id=datos.ins_policy_id,
-        valid_from=datos.valid_from,
-        period_salary=Money(datos.period_salary),
-        solidarista_rate=datos.solidarista_rate,
+        schedule_id=schedule_id,
+        position_id=position_id,
+        ins_policy_id=ins_policy_id,
+        valid_from=valid_from,
+        period_salary=Money(period_salary),
+        solidarista_rate=solidarista_rate,
     )
-    db.commit()
-    return _contrato_out(db.query(EmploymentContract).filter(EmploymentContract.id == nuevo).first())
 
 
 # ------------------------------------------------------- acciones de personal
@@ -609,6 +699,7 @@ def registrar_accion(db: Session, datos, *, user_id: int) -> dict:
     caso = RegisterAction(
         employees=SqlAlchemyEmployeeRepository(db),
         actions=SqlAlchemyActionRepository(db),
+        vacations=SqlAlchemyVacationRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
     )
@@ -618,14 +709,21 @@ def registrar_accion(db: Session, datos, *, user_id: int) -> dict:
 
 
 def editar_accion(db: Session, action_id: int, datos) -> dict:
-    caso = UpdateAction(actions=SqlAlchemyActionRepository(db), uow=SqlAlchemyUnitOfWork(db))
+    caso = UpdateAction(
+        actions=SqlAlchemyActionRepository(db), vacations=SqlAlchemyVacationRepository(db), uow=SqlAlchemyUnitOfWork(db)
+    )
     with traduciendo():
         caso(action_id, _pedido(datos, employee_id=0, kind=""))
     return _una_accion(db, action_id)
 
 
 def anular_accion(db: Session, action_id: int, *, user_id: int, memo: str | None) -> dict:
-    caso = CancelAction(actions=SqlAlchemyActionRepository(db), uow=SqlAlchemyUnitOfWork(db), clock=SystemClock())
+    caso = CancelAction(
+        actions=SqlAlchemyActionRepository(db),
+        vacations=SqlAlchemyVacationRepository(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+    )
     with traduciendo():
         nueva = caso(action_id, user_id=user_id, memo=memo)
     return _una_accion(db, nueva)
@@ -664,6 +762,7 @@ def _corrida_out(db: Session, corrida: PayrollRun, *, con_lineas: bool) -> dict:
         "period_to": corrida.period_to,
         "pay_date": corrida.pay_date,
         "status": corrida.status,
+        "adjusts_run_id": corrida.adjusts_run_id,
         "journal_entry_id": corrida.journal_entry_id,
         "employees": len(lineas),
         "gross": _float(Money.sum(Money(l.gross) for l in lineas)),
@@ -748,6 +847,8 @@ def calcular(db: Session, run_id: int) -> dict:
         actions=SqlAlchemyActionRepository(db),
         rates=SqlAlchemyRateTable(db),
         settings=SqlAlchemyPayrollSettings(db),
+        vacations=SqlAlchemyVacationRepository(db),
+        opening=SqlAlchemyOpeningRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
     )
     with traduciendo():
@@ -780,9 +881,246 @@ def pagar(db: Session, run_id: int, *, sesion: Sesion, ip: str | None) -> dict:
     caso = PayRun(
         runs=repo,
         ledger=crud_accounting.libro(db, user_id=sesion.user.id_user),
+        vacations=SqlAlchemyVacationRepository(db),
+        schedules=SqlAlchemyScheduleRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
     )
     with traduciendo():
         caso(run_id, user_id=sesion.user.id_user)
     return corrida(db, run_id)
+
+
+def crear_aguinaldo(db: Session, datos, *, user_id: int) -> dict:
+    """`POST /payroll/runs/aguinaldo` (RF-59, RN-69): la del año, para toda la compañía."""
+    caso = CreateAguinaldoRun(runs=SqlAlchemyPayrollRepository(db), uow=SqlAlchemyUnitOfWork(db), clock=SystemClock())
+    with traduciendo():
+        nueva = caso(datos.year, pay_date=datos.pay_date, user_id=user_id)
+    return _corrida_out(db, _corrida(db, nueva.id), con_lineas=True)
+
+
+def ajustar(db: Session, run_id: int, *, user_id: int) -> dict:
+    """`POST /payroll/runs/{id}/adjust` (RF-63, RN-68): el ajuste nace vacío y
+    referenciando a la pagada; calcularlo escribe la diferencia."""
+    caso = AdjustRun(runs=SqlAlchemyPayrollRepository(db), uow=SqlAlchemyUnitOfWork(db), clock=SystemClock())
+    with traduciendo():
+        nueva = caso(run_id, user_id=user_id)
+    return _corrida_out(db, _corrida(db, nueva.id), con_lineas=True)
+
+
+# --------------------------------------------------------------- vacaciones
+
+
+def vacaciones(db: Session, employee_id: int) -> dict:
+    """`GET /payroll/vacations/{employee}` (RF-60, RN-70): el saldo es la suma."""
+    _empleado(db, employee_id)
+    movimientos = SqlAlchemyVacationRepository(db).movements(employee_id)
+    return {
+        "employee_id": employee_id,
+        "balance": _float(vacation_balance((m.kind, m.days) for m in movimientos)),
+        "movements": [
+            {
+                "id": m.id,
+                "kind": m.kind,
+                "days": _float(m.days),
+                "on_date": m.on_date,
+                "run_id": m.run_id,
+                "action_id": m.action_id,
+            }
+            for m in movimientos
+        ],
+    }
+
+
+# ------------------------------------------------------------------- boleta
+
+
+def boleta(db: Session, run_id: int, employee_id: int) -> dict:
+    """`GET /payroll/runs/{id}/payslips/{employee}` (RF-58, RN-66).
+
+    Todo sale de los rubros congelados; acá solo se les pone nombre a las cosas
+    —el puesto, la jornada, de qué acción salió cada rubro— para que la boleta
+    los pueda imprimir sin volver a preguntar.
+    """
+    corrida_ = _corrida(db, run_id)
+    repo = SqlAlchemyPayrollRepository(db)
+    linea = next((l for l in repo.lines_of(run_id) if l.employee_id == employee_id), None)
+    if linea is None:
+        raise api_error(404, "employee_not_found", employee_id=employee_id)
+    e = _empleado(db, employee_id)
+    contrato = db.query(EmploymentContract).filter(EmploymentContract.id == linea.contract_id).first()
+    puesto = db.query(Position).filter(Position.id == contrato.position_id).first() if contrato else None
+    jornada = db.query(WorkSchedule).filter(WorkSchedule.id == contrato.schedule_id).first() if contrato else None
+    acciones = {a.id: a for a in SqlAlchemyActionRepository(db).for_employee(employee_id)}
+    return {
+        "run": {
+            "id": corrida_.id,
+            "kind": corrida_.kind,
+            "period_from": corrida_.period_from,
+            "period_to": corrida_.period_to,
+            "pay_date": corrida_.pay_date,
+            "status": corrida_.status,
+            "paid_at": corrida_.paid_at,
+            "adjusts_run_id": corrida_.adjusts_run_id,
+        },
+        "employer_number": configuracion(db)["employer_number"],
+        "employee": {
+            "id": e.id,
+            "first_name": e.first_name,
+            "last_name_1": e.last_name_1,
+            "last_name_2": e.last_name_2,
+            "identification_type": e.identification_type,
+            "identification": e.identification,
+            "insured_number": e.insured_number,
+            "hired_on": e.hired_on,
+            "terminated_on": e.terminated_on,
+            "iban": e.iban,
+            "position_name": puesto.name if puesto is not None else None,
+            "schedule_name": jornada.name if jornada is not None else None,
+            "frequency": jornada.frequency if jornada is not None else None,
+            "period_salary": _float(contrato.period_salary) if contrato is not None else None,
+        },
+        "line": {
+            "gross": _float(linea.gross),
+            "employee_deductions": _float(linea.employee_deductions),
+            "income_tax": _float(linea.income_tax),
+            "other_deductions": _float(linea.other_deductions),
+            "net": _float(linea.net),
+            "employer_charges": _float(linea.employer_charges),
+        },
+        "items": [
+            {
+                "concept": i.concept,
+                "payer": i.payer,
+                "base": _float(i.base),
+                "rate": _float(i.rate),
+                "amount": _float(i.amount),
+                "action_id": i.action_id,
+                "action_kind": acciones[i.action_id].kind if i.action_id in acciones else None,
+                "action_memo": acciones[i.action_id].memo if i.action_id in acciones else None,
+                "quantity": _float(i.quantity),
+                "applied_from": i.applied_from,
+                "applied_to": i.applied_to,
+            }
+            for i in repo.items_of(linea.id)
+        ],
+    }
+
+
+# ------------------------------------------------------------ importación
+
+
+def _error_de_fila(e) -> dict:
+    return {"sheet": e.sheet, "row": e.row, "code": e.code, "field": e.field, "reason": e.reason}
+
+
+def importar(db: Session, datos, *, dry_run: bool, user_id: int) -> dict:
+    """`POST /payroll/import?dry_run=` (RF-86, RN-97).
+
+    Las filas vienen ya leídas del Excel por el POS. Con `dry_run` se revisan y
+    se responde fila por fila; sin él, entra todo o no entra nada.
+    """
+    pedido = ImportRequest(
+        as_of=datos.as_of,
+        positions=tuple(PositionRow(**p.model_dump()) for p in datos.positions),
+        employees=tuple(
+            EmployeeRow(**{**e.model_dump(exclude={"period_salary"}), "period_salary": Money(e.period_salary)})
+            for e in datos.employees
+        ),
+        earnings=tuple(
+            EarningRow(row=e.row, identification=e.identification, month=e.month, gross=Money(e.gross))
+            for e in datos.earnings
+        ),
+        deductions=tuple(
+            DeductionRow(
+                **{
+                    **d.model_dump(exclude={"amount", "balance"}),
+                    "amount": Money(d.amount),
+                    "balance": None if d.balance is None else Money(d.balance),
+                }
+            )
+            for d in datos.deductions
+        ),
+    )
+    caso = ImportPayroll(
+        catalog=SqlAlchemyImportRepository(db),
+        employees=SqlAlchemyEmployeeRepository(db),
+        actions=SqlAlchemyActionRepository(db),
+        vacations=SqlAlchemyVacationRepository(db),
+        opening=SqlAlchemyOpeningRepository(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+    )
+    try:
+        resultado = caso(pedido, dry_run=dry_run, user_id=user_id)
+    except ImportHasErrors as e:
+        raise api_error(400, "import_has_errors", errors=[_error_de_fila(x) for x in e.errors]) from None
+    return {
+        "dry_run": resultado.dry_run,
+        "ok": resultado.ok,
+        "errors": [_error_de_fila(x) for x in resultado.errors],
+        "positions": resultado.positions,
+        "employees": resultado.employees,
+        "earnings": resultado.earnings,
+        "deductions": resultado.deductions,
+    }
+
+
+# ------------------------------------------------------- los archivos del mes
+
+
+def informe_ccss(db: Session, year: int, month: int) -> dict:
+    """`GET /payroll/exports/ccss` (RF-62, RN-96): lo que pide el formulario de
+    Autogestión de la CCSS, por trabajador y con cada movimiento fechado."""
+    with traduciendo():
+        informe = ExportCcssReport(reports=SqlAlchemyPayrollReports(db))(year, month)
+    return {
+        "employer_number": informe.employer_number,
+        "period_from": informe.period.starts_on,
+        "period_to": informe.period.ends_on,
+        "total_salary": _float(informe.total_salary),
+        "rows": [
+            {
+                "employee_id": r.employee_id,
+                "identification": r.identification,
+                "insured_number": r.insured_number,
+                "full_name": r.full_name,
+                "ccss_code": r.ccss_code,
+                "shift": r.shift,
+                "salary": _float(r.salary),
+                "days": _float(r.days),
+                "movements": [
+                    {"kind": m.kind, "starts_on": m.starts_on, "ends_on": m.ends_on, "detail": m.detail}
+                    for m in r.movements
+                ],
+            }
+            for r in informe.rows
+        ],
+    }
+
+
+def archivo_ins(db: Session, year: int, month: int, policy_id: int):
+    """`GET /payroll/exports/ins` (RF-85): el archivo de texto de una póliza."""
+    with traduciendo():
+        return ExportInsFile(reports=SqlAlchemyPayrollReports(db))(year, month, policy_id)
+
+
+def resumen_renta(db: Session, year: int, month: int) -> dict:
+    """`GET /payroll/exports/income-tax` (RF-62, RN-73): la renta retenida del mes."""
+    resumen = IncomeTaxSummary(reports=SqlAlchemyPayrollReports(db))(year, month)
+    return {
+        "period_from": resumen.period.starts_on,
+        "period_to": resumen.period.ends_on,
+        "total_taxable": _float(resumen.total_taxable),
+        "total_withheld": _float(resumen.total_withheld),
+        "rows": [
+            {
+                "employee_id": r.employee_id,
+                "identification": r.identification,
+                "full_name": r.full_name,
+                "taxable": _float(r.taxable),
+                "withheld": _float(r.withheld),
+            }
+            for r in resumen.rows
+        ],
+    }

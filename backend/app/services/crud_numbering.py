@@ -16,6 +16,7 @@ from app.infrastructure.persistence.sqlalchemy_numbering import (
     SqlAlchemyIssuerRepository,
 )
 from app.models.model_fe import FeDocument
+from app.services import crud_fe_documents
 
 
 def numerador(db: Session) -> NumberDocument:
@@ -23,6 +24,8 @@ def numerador(db: Session) -> NumberDocument:
         issuer=SqlAlchemyIssuerRepository(db),
         numbering=SqlAlchemyDocumentNumbering(db),
         security_codes=RandomSecurityCodes(),
+        # El dígito de situación sale de lo que la cola observó (RN-43).
+        contingency=crud_fe_documents.contingencia(db),
     )
 
 
@@ -41,13 +44,9 @@ def comprobante_de(db: Session, source_type: str, source_id: int) -> dict | None
     )
     if fila is None:
         return None
-    return {
-        "clave": fila.clave,
-        "consecutive": fila.consecutive,
-        "environment": fila.environment,
-        "economic_activity": fila.economic_activity,
-        "situation": fila.situation,
-    }
+    # La clave y el consecutivo de T-705, y encima el recorrido de T-707: en qué
+    # estado está, por qué se detuvo y si ya hay XML y respuesta que bajar.
+    return crud_fe_documents.documento_out(crud_fe_documents.repositorio(db).get(fila.id))
 
 
 def clave_de(db: Session, source_type: str, source_id: int) -> str | None:

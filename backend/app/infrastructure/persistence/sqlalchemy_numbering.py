@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.application.ports.numbering import Issuer, NumberedDocument, Office
 from app.domain.fe_key import SECURITY_CODE_DIGITS
 from app.models.model_company import Branch, Company, Terminal
+from app.domain.fe_transmission import NUMBERED
 from app.models.model_fe import FeDocument, FeSequence
 from app.utils import clock
 from app.utils.tenancy import compania_actual, sucursal_actual, terminal_actual
@@ -112,6 +113,10 @@ class SqlAlchemyDocumentNumbering:
                 situation=document.situation,
                 economic_activity=document.economic_activity,
                 issued_at=document.issued_at,
+                # Nace en la cola (F7): numerado y con el primer paso ya debido,
+                # para que el trabajador lo firme y lo envíe en su próximo turno.
+                status=NUMBERED,
+                next_attempt_at=document.issued_at,
             )
         )
         # `flush` para que un consecutivo o una clave repetidos salten acá, con

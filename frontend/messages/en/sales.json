@@ -72,5 +72,6 @@
   "sales_confirm_charge": "Confirm charge",
   "sales_line_unclassified": "unclassified",
   "sales_choose_client": "Choose a customer",
-  "sales_only_invoices_needs_client": "This business only issues electronic invoices: choose a customer to charge."
+  "sales_only_invoices_needs_client": "This business only issues electronic invoices: choose a customer to charge.",
+  "sales_export_client": "A foreign customer receives an export invoice or a ticket."
 }

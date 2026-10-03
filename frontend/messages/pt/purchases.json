@@ -29,6 +29,8 @@
 	"suppliers_id_type_02": "Jurídica",
 	"suppliers_id_type_03": "DIMEX",
 	"suppliers_id_type_04": "NITE",
+	"suppliers_id_type_05": "Estrangeiro não domiciliado",
+	"suppliers_id_type_06": "Não contribuinte",
 	"suppliers_label_email": "E-mail",
 	"suppliers_label_phone": "Telefone",
 	"suppliers_label_terms": "Prazo habitual (dias)",

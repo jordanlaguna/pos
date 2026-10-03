@@ -1,4 +1,10 @@
-import { identificationTypeFor, isIdentificationType } from '$lib/domain/identification';
+import { isForeign, identificationTypeFor, isIdentificationType } from '$lib/domain/identification';
+import {
+	FOREIGN_ADDRESS_MAX_LENGTH,
+	exportLineProblem,
+	hasForeignAddress,
+	isTariffHeading
+} from '$lib/domain/export';
 import { ApiError, type ApiUpload } from '../api';
 import {
 	CHART,
@@ -50,9 +56,11 @@ import { COMPANY_STATES, MODULES as MODULOS, PAYMENT_METHODS } from '$lib/domain
 import {
 	CREDIT_NOTE,
 	DEBIT_NOTE,
+	EXPORT_INVOICE,
 	INVOICE,
 	enabledTypes,
 	isCounterDocumentType,
+	purchaseDocumentType,
 	suggestedDocumentType
 } from '$lib/domain/documentType';
 import { CORRECTS_AMOUNT } from '$lib/domain/documents';
@@ -60,6 +68,7 @@ import { isBlankLocation, locationProblem, normalizeLocation } from '$lib/domain
 import { mergeSettings } from '$lib/domain/settings';
 import type { MockFeDocument } from './db';
 import { PAYROLL_SEED } from './payrollRates';
+import { rutasDePlanilla } from './payroll';
 import type { Account, JournalEntry } from '$lib/domain/types';
 import type {
 	AmountNote,
@@ -76,8 +85,9 @@ import type {
 	SaleItem,
 	SaleReturn,
 	SalesByDay,
+	StockEntry,
 	Supplier,
-	TopProduct
+	TopProduct,
 } from '$lib/domain/types';
 
 /**
@@ -585,6 +595,7 @@ route('GET', '/users/me', ({ userId, companyId, token }) => {
 });
 
 route('POST', '/users/membership', ({ body, userId, companyId }) => {
+	exigirModulo(companyId, 'users'); // QA-01
 	if (userId == null) fail(401, 'unauthorized');
 	const db = getDb(companyId);
 	const actor = db.users.find((u) => u.id_user === userId);
@@ -618,6 +629,7 @@ route('GET', '/users/', ({ companyId }) =>
 );
 
 route('PUT', '/users/role/:id', ({ params, body, companyId }) => {
+	exigirModulo(companyId, 'users'); // QA-01
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const user = db.users.find((u) => u.id_user === id);
@@ -789,12 +801,23 @@ function tipoDeIdentificacion(pedido: unknown, identificacion: string): string {
 	return deducido;
 }
 
+/** La dirección de un cliente del extranjero (RF-78), limpia; nula en blanco. */
+function senasExtranjeras(valor: unknown): string | null {
+	const limpia = String(valor ?? '').trim();
+	if (!limpia) return null;
+	if (limpia.length > FOREIGN_ADDRESS_MAX_LENGTH)
+		fail(400, 'invalid_foreign_address', { max_length: FOREIGN_ADDRESS_MAX_LENGTH });
+	return limpia;
+}
+
 route('POST', '/clients/register_client', ({ body, companyId }) => {
+	exigirModulo(companyId, 'clients'); // QA-01
 	const db = getDb(companyId);
 	const identification = String(body?.identification ?? '').trim();
 	if (db.clients.some((c) => c.identification === identification))
 		fail(400, 'client_identification_taken');
 	const identificationType = tipoDeIdentificacion(body?.identification_type, identification);
+	const foreignAddress = senasExtranjeras(body?.foreign_address);
 	const id = nextId('clients');
 	db.clients.push({
 		id_client: id,
@@ -806,6 +829,7 @@ route('POST', '/clients/register_client', ({ body, companyId }) => {
 		email: String(body?.email ?? ''),
 		telephone: Number(body?.telephone ?? 0),
 		address: String(body?.address ?? ''),
+		foreign_address: foreignAddress,
 		register_date: String(body?.register_date ?? nowIso().slice(0, 10)),
 		...revisarExoneracion(body)
 	});
@@ -814,6 +838,7 @@ route('POST', '/clients/register_client', ({ body, companyId }) => {
 });
 
 route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
+	exigirModulo(companyId, 'clients'); // QA-01
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const client = db.clients.find((c) => c.id_client === id);
@@ -828,9 +853,12 @@ route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
 		if (!isIdentificationType(tipo)) fail(400, 'invalid_identification_type', { identification_type: tipo });
 		client.identification_type = tipo;
 	}
+	// Las señas extranjeras se ponen y se quitan con el campo (T-727): en blanco
+	// es «ya no», no «no lo toqué».
+	if (body && 'foreign_address' in body) client.foreign_address = senasExtranjeras(body.foreign_address);
 	for (const [key, value] of Object.entries(body ?? {})) {
 		if ((CAMPOS_EXONERACION as readonly string[]).includes(key)) continue;
-		if (key === 'identification_type') continue;
+		if (key === 'identification_type' || key === 'foreign_address') continue;
 		if (value == null || value === '') continue;
 		if (key === 'telephone') client.telephone = Number(value);
 		else if (key in client) (client as any)[key] = value;
@@ -842,7 +870,15 @@ route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
 // ------------------------------------------------------------------ productos
 
 /** Columnas donde el nulo **es un valor**. Espejo de `crud_product.VACIABLES`. */
-const VACIABLES = new Set(['cabys_code', 'tax_rate', 'tax_code']);
+const VACIABLES = new Set(['cabys_code', 'tax_rate', 'tax_code', 'tariff_heading']);
+
+/** La partida saneada (T-727), nula si viene vacía, o 400. Espejo de `crud_product`. */
+function partidaArancelaria(valor: unknown): string | null {
+	const limpia = String(valor ?? '').trim();
+	if (!limpia) return null;
+	if (!isTariffHeading(limpia)) fail(400, 'invalid_tariff_heading', { tariff_heading: String(valor) });
+	return limpia;
+}
 
 /**
  * La nota 8.1 del anexo de Hacienda: once códigos para nueve porcentajes.
@@ -889,6 +925,7 @@ function codigoSugerido(tarifa: number): string | null {
 route('GET', '/products/products_list', ({ companyId }) => getDb(companyId).products);
 
 route('POST', '/products/add_product', ({ body, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const barcode = String(body?.barcode ?? '').trim();
 	if (db.products.some((p) => p.barcode === barcode)) fail(400, 'barcode_taken', { barcode });
@@ -913,13 +950,15 @@ route('POST', '/products/add_product', ({ body, companyId }) => {
 				? Number(body.tax_rate)
 				: null,
 		tax_code: body?.tax_code ? codigoYTarifa(body.tax_code)[0] : null,
-		unit_of_measure: String(body?.unit_of_measure ?? 'Unid')
+		unit_of_measure: String(body?.unit_of_measure ?? 'Unid'),
+		tariff_heading: partidaArancelaria(body?.tariff_heading)
 	});
 	persist();
 	return { message: 'product_registered', id_product: id };
 });
 
 route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const product = db.products.find((p) => p.id_product === id);
@@ -953,6 +992,7 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 			product.cabys_code = value === '' || value == null ? null : String(value);
 		else if (key === 'tax_code')
 			product.tax_code = value === '' || value == null ? null : String(value);
+		else if (key === 'tariff_heading') product.tariff_heading = partidaArancelaria(value);
 		else if (key in product) (product as any)[key] = value;
 	}
 	persist();
@@ -964,6 +1004,7 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
  * catálogo clasificado es el desorden que esto existe para arreglar.
  */
 route('PUT', '/products/assign_cabys', ({ body, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const codigo = String(body?.cabys_code ?? '').trim();
 	// Las mismas tres razones que el dominio, y en el mismo orden.
@@ -993,6 +1034,7 @@ route('PUT', '/products/assign_cabys', ({ body, companyId }) => {
 });
 
 route('DELETE', '/products/delete_product/:id', ({ params, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const index = db.products.findIndex((p) => p.id_product === id);
@@ -1117,6 +1159,7 @@ function categoriasOrdenadas(companyId: number): Category[] {
 route('GET', '/categories/categories_list', ({ companyId }) => categoriasOrdenadas(companyId));
 
 route('POST', '/categories/register_category', ({ body, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const name = String(body?.name ?? '').trim();
 	const parentId = body?.parent_id == null ? null : Number(body.parent_id);
@@ -1137,6 +1180,7 @@ route('POST', '/categories/register_category', ({ body, companyId }) => {
 });
 
 route('PUT', '/categories/update_category/:id', ({ params, body, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const id = Number(params[0]);
 	const categoria = categoriaPorId(companyId, id);
 	if (!categoria) fail(404, 'category_not_found', { category_id: id });
@@ -1180,6 +1224,7 @@ route('PUT', '/categories/update_category/:id', ({ params, body, companyId }) =>
 });
 
 route('PUT', '/categories/reorder', ({ body, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const parentId = body?.parent_id == null ? null : Number(body.parent_id);
 	const ids = Array.isArray(body?.ids) ? body.ids.map(Number) : [];
 	const grupo = hermanas(companyId, parentId);
@@ -1201,6 +1246,7 @@ route('PUT', '/categories/reorder', ({ body, companyId }) => {
 });
 
 route('DELETE', '/categories/delete_category/:id', ({ params, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const id = Number(params[0]);
 	const indice = db.categories.findIndex((c) => c.id === id);
@@ -1280,15 +1326,294 @@ function numerar(
 	const clave = `506${fechaDeLaClave(origen.issued_at)}${emisor.identification.padStart(12, '0')}${consecutivo}1${seguridad}`;
 	const documento: MockFeDocument = {
 		...origen,
+		id: nextId('fe_documents'),
 		environment: emisor.environment,
 		sequence: secuencia,
 		consecutive: consecutivo,
 		clave,
 		situation: '1',
-		economic_activity: emisor.economic_activity
+		economic_activity: emisor.economic_activity,
+		status: 'numbered',
+		events: []
 	};
 	(empresa.fe_documents ??= []).push(documento);
 	return documento;
+}
+
+// ------------------------------------------- el arranque de las series (T-616)
+//
+// Como `crud_fe_sequences`. El simulado numera con una sola oficina —la de la
+// sesión, ver `numerar`—, así que lista esa caja y rechaza las demás.
+
+function cajaDeLaSesion(companyId: number) {
+	// La misma oficina que pone `prepararNumeracion`: la del registro de la compañía.
+	const registro = getRoot().companies.find((c) => c.id === companyId);
+	const cajas = cajasDe(companyId);
+	const caja = cajas.find((c) => c.codigo === (registro?.terminal_code ?? '00001')) ?? cajas[0];
+	const sucursal = sucursalesDe(companyId).find((s) => s.id === caja?.branch_id);
+	return { caja, sucursal };
+}
+
+function serieUsada(companyId: number, tipo: string, ambiente: string): boolean {
+	return (getEmpresa(companyId).fe_documents ?? []).some(
+		(d) => d.document_type === tipo && d.environment === ambiente
+	);
+}
+
+route('GET', '/fe/sequences', ({ userId, companyId }) => {
+	exigirAdmin(userId, companyId);
+	const ambiente = ambienteActivo(companyId);
+	const tipos = [...mergeSettings(settingsRow(companyId).data).eInvoicing.documentTypes].sort();
+	const { caja, sucursal } = cajaDeLaSesion(companyId);
+	if (!caja) return { environment: ambiente, items: [] };
+	const series = getEmpresa(companyId).fe_sequences ?? {};
+	return {
+		environment: ambiente,
+		items: tipos.map((tipo) => ({
+			terminal_id: caja.id,
+			branch_code: sucursal?.codigo ?? '001',
+			branch_name: sucursal?.nombre ?? '',
+			terminal_code: caja.codigo,
+			terminal_name: caja.nombre,
+			document_type: tipo,
+			last_number: series[`${tipo}|${ambiente}`] ?? 0,
+			in_use: serieUsada(companyId, tipo, ambiente)
+		}))
+	};
+});
+
+route('PUT', '/fe/sequences', ({ body, userId, companyId }) => {
+	const user = exigirAdmin(userId, companyId);
+	const ambiente = ambienteActivo(companyId);
+	const tipo = String(body?.document_type ?? '');
+	if (!mergeSettings(settingsRow(companyId).data).eInvoicing.documentTypes.includes(tipo))
+		fail(400, 'invalid_sale_document_type', { document_type: tipo });
+	const { caja, sucursal } = cajaDeLaSesion(companyId);
+	const pedidaCaja = Number(body?.terminal_id);
+	if (!caja || caja.id !== pedidaCaja) fail(404, 'terminal_not_found', { terminal_id: pedidaCaja });
+
+	const pedido = body?.last_number;
+	if (!Number.isInteger(pedido) || pedido < 0 || pedido > 9_999_999_999)
+		fail(400, 'invalid_sequence_start', { value: String(pedido) });
+	if (serieUsada(companyId, tipo, ambiente)) fail(409, 'sequence_in_use', { document_type: tipo });
+	const empresa = getEmpresa(companyId);
+	const clave = `${tipo}|${ambiente}`;
+	const antes = empresa.fe_sequences?.[clave] ?? 0;
+	if (pedido < antes) fail(409, 'sequence_cannot_go_down', { current: antes, requested: pedido });
+
+	(empresa.fe_sequences ??= {})[clave] = pedido;
+	registrar(
+		user.id_user,
+		companyId,
+		'serie_arranque',
+		`${tipo} ${sucursal?.codigo ?? '001'}-${caja.codigo} (${ambiente}): ${antes} → ${pedido}`
+	);
+	persist();
+	return { terminal_id: caja.id, document_type: tipo, environment: ambiente, last_number: pedido };
+});
+
+// ----------------------------------------------------------- el recorrido (F7)
+//
+// La de verdad tiene una cola que firma, envía y consulta con sus cadencias
+// (`domain/fe_transmission.py`). El simulado no tiene hilos: avanza cada
+// documento **cuando alguien lo lee**, por el tiempo que pasó desde que se
+// numeró (o desde que se reintentó a mano), con los mismos estados y el mismo
+// contrato. Con el certificado y las credenciales del ambiente cargados, un
+// comprobante tarda unos segundos en quedar aceptado; sin ellos se detiene en
+// la firma o en el envío y dice qué falta, que es lo que la pantalla tiene que
+// saber enseñar.
+
+const SEGUNDOS = { firmado: 2, enviado: 4, aceptado: 7 };
+
+function listoParaEmitir(companyId: number, environment: 'sandbox' | 'production') {
+	const salida = feSalida(feFila(companyId, environment));
+	return { certificado: salida.certificate_configured && salida.certificate_status !== 'expired', atv: salida.atv_configured };
+}
+
+function masTarde(desde: string, segundos: number): string {
+	return new Date(new Date(desde).getTime() + segundos * 1000).toISOString();
+}
+
+/** El estado que le toca por el tiempo transcurrido; escribe las huellas una sola vez. */
+function avanzar(companyId: number, d: MockFeDocument): MockFeDocument {
+	if (!d.status) d.status = 'numbered';
+	if (!d.events) d.events = [];
+	if (!d.id) d.id = nextId('fe_documents');
+	if (d.status === 'accepted' || d.status === 'rejected' || d.status === 'stopped') return d;
+	const desde = d.resumed_at ?? d.issued_at;
+	const transcurrido = (Date.now() - new Date(desde).getTime()) / 1000;
+	const listo = listoParaEmitir(companyId, d.environment);
+
+	if (d.status === 'numbered' && transcurrido >= SEGUNDOS.firmado) {
+		if (!listo.certificado) {
+			d.status = 'stopped';
+			d.stop_reason = 'certificate_missing';
+			d.events.push({ at: masTarde(desde, SEGUNDOS.firmado), event: 'stopped', detail: 'certificate_missing' });
+			persist();
+			return d;
+		}
+		d.status = 'signed';
+		d.signed_at = masTarde(desde, SEGUNDOS.firmado);
+		d.events.push({ at: d.signed_at, event: 'signed' });
+	}
+	if (d.status === 'signed' && transcurrido >= SEGUNDOS.enviado) {
+		if (!listo.atv) {
+			d.status = 'stopped';
+			d.stop_reason = 'credentials_missing';
+			d.events.push({ at: masTarde(desde, SEGUNDOS.enviado), event: 'stopped', detail: 'credentials_missing' });
+			persist();
+			return d;
+		}
+		d.status = 'sent';
+		d.sent_at = masTarde(desde, SEGUNDOS.enviado);
+		d.hacienda_status = 'recibido';
+		d.events.push({ at: d.sent_at, event: 'sent' });
+	}
+	if (d.status === 'sent' && transcurrido >= SEGUNDOS.aceptado) {
+		// Una clave que termina en 99 se rechaza: es la forma de ver ese camino.
+		const rechazada = d.clave.endsWith('99');
+		d.status = rechazada ? 'rejected' : 'accepted';
+		d.hacienda_status = rechazada ? 'rechazado' : 'aceptado';
+		d.resolved_at = masTarde(desde, SEGUNDOS.aceptado);
+		d.stop_detail = rechazada ? 'Rechazado en el simulado: la clave termina en 99' : 'Aceptado en el simulado';
+		d.events.push({ at: d.resolved_at, event: rechazada ? 'rejected' : 'accepted', detail: d.stop_detail });
+	}
+	persist();
+	return d;
+}
+
+function documentoOut(d: MockFeDocument) {
+	const pendiente = d.status === 'numbered' || d.status === 'signed' || d.status === 'sent';
+	return {
+		id: d.id,
+		clave: d.clave,
+		consecutive: d.consecutive,
+		environment: d.environment,
+		economic_activity: d.economic_activity,
+		situation: d.situation,
+		document_type: d.document_type,
+		source_type: d.source_type,
+		source_id: d.source_id,
+		status: d.status,
+		stop_reason: d.stop_reason ?? null,
+		stop_detail: d.stop_detail ?? null,
+		hacienda_status: d.hacienda_status ?? null,
+		failures: 0,
+		polls: d.status === 'sent' ? 1 : d.resolved_at ? 1 : 0,
+		issued_at: d.issued_at,
+		signed_at: d.signed_at ?? null,
+		sent_at: d.sent_at ?? null,
+		resolved_at: d.resolved_at ?? null,
+		last_attempt_at: d.resolved_at ?? d.sent_at ?? d.signed_at ?? null,
+		next_attempt_at: pendiente ? masTarde(d.resumed_at ?? d.issued_at, SEGUNDOS.aceptado) : null,
+		has_xml: Boolean(d.signed_at),
+		has_response: Boolean(d.resolved_at)
+	};
+}
+
+function documentoPorId(companyId: number, id: number): MockFeDocument {
+	const hallado = (getEmpresa(companyId).fe_documents ?? []).find((d) => d.id === id);
+	if (!hallado) fail(404, 'document_not_found', { document_id: id });
+	return avanzar(companyId, hallado);
+}
+
+function expedienteOut(companyId: number, d: MockFeDocument) {
+	return {
+		document: documentoOut(d),
+		source_type: d.source_type,
+		source_id: d.source_id,
+		events: (d.events ?? []).map((e) => ({ at: e.at, event: e.event, detail: e.detail ?? null }))
+	};
+}
+
+/** Un XML con la forma del de verdad, para que la pantalla tenga qué bajar. */
+function xmlSimulado(d: MockFeDocument): string {
+	const raiz =
+		{
+			'01': 'FacturaElectronica',
+			'02': 'NotaDebitoElectronica',
+			'03': 'NotaCreditoElectronica',
+			'04': 'TiqueteElectronico',
+			'08': 'FacturaElectronicaCompra',
+			'09': 'FacturaElectronicaExportacion'
+		}[d.document_type] ?? 'TiqueteElectronico';
+	return (
+		`<?xml version='1.0' encoding='utf-8'?><${raiz} xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${raiz[0].toLowerCase()}${raiz.slice(1)}">` +
+		`<Clave>${d.clave}</Clave><NumeroConsecutivo>${d.consecutive}</NumeroConsecutivo><FechaEmision>${d.issued_at}</FechaEmision>` +
+		`<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="xades-Signature-simulada"><ds:SignatureValue>simulada</ds:SignatureValue></ds:Signature></${raiz}>`
+	);
+}
+
+function respuestaSimulada(d: MockFeDocument): string {
+	const mensaje = d.status === 'rejected' ? '3' : '1';
+	return (
+		`<?xml version="1.0" encoding="utf-8"?><MensajeHacienda xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/mensajeHacienda">` +
+		`<Clave>${d.clave}</Clave><Mensaje>${mensaje}</Mensaje><DetalleMensaje>${d.stop_detail ?? ''}</DetalleMensaje></MensajeHacienda>`
+	);
+}
+
+function archivo(nombre: string, contenido: string) {
+	return { __file: { filename: nombre, content: contenido, content_type: 'application/xml; charset=utf-8' } };
+}
+
+route('GET', '/fe/queue', ({ companyId }) => {
+	const docs = (getEmpresa(companyId).fe_documents ?? []).map((d) => avanzar(companyId, d));
+	const counts: Record<string, number> = { numbered: 0, signed: 0, sent: 0, accepted: 0, rejected: 0, retrying: 0, stopped: 0 };
+	for (const d of docs) counts[d.status ?? 'numbered'] = (counts[d.status ?? 'numbered'] ?? 0) + 1;
+	const pendientes = docs.filter((d) => ['numbered', 'signed', 'sent', 'retrying'].includes(d.status ?? ''));
+	const masViejo = pendientes.map((d) => d.issued_at).sort()[0] ?? null;
+	const edadHoras = masViejo ? (Date.now() - new Date(masViejo).getTime()) / 3_600_000 : 0;
+	return {
+		counts,
+		pending: pendientes.length,
+		stopped: docs.filter((d) => d.status === 'stopped').sort((a, b) => a.issued_at.localeCompare(b.issued_at)).map(documentoOut),
+		oldest_pending_at: masViejo,
+		alarm: edadHoras >= 120 ? 'danger' : edadHoras >= 24 ? 'warning' : 'ok',
+		contingency: false
+	};
+});
+
+route('GET', '/fe/documents/:id', ({ params, companyId }) => {
+	return expedienteOut(companyId, documentoPorId(companyId, Number(params[0])));
+});
+
+route('GET', '/fe/documents/:id/xml', ({ params, companyId }) => {
+	const d = documentoPorId(companyId, Number(params[0]));
+	if (!d.signed_at) fail(409, 'document_not_signed', { document_id: d.id, status: d.status });
+	return archivo(`${d.clave}.xml`, xmlSimulado(d));
+});
+
+route('GET', '/fe/documents/:id/response', ({ params, companyId }) => {
+	const d = documentoPorId(companyId, Number(params[0]));
+	if (!d.resolved_at) fail(409, 'document_not_resolved', { document_id: d.id, status: d.status });
+	return archivo(`${d.clave}-respuesta.xml`, respuestaSimulada(d));
+});
+
+route('POST', '/fe/documents/:id/retry', ({ params, userId, companyId }) => {
+	const user = exigirAdmin(userId, companyId);
+	const d = documentoPorId(companyId, Number(params[0]));
+	if (d.status !== 'stopped') fail(409, 'document_not_stopped', { document_id: d.id, status: d.status });
+	// Vuelve al paso que le tocaba: si ya estaba firmado, a enviar; si no, a firmar.
+	d.status = d.sent_at ? 'sent' : d.signed_at ? 'signed' : 'numbered';
+	d.stop_reason = null;
+	d.stop_detail = null;
+	d.resumed_at = nowIso();
+	(d.events ??= []).push({ at: d.resumed_at, event: 'resumed', detail: `user:${user.id_user}` });
+	registrar(user.id_user, companyId, 'fe_reintento', `${d.clave} ← reintento`);
+	persist();
+	return expedienteOut(companyId, d);
+});
+
+/** T-713: qué falta ver aceptado en pruebas para pasar a producción. */
+function puertaDeProduccion(companyId: number) {
+	const aceptados = new Set(
+		(getEmpresa(companyId).fe_documents ?? [])
+			.map((d) => avanzar(companyId, d))
+			.filter((d) => d.status === 'accepted' && d.environment === 'sandbox')
+			.map((d) => d.document_type)
+	);
+	const faltan = ['01', '04', '03'].filter((t) => !aceptados.has(t));
+	return { ready: faltan.length === 0, missing: faltan };
 }
 
 /** El comprobante vigente de un origen, con la forma de `EinvoiceOut`. */
@@ -1297,13 +1622,7 @@ function comprobanteDe(companyId: number, source_type: MockFeDocument['source_ty
 		.reverse()
 		.find((d) => d.source_type === source_type && d.source_id === source_id);
 	if (!hallado) return null;
-	return {
-		clave: hallado.clave,
-		consecutive: hallado.consecutive,
-		environment: hallado.environment,
-		economic_activity: hallado.economic_activity,
-		situation: hallado.situation
-	};
+	return documentoOut(avanzar(companyId, hallado));
 }
 
 // --------------------------------------------------------------------- ventas
@@ -1324,12 +1643,18 @@ function saleResponse(sale: MockSale, companyId: number) {
 		created_at: sale.created_at,
 		// Nulo y no ausente, como el backend: las ventas del seed no lo tienen.
 		document_type: sale.document_type ?? null,
-		returned
+		returned,
+		// RF-33: en qué va la venta ante Hacienda; nulo sin comprobante.
+		einvoice_status: comprobanteDe(companyId, 'sale', sale.id)?.status ?? null
 	};
 }
 
 route('GET', '/sales/sales_list', ({ companyId }) =>
-	[...getDb(companyId).sales].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(saleResponse)
+	// `map(saleResponse)` le pasaba el índice como compañía: el comprobante de
+	// cada venta salía de otra empresa o de ninguna.
+	[...getDb(companyId).sales]
+		.sort((a, b) => b.created_at.localeCompare(a.created_at))
+		.map((venta) => saleResponse(venta, companyId))
 );
 
 route('GET', '/sales/sale/:id', ({ params, companyId }) => {
@@ -1346,12 +1671,22 @@ route('GET', '/sales/sale/:id', ({ params, companyId }) => {
 	};
 });
 
+function numeroDeVentaLibre(db: { sales: { sale_number: string }[] }): string {
+	const ahora = new Date();
+	const dos = (n: number) => String(n).padStart(2, '0');
+	const base = `${ahora.getFullYear()}${dos(ahora.getMonth() + 1)}${dos(ahora.getDate())}${dos(ahora.getHours())}${dos(ahora.getMinutes())}${dos(ahora.getSeconds())}`;
+	let candidato = base;
+	let sufijo = 2;
+	while (db.sales.some((s) => s.sale_number === candidato)) candidato = `${base}-${sufijo++}`;
+	return candidato;
+}
+
 route('POST', '/sales/add_sale', ({ body, companyId }) => {
+	exigirModulo(companyId, 'sales'); // QA-01
 	const db = getDb(companyId);
-	const saleNumber = String(body?.sale_number ?? '').trim();
-	// Sin número no hay factura. El backend de verdad lo rechaza por esquema, así
-	// que acá se devuelve el código de «cuerpo rechazado» y no uno inventado.
-	if (!saleNumber) fail(400, 'invalid_request', { fields: ['sale_number'] });
+	// T-706: sin número, lo pone el servidor con su reloj —`yyyyMMddHHmmss` y un
+	// sufijo si ese segundo ya tiene venta—, igual que `RegisterSale`.
+	const saleNumber = String(body?.sale_number ?? '').trim() || numeroDeVentaLibre(db);
 	if (db.sales.some((s) => s.sale_number === saleNumber))
 		fail(400, 'duplicate_sale_number', { sale_number: saleNumber });
 
@@ -1373,8 +1708,10 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 	// no sabe de compañías y el caso de uso lo pregunta; acá cada compañía tiene
 	// su porción, así que basta con buscarlo en la suya.
 	const clientId = body?.client_id != null ? Number(body.client_id) : null;
-	if (clientId !== null && !db.clients.some((c) => c.id_client === clientId))
-		fail(404, 'client_not_found', { client_id: clientId });
+	const cliente = clientId === null ? null : db.clients.find((c) => c.id_client === clientId);
+	if (clientId !== null && !cliente) fail(404, 'client_not_found', { client_id: clientId });
+	// Quién es ante Hacienda (RN-87, T-727): al del extranjero se le exporta.
+	const extranjero = isForeign(cliente?.identification_type);
 
 	// El comprobante, con la misma regla y el mismo orden que
 	// `domain/fe_document_type.py`: un valor desconocido se rechaza siempre, con
@@ -1387,11 +1724,18 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 	if (einvoicingEnabled(companyId)) {
 		// Lo que la compañía emite (RN-88), saneado como en el backend.
 		const encendidos = enabledTypes(seccionElectronica(companyId)?.documentTypes);
-		if (pedido === null) documentType = suggestedDocumentType(clientId !== null, encendidos);
+		if (pedido === null)
+			documentType = suggestedDocumentType(clientId !== null, encendidos, extranjero);
 		else if (!encendidos.includes(pedido))
 			fail(400, 'document_type_not_enabled', { document_type: pedido });
 		else documentType = pedido;
 		if (documentType === INVOICE && clientId === null) fail(400, 'invoice_needs_receiver');
+		if (documentType === INVOICE && extranjero) fail(400, 'invoice_needs_resident');
+		if (documentType === EXPORT_INVOICE && clientId === null) fail(400, 'export_needs_receiver');
+		if (documentType === EXPORT_INVOICE && !extranjero) fail(400, 'export_needs_foreign_receiver');
+		// La exportación lleva las señas del receptor en vez de su ubicación (RF-78).
+		if (documentType === EXPORT_INVOICE && !hasForeignAddress(cliente?.foreign_address))
+			fail(400, 'export_needs_foreign_address', { client_id: clientId });
 	}
 
 	// F5: cada línea lleva la tarifa de SU producto; la configurada es solo el
@@ -1436,8 +1780,31 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 			// El CABYS y la unidad, congelados igual (T-731, RN-86): el comprobante
 			// los imprime por línea. La unidad nace en 'Unid', como la columna.
 			cabys_code: product.cabys_code ?? null,
-			unit_of_measure: product.unit_of_measure ?? 'Unid'
+			unit_of_measure: product.unit_of_measure ?? 'Unid',
+			// La partida, solo en la exportación (T-727): en una venta del país no
+			// significa nada y no se congela.
+			tariff_heading: documentType === EXPORT_INVOICE ? (product.tariff_heading ?? null) : null
 		});
+	}
+
+	// Lo que una exportación exige de cada línea (RF-78, T-720), antes de la
+	// plata y con el producto, como `RegisterSale`.
+	if (documentType === EXPORT_INVOICE) {
+		for (const item of items) {
+			const product = db.products.find((p) => p.id_product === item.id_product)!;
+			const problema = exportLineProblem(product);
+			if (problema?.code === 'export_tariff_not_allowed')
+				fail(400, 'export_tariff_not_allowed', {
+					product_id: product.id_product,
+					name: product.name,
+					tax_code: problema.taxCode
+				});
+			if (problema?.code === 'export_line_needs_tariff_heading')
+				fail(400, 'export_line_needs_tariff_heading', {
+					product_id: product.id_product,
+					name: product.name
+				});
+		}
 	}
 
 	/*
@@ -1588,6 +1955,7 @@ route('GET', '/returns/return/:id', ({ params, companyId }) => {
 });
 
 route('POST', '/returns/add_return', ({ body, companyId }) => {
+	exigirModulo(companyId, body?.annul === true ? 'invoices' : 'returns'); // QA-01
 	const db = getDb(companyId);
 	const sale = db.sales.find((s) => s.id === Number(body?.sale_id));
 	if (!sale) fail(404, 'sale_not_found');
@@ -1806,6 +2174,7 @@ function noteResponse(nota: AmountNote, companyId: number): AmountNote {
 }
 
 route('POST', '/notes/add_note', ({ body, userId, companyId }) => {
+	exigirModulo(companyId, 'invoices'); // QA-01
 	// Solo el administrador (T-726): mueve plata sin mercadería.
 	const actor = getRoot().users.find((u) => u.id_user === userId);
 	if (!actor || (rolEn(actor.id_user, companyId) ?? actor.role) !== 'admin') fail(403, 'admin_only');
@@ -2034,6 +2403,7 @@ route('GET', '/cash/current', ({ query, userId, companyId }) => {
 });
 
 route('POST', '/cash/open', ({ body, companyId }) => {
+	exigirModulo(companyId, 'cash'); // QA-01
 	const db = getDb(companyId);
 	const user = Number(body?.user_id ?? 0);
 	if (currentSession(user, companyId)) fail(400, 'cash_already_open');
@@ -2059,6 +2429,7 @@ route('POST', '/cash/open', ({ body, companyId }) => {
 });
 
 route('POST', '/cash/movement', ({ body, companyId }) => {
+	exigirModulo(companyId, 'cash'); // QA-01
 	const db = getDb(companyId);
 	const user = Number(body?.user_id ?? 0);
 	const session = currentSession(user, companyId);
@@ -2103,6 +2474,7 @@ route('POST', '/cash/movement', ({ body, companyId }) => {
 });
 
 route('POST', '/cash/close', ({ body, companyId }) => {
+	exigirModulo(companyId, 'cash'); // QA-01
 	const user = Number(body?.user_id ?? 0);
 	const session = currentSession(user, companyId);
 	if (!session) fail(400, 'cash_no_open_session');
@@ -2296,7 +2668,7 @@ route('GET', '/suppliers', ({ companyId, query }) => {
 
 route('POST', '/suppliers', ({ body, companyId }) => {
 	const db = getDb(companyId);
-	exigirModulo(companyId, 'purchases');
+	exigirModulo(companyId, 'suppliers');
 	validarIdentificacion(body);
 
 	const identificacion = String(body?.identification ?? '').trim() || null;
@@ -2331,7 +2703,7 @@ route('POST', '/suppliers', ({ body, companyId }) => {
 
 route('PUT', '/suppliers/:id', ({ params, body, companyId }) => {
 	const db = getDb(companyId);
-	exigirModulo(companyId, 'purchases');
+	exigirModulo(companyId, 'suppliers');
 	const proveedor = (db.suppliers ?? []).find((p) => p.id === Number(params[0]));
 	if (!proveedor) fail(404, 'supplier_not_found', { supplier_id: Number(params[0]) });
 	validarIdentificacion(body);
@@ -2368,7 +2740,9 @@ route('PUT', '/suppliers/:id', ({ params, body, companyId }) => {
 function validarIdentificacion(body: Record<string, unknown> | null): void {
 	const tipo = String(body?.identification_type ?? '').trim();
 	if (!tipo) return;
-	if (!['01', '02', '03', '04'].includes(tipo))
+	// Los seis de Hacienda (F7): el 06, no contribuyente, es a quien se le emite
+	// la factura de compra (T-728).
+	if (!isIdentificationType(tipo))
 		fail(400, 'invalid_identification_type', { identification_type: tipo });
 	if (!String(body?.identification ?? '').trim()) fail(400, 'identification_required');
 }
@@ -2624,14 +2998,24 @@ function diasEntre(desde: string, hasta: string): number {
 
 // -------------------------------------------- entradas de inventario
 
+/** La entrada con su factura de compra, si la tiene (T-728), como el backend. */
+function entradaOut(companyId: number, e: StockEntry) {
+	return {
+		...e,
+		einvoice: e.document_type ? comprobanteDe(companyId, 'purchase', e.id) : null
+	};
+}
+
 route('GET', '/inventory/entries', ({ companyId }) =>
-	[...getDb(companyId).stock_entries].sort((a, b) => b.created_at.localeCompare(a.created_at))
+	[...getDb(companyId).stock_entries]
+		.sort((a, b) => b.created_at.localeCompare(a.created_at))
+		.map((e) => entradaOut(companyId, e))
 );
 
 route('GET', '/inventory/entry/:id', ({ params, companyId }) => {
 	const found = getDb(companyId).stock_entries.find((e) => e.id === Number(params[0]));
 	if (!found) fail(404, 'entry_not_found');
-	return found;
+	return entradaOut(companyId, found);
 });
 
 route('POST', '/inventory/entry', ({ body, companyId }) => {
@@ -2644,15 +3028,31 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	// Con `supplier_id` esto es una compra (RN-52): abre cuenta por pagar y
 	// crédito fiscal. Sin él es la entrada de siempre y nada de esto se usa.
 	const supplierId = Number(body?.supplier_id ?? 0) || null;
-	// Solo si trae proveedor: una entrada de mercadería no es una compra y no
-	// necesita el módulo. Es lo mismo que hace el endpoint del backend, y por lo
-	// mismo: este endpoint escribe dos cosas distintas según su cuerpo.
-	if (supplierId) exigirModulo(companyId, 'purchases');
+	// Los módulos según lo que trae, como `create_entry` en el backend (QA-01):
+	// recibir es del inventario, nombrar al proveedor es de proveedores y
+	// comprar a crédito —que deja una cuenta por pagar— es de compras.
+	exigirModulo(companyId, 'inventory');
+	if (supplierId) {
+		exigirModulo(companyId, 'suppliers');
+		if (body?.payment_terms === 'credit') exigirModulo(companyId, 'purchases');
+	}
 	const proveedor = supplierId
 		? (db.suppliers ?? []).find((p) => p.id === supplierId)
 		: undefined;
 	if (supplierId && !proveedor) fail(404, 'supplier_not_found', { supplier_id: supplierId });
 	if (proveedor && !proveedor.is_active) fail(400, 'supplier_inactive', { name: proveedor.name });
+
+	// La factura electrónica de compra (RF-79, T-728): nace de comprarle a un no
+	// contribuyente, si la compañía la emite. Se decide y se prepara el emisor
+	// antes de escribir nada, como `RegisterStockEntry`.
+	const documentType = proveedor
+		? purchaseDocumentType(
+				einvoicingEnabled(companyId),
+				enabledTypes(seccionElectronica(companyId)?.documentTypes),
+				proveedor.identification_type
+			)
+		: null;
+	const emisorDeCompra = documentType ? prepararNumeracion(companyId) : null;
 
 	const documentNumber = body?.document_number ? String(body.document_number).trim() : null;
 	if (documentNumber) {
@@ -2766,6 +3166,7 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	const aCredito = Boolean(proveedor) && body?.payment_terms === 'credit' && dias > 0;
 	const dueDate = aCredito ? sumarDias(documentDate ?? nowIso().slice(0, 10), dias) : null;
 
+	const creadaEn = nowIso();
 	db.stock_entries.push({
 		id,
 		document_number: documentNumber,
@@ -2775,7 +3176,7 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 		source: ['manual', 'excel', 'xml'].includes(body?.source) ? body.source : 'manual',
 		user_id: Number(body?.user_id ?? 0),
 		user_name: personName(Number(body?.user_id ?? 0)),
-		created_at: nowIso(),
+		created_at: creadaEn,
 		notes: body?.notes ? String(body.notes) : null,
 		status: 'aplicada',
 		total_cost: total,
@@ -2787,8 +3188,19 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 		payment_terms: dueDate ? 'credit' : 'cash',
 		due_date: dueDate,
 		subtotal: subtotalTotal,
-		tax: impuestoTotal
+		tax: impuestoTotal,
+		document_type: documentType
 	});
+	// El número y la clave de la factura de compra, con la misma hora que la
+	// entrada (T-704, T-705, T-728).
+	if (emisorDeCompra && documentType) {
+		numerar(companyId, emisorDeCompra, {
+			source_type: 'purchase',
+			source_id: id,
+			document_type: documentType,
+			issued_at: creadaEn
+		});
+	}
 
 	// El abono de una compra de contado, si se dijo CÓMO se pagó. Sin método
 	// queda con saldo: adivinar «efectivo» descuadraría un arqueo (RN-56).
@@ -2835,6 +3247,7 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 });
 
 route('POST', '/inventory/entry/:id/cancel', ({ params, body, companyId }) => {
+	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const entry = db.stock_entries.find((e) => e.id === Number(params[0]));
 	if (!entry) fail(404, 'entry_not_found');
@@ -2984,13 +3397,10 @@ route('PUT', '/settings/', ({ userId, body, companyId }) => {
 	// guardado. Es el mismo `PROTECTED_PATHS` de `crud_settings.py`.
 	conservarAmbiente(data, settingsRow(companyId).data);
 
-	const rate = data?.impuesto?.rate;
-	if (rate !== undefined) {
-		const n = Number(rate);
-		if (!Number.isFinite(n)) fail(400, 'tax_rate_not_a_number');
-		if (n < 0 || n > 1)
-			fail(400, 'tax_rate_out_of_range');
-	}
+	// El impuesto no se configura (QA-05): lo que llegue se descarta, como
+	// `sin_impuesto` en `crud_settings.py`.
+	delete (data as Record<string, unknown>).tax;
+	delete (data as Record<string, unknown>).impuesto;
 
 	validarEmisor(companyId, data as Record<string, any>);
 
@@ -3341,6 +3751,22 @@ route('GET', '/support/me', ({ token }) => {
 		name: personName(user.id_user) ?? user.email,
 		is_support: true,
 		locale: user.locale || 'es'
+	};
+});
+
+/** El idioma del panel (QA-02): como `/auth/locale`, pero con token de soporte. */
+route('POST', '/support/locale', ({ body, token }) => {
+	const user = usuarioDelToken(token);
+	const pedido = body?.locale === null || body?.locale === undefined ? null : String(body.locale);
+	if (pedido !== null && !IDIOMAS.includes(pedido)) fail(400, 'unsupported_locale', { locale: pedido });
+	user.locale = pedido;
+	persist();
+	return {
+		access_token: tokenDeSoporte(user),
+		token_type: 'bearer',
+		locale: pedido || 'es',
+		user_locale: pedido,
+		document_locale: 'es'
 	};
 });
 
@@ -4601,7 +5027,8 @@ function feSalida(fila: MockFeCredentials) {
 function feEstado(companyId: number) {
 	return {
 		environments: AMBIENTES.map((a) => feSalida(feFila(companyId, a))),
-		active: ambienteActivo(companyId)
+		active: ambienteActivo(companyId),
+		production_gate: puertaDeProduccion(companyId)
 	};
 }
 
@@ -4746,6 +5173,12 @@ route('PUT', '/fe/active', ({ body, userId, companyId }) => {
 	// trámite, justo cuando alguien acaba de darse cuenta del error.
 	if (destino === 'production' && body?.confirm !== true)
 		fail(400, 'confirmation_required', { environment: destino });
+	// T-713, RN-46: sin una factura, un tiquete y una nota de crédito aceptados
+	// en pruebas, no se pasa, y se dice cuál falta.
+	if (destino === 'production') {
+		const puerta = puertaDeProduccion(companyId);
+		if (!puerta.ready) fail(409, 'production_gate_locked', { missing: puerta.missing });
+	}
 
 	const fila = settingsRow(companyId);
 	const data = (fila.data ?? {}) as { eInvoicing?: Record<string, unknown> };
@@ -5066,4 +5499,19 @@ route('DELETE', '/offices/terminals/:id', ({ params, userId, companyId }) => {
 	filas.splice(filas.indexOf(caja), 1);
 	persist();
 	return officeEstado(companyId);
+});
+
+// ------------------------------------------------------------ planilla (F12)
+//
+// Las rutas de `/payroll/*` viven en `payroll.ts`, con su aritmética en
+// `payrollCalc.ts`: son unas treinta y este archivo ya no las aguanta. Reciben
+// de acá lo que comparten con el resto —la ruta, el admin, el módulo, la
+// bitácora y las tasas del país—.
+rutasDePlanilla({
+	route,
+	exigirAdmin,
+	exigirModulo,
+	registrar,
+	nowIso,
+	tasas: tasasDePlanilla
 });

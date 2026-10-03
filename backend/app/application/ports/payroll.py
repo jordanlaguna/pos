@@ -25,7 +25,9 @@ from typing import Protocol, Sequence
 from app.domain.ledger import PaidPayroll
 from app.domain.money import Money
 from app.domain.payroll import PayItem, Rate, TaxBracket, TaxCredits
+from app.domain.payroll_benefits import SeveranceBracket
 from app.domain.payroll_calendar import Period
+from app.domain.payroll_files import Employer, WorkerMonth
 
 
 class ScheduleSnapshot(Protocol):
@@ -46,6 +48,8 @@ class EmployeeSnapshot(Protocol):
     id: int
     hired_on: date
     terminated_on: date | None
+    #: Una de las cinco causas de RN-71, cuando ya salió.
+    termination_cause: str | None
     #: Para el crédito fiscal de la renta (RN-73).
     dependent_children: int
     spouse_credit: bool
@@ -105,7 +109,22 @@ class RunSnapshot(Protocol):
     period_to: date
     pay_date: date
     status: str
+    #: La corrida pagada que este ajuste corrige (RN-68, T-1212).
+    adjusts_run_id: int | None
     journal_entry_id: int | None
+
+
+class VacationSnapshot(Protocol):
+    """Una fila de `vacation_movements` (RN-70)."""
+
+    id: int
+    employee_id: int
+    #: 'opening' | 'accrual' | 'taken' | 'paid'.
+    kind: str
+    days: Decimal
+    on_date: date
+    run_id: int | None
+    action_id: int | None
 
 
 @dataclass(frozen=True)
@@ -123,6 +142,26 @@ class CalculatedLine:
     employer_charges: Money
 
 
+@dataclass(frozen=True)
+class StoredLine:
+    """Una línea ya escrita, leída de vuelta con sus rubros congelados.
+
+    Es lo que un ajuste compara (T-1212), lo que la liquidación usa para saber
+    de quién es (T-1210) y lo que el pago lee para acumular vacaciones (T-1209).
+    """
+
+    id: int
+    employee_id: int
+    contract_id: int
+    gross: Money
+    employee_deductions: Money
+    income_tax: Money
+    other_deductions: Money
+    net: Money
+    employer_charges: Money
+    items: tuple[PayItem, ...]
+
+
 class ScheduleRepository(Protocol):
     def get(self, schedule_id: int) -> ScheduleSnapshot | None: ...
 
@@ -136,6 +175,11 @@ class EmployeeRepository(Protocol):
 
     def contracts_in(self, schedule_id: int, period: Period) -> list[ContractSnapshot]:
         """Los contratos de esa jornada que tocan el periodo, de cualquier empleado."""
+        ...
+
+    def contracts_between(self, period: Period) -> list[ContractSnapshot]:
+        """Los contratos que tocan el periodo, de cualquier jornada: el aguinaldo
+        es de toda la compañía, no de un grupo de pago."""
         ...
 
     def add_contract(
@@ -193,7 +237,9 @@ class ActionRepository(Protocol):
 class PayrollRepository(Protocol):
     def get_run(self, run_id: int) -> RunSnapshot | None: ...
 
-    def find_run(self, *, schedule_id: int, period_to: date, kind: str) -> RunSnapshot | None: ...
+    def find_run(self, *, schedule_id: int | None, period_to: date, kind: str) -> RunSnapshot | None:
+        """La corrida de esa clase con ese corte; sin jornada, la del aguinaldo."""
+        ...
 
     def add_run(
         self,
@@ -205,9 +251,14 @@ class PayrollRepository(Protocol):
         pay_date: date,
         created_by: int,
         created_at: datetime,
+        adjusts_run_id: int | None = None,
     ) -> RunSnapshot: ...
 
     def line_count(self, run_id: int) -> int: ...
+
+    def lines(self, run_id: int) -> list[StoredLine]:
+        """Las líneas de la corrida con sus rubros, por empleado."""
+        ...
 
     def replace_lines(self, run_id: int, lines: Sequence[CalculatedLine]) -> None:
         """Borra lo que la corrida tuviera y escribe estas líneas con sus rubros."""
@@ -215,6 +266,13 @@ class PayrollRepository(Protocol):
 
     def totals(self, run_id: int) -> PaidPayroll:
         """Las sumas de sus líneas, en la forma en que el libro las quiere."""
+        ...
+
+    def paid_earnings(self, employee_id: int, period: Period) -> list[tuple[date, Money]]:
+        """`(corte, salario devengado)` por cada corrida **pagada** —regular o de
+        ajuste— del empleado cuyo corte cae en el periodo. Lo devengado es la
+        suma de los rubros de `EARNED_CONCEPTS`: lo que cuenta para el aguinaldo
+        y el promedio de la liquidación (RN-69, RN-71)."""
         ...
 
     def month_withholding(
@@ -238,6 +296,81 @@ class RateTable(Protocol):
     def brackets_at(self, on: date, country: str) -> list[TaxBracket]: ...
 
     def credits_at(self, on: date, country: str) -> TaxCredits: ...
+
+    def severance_at(self, on: date, country: str) -> list[SeveranceBracket]:
+        """La tabla de cesantía que rige a esa fecha (art. 29, RN-71), vacía si no hay."""
+        ...
+
+
+class VacationRepository(Protocol):
+    """Los movimientos de vacaciones; el saldo es su suma, nunca una columna (RN-70)."""
+
+    def movements(self, employee_id: int) -> list[VacationSnapshot]: ...
+
+    def add(
+        self,
+        employee_id: int,
+        *,
+        kind: str,
+        days: Decimal,
+        on_date: date,
+        run_id: int | None = None,
+        action_id: int | None = None,
+    ) -> int: ...
+
+    def update_for_action(self, action_id: int, *, days: Decimal, on_date: date) -> None:
+        """Corrige el disfrute de una acción que nadie aplicó todavía."""
+        ...
+
+
+class OpeningRepository(Protocol):
+    """Lo devengado antes de VentaSys, mes a mes (RN-97)."""
+
+    def earnings(self, employee_id: int, period: Period) -> list[tuple[date, Money]]:
+        """`(primer día del mes, bruto)` de los meses de apertura dentro del periodo."""
+        ...
+
+    def add_earning(self, employee_id: int, *, month: date, gross: Money, by: int, at: datetime) -> None: ...
+
+
+class PayrollReports(Protocol):
+    """Lo que un mes pagado sabe de cada trabajador, para los archivos (RN-96).
+
+    Es un modelo de lectura: junta lo que las corridas pagadas del mes dejaron
+    con los datos de la ficha, del contrato y de las acciones, en la forma que
+    el dominio formatea (`payroll_files.py`).
+    """
+
+    def month(self, year: int, month: int) -> list[WorkerMonth]:
+        """Un `WorkerMonth` por empleado con alguna línea en las corridas
+        pagadas —regulares y ajustes— cuyo corte cae en el mes."""
+        ...
+
+    def employer(self) -> Employer: ...
+
+    def policy_number(self, policy_id: int) -> str | None: ...
+
+
+class ImportRepository(Protocol):
+    """Lo que la importación busca por nombre y da de alta (RN-97, T-1220).
+
+    Quien viene de otro sistema trae nombres, no ids: la jornada «Quincenal», el
+    puesto «Cajera», la póliza «RT-1». Acá se traducen.
+    """
+
+    def position_by_name(self, name: str) -> tuple[int, bool] | None:
+        """`(id, activo)` del puesto con ese nombre, o `None`."""
+        ...
+
+    def add_position(self, *, name: str, ccss_code: str, ins_code: str) -> int: ...
+
+    def schedule_by_name(self, name: str) -> ScheduleSnapshot | None: ...
+
+    def policy_by_number(self, number: str) -> int | None: ...
+
+    def employee_by_identification(self, identification: str) -> int | None: ...
+
+    def add_employee(self, **fields: object) -> int: ...
 
 
 class PayrollSettings(Protocol):

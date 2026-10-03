@@ -24,19 +24,28 @@ class PlanOut(BaseModel):
     max_terminales: int
     max_usuarios: int
     factura_electronica: bool
-    #: Los módulos que incluye (RN-49, RF-39). Van los tres siempre, también los
-    #: apagados: en el formulario una casilla ausente y una sin marcar no se
+    #: Los módulos que incluye (RN-49, RF-39, QA-01). Van todos siempre, también
+    #: los apagados: en el formulario una casilla ausente y una sin marcar no se
     #: pueden dibujar igual.
+    sales: bool = False
+    cash: bool = False
+    invoices: bool = False
+    returns: bool = False
+    reports: bool = False
+    inventory: bool = False
     purchases: bool = False
+    suppliers: bool = False
     accounting: bool = False
     payroll: bool = False
+    clients: bool = False
+    users: bool = False
 
 
 class PlanModulesUpdate(BaseModel):
     """Qué módulos incluye un plan (RF-39).
 
-    Se mandan los tres, no un parche: el formulario tiene tres casillas y manda
-    el estado de las tres. Con un parche, desmarcar una y mandar solo las
+    Se mandan todos, no un parche: el formulario tiene una casilla por módulo y
+    manda el estado de cada una. Con un parche, desmarcar una y mandar solo las
     marcadas sería indistinguible de no tocarla.
 
     **Es el plan y no la compañía.** Encender un módulo acá lo enciende para
@@ -44,9 +53,18 @@ class PlanModulesUpdate(BaseModel):
     (`PUT /companies/{id}/subscription`), que es el camino que ya existe.
     """
 
+    sales: bool
+    cash: bool
+    invoices: bool
+    returns: bool
+    reports: bool
+    inventory: bool
     purchases: bool
+    suppliers: bool
     accounting: bool
     payroll: bool
+    clients: bool
+    users: bool
 
 
 class UsoOut(BaseModel):

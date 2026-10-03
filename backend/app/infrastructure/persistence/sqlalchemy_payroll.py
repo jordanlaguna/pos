@@ -25,30 +25,39 @@ from typing import Sequence
 
 from sqlalchemy.orm import Session
 
-from app.application.ports.payroll import CalculatedLine
+from app.application.ports.payroll import CalculatedLine, StoredLine
 from app.domain.ledger import PaidPayroll
 from app.domain.money import Money
-from app.domain.payroll import EARNING, Rate, TaxBracket, TaxCredits
+from app.domain.payroll import EARNING, PayItem, Rate, TaxBracket, TaxCredits
 from app.domain.payroll_actions import TAXABLE
+from app.domain.payroll_benefits import EARNED_CONCEPTS, SeveranceBracket
 from app.domain.payroll_calendar import Period
+from app.domain.payroll_files import Employer, WorkerAction, WorkerMonth, month_period
 from app.models.model_payroll import (
     Employee,
     EmploymentContract,
     IncomeTaxBracket,
     IncomeTaxCredit,
     InsPolicy,
+    PayrollOpeningEarning,
     PayrollRate,
     PayrollRun,
     PayrollRunItem,
     PayrollRunLine,
     PersonnelAction,
     Position,
+    VacationMovement,
     WorkSchedule,
 )
+from app.models.model_payroll import SeveranceBracket as FilaDeCesantia
+from app.models.model_company import Company
 from app.models.model_settings import Settings
 from app.utils.tenancy import compania_actual
 
 APROBADA_O_PAGADA = ("approved", "paid")
+#: Las corridas que llevan salario: la regular y el ajuste que la corrige. El
+#: aguinaldo y la liquidación no son salario del mes.
+CON_SALARIO = ("regular", "adjustment")
 
 
 class SqlAlchemyScheduleRepository:
@@ -84,17 +93,22 @@ class SqlAlchemyEmployeeRepository:
             .all()
         )
 
+    def _tocan(self, period: Period):
+        return self._db.query(EmploymentContract).filter(
+            EmploymentContract.valid_from <= period.ends_on,
+            (EmploymentContract.valid_to.is_(None)) | (EmploymentContract.valid_to >= period.starts_on),
+        )
+
     def contracts_in(self, schedule_id: int, period: Period) -> list[EmploymentContract]:
         return (
-            self._db.query(EmploymentContract)
-            .filter(
-                EmploymentContract.schedule_id == schedule_id,
-                EmploymentContract.valid_from <= period.ends_on,
-                (EmploymentContract.valid_to.is_(None)) | (EmploymentContract.valid_to >= period.starts_on),
-            )
+            self._tocan(period)
+            .filter(EmploymentContract.schedule_id == schedule_id)
             .order_by(EmploymentContract.employee_id, EmploymentContract.valid_from)
             .all()
         )
+
+    def contracts_between(self, period: Period) -> list[EmploymentContract]:
+        return self._tocan(period).order_by(EmploymentContract.employee_id, EmploymentContract.valid_from).all()
 
     def add_contract(
         self,
@@ -233,16 +247,13 @@ class SqlAlchemyPayrollRepository:
     def get_run(self, run_id: int) -> PayrollRun | None:
         return self._db.query(PayrollRun).filter(PayrollRun.id == run_id).first()
 
-    def find_run(self, *, schedule_id: int, period_to: date, kind: str) -> PayrollRun | None:
-        return (
-            self._db.query(PayrollRun)
-            .filter(
-                PayrollRun.schedule_id == schedule_id,
-                PayrollRun.period_to == period_to,
-                PayrollRun.kind == kind,
-            )
-            .first()
-        )
+    def find_run(self, *, schedule_id: int | None, period_to: date, kind: str) -> PayrollRun | None:
+        consulta = self._db.query(PayrollRun).filter(PayrollRun.period_to == period_to, PayrollRun.kind == kind)
+        if schedule_id is None:
+            consulta = consulta.filter(PayrollRun.schedule_id.is_(None))
+        else:
+            consulta = consulta.filter(PayrollRun.schedule_id == schedule_id)
+        return consulta.first()
 
     def add_run(
         self,
@@ -254,6 +265,7 @@ class SqlAlchemyPayrollRepository:
         pay_date: date,
         created_by: int,
         created_at: datetime,
+        adjusts_run_id: int | None = None,
     ) -> PayrollRun:
         corrida = PayrollRun(
             kind=kind,
@@ -262,6 +274,7 @@ class SqlAlchemyPayrollRepository:
             period_to=period_to,
             pay_date=pay_date,
             status="draft",
+            adjusts_run_id=adjusts_run_id,
             created_by=created_by,
             created_at=created_at,
         )
@@ -287,6 +300,37 @@ class SqlAlchemyPayrollRepository:
 
     def line_count(self, run_id: int) -> int:
         return len(self.lines_of(run_id))
+
+    @staticmethod
+    def _rubro(i: PayrollRunItem) -> PayItem:
+        return PayItem(
+            i.concept,
+            i.payer,
+            Money(i.base),
+            None if i.rate is None else Decimal(i.rate),
+            Money(i.amount),
+            action_id=i.action_id,
+            quantity=None if i.quantity is None else Decimal(i.quantity),
+            applied_from=i.applied_from,
+            applied_to=i.applied_to,
+        )
+
+    def lines(self, run_id: int) -> list[StoredLine]:
+        return [
+            StoredLine(
+                id=l.id,
+                employee_id=l.employee_id,
+                contract_id=l.contract_id,
+                gross=Money(l.gross),
+                employee_deductions=Money(l.employee_deductions),
+                income_tax=Money(l.income_tax),
+                other_deductions=Money(l.other_deductions),
+                net=Money(l.net),
+                employer_charges=Money(l.employer_charges),
+                items=tuple(self._rubro(i) for i in self.items_of(l.id)),
+            )
+            for l in self.lines_of(run_id)
+        ]
 
     def replace_lines(self, run_id: int, lines: Sequence[CalculatedLine]) -> None:
         for linea in self.lines_of(run_id):
@@ -340,6 +384,30 @@ class SqlAlchemyPayrollRepository:
             net=Money.sum(Money(l.net) for l in lineas),
         )
 
+    def paid_earnings(self, employee_id: int, period: Period) -> list[tuple[date, Money]]:
+        filas = (
+            self._db.query(PayrollRunLine, PayrollRun)
+            .join(PayrollRun, PayrollRun.id == PayrollRunLine.run_id)
+            .filter(
+                PayrollRunLine.employee_id == employee_id,
+                PayrollRun.kind.in_(CON_SALARIO),
+                PayrollRun.status == "paid",
+                PayrollRun.period_to >= period.starts_on,
+                PayrollRun.period_to <= period.ends_on,
+            )
+            .order_by(PayrollRun.period_to, PayrollRun.id)
+            .all()
+        )
+        return [
+            (
+                corrida.period_to,
+                Money.sum(
+                    Money(i.amount) for i in self.items_of(linea.id) if i.payer == EARNING and i.concept in EARNED_CONCEPTS
+                ),
+            )
+            for linea, corrida in filas
+        ]
+
     def month_withholding(
         self, employee_id: int, year: int, month: int, *, exclude_run_id: int
     ) -> tuple[Money, Money]:
@@ -351,7 +419,7 @@ class SqlAlchemyPayrollRepository:
             .filter(
                 PayrollRunLine.employee_id == employee_id,
                 PayrollRun.id != exclude_run_id,
-                PayrollRun.kind == "regular",
+                PayrollRun.kind.in_(CON_SALARIO),
                 PayrollRun.status.in_(APROBADA_O_PAGADA),
                 PayrollRun.period_to >= desde,
                 PayrollRun.period_to < hasta,
@@ -433,6 +501,125 @@ class SqlAlchemyRateTable:
 
         return TaxCredits(child=monto("child"), spouse=monto("spouse"))
 
+    def severance_at(self, on: date, country: str) -> list[SeveranceBracket]:
+        """La tabla más reciente que rige: todas las filas de la misma vigencia."""
+        filas = [
+            f
+            for f in self._db.query(FilaDeCesantia).filter(FilaDeCesantia.country == country).all()
+            if f.valid_from <= on
+        ]
+        if not filas:
+            return []
+        ultima = max(f.valid_from for f in filas)
+        return [
+            SeveranceBracket(
+                Decimal(f.years_from),
+                None if f.years_to is None else Decimal(f.years_to),
+                Decimal(f.days),
+            )
+            for f in sorted((f for f in filas if f.valid_from == ultima), key=lambda f: f.years_from)
+        ]
+
+
+class SqlAlchemyVacationRepository:
+    """Los movimientos de vacaciones (RN-70). El saldo lo suma el dominio."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def movements(self, employee_id: int) -> list[VacationMovement]:
+        return (
+            self._db.query(VacationMovement)
+            .filter(VacationMovement.employee_id == employee_id)
+            .order_by(VacationMovement.on_date, VacationMovement.id)
+            .all()
+        )
+
+    def add(
+        self,
+        employee_id: int,
+        *,
+        kind: str,
+        days: Decimal,
+        on_date: date,
+        run_id: int | None = None,
+        action_id: int | None = None,
+    ) -> int:
+        fila = VacationMovement(
+            employee_id=employee_id, kind=kind, days=days, on_date=on_date, run_id=run_id, action_id=action_id
+        )
+        self._db.add(fila)
+        self._db.flush()
+        return fila.id
+
+    def update_for_action(self, action_id: int, *, days: Decimal, on_date: date) -> None:
+        fila = self._db.query(VacationMovement).filter(VacationMovement.action_id == action_id).first()
+        fila.days = days
+        fila.on_date = on_date
+        self._db.flush()
+
+
+class SqlAlchemyImportRepository:
+    """Lo que la importación busca por nombre y da de alta (RN-97, T-1220)."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def position_by_name(self, name: str) -> tuple[int, bool] | None:
+        puesto = self._db.query(Position).filter(Position.name == name).first()
+        return None if puesto is None else (puesto.id, bool(puesto.is_active))
+
+    def add_position(self, *, name: str, ccss_code: str, ins_code: str) -> int:
+        puesto = Position(name=name, ccss_code=ccss_code, ins_code=ins_code, is_active=True)
+        self._db.add(puesto)
+        self._db.flush()
+        return puesto.id
+
+    def schedule_by_name(self, name: str) -> WorkSchedule | None:
+        return self._db.query(WorkSchedule).filter(WorkSchedule.name == name).first()
+
+    def policy_by_number(self, number: str) -> int | None:
+        poliza = self._db.query(InsPolicy).filter(InsPolicy.number == number).first()
+        return None if poliza is None else poliza.id
+
+    def employee_by_identification(self, identification: str) -> int | None:
+        empleado = self._db.query(Employee).filter(Employee.identification == identification).first()
+        return None if empleado is None else empleado.id
+
+    def add_employee(self, **fields: object) -> int:
+        empleado = Employee(**fields, is_active=True)
+        self._db.add(empleado)
+        self._db.flush()
+        return empleado.id
+
+
+class SqlAlchemyOpeningRepository:
+    """Lo devengado antes de VentaSys, mes a mes (RN-97)."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def earnings(self, employee_id: int, period: Period) -> list[tuple[date, Money]]:
+        filas = (
+            self._db.query(PayrollOpeningEarning)
+            .filter(
+                PayrollOpeningEarning.employee_id == employee_id,
+                PayrollOpeningEarning.period_month >= period.starts_on,
+                PayrollOpeningEarning.period_month <= period.ends_on,
+            )
+            .order_by(PayrollOpeningEarning.period_month)
+            .all()
+        )
+        return [(f.period_month, Money(f.gross)) for f in filas]
+
+    def add_earning(self, employee_id: int, *, month: date, gross: Money, by: int, at: datetime) -> None:
+        self._db.add(
+            PayrollOpeningEarning(
+                employee_id=employee_id, period_month=month, gross=gross.amount, imported_by=by, imported_at=at
+            )
+        )
+        self._db.flush()
+
 
 class SqlAlchemyPayrollSettings:
     """La sección `payroll` del JSON de configuración: número patronal y si el
@@ -469,3 +656,128 @@ class SqlAlchemyPayrollSettings:
         datos[self.SECCION] = config
         fila.data = json.dumps(datos, ensure_ascii=False)
         self._db.flush()
+
+
+class SqlAlchemyPayrollReports:
+    """Lo que un mes pagado sabe de cada trabajador (RN-96, T-1211, T-1219).
+
+    Un modelo de lectura: junta las líneas de las corridas pagadas del mes con
+    la ficha, el último contrato de esas líneas y las acciones del mes, en la
+    forma que formatea `domain/payroll_files.py`.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+        self._runs = SqlAlchemyPayrollRepository(db)
+
+    def policy_number(self, policy_id: int) -> str | None:
+        poliza = self._db.query(InsPolicy).filter(InsPolicy.id == policy_id).first()
+        return None if poliza is None else poliza.number
+
+    def employer(self) -> Employer:
+        from app.domain.hacienda import identification_type_for
+
+        company = self._db.get(Company, compania_actual())
+        identificacion = (company.identificacion or "").strip() if company else ""
+        tipo = (company.identification_type if company else None) or (
+            identification_type_for(identificacion) if identificacion else None
+        )
+        fila = self._db.query(Settings).first()
+        try:
+            datos = json.loads(fila.data or "{}") if fila is not None else {}
+        except ValueError:
+            datos = {}
+        datos = datos if isinstance(datos, dict) else {}
+        negocio = datos.get("business") or datos.get("negocio") or {}
+        negocio = negocio if isinstance(negocio, dict) else {}
+        planilla = datos.get("payroll") if isinstance(datos.get("payroll"), dict) else {}
+
+        def dato(*claves: str) -> str | None:
+            for clave in claves:
+                valor = negocio.get(clave)
+                if isinstance(valor, str) and valor.strip():
+                    return valor.strip()
+            return None
+
+        return Employer(
+            identification_type=tipo,
+            identification=identificacion or None,
+            employer_number=planilla.get("employer_number") or None,
+            phone=dato("phone", "telefono"),
+            email=dato("email", "correo"),
+            address=dato("address", "direccion"),
+        )
+
+    def month(self, year: int, month: int) -> list[WorkerMonth]:
+        periodo = month_period(year, month)
+        corridas = (
+            self._db.query(PayrollRun)
+            .filter(
+                PayrollRun.kind.in_(CON_SALARIO),
+                PayrollRun.status == "paid",
+                PayrollRun.period_to >= periodo.starts_on,
+                PayrollRun.period_to <= periodo.ends_on,
+            )
+            .order_by(PayrollRun.period_to, PayrollRun.id)
+            .all()
+        )
+        rubros: dict[int, list[PayItem]] = {}
+        contrato_de: dict[int, int] = {}
+        for corrida in corridas:
+            for linea in self._runs.lines_of(corrida.id):
+                rubros.setdefault(linea.employee_id, []).extend(self._runs._rubro(i) for i in self._runs.items_of(linea.id))
+                contrato_de[linea.employee_id] = linea.contract_id
+        if not rubros:
+            return []
+
+        por_omision = self._db.query(InsPolicy).filter(InsPolicy.is_default.is_(True)).first()
+        salida: list[WorkerMonth] = []
+        for empleado in self._db.query(Employee).filter(Employee.id.in_(list(rubros))).all():
+            contrato = self._db.query(EmploymentContract).filter(EmploymentContract.id == contrato_de[empleado.id]).first()
+            puesto = self._db.query(Position).filter(Position.id == contrato.position_id).first()
+            jornada = self._db.query(WorkSchedule).filter(WorkSchedule.id == contrato.schedule_id).first()
+            poliza = (
+                self._db.query(InsPolicy).filter(InsPolicy.id == contrato.ins_policy_id).first()
+                if contrato.ins_policy_id is not None
+                else por_omision
+            )
+            acciones = []
+            for a in (
+                self._db.query(PersonnelAction)
+                .filter(
+                    PersonnelAction.employee_id == empleado.id,
+                    PersonnelAction.cancels_action_id.is_(None),
+                    PersonnelAction.starts_on >= periodo.starts_on,
+                    PersonnelAction.starts_on <= periodo.ends_on,
+                )
+                .order_by(PersonnelAction.starts_on, PersonnelAction.id)
+                .all()
+            ):
+                nuevo = None
+                if a.position_id is not None:
+                    cambio = self._db.query(Position).filter(Position.id == a.position_id).first()
+                    nuevo = cambio.ccss_code if cambio is not None else None
+                acciones.append(WorkerAction(a.kind, a.starts_on, a.ends_on, nuevo))
+            salida.append(
+                WorkerMonth(
+                    employee_id=empleado.id,
+                    identification_type=empleado.identification_type,
+                    identification=empleado.identification,
+                    insured_number=empleado.insured_number,
+                    first_name=empleado.first_name,
+                    last_name_1=empleado.last_name_1,
+                    last_name_2=empleado.last_name_2,
+                    hired_on=empleado.hired_on,
+                    terminated_on=empleado.terminated_on,
+                    termination_cause=empleado.termination_cause,
+                    ccss_code=puesto.ccss_code if puesto is not None else None,
+                    ins_code=puesto.ins_code if puesto is not None else None,
+                    policy_id=poliza.id if poliza is not None else None,
+                    policy_number=poliza.number if poliza is not None else None,
+                    shift=jornada.shift if jornada is not None else "day",
+                    hours_per_day=Decimal(jornada.hours_per_day) if jornada is not None else Decimal(8),
+                    items=tuple(rubros[empleado.id]),
+                    actions=tuple(acciones),
+                )
+            )
+        return sorted(salida, key=lambda w: (w.last_name_1, w.first_name, w.employee_id))

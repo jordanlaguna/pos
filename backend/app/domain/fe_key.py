@@ -26,7 +26,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Final
 
-from .errors import InvalidKeyPart
+from .errors import InvalidKeyPart, InvalidSequenceStart, SequenceCannotGoDown, SequenceInUse
 from .office import BranchCode, TerminalCode
 
 #: Costa Rica. La clave empieza siempre así.
@@ -64,6 +64,27 @@ def next_sequence(last: object) -> int:
     if not _entero(last) or last < 0 or last > MAX_SEQUENCE:
         raise InvalidKeyPart("sequence", last)
     return 1 if last == MAX_SEQUENCE else last + 1
+
+
+def check_sequence_start(
+    *, document_type: str, current: int, requested: object, emitted: bool
+) -> int:
+    """El último consecutivo que trae un negocio de otro sistema (T-616, RN-36 a
+    RN-38), ya revisado. Es el **último emitido**, no el siguiente: la serie
+    sigue en `requested + 1`.
+
+    - Tiene que caber en la clave: un entero de cero a diez dígitos.
+    - Si el sistema ya emitió con esta serie, el contador es suyo y no se toca.
+    - Solo sube: bajarlo volvería a emitir números usados. Igual al de ahora
+      no es un error; no cambia nada.
+    """
+    if not _entero(requested) or requested < 0 or requested > MAX_SEQUENCE:
+        raise InvalidSequenceStart(requested)
+    if emitted:
+        raise SequenceInUse(document_type)
+    if requested < current:
+        raise SequenceCannotGoDown(current, requested)
+    return requested
 
 
 def consecutive(

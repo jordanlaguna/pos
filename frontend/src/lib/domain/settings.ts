@@ -54,11 +54,23 @@ export interface CurrencySettings {
 }
 
 export interface TaxSettings {
-	/** Cómo se llama el impuesto en la factura: IVA, ISV, IGV… */
+	/** Cómo se llama el impuesto en la factura. */
 	name: string;
 	/** Expresada entre 0 y 1. 0.13 = 13 %. */
 	rate: number;
 }
+
+/**
+ * El impuesto, que **ya no se configura** (QA-05).
+ *
+ * La tarifa de cada producto la da su CABYS; la de uno sin CABYS es la general
+ * del IVA, el 13 % de ley (RN-9). Antes era «la tasa del negocio» de la pestaña
+ * Moneda, y con la tarifa por CABYS ese campo solo servía para equivocarse: un
+ * 10 % escrito ahí se cobraba en todo producto sin clasificar. El backend tiene
+ * la misma tarifa en `domain/tax.py` (`GENERAL_RATE`), y descarta lo que llegue
+ * como impuesto al guardar la configuración.
+ */
+export const VAT: TaxSettings = Object.freeze({ name: 'IVA', rate: 0.13 });
 
 export type TemplateId = 'tiquete' | 'clasica' | 'moderna';
 
@@ -235,7 +247,7 @@ export const DEFAULT_SETTINGS: Settings = {
 		location: { ...EMPTY_LOCATION }
 	},
 	currency: { ...CURRENCIES[0] },
-	tax: { name: 'IVA', rate: 0.13 },
+	tax: { ...VAT },
 	document: {
 		template: 'tiquete',
 		color: '#0e7490',
@@ -283,7 +295,11 @@ export const ID_TYPES = [
 	{ code: '01', label: 'Cédula física' },
 	{ code: '02', label: 'Cédula jurídica' },
 	{ code: '03', label: 'DIMEX' },
-	{ code: '04', label: 'NITE' }
+	{ code: '04', label: 'NITE' },
+	// Los dos de F7: el extranjero recibe la factura de exportación (T-727) y
+	// el no contribuyente, como proveedor, la de compra (T-728).
+	{ code: '05', label: 'Extranjero no domiciliado' },
+	{ code: '06', label: 'No contribuyente' }
 ] as const;
 
 // ------------------------------------------------------------------- fusión
@@ -389,7 +405,6 @@ export function mergeSettings(raw: unknown): Settings {
 
 	const business = obj(legacy(source, 'business', 'negocio'));
 	const currency = obj(legacy(source, 'currency', 'moneda'));
-	const tax = obj(legacy(source, 'tax', 'impuesto'));
 	// `doc` y no `document`: una variable con ese nombre tapa el global del
 	// navegador, justo en el módulo que tiene prohibido tocarlo.
 	const doc = obj(legacy(source, 'document', 'documento'));
@@ -434,10 +449,8 @@ export function mergeSettings(raw: unknown): Settings {
 			symbolAtEnd: bool(legacy(currency, 'symbolAtEnd', 'simbolo_al_final'), d.currency.symbolAtEnd),
 			space: bool(legacy(currency, 'space', 'espacio'), d.currency.space)
 		},
-		tax: {
-			name: str(legacy(tax, 'name', 'nombre'), d.tax.name, 20),
-			rate: num(legacy(tax, 'rate', 'tasa'), d.tax.rate, 0, 1)
-		},
+		// Lo que haya guardado no cuenta: el impuesto no se configura (QA-05).
+		tax: { ...VAT },
 		document: {
 			template: pick(
 				legacy(doc, 'template', 'plantilla'),

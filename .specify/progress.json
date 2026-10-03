@@ -12,7 +12,7 @@
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-10-02",
+  "actualizado": "2026-10-03",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -590,6 +590,90 @@
       "causa": "La pantalla manda solo sus seis secciones y `save_settings` reemplazaba el JSON entero; solo conservaba el campo protegido del ambiente de factura electrónica.",
       "arreglo": "`OWNED_SECTIONS` en `crud_settings`: las secciones del backend se conservan enteras al guardar y se ignoran si vienen en la petición. Regresión en `test_contabilidad.py` y en `test_planilla.py`.",
       "sesion": 76
+    },
+    {
+      "defecto": "En `/contabilidad`, la fecha de arranque volvía al primero del mes en cuanto se tecleaba un saldo inicial",
+      "sintoma": "Quien ponía enero y después los saldos activaba los libros en octubre sin aviso; la primera corrida de planilla pagada en enero no dejaba asiento (RN-60: antes del arranque no se escribe) y la pantalla no explicaba por qué. La prueba de F11 no lo veía porque arranca en el mes corriente.",
+      "causa": "`<input value={hoy.slice(0, 8) + '01'}>`: por ser una llamada, Svelte 5 la mete en un `template_effect` compartido con otros atributos del bloque, y cada cambio de `filas` volvía a aplicar el valor inicial sobre lo tecleado.",
+      "arreglo": "La fecha es `$state` con `bind:value`, como los saldos. `planilla.spec.ts` comprueba que la fecha sobrevive a los saldos antes de activar.",
+      "sesion": 77
+    },
+    {
+      "defecto": "Dar de baja a una persona dejaba la ficha donde estaba en vez de abrir la liquidación",
+      "sintoma": "La baja se registraba, la liquidación nacía en borrador y la persona se quedaba en la ficha sin saber que tenía que ir a corridas a calcularla.",
+      "causa": "La acción devolvía el id y la pantalla hacía `goto` en `onSuccess`; `use:enhance` aplica el resultado **después** del callback y esa actualización cancelaba la navegación recién empezada.",
+      "arreglo": "La acción responde `redirect(303, /planilla/corridas/{id})`, como ya hacían las corridas; el modal se cierra en `onRedirect`. Lo cubre la prueba de punta a punta.",
+      "sesion": 77
+    },
+    {
+      "defecto": "La clave declaraba «contingencia» (situación 2) cuando no se alcanzaba a Hacienda",
+      "sintoma": "Ninguno todavía: no hubo una caída real. Habría sido un rechazo de cada comprobante numerado durante la caída.",
+      "causa": "La decisión se tomó con el README de `docs/`, que decía 2; el anexo 4.4 (nota 3, inciso g) reserva la 2 para el comprobante que sustituye uno físico y pone la 3, «sin internet», para el que se generó electrónicamente sin poder transmitirse.",
+      "arreglo": "`NumberDocument.situation()` devuelve la 3; la prueba lo fija con la cita del anexo, y el README quedó corregido.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "Vault sellado o el almacén caído ponían al negocio en «sin internet»",
+      "sintoma": "Tras reiniciar la máquina con Vault sellado y Hacienda arriba, cada venta habría nacido declarando una caída que no hubo, que es causa de rechazo.",
+      "causa": "La salud de la cola tomaba la última falla de cualquier comprobante en `retrying`, y `_diferir` lo pone en `retrying` también por fallas nuestras.",
+      "arreglo": "`fe_documents.unreachable_at` (migración 021) se anota solo cuando no contestó Hacienda o su IdP, y es lo único que mira `health()`. Las pruebas de Vault sellado y del almacén caído comprueban que no lo tocan.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "La nota de débito tenía flujo desde T-726 y su casilla seguía bloqueada",
+      "sintoma": "Una compañía cuya lista guardada no traía la ND no podía encenderla, y emitirla respondía `document_type_not_enabled`.",
+      "causa": "Nadie la agregó a `AVAILABLE` cuando llegó su flujo; la prueba fijaba la lista sin ella.",
+      "arreglo": "La ND entra a `AVAILABLE` en los dos dominios; Configuración la describe en vez de decir «todavía no disponible», y la prueba de punta a punta comprueba que se mueve y que el REP no.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "La página entera se desplazaba y se llevaba el menú",
+      "sintoma": "En el detalle de una venta con el tiquete, al bajar el menú quedaba cortado a media pantalla y debajo había fondo vacío; aparecían dos barras de desplazamiento. También en la configuración de planilla.",
+      "causa": "El `dt.sr-only` del monto en letras es `position: absolute`; `main` desplazaba sin estar posicionado, así que el rótulo tomaba al documento como contenedor y lo estiraba.",
+      "arreglo": "`relative` en el `main` del POS y del panel de soporte; `desplazamiento.spec.ts` recorre todas las pantallas.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "«Guardar cambios» en Configuración volvía a la pestaña Negocio",
+      "sintoma": "Quien guardaba desde Moneda, Documentos o Factura electrónica caía en Negocio y tenía que volver a buscar lo que había cambiado.",
+      "causa": "Guardar recarga la pantalla entera, y la pestaña vivía solo en memoria.",
+      "arreglo": "La pestaña va en `?seccion=` con `replaceState`; `configuracion.spec.ts` lo comprueba.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "La recepción del sandbox apuntaba a una ruta que no existe",
+      "sintoma": "Todo comprobante de pruebas se detenía en el envío con «Las credenciales no tienen permiso para este emisor» (`forbidden`), con credenciales verificadas y el usuario de ATV igual a la cédula de la compañía.",
+      "causa": "El README de `docs/` daba `api.comprobanteselectronicos.go.cr/recepcion-sandbox/v1/` y el dominio lo copió con una nota que afirmaba que el sandbox era «la misma máquina con otra ruta». Esa ruta la contesta el Gateway de AWS con 403. La de verdad es `api-sandbox.…/recepcion/v1/`. Las pruebas no lo podían ver: hablan con una Hacienda de mentira.",
+      "arreglo": "`domain/hacienda.py` con la URL buena y una prueba que la fija entera; `docs/` corregido con cómo se comprobó. La primera FE salió aceptada en once segundos.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "Un 403 de la recepción se guardaba sin lo que dijo el servidor",
+      "sintoma": "La pantalla culpaba a las credenciales y no había nada más que leer; hubo que repetir el envío a mano para ver la respuesta.",
+      "causa": "`ReceptionForbidden` no llevaba causa, a diferencia de `ReceptionRejected`.",
+      "arreglo": "`ReceptionForbidden(cause)` con la cabecera o el cuerpo, y el caso de uso lo deja en `stop_detail`.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "Clases y colores que no existían en app.css",
+      "sintoma": "Los botones del certificado y de las credenciales salían sin fondo ni borde; en contabilidad y en la selección de compañía los errores y los descuadres no salían en rojo, y el ícono de cada compañía quedaba casi invisible.",
+      "causa": "`btn-secondary`, `btn-sm`, `--danger`, `--success`, sus fondos, `--surface-2`, `--surface-muted` y `--accent-soft` se usaban y nunca se definieron. El navegador los ignora en silencio.",
+      "arreglo": "Mapeados a los tokens de verdad, `--accent-soft` definido a partir del acento, y `css-tokens.test.ts` que exige que toda clase de botón y toda `var(--x)` estén definidas.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "Listas y campos controlados que se reiniciaban al hidratar",
+      "sintoma": "En las pruebas de punta a punta: una compañía dada de alta en «Comercio» nacía en «Básico», pasar una compañía de plan desde Planes no la movía, y la numeración guardaba el número viejo con el aviso de «guardada».",
+      "causa": "Al pasar las listas a `Select` se les puso `value=` fijo, y el campo de la numeración llevaba `value=`. Svelte los reinicia al hidratar y se come lo que se eligió o escribió antes. El selector de idioma del menú ya documentaba esto desde F8.",
+      "arreglo": "La opción inicial con `selected` y sin `value` en `Select`; el número con `defaultValue`. Anotado en `Select.svelte` y en las trampas de `CLAUDE.md`.",
+      "sesion": "2026-10-03"
+    },
+    {
+      "defecto": "La prueba del 400 sin cuerpo fallaba a veces",
+      "sintoma": "`test_un_400_sin_nada_dice_el_codigo` falló una vez en la batería completa y pasaba sola.",
+      "causa": "El servidor de mentira contestaba sin leer el cuerpo del POST; a veces el cliente recibía la conexión cortada en vez del código.",
+      "arreglo": "El servidor lee el cuerpo antes de contestar.",
+      "sesion": "2026-10-03"
     }
   ],
   "decisiones": [
@@ -1538,6 +1622,180 @@
       "decision": "`TerminateEmployee` crea la corrida `settlement` sin líneas; sus rubros los calcula T-1210.",
       "porque": "Un ex empleado sin liquidación en la lista es un reclamo laboral dentro de un mes; la fila existe desde la baja para que no se olvide, y el cálculo llega con el promedio de seis meses y las vacaciones sin disfrutar.",
       "fecha": "2026-10-02"
+    },
+    {
+      "tema": "El archivo de la CCSS es un informe hasta que la Dirección SICERE entregue el trazado",
+      "decision": "`GET /payroll/exports/ccss` devuelve, por trabajador, lo que el formulario de Autogestión Planilla en Línea pide —identificación como la pide la Caja, ocupación, jornada, salario que cotiza, días y cada movimiento con fechas—, y la pantalla lo muestra y lo baja en CSV. El archivo de texto es T-1222.",
+      "porque": "La CCSS no publica la estructura del archivo de grandes clientes (se buscó el 2026-10-02 en ccss.sa.cr, guías oficiales, procedimientos de instituciones y documentación de proveedores) y plan §14.8 prohíbe suponer el formato. El 98 % de los patronos presenta por el formulario; el informe es lo que se teclea ahí.",
+      "fecha": "2026-10-02"
+    },
+    {
+      "tema": "El archivo del INS sale del trazado V08D de segunda mano, cotejo pendiente",
+      "decision": "`ins_file` escribe el trazado de `docs/ins/README.md` (tres líneas de encabezado y registros de 114 posiciones, ISO-8859-1, nombre `PL<póliza>M<año><mes>-V08D (Texto).txt`), tomado del generador público que reproduce la plantilla del INS y de la charla oficial sobre identificaciones. T-1223 lo coteja con «Estructura del archivo» de RT-Virtual.",
+      "porque": "La estructura oficial vive dentro de RT-Virtual con la sesión de la póliza; el trazado disponible es concreto y verificable, y un rechazo del INS se corrige en una función y su prueba, no en la planilla.",
+      "fecha": "2026-10-02"
+    },
+    {
+      "tema": "El ajuste valora los tramos de la pagada y escribe la diferencia",
+      "decision": "`CalculateRun` de un `adjustment` vuelve a correr el cálculo regular sobre el periodo de la original, aplicando exactamente los tramos de acciones que ella aplicó con los datos de hoy, copiando cuotas y anulaciones, y guarda la diferencia por rubro (`difference_lines`). La renta se proyecta si el mes sigue abierto y se liquida contra el mes si ya cerró; `month_withholding` cuenta regulares y ajustes.",
+      "porque": "Lo que la pagada no aplicó entra en la regular siguiente (RN-91); si el ajuste también lo tomara se pagaría dos veces. Y un ajuste de un mes cerrado tiene que dejar el mes cuadrado, porque ya no vendrá una corrida que lo cierre.",
+      "fecha": "2026-10-02"
+    },
+    {
+      "tema": "La liquidación nace con una línea vacía que dice de quién es",
+      "decision": "`TerminateEmployee` escribe en la corrida `settlement` una línea del empleado con totales en cero y sin rubros; `settlement_lines` la lee para saber a quién liquida y la reemplaza.",
+      "porque": "`payroll_runs` no tiene columna de empleado porque las demás corridas son de muchos, y agregarla para una sola clase era llevar a la tabla lo que la línea ya modela.",
+      "fecha": "2026-10-02"
+    },
+    {
+      "tema": "Lo devengado que cuenta para el aguinaldo y el promedio es lo que paga renta",
+      "decision": "`EARNED_CONCEPTS = TAXABLE`: salario, extras, dobles, bonificación, las ausencias en negativo y, de la maternidad, lo que pagó el patrono; los subsidios de incapacidad no.",
+      "porque": "El subsidio no es salario (MTSS, DAJ-AE-201-12). Que la maternidad cuente el salario entero por el art. 95 está pendiente con el usuario; el conjunto está en un solo sitio.",
+      "fecha": "2026-10-02"
+    },
+    {
+      "tema": "Las vacaciones se acumulan por días de calendario del salario base",
+      "decision": "Al pagar una corrida regular, cada línea acumula `vacation_accrual(días de calendario que cubrió su salario base, días hábiles de la jornada)`; una quincena de quince días da 0,51 hábiles.",
+      "porque": "Es la fórmula del art. 153 ya probada en el dominio, aplicada al tramo que de verdad se pagó: quien entró el 20 acumula por once días. No descuenta permisos sin goce: anotado como mejora.",
+      "fecha": "2026-10-02"
+    },
+    {
+      "tema": "La importación trae nombres y escribe todo o nada",
+      "decision": "Las filas llegan con la jornada, el puesto y la póliza **por nombre**; un puesto que ya existe se reutiliza, una cédula que ya está no entra, y el saldo de una deducción entra como lo pactado que falta. Con `dry_run` solo se revisa; sin él, una fila mala responde `import_has_errors` y no se escribe nada.",
+      "porque": "Es lo que trae quien viene de otro sistema (RN-97), y media planilla importada es peor que ninguna.",
+      "fecha": "2026-10-02"
+    },
+    {
+      "tema": "La ruta de emisión es directa",
+      "decision": "VentaSys firma con la llave de Vault y transmite a la API de recepción de Hacienda. Un proveedor autorizado sigue cabiendo detrás de `DocumentSigner` y `HaciendaReception`.",
+      "porque": "F6 ya dejó la llave en Vault y el IdP probado, el usuario cargó certificado y credenciales, y los comprobantes aceptados de `docs/…/XML-Ejemplos/` dan la forma exacta. Un proveedor costaría por documento y ataría la salida a producción a un tercero.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La canonicalización es la de la biblioteca estándar",
+      "decision": "`domain/fe_signature.py` usa `ET.canonicalize` (C14N 2.0) para los tres resúmenes y no agrega `lxml` a `requirements.txt`; una prueba compara byte por byte contra la exclusiva 1.0 de `lxml` cuando está instalado.",
+      "porque": "El proyecto acota sus dependencias a propósito, y sobre estos documentos las dos formas canónicas coinciden; si dejaran de coincidir, la prueba lo dice antes que Hacienda.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "El trabajador de la cola es un hilo del proceso de la API",
+      "decision": "`workers/fe_worker.py` arranca con el `lifespan` de FastAPI, despierta cada `FE_WORKER_INTERVAL_SECONDS` y atiende cada compañía en su propio contexto. `FE_WORKER=0` lo apaga.",
+      "porque": "El POS de una tienda corre en un contenedor y otro proceso es otra cosa que puede quedarse sin arrancar. Con un solo uvicorn no hay dos hilos; si los hubiera, el almacén que se escribe una vez y la clave única de Hacienda hacen el cruce feo pero no incorrecto.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "El recorrido vive en `fe_documents`, la bitácora aparte",
+      "decision": "Migración 020: estado, intentos, horas y llaves del almacén como columnas del comprobante, y cada paso en `fe_document_events`. Lo numerado antes de la migración entra a la cola.",
+      "porque": "Plan §7.2 ya decía que el estado colgaría de la tabla del comprobante; la bitácora es de solo agregar y crece aparte.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Qué se reintenta y qué detiene",
+      "decision": "Transitorio —IdP o Hacienda que no contestan, 5xx, 429, Vault sellado, almacén caído— se reintenta 5, 15, 30 min, 1, 2, 4, 8, 16, 24 h hasta 72. Detienen en el primer intento el certificado que falta o venció, las credenciales que faltan o Hacienda rechaza, un 400 de la recepción, un 403 y un comprobante al que le falta un dato. Un rechazo es final. El veredicto se consulta 10 s, 30 s, 1, 2, 5 min y luego cada 5, hasta 72 h.",
+      "porque": "RN-40 a RN-42 y README §8: lo transitorio se espera; lo nuestro se avisa ya.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La contingencia es lo observado",
+      "decision": "Situación 2 cuando el último intento contra Hacienda falló por algo transitorio y no hubo contacto bueno después, dentro de las últimas 24 horas. La decide `NumberDocument` al numerar, por el puerto `ContingencyMode`.",
+      "porque": "RN-43: un hecho observado, no una precaución. Emitir con 2 con Hacienda arriba es causa de rechazo, así que la duda cae hacia lo normal.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "`ProveedorSistemas` es el propio emisor salvo que se configure",
+      "decision": "`FE_PROVEEDOR_SISTEMAS` si está; si no, la cédula del emisor.",
+      "porque": "Los comprobantes aceptados de SWS traen su propia cédula. El código no escribe la cédula de nadie.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "`sale_number` convive con el consecutivo y lo pone el servidor",
+      "decision": "`RegisterSale` lo fabrica con su reloj (`yyyyMMddHHmmss`, sufijo si choca) cuando no viene; el POS dejó de mandarlo; un cliente viejo que lo mande sigue pudiendo.",
+      "porque": "Es el recibo interno, el que se imprime sin comprobante; el fiscal es el consecutivo. Dos cajas en el mismo segundo ya no chocan.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "El simulado recorre la cola por reloj",
+      "decision": "Un comprobante del modo simulado pasa a firmado, enviado y aceptado a los 2, 4 y 7 segundos de numerado si el ambiente tiene certificado y credenciales; sin ellos se detiene con el mismo motivo que el backend. Una clave que termina en 99 se rechaza.",
+      "porque": "Las pantallas y Playwright necesitan ver los siete estados sin Vault ni Hacienda; el contrato es el mismo.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La partida arancelaria se exige a las mercancías, no a los servicios",
+      "decision": "La FEE exige la partida de cada línea cuyo CABYS empieza con 0 a 4 (o no tiene CABYS); los servicios (5 a 9) no la llevan. RF-78 dice «algún producto»; el XSD la deja opcional y el anexo la pide en las mercancías.",
+      "porque": "Pedírsela a una asesoría sería inventar un dato que Hacienda no espera; dejar pasar una mercancía sin ella es un rechazo que llega con el cliente ya ido.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Los tipos de identificación son seis; el emisor sigue siendo de cuatro",
+      "decision": "`IDENTIFICATION_TYPES` admite 01 a 06 para clientes y proveedores; `check_issuer_identity` rechaza el 05 y el 06. Con el 05 la identificación del cliente es texto de hasta 20 (un pasaporte no son dígitos) y la ficha pide su dirección extranjera en lugar de la del país.",
+      "porque": "Un extranjero no domiciliado o un no contribuyente reciben comprobantes; no los emiten. Permitírselo al emisor firmaría claves que Hacienda rechaza.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La FEC se arma como la aceptada de docs/",
+      "decision": "El proveedor es el emisor del XML y el negocio el receptor, con la actividad del negocio en `CodigoActividadEmisor` y `CodigoActividadReceptor`; la referencia es tipo 14 con código 04, con el número del documento del proveedor si lo dio y sin él si no; la condición y el medio de pago son los de la compra, y el 99 lleva «Otros» en `MedioPagoOtros`. El impuesto de la línea es el que se tecleó en la compra (RN-53).",
+      "porque": "Es la única FEC aceptada que se tiene, y el anexo no describe otra forma. Deducir el impuesto del producto cambiaría la plata de una compra que ya se registró.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La NC por exoneración posterior no se inventa",
+      "decision": "T-732 queda abierta hasta confirmar con Hacienda o el contador cómo se arman sus líneas. Las tres salidas posibles están escritas en la tarea.",
+      "porque": "RN-80: lo que el sistema deduce es lo que nadie puede explicar después. Con la exoneración en la línea la aritmética del anexo acredita base y 4 %, no el 9 % que se devuelve; una línea exenta acredita el monto pero lo declara como venta.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "F7 se cierra con lo abierto escrito",
+      "decision": "La fase queda cerrada con una tabla en `task.md` de lo que sigue abierto, cada cosa con su porqué y lo que la destraba. Lo que pide decisión del usuario: T-729 (venta a crédito), T-732 (confirmar con Hacienda), T-733 (correo), T-735 y T-736.",
+      "porque": "Lo abierto depende de una fase propia, de una definición de Hacienda, de decisiones del usuario o de un despliegue que no existe. Lo que sí estaba en F7 y salía mal —la situación de la clave, la ND bloqueada— se corrigió antes de cerrar.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La clave declara «sin internet» (3), no «contingencia» (2)",
+      "decision": "Cuando no se alcanza a Hacienda, `NumberDocument` numera con situación 3. Solo cuenta lo que no contestó Hacienda o su IdP (`fe_documents.unreachable_at`); Vault sellado o el almacén caído no cambian la clave.",
+      "porque": "El anexo 4.4 (nota 3, inciso g, p. 67) reserva la 2 para el comprobante electrónico que sustituye uno físico hecho a mano, con su referencia; la 3 es la del que se generó electrónicamente sin poder transmitirlo, y es la única con la que admite una fecha de emisión anterior a la validación (p. 19). El README de `docs/` decía 2 y se corrigió con la cita.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "El número que da quien viene de otro sistema es el último que emitió",
+      "decision": "Para la primera FE de prueba, 500209 se tomó como el último emitido por el otro sistema y la factura salió con 500210, como dice RN-36.",
+      "porque": "Repetir un consecutivo que el otro sistema ya usó es exponerse a un rechazo; el siguiente no choca con nada.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "El contrato se da en el alta, en la misma transacción",
+      "decision": "`POST /payroll/employees` admite `contract` (sin fecha: rige desde el ingreso) y guarda los dos o ninguno. La ficha lo ofrece marcado cuando hay una jornada y un puesto activos; sin ellos lo dice y el contrato va después. Los contratos que siguen van por la ficha del empleado.",
+      "porque": "RF-55 pide el alta con contrato y la pantalla lo partía en dos pasos: cada alta quedaba «Sin contrato», fuera de toda corrida, hasta que alguien se acordara. Dos pedidos desde el POS habrían dejado un empleado sin contrato cuando el segundo fallara.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Los planes son paquetes de módulos, y el paquete decide",
+      "decision": "Cada sección del POS es un módulo y el plan dice cuáles trae; no hay interruptor por compañía (RN-49 a RN-51 siguen). Paquetes de fábrica: Restaurante, Comercio, Comercio con compras —con clientes y usuarios, que la lista del usuario no traía— y Completo. Precio y límites de los paquetes quedan en 0 y 1/3/10 hasta que se decidan.",
+      "porque": "El usuario quiere vender por paquetes; un interruptor por compañía serían dos verdades. Sin usuarios el dueño no crea cajeros y sin clientes no factura a nombre de nadie.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Lo que entra de F13, F14 y F15, y en qué orden",
+      "decision": "Entra todo lo propuesto de las tres fases: en F13 los siete puntos, con el buzón de comprobantes recibidos, y los gastos y servicios son del módulo de proveedores; en F14 los puntos 1 a 7, con la orden de compra con aprobación opcional por compañía, y la proporcionalidad del IVA bloqueada hasta hablarla con un contador (T-1407); en F15 los siete, con existencias por sucursal, valorado, rotación, marca, y lote y vencimiento activables por compañía. Orden: F15 → F13 → F14. El precio y los límites de los paquetes los carga soporte a mano.",
+      "porque": "El kárdex y el mínimo por producto de F15 los usan los otros dos; los gastos son de proveedores porque el paquete Comercio los necesita sin tener compras.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "El impuesto no se configura: la tarifa es la del CABYS o el 13 % de ley",
+      "decision": "Se quitó la tasa del negocio de la pestaña Moneda; un producto sin tarifa propia paga la general del IVA, fija en el código de los dos lados.",
+      "porque": "Con la tarifa por CABYS el campo solo servía para equivocarse: un 10 % escrito ahí se cobraba en todo producto sin clasificar.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Las listas desplegables son la nativa con nuestro estilo",
+      "decision": "`Select.svelte` envuelve la lista nativa y `select.input` le pone la flecha y el relleno; el desplegable abierto sigue al tema por `color-scheme`.",
+      "porque": "Viaja en el formulario sin JavaScript, el teclado y el lector de pantalla la conocen, y las pruebas la eligen con `selectOption`. Un desplegable dibujado a mano, con búsqueda, se puede montar después sobre el mismo componente.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "El arranque de una serie se toca solo mientras el sistema no la usó",
+      "decision": "T-616 deja subir el último consecutivo de cada caja y tipo en el ambiente en uso; bajarlo o moverlo después de la primera emisión del sistema se rechaza (`sequence_cannot_go_down`, `sequence_in_use`).",
+      "porque": "RN-38: bajarlo vuelve a emitir números usados, y una vez que el sistema emitió el contador es suyo.",
+      "fecha": "2026-10-03"
     }
   ],
   "invariantes_verificados": {
@@ -2768,6 +3026,114 @@
         "«Aplicado» tiene que contar las corridas aprobadas y no solo las pagadas: si no, dos quincenas seguidas aplican la misma incapacidad mientras la primera espera el pago. RN-92 habla del saldo que ve la persona; el cálculo necesita la otra cuenta.",
         "Una cifra de renta escrita a mano en una prueba vence con el decreto. La prueba la calcula con los tramos que devuelve la API, y así siguió en verde cuando el primer tramo de 2026 no era el que se recordaba.",
         "Una compañía de prueba con número fijo nace con el plan de su primera corrida y no hay forma de cambiárselo después: la de respaldo necesitaba planilla y la «3» no la tenía. Cada corrida da de alta la suya, que es la lección de T-310 otra vez."
+      ]
+    },
+    {
+      "fecha": "2026-10-02",
+      "titulo": "F12 cerrada: aguinaldo, vacaciones, liquidación, ajuste, importación, archivos del mes, boleta, pantallas y punta a punta",
+      "hecho": [
+        "T-1207: `GET /payroll/runs/{id}/payslips/{employee}` y `Boleta.svelte`, la cuarta plantilla de documento, con `payslipLabels(docLocale)` y los rubros congelados.",
+        "T-1208: `CreateAguinaldoRun` y `aguinaldo_lines`: lo devengado de las pagadas y los meses de apertura del 1 de diciembre al 30 de noviembre, entre doce, sin cargas ni renta.",
+        "T-1209: `VacationRepository`; `PayRun` acumula por los días de calendario del salario base y deja pagados los días de una liquidación; el disfrute revisa el saldo (`vacation_balance_exceeded`) y la anulación lo devuelve.",
+        "T-1210: `settlement_lines` sobre la línea vacía con que nace la liquidación: promedio de los seis meses anteriores (o el salario del contrato), vacaciones con el piso de un día por mes, aguinaldo desde diciembre, preaviso y cesantía solo en el despido sin causa (`RateTable.severance_at`); `settlement_requires_termination`.",
+        "T-1212: `AdjustRun` y `difference_lines`: el recálculo valora los mismos tramos que la pagada aplicó y escribe la diferencia; `run_not_paid`; las retenciones del mes cuentan regulares y ajustes.",
+        "T-1220: `ImportPayroll` con `dry_run` por `ImportRepository` (catálogos por nombre), `import_has_errors`; el POS lee una hoja por archivo (`$lib/server/import/payroll.ts`) y da una plantilla CSV por hoja.",
+        "T-1211 y T-1219: `domain/payroll_files.py` —el informe de la CCSS con los movimientos fechados, la renta retenida y el archivo del INS V08D— por `PayrollReports` (modelo de lectura) y `export_data_incomplete`. La CCSS no publica el trazado del archivo: `docs/ccss/README.md` y T-1222; el del INS se cotejará (T-1223).",
+        "T-1213 y T-1214: nueve pestañas bajo `/planilla`, `payroll.json` en tres idiomas, el menú con «Planilla», `mock/payroll.ts` y `mock/payrollCalc.ts` con las treinta y cuatro rutas y la planilla de demostración (`SEED_VERSION` 17); `apiFile()` para bajar el archivo del INS sin pasar por JSON.",
+        "T-1215: `tests/e2e/planilla.spec.ts` en una compañía propia, de la configuración a los archivos del mes, con contabilidad activa.",
+        "`tests/e2e/planilla.spec.ts` quedó a prueba de hidratación: lo que se teclea antes de hidratar se pierde o se envía nativo, así que los campos sueltos se llenan dentro de un reintento, las jornadas se eligen por el texto de la opción («nombre · periodicidad») y las fechas se esperan con dos dígitos (`formatDate`). De paso destapó dos defectos de pantalla (abajo).",
+        "`contabilidad.spec.ts` (F11) tenía dos carreras que los catálogos más pesados destaparon: tocaba el producto del catálogo antes de hidratar (el catálogo viene del servidor y se ve antes de que el clic sirva) y daba por cerrada la caja al ver «915,50», que ya estaba en pantalla dentro del esperado 54 915,50. Ahora el clic reintenta hasta ver la línea en la venta y el cierre espera «La caja está cerrada».",
+        "Playwright: el límite de arranque del servidor (`webServer.timeout`) pasa de dos a diez minutos, porque la compilación de Paraglide tarda tres y la suite moría con «Timed out waiting 120000ms» antes de abrir una página. El porqué y las salidas, en T-1224.",
+        "Verificado: 2977 pruebas del backend contra el stack con cobertura 100 % en dominio y aplicación; 913 del POS con cobertura 100 %; `npm run check` en 0/0; Playwright en verde con la configuración oficial: 84 de 85 en la corrida completa y la de contabilidad al repetirla sola con sus dos carreras corregidas; `planilla.spec.ts` recorre F12 entera en 46 s. El recorrido a mano contra el stack de desarrollo (8001, ya reconstruido) queda para el usuario."
+      ],
+      "lo_que_ensena": [
+        "«El formato no se supone» tiene un límite: cuando la especificación no está publicada —la carga por archivo de la CCSS es de mil grandes clientes y su trazado no sale de la Dirección SICERE—, lo que se entrega es el dato en la forma del canal que sí existe (el formulario de Autogestión), con el escritor del archivo esperando a la especificación y no inventado. Para el INS pasó lo contrario: la estructura oficial vive detrás de la sesión de la póliza, pero el generador público que reproduce su plantilla la documenta posición por posición, y eso sí es una fuente, con su cotejo pendiente anotado.",
+        "La liquidación necesitaba saber de quién es y `payroll_runs` no tiene empleado porque las demás corridas son de muchos: la línea vacía que nace con la baja es el enlace, y de paso es lo que la pantalla ya mostraba como «sin calcular».",
+        "Un ajuste no puede tomar lo que la pagada no aplicó: RN-91 ya lo manda a la regular siguiente, y tomarlo dos veces era el error fácil. Por eso el recálculo del ajuste valora los tramos de la pagada y nada más, y la renta se liquida contra el mes solo si el mes ya cerró; con el mes abierto, la corrida que cierre ajusta sola.",
+        "Un servidor que no dice «ready» en minuto y medio no está roto: está compilando. Se buscó la causa en la máquina (dieciséis núcleos al 34 %), en procesos viejos de Node y en la pelea por `.svelte-kit`, y era la compilación de Paraglide: 3 min 11 s a solas con 2 250 mensajes, 1 min 58 s con los 1 833 de antes de F12, y el perfil de CPU de Node la muestra ociosa el 95 %, esperando a la base SQLite del SDK de inlang. La versión 2.25.4 tarda 4 min 10 s. Medir antes de tocar: el límite de Playwright se subió con la cifra en el comentario, no a ojo.",
+        "Los documentos «DM» del INS que aparecen primero al buscar la estructura del archivo son de otro producto (la deducción mensual de primas en planilla), no de riesgos del trabajo: media hora de leerlos antes de notar la sigla."
+      ]
+    },
+    {
+      "fecha": "2026-10-03",
+      "titulo": "F7 emite: firma XAdES, envío a Hacienda, veredicto, reintentos, detenidos, archivo, puerta de producción y las pantallas",
+      "hecho": [
+        "T-701 decidida: ruta directa. T-703: cuatro puertos (`DocumentSigner`, `HaciendaReception`, `CertificateParser`, `TransmissionRepository`) y el recorrido en `use_cases/fe_transmission.py`.",
+        "T-712: `domain/fe_signature.py`, la firma XAdES-EPES envuelta con la política de la 4.4 y la forma de los comprobantes aceptados; no firma, le pide a Vault la firma del `SignedInfo`. Canonicaliza con la biblioteca estándar y se comprueba contra `lxml` y contra el XSD oficial.",
+        "T-707 a T-711: `domain/fe_transmission.py` (estados, dos cadencias, qué falla detiene, contingencia, alarma, puerta), migración 020 (`fe_documents` con el recorrido y `fe_document_events`), `workers/fe_worker.py` (un hilo del proceso de la API, por compañía), `GET /fe/queue`, `GET /fe/documents/{id}`, `/xml`, `/response`, `POST /retry`.",
+        "T-713: `production_gate_locked` con lo que falta; `GET /fe` publica la puerta. T-705 cerrada: la situación de la clave sale de lo observado (`ObservedContingency`).",
+        "T-706: `sale_number` lo pone el servidor; el POS dejó de fabricarlo.",
+        "T-721: `FeExpediente.svelte` en la factura, la devolución y la nota; los dos XML se bajan desde la cabecera de la factura; la columna «Hacienda» en la lista; lo detenido con reintento; la alarma de antigüedad en el marco; la pestaña de Configuración dice cómo se emite y la puerta de producción.",
+        "El simulado recorre los mismos estados por reloj (2, 4 y 7 segundos) y se detiene sin certificado o sin credenciales; `tipo-de-comprobante.spec.ts` lo recorre de punta a punta, incluido el reintento.",
+        "La pila de pruebas tiene una Hacienda de mentira (`tests/stub_hacienda.py`) y `test_emision.py` ve un tiquete, una factura y una nota de crédito recorrer la cola entera con Vault y MinIO de verdad.",
+        "Verificado: 3 150 (3 149 en la corrida completa, más la de la forma vieja de la configuración, rehecha sobre una compañía propia y pasada después) pruebas del backend con cobertura 100 % en dominio y aplicación; 925 del POS con cobertura 100 %; `npm run check` en 0/0; 85 pruebas de punta a punta en verde, con el recorrido ante Hacienda del simulado —tiquete, factura y nota aceptados, lo detenido con reintento— y la puerta de producción abierta y cerrada. Contra el sandbox de Hacienda con las credenciales del usuario: el tiquete real (consecutivo 00100001040000000001) entró a la cola al reiniciar la API y se detuvo en el primer intento con «document_invalid: linea_sin_cabys:6», un producto sin CABYS en la línea 6; con el CABYS puesto, «Reintentar» lo firma y lo envía. El recorrido completo contra el sandbox real queda por confirmar por el usuario."
+      ],
+      "lo_que_ensena": [
+        "La firma no necesita `lxml` ni la llave: C14N 2.0 de la biblioteca estándar coincide con la exclusiva 1.0 sobre documentos sin comentarios ni atributos `xml:*`, y la prueba lo demuestra byte por byte en vez de suponerlo. Lo que sí necesita es que el XML archivado sean **los bytes** que se resumieron: por eso se guarda antes de anotar y nunca se vuelve a firmar.",
+        "Un comprobante que nace en la cola tiene que nacer **con su próximo intento**: la primera versión de la numeración lo dejaba en nulo y la cola, que pregunta «¿qué le toca ya?», no lo veía nunca. El síntoma —todo queda «numerado»— no apunta al sitio del defecto.",
+        "El primer comprobante real del usuario se detuvo con `linea_sin_cabys:6`: un producto sin CABYS. Es el recorrido funcionando como debe —Hacienda lo habría rechazado minutos después—, y la pantalla dice cuál línea; se arregla en el producto y se reintenta.",
+        "El trabajador que falla por una excepción no esperada se calla la compañía entera: un atributo que faltaba en la instantánea tumbaba el turno y nada avanzaba. Lo que se ve en el registro del contenedor es la única pista.",
+        "Un campo protegido puede tapar la forma vieja de la configuración: `eInvoicing.environment` se escribe por su puerta (T-611) y sobrevive a cualquier guardado, y en cuanto existe la clave nueva «está» y manda sobre `electronica.activa` aunque no diga si la facturación está encendida —en el servidor y en el POS por igual—. Apareció porque el recorrido de la puerta pasó la compañía A de pruebas a producción y la devolvió; la prueba de la forma vieja pasó a una compañía propia y el caso quedó anotado en `task.md` (F6, Ambiente) para decidirlo."
+      ]
+    },
+    {
+      "fecha": "2026-10-03",
+      "titulo": "Cierre de F7: la factura de exportación, la de compra y lo que queda abierto con su porqué",
+      "hecho": [
+        "T-727 FEE: `domain/fe_export.py` (partida de doce dígitos en cada mercancía, tarifa que la exportación admita, señas del cliente), `COUNTER_TYPES` de tres con `DOMESTIC_COUNTER_TYPES`, los seis tipos de identificación de la 4.4 con el emisor limitado a cuatro, migración 021 (`products.tariff_heading`, `clients.foreign_address`, `sale_details.tariff_heading`), el receptor `05` sin ubicación y con sus señas en el armador, y en el POS la ficha del producto, la del cliente, el cobro, las plantillas, el simulado y el recorrido de punta a punta hasta «aceptada».",
+        "T-728 FEC: `purchase_document_type`, `RegisterStockEntry` numera en la misma transacción (`SOURCE_PURCHASE`), `stock_entries.document_type`, y `_de_compra` arma el XML como la FEC aceptada de `docs/`: el proveedor como emisor, el negocio como receptor con su actividad en los dos, la condición y el medio de la compra, y la referencia tipo 14 al respaldo. La pantalla de entradas enseña la FEC con su estado, su expediente, sus dos archivos y el reintento; los proveedores admiten el 05 y el 06.",
+        "T-732 (NC por exoneración posterior) quedó bloqueada y escrita: el anexo solo dice cuándo se usa el código 12, no cómo se arman las líneas, y no hay ejemplo aceptado. Tres salidas anotadas para decidir con el usuario.",
+        "Tres revisiones al cerrar (arquitecto, plan, tareas). Del arquitecto: seis reglas de negocio que habían quedado en el armador de la base pasaron al dominio con prueba —el código de la línea de compra (`purchase_line_code`), el plazo (`credit_term_days`), el medio de pago de la compra (`code_for_purchase`), la partida y el receptor de la exportación que ahora exige `fe_xml` para cualquier origen, y una sola política del largo de la dirección extranjera—; el puerto de proveedores ganó la cédula y la compra a un no contribuyente sin ella se rechaza antes de numerar (`check_purchase_issuer`).",
+        "De las revisiones del plan y de las tareas, tres defectos de F7 corregidos —la situación de la clave, qué falla cuenta para ella y la ND fuera de `AVAILABLE`; ver `defectos_corregidos`— y lo que faltaba probar: la entrada sin proveedor nunca lleva FEC, y el XML real de la FEE y la FEC valida contra su XSD en `test_emision.py`.",
+        "Lo abierto quedó en una tabla de `task.md` con su porqué y lo que lo destraba: T-729 (REP), T-732, T-733, T-734, y tres tareas nuevas —T-735 el código de tarifa en la entrada, T-736 reemitir un rechazado (sin requisito; se consulta), T-737 el presupuesto del turno de la cola—, más T-716, T-718 y T-719 a medias, T-616 de F6, la prueba en el sandbox real y `lxml` en las dependencias de desarrollo.",
+        "T-625 (F6): un campo protegido tapa la forma vieja de la configuración. La prueba de la forma vieja corre ahora sobre una compañía propia.",
+        "Las pruebas de punta a punta de T-611 se partieron: la puerta cerrada en `factura-electronica.spec.ts` y el paso real a producción, con los tres aceptados, en `tipo-de-comprobante.spec.ts`.",
+        "Quedó un solo servidor de desarrollo del POS: el del 2 de octubre, en `localhost:5174` por IPv6. El del 26 de septiembre, anterior al cambio de dependencias del 27, se detuvo.",
+        "Verificado: 3 271 pruebas del backend con cobertura 100 % en dominio y aplicación; 966 del POS con cobertura 100 %; `npm run check` en 0/0; 87 pruebas de punta a punta en verde, incluidas la exportación y la factura de compra hasta «aceptada» en el simulado. La base de desarrollo tiene la 021 y la API de desarrollo está reconstruida."
+      ],
+      "lo_que_ensena": [
+        "`documentType.ts` no puede importar `identification.ts`: ese módulo importa `settings.ts`, y `settings.ts` importa `documentType.ts` para la configuración de fábrica. El ciclo deja `DEFAULT_ENABLED` sin definir a medio cargar y el síntoma es que tres archivos de prueba que no se tocaron no cargan con «DEFAULT_ENABLED is not iterable». El literal se repite con su comentario.",
+        "El guardián de textos sueltos tiene una lista de nombres legales que no se traducen (los tipos de identificación de Hacienda): un tipo nuevo hay que anotarlo ahí con su razón, o el guardián lo toma por una frase escrita a mano.",
+        "El recibo de un no contribuyente no trae IVA y la FEC lo necesita en cada línea: con 0 % en un producto del 13 % el comprobante se detiene con `linea_sin_codigo_de_tarifa`, porque el 0 % tiene tres códigos. La regla está bien; lo que falta es dónde elegir el código al cargar la compra (T-735).",
+        "La prueba de integración de la factura de compra se detenía exactamente por eso, y la salida no fue aflojar el armador sino cargar la compra con su 13 %, que es lo que hace una persona."
+      ]
+    },
+    {
+      "fecha": "2026-10-03",
+      "titulo": "Tres arreglos de interfaz, y la primera factura aceptada por el sandbox real",
+      "hecho": [
+        "T-931: `main` es `relative` en el POS y en el panel. Un `sr-only` abajo de una pantalla larga estiraba el documento y la página entera se desplazaba llevándose el menú. `desplazamiento.spec.ts` recorre treinta y nueve pantallas con una ventana de 480 px.",
+        "T-932: la pestaña de Configuración viaja en `?seccion=` con `replaceState`; guardar ya no vuelve a Negocio.",
+        "T-1225: `POST /payroll/employees` admite `contract` y guarda el alta y el contrato en una transacción, desde el ingreso (`_contratar` lo comparten el alta y `POST /payroll/contracts`, en el backend y en el simulado). La ficha de alta trae la sección con la casilla «Asignarle el contrato ahora». La acción del alta avisa el primer error de validación.",
+        "La primera FE contra el sandbox real, aceptada: consecutivo 0000500210 (el usuario usa 500209 en otro sistema; RN-36 pide el último emitido y se tomó así). La serie se arrancó escribiendo `fe_sequences` a mano en la base de desarrollo, con `GREATEST`, porque T-616 no está construida.",
+        "La URL de recepción del sandbox estaba mal desde F6: `api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/`, no `api.…/recepcion-sandbox/v1/`. Corregida en `domain/hacienda.py`, su prueba y `docs/`. El 403 guarda ahora lo que contestó el servidor (`ReceptionForbidden.cause`).",
+        "Verificado: 3 273 pruebas del backend con cobertura 100 % en dominio y aplicación (la del 400 sin cuerpo tenía una carrera en su servidor de mentira y se corrigió); 966 del POS con cobertura 100 %; npm run check en 0/0; 91 de punta a punta; la FE 0000500210 aceptada por el sandbox real."
+      ],
+      "lo_que_ensena": [
+        "Un elemento `position: absolute` dentro de un contenedor que desplaza pero no está posicionado no queda dentro de él: su contenedor es el siguiente ancestro posicionado —acá, el documento—, y lo estira hasta su altura. `sr-only` es así, y está en todas partes. El síntoma —el menú cortado a media pantalla con fondo vacío debajo— no apunta al rótulo.",
+        "Delante de Hacienda hay un Gateway de AWS que contesta **403** `IncompleteSignatureException` («Invalid key=value pair … in Authorization header») a una ruta que no existe, con cualquier token. Se lee como «credenciales sin permiso» y no lo es. Para saber a quién se le está hablando, consultar la misma clave por GET en cada URL: Hacienda contesta 400 con `X-Error-Cause` («no ha sido recibido»), el Gateway 403 y producción 401 a un token de pruebas.",
+        "Para un comprobante que todavía no recibió, el GET del sandbox contesta **400** con `X-Error-Cause`, no 404. La cola lo leería como un rechazo y lo detendría; solo pasaría si Hacienda pierde algo que ya aceptó con 202.",
+        "La prueba que lo caza tiene que usar una ventana baja: con la de 720 de siempre la venta corta del simulado dejaba el rótulo adentro y la prueba pasaba con el defecto puesto. Se comprobó corriéndola antes del arreglo."
+      ]
+    },
+    {
+      "fecha": "2026-10-03",
+      "titulo": "El archivo de QA del usuario: paquetes de módulos, soporte, impuesto de ley, listas y botones, T-616 y tres fases analizadas contra la KB",
+      "hecho": [
+        "QA-01: cada sección del POS es un módulo (doce) y los planes son paquetes —Restaurante, Comercio, Comercio con compras, Completo—. Migración 022 con `BASE` encendida en los planes que ya había; `require_module` en cada escritura; proveedores separado de compras; la entrada pide inventario, proveedores si nombra uno y compras si es a crédito; anular es de facturas y devolver de devoluciones. El alta muestra lo que trae el paquete.",
+        "QA-02: el idioma del panel de soporte (`POST /support/locale`, que emite token de soporte).",
+        "QA-03: Planes lista las compañías de cada plan y las pasa a otro por el endpoint de suscripción, con el estado guardado y la fecha como estaban.",
+        "QA-04: el alta propone el siguiente afiliado y la siguiente compañía del afiliado escrito (`domain/affiliates.ts`), la misma regla que ya aplicaba el backend con los campos vacíos.",
+        "QA-05: el impuesto ya no se configura: `GENERAL_RATE` en `domain/tax.py` y `VAT` en el POS; la configuración descarta lo que llegue como impuesto (`sin_impuesto`); `SettingsRepository` perdió `tax_rate` y la devolución, el puerto entero; `tax_rate_not_a_number` salió de los cuatro lugares.",
+        "QA-06: `btn-secondary` y `btn-sm` no existían; `--danger`, `--success`, sus fondos, `--surface-2`, `--surface-muted` y `--accent-soft` tampoco. Mapeados a los tokens de verdad, `--accent-soft` definido, `select.input` con flecha propia y `Select.svelte`. `css-tokens.test.ts` los vigila.",
+        "QA-07 / T-616: el último consecutivo por caja y tipo, en Configuración → Factura electrónica. `check_sequence_start` en el dominio: solo sube, cabe en diez dígitos y una serie que el sistema ya usó no se toca. Queda en bitácora (`serie_arranque`).",
+        "QA-08 a QA-10: Proveedores, Compras e Inventario analizados contra la KB del ERP (`KbSws20_actualizado.xpz`) y escritos como F13, F14 y F15 en task.md, con lo que falta por valor y lo que hay que decidir.",
+        "Verificado: 3 294 pruebas del backend con cobertura 100 % en dominio y aplicación; 983 del POS con cobertura 100 %; npm run check en 0/0; 96 de punta a punta (95 en la corrida completa y la de la numeración, corregida, sola)."
+      ],
+      "lo_que_ensena": [
+        "El navegador ignora sin avisar una clase o una `var(--x)` que no existe, así que nada de lo que corre en la build lo ve: había diez pantallas con colores de error y de éxito sin definir y dos clases de botón inventadas. La única forma de cazarlo es leer el código contra `app.css`, y ahora lo hace una prueba.",
+        "La KB de GeneXus es un solo XML: el tipo de cada objeto va por GUID (transacción `1db606f2…`, procedimiento `84a12160…`, pantalla `c9584656…`) y las partes de una transacción también (estructura `264be5fb…`, reglas `9b0a32a3…`, eventos `c44bd5ff…`). Los nombres llevan una letra delante según el tipo (`P`, `W`, `N`, `L`), así que buscar por prefijo de módulo sin ella deja afuera la mayoría.",
+        "Una corrida larga de pytest importa los archivos del disco al ir llegando: si se edita el código mientras corre, la cobertura y los guardianes miden una mezcla. Hay que volver a correrla entera después de terminar de editar."
       ]
     }
   ],

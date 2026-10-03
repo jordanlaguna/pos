@@ -31,7 +31,7 @@ import sys
 from datetime import datetime
 
 from app.database.database import SessionLocal
-from app.domain.modules import MODULES
+from app.domain.modules import BASE, MODULES
 from app.models.model_person import Person
 from app.models.model_user import User
 from app.services import crud_company
@@ -124,7 +124,9 @@ def _compania(db, args) -> list[str]:
         args.plan,
         crear=True,
         limites=(args.plan_max_sucursales, args.plan_max_terminales, args.plan_max_usuarios),
-        modulos=_modulos(args.plan_modulos),
+        # La base va siempre (QA-01): es lo que el POS tuvo antes de que sus
+        # secciones fueran módulos. La bandera agrega los que se venden aparte.
+        modulos=(*BASE, *_modulos(args.plan_modulos)),
     )
     ya_estaba = crud_company.por_par(db, args.afiliado, args.compania) is not None
 
@@ -216,7 +218,8 @@ def main() -> None:
     ap.add_argument(
         "--plan-modulos",
         default="",
-        help="módulos del plan, separados por coma: purchases,accounting,payroll",
+        help="módulos que se venden aparte, además de la base, separados por coma: "
+        "purchases,suppliers,accounting,payroll",
     )
     ap.add_argument("--estado", default="activa", help="prueba | activa | vencida | …")
     ap.add_argument("--idioma", default="es", help="idioma de la pantalla")

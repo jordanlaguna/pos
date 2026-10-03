@@ -31,7 +31,6 @@ from app.application.ports.repositories import (
     ProductRepository,
     ReturnRepository,
     SaleRepository,
-    SettingsRepository,
     UnitOfWork,
 )
 from app.domain.errors import (
@@ -49,7 +48,7 @@ from app.domain.returns import (
     is_fully_returned,
     refund_totals,
 )
-from app.domain.tax import TaxRate
+from app.domain.tax import GENERAL_RATE, TaxRate
 
 
 class SaleNotFound(DomainError):
@@ -106,7 +105,6 @@ class RegisterReturn:
         returns: ReturnRepository,
         notes: NoteRepository,
         products: ProductRepository,
-        settings: SettingsRepository,
         uow: UnitOfWork,
         clock: Clock,
         ledger: Ledger | None = None,
@@ -116,7 +114,6 @@ class RegisterReturn:
         self._returns = returns
         self._notes = notes
         self._products = products
-        self._settings = settings
         self._uow = uow
         self._clock = clock
         self._ledger = ledger or NullLedger()
@@ -160,14 +157,14 @@ class RegisterReturn:
         # La tasa del ENCABEZADO de esta venta, reconstruida de sus montos. Desde
         # F5 es solo el respaldo: sirve para las ventas anteriores a la migración
         # 006, que no tienen tarifa en la línea y llevan una sola, así que el
-        # cociente la reconstruye exacta. La configurada entra un escalón más
-        # abajo, para las del WinForms que quedaron sin desglose.
+        # cociente la reconstruye exacta. La general del IVA entra un escalón
+        # más abajo, para las del WinForms que quedaron sin desglose.
         #
         # **No sirve cuando la venta mezcla tarifas**: ahí `tax / subtotal` es un
         # promedio, y devolver una sola línea con el promedio reembolsa de más o
         # de menos. Por eso lo primero que se mira es la tarifa de la línea.
         del_encabezado = TaxRate.of_sale(
-            Money(venta.subtotal), Money(venta.tax), default=self._settings.tax_rate()
+            Money(venta.subtotal), Money(venta.tax), default=GENERAL_RATE
         )
 
         # Se valida TODO antes de escribir: o entra la devolución completa, o

@@ -351,6 +351,88 @@ async function comprobantes(page: Page, cambios: Record<string, boolean>) {
 	await guardarConfiguracion(page);
 }
 
+/** Un cliente del extranjero (identificación 05), con su dirección de afuera. */
+async function crearClienteExtranjero(page: Page) {
+	await page.goto('/clientes');
+	const cedula = page.locator('#client-form input[name="identification"]');
+	await clicHasta(page.getByRole('button', { name: /Nuevo cliente/i }).first(), () =>
+		expect(cedula).toBeVisible({ timeout: 1000 })
+	);
+	await page.locator('#client-form select[name="identification_type"]').selectOption('05');
+	await cedula.fill(`P${marca().slice(-7)}`);
+	await page.locator('#client-form input[name="name"]').fill('Foreign');
+	await page.locator('#client-form input[name="last_name"]').fill('Buyer');
+	await page.locator('#client-form input[name="second_name"]').fill('Inc');
+	await page.locator('#client-form input[name="email"]').fill(`buyer${marca()}@example.com`);
+	await page.locator('#client-form input[name="telephone"]').fill('13055550100');
+	await page.locator('#client-form input[name="foreign_address"]').fill('12 Main St, Miami, FL');
+	await page.locator('#client-form input[name="register_date"]').fill('2026-09-01');
+	await page.locator('button[type="submit"][form="client-form"]').click();
+	await expect(page.getByRole('row', { name: /Buyer/ })).toBeVisible();
+}
+
+/** Una mercancía que se puede exportar: con CABYS y con partida arancelaria. */
+async function crearProductoExportable(page: Page) {
+	await page.goto('/inventario');
+	await clicHasta(page.getByRole('button', { name: /Nuevo producto/i }).first(), () =>
+		expect(page.locator('#product-form input[name="name"]')).toBeVisible({ timeout: 1000 })
+	);
+	await page.locator('#product-form input[name="name"]').fill('Café');
+	await page.locator('#product-form input[name="description"]').fill('Café');
+	await page.locator('#product-form input[name="price"]').fill('1000');
+	await page.locator('#product-form input[name="stock"]').fill('50');
+	await page.locator('#product-form input[name="barcode"]').fill(`C${marca()}`);
+	await page.locator('#product-form input[name="cabys_code"]').fill('2316100000100');
+	await page.locator('#product-form input[name="tariff_heading"]').fill('090111000000');
+	await page.getByRole('button', { name: /Agregar producto/i }).click();
+	await expect(page.getByRole('row', { name: /Café/ }).first()).toBeVisible();
+}
+
+/** Como `llenarVenta`, con el producto que se le diga. Los dos cuestan 1 000. */
+async function llenarVentaDe(page: Page, nombre: RegExp) {
+	await page.goto('/ventas');
+	const buscar = page.locator('input[type="search"]').first();
+	await expect(async () => {
+		await buscar.fill(nombre.source);
+		await expect(page.getByRole('button', { name: nombre }).first()).toBeVisible({ timeout: 1000 });
+	}).toPass({ timeout: 15_000 });
+	await clicHasta(page.getByRole('button', { name: nombre }).first(), () =>
+		expect(page.locator('body')).toContainText('1.130,00', { timeout: 1000 })
+	);
+}
+
+/** Un proveedor no contribuyente (identificación 06): a él se le emite la FEC. */
+async function crearProveedorNoContribuyente(page: Page) {
+	await page.goto('/compras/proveedores');
+	await clicHasta(page.getByRole('button', { name: /nuevo proveedor/i }).first(), () =>
+		expect(page.locator('#form-proveedor input[name="name"]')).toBeVisible({ timeout: 1000 })
+	);
+	await page.locator('#form-proveedor input[name="name"]').fill('Doña Flor');
+	await page.locator('#form-proveedor select[name="identification_type"]').selectOption('06');
+	await page.locator('#form-proveedor input[name="identification"]').fill(`1${marca()}`);
+	await page.locator('button[type="submit"][form="form-proveedor"]').click();
+	await expect(page.getByRole('row', { name: /Doña Flor/ })).toBeVisible();
+}
+
+/** Una compra de contado de una unidad de Arroz al primer proveedor de la lista. */
+async function comprarArroz(page: Page): Promise<string> {
+	await page.goto('/inventario/entradas/nueva');
+	const buscar = page.locator('input[type="search"]');
+	await expect(async () => {
+		await buscar.fill('Arroz');
+		await expect(page.getByRole('button', { name: /Arroz/i }).first()).toBeVisible({ timeout: 1000 });
+	}).toPass({ timeout: 15_000 });
+	await page.getByRole('button', { name: /Arroz/i }).first().click();
+	await page.locator('input[type="number"][aria-label*="osto"]').first().fill('500');
+	await page.locator('#proveedor').selectOption({ index: 1 });
+	const documento = `REC-${marca()}`;
+	await page.locator('input[name="document_number"]').fill(documento);
+	await page.locator('#condicion').selectOption('cash');
+	await page.getByRole('button', { name: /ingresar|registrar/i }).last().click();
+	await expect(page).toHaveURL(/\/inventario\/entradas\?creada=/);
+	return documento;
+}
+
 /** Devuelve una unidad de lo que se vendió, desde la pantalla de Devoluciones. */
 async function devolverUna(page: Page, factura: string) {
 	const venta = factura.split('/').pop();
@@ -374,20 +456,84 @@ test.describe('los comprobantes de cada compañía (RN-88) y las notas (RN-89)',
 		await crearProducto(page);
 	});
 
+	test('al cliente del extranjero se le exporta, y la partida se exige antes de cobrar (T-727)', async ({
+		page
+	}) => {
+		test.setTimeout(180_000);
+		await activarFacturacion(page);
+		await credencialesDePruebas(page);
+		await comprobantes(page, { '09': true });
+		await crearClienteExtranjero(page);
+		await crearProductoExportable(page);
+
+		// Con la partida, sale: la exportación se sugiere sola y la factura no se
+		// ofrece (RN-87). El tiquete sigue ahí.
+		await llenarVentaDe(page, /Café/);
+		const recibido = await abrirCobro(page);
+		await page.locator('#client-select').selectOption({ index: 1 });
+		await expect(page.locator('input[name="document_type"][value="09"]')).toBeChecked();
+		await expect(page.locator(FACTURA)).toHaveCount(0);
+		await expect(page.locator(TIQUETE)).toBeEnabled();
+		await expect(page.locator('[data-comprobante="09"]')).toBeVisible();
+		await recibido.fill('2000');
+		const exportacion = await confirmarCobro(page);
+		await expect(page.getByText(/Factura electrónica de exportación/).first()).toBeVisible();
+		// Y recorre la cola como las demás, hasta aceptada (RN-39).
+		await esperarEstado(page, exportacion, 'accepted');
+
+		// Sin la partida, no se cobra y se dice de cuál producto (RF-78).
+		await llenarVenta(page);
+		const recibido2 = await abrirCobro(page);
+		await page.locator('#client-select').selectOption({ index: 1 });
+		await recibido2.fill('2000');
+		await page.locator('button[type="submit"][form="payment-form"]').click();
+		await expect(page.getByText(/Arroz no tiene partida arancelaria/i).first()).toBeVisible({
+			timeout: 15_000
+		});
+	});
+
+	test('comprarle a un no contribuyente emite la factura de compra (T-728)', async ({ page }) => {
+		test.setTimeout(180_000);
+		await activarFacturacion(page);
+		await credencialesDePruebas(page);
+		await comprobantes(page, { '08': true });
+		await crearProveedorNoContribuyente(page);
+
+		const documento = await comprarArroz(page);
+		const fila = page.getByRole('row', { name: new RegExp(documento) });
+		await expect(fila).toContainText(/Factura electrónica de compra/);
+
+		// Su expediente, desde la fila: recorre la cola hasta aceptada (RN-39).
+		await expect(async () => {
+			await page.reload();
+			await page
+				.getByRole('row', { name: new RegExp(documento) })
+				.getByRole('button', { name: /Ver detalle/i })
+				.click();
+			await expect(page.locator('[data-expediente][data-estado="accepted"]')).toBeVisible({
+				timeout: 2000
+			});
+		}).toPass({ timeout: 40_000 });
+		await expect(page.locator('[data-xml-firmado]')).toBeVisible();
+		await expect(page.locator('[data-respuesta-hacienda]')).toBeVisible();
+	});
+
 	test('una distribuidora que apaga el tiquete no cobra sin cliente', async ({ page }) => {
 		await crearCliente(page);
 		await activarFacturacion(page);
 
-		// La NC no se apaga y la ND todavía no tiene flujo: se ven, no se mueven.
+		// La NC no se apaga: se ve, no se mueve. La ND (T-726) y la exportación
+		// (T-727) ya tienen flujo: sus casillas se mueven. El REP no.
 		await pestana(page, /Factura electrónica/i, '[data-comprobantes]');
 		await expect(casilla(page, '03')).toBeDisabled();
 		await expect(casilla(page, '03')).toBeChecked();
-		await expect(casilla(page, '02')).toBeDisabled();
-		await expect(casilla(page, '09')).toBeDisabled();
+		await expect(casilla(page, '02')).toBeEnabled();
+		await expect(casilla(page, '09')).toBeEnabled();
+		await expect(casilla(page, '10')).toBeDisabled();
 
 		await comprobantes(page, { '04': false });
 		// Queda la factura sola, y es la última de venta: ya no se puede apagar. Y
-		// guardar no apagó la NC ni la ND, que estaban bloqueadas.
+		// guardar no apagó la NC, que está bloqueada, ni la ND, que nadie tocó.
 		await pestana(page, /Factura electrónica/i, '[data-comprobantes]');
 		await expect(casilla(page, '01')).toBeDisabled();
 		await expect(casilla(page, '04')).not.toBeChecked();
@@ -575,5 +721,164 @@ test.describe('el emisor: su ubicación (T-722) y su cédula (RN-45, T-621)', ()
 		await expect(page.locator('[data-emisor-form] input[name="identificacion"]')).toHaveValue(
 			'3101999999'
 		);
+	});
+});
+
+
+// ------------------------------------------------- el recorrido ante Hacienda (F7)
+//
+// El simulado avanza cada comprobante por el tiempo transcurrido desde que se
+// numeró —firmado a los 2 s, enviado a los 4, aceptado a los 7— con el
+// certificado y las credenciales del ambiente cargados; sin ellos se detiene y
+// dice qué falta. Es la misma máquina de estados del backend
+// (`domain/fe_transmission.py`), así que lo que estas pruebas comprueban es que
+// las pantallas la cuenten bien: la columna, el expediente, los dos XML, lo
+// detenido y el reintento.
+
+/** Un `.p12` de mentira que el simulado sabe leer (ver factura-electronica.spec). */
+function p12DePrueba(): Buffer {
+	return Buffer.concat([Buffer.from([0x30]), Buffer.from('|SUJETO=SUPER DE PRUEBA S.A.|DIAS=365', 'utf-8')]);
+}
+
+/** Deja el ambiente de pruebas listo para emitir: certificado y usuario de ATV. */
+async function credencialesDePruebas(page: Page) {
+	await pestana(page, /Factura electrónica/i, '[data-ambiente="sandbox"]');
+	const card = page.locator('[data-ambiente="sandbox"]');
+	await card
+		.locator('input[type="file"]')
+		.setInputFiles({ name: 'llave.p12', mimeType: 'application/x-pkcs12', buffer: p12DePrueba() });
+	await card.locator('input[name="pin"]').fill('1234');
+	await card.getByRole('button', { name: /Subir certificado/i }).click();
+	await expect(card).toContainText(/SUPER DE PRUEBA/i);
+	await card.locator('input[name="atv_usuario"]').fill('cpj-3101000000@pruebas.cr');
+	await card.locator('input[name="atv_clave"]').fill('buena-clave');
+	await card.getByRole('button', { name: /Guardar credenciales/i }).click();
+	await expect(card.locator('input[name="atv_usuario"]')).toHaveValue('cpj-3101000000@pruebas.cr');
+}
+
+/** Recarga hasta que el expediente diga ese estado: la cola del simulado va por reloj. */
+async function esperarEstado(page: Page, factura: string, estado: string) {
+	await expect(async () => {
+		await page.goto(factura);
+		await expect(page.locator('[data-expediente]')).toHaveAttribute('data-estado', estado, { timeout: 1500 });
+	}).toPass({ timeout: 30_000 });
+}
+
+test.describe('el recorrido ante Hacienda (F7, RN-39 a RN-42)', () => {
+	test.beforeEach(async ({ page }) => {
+		const dueno = await supermercadoNuevo(page);
+		await entrar(page, dueno);
+		await crearProducto(page);
+		await activarFacturacion(page);
+	});
+
+	test('un tiquete llega a aceptado y sus dos XML se bajan, y con los tres aceptados se pasa a producción', async ({ page }) => {
+		test.setTimeout(240_000);
+		await credencialesDePruebas(page);
+		await llenarVenta(page);
+		await abrirCobro(page);
+		const factura = await confirmarCobro(page);
+
+		// Recién cobrado: el expediente existe y está en camino.
+		await expect(page.locator('[data-expediente]')).toBeVisible();
+		await esperarEstado(page, factura, 'accepted');
+		await expect(page.locator('[data-estado-hacienda]')).toHaveText(/Aceptado/);
+		await expect(page.locator('[data-eventos]')).toContainText(/Firmado/);
+		await expect(page.locator('[data-eventos]')).toContainText(/Enviado a Hacienda/);
+		await expect(page.locator('[data-eventos]')).toContainText(/Hacienda lo aceptó/);
+
+		// Los dos XML del expediente (RF-34): el firmado y la respuesta de Hacienda.
+		await expect(page.locator('[data-xml-firmado]')).toBeVisible();
+		const xml = await page.request.get(`${factura}/xml`);
+		expect(xml.status()).toBe(200);
+		const textoXml = await xml.text();
+		expect(textoXml).toContain('<ds:Signature');
+		expect(xml.headers()['content-disposition']).toContain('.xml');
+		const respuesta = await page.request.get(`${factura}/respuesta`);
+		expect(respuesta.status()).toBe(200);
+		expect(await respuesta.text()).toContain('<Mensaje>1</Mensaje>');
+
+		// Y la lista lo dice en su columna (RF-33).
+		await page.goto('/facturas');
+		await expect(page.locator('[data-hacienda="accepted"]').first()).toBeVisible();
+
+		// ---------------------------------- la puerta de producción (T-713, RN-46)
+		//
+		// Falta la factura y la nota de crédito. La factura, con cliente; la nota,
+		// devolviendo el tiquete. Las dos recorren la cola igual.
+		await crearCliente(page);
+		await llenarVenta(page);
+		const recibido = await abrirCobro(page);
+		await page.locator('#client-select').selectOption({ index: 1 });
+		await recibido.fill('2000');
+		const facturaConCliente = await confirmarCobro(page);
+		await devolverUna(page, factura);
+		await expect(page).toHaveURL(/\/devoluciones\/\d+\?nueva=1/, { timeout: 15_000 });
+		const notaDeCredito = new URL(page.url()).pathname;
+		await esperarEstado(page, facturaConCliente, 'accepted');
+		await esperarEstado(page, notaDeCredito, 'accepted');
+
+		// Con los tres aceptados la puerta se abre y se pasa, confirmando (RN-35).
+		await pestana(page, /Factura electrónica/i, '[data-ambiente="sandbox"]');
+		await expect(page.locator('[data-puerta-produccion="abierta"]')).toBeVisible();
+		await clicHasta(page.getByRole('button', { name: /Pasar a producción/i }), async () => {
+			await expect(page.getByRole('dialog')).toBeVisible();
+		});
+		await page.getByRole('button', { name: /Sí, pasar a producción/i }).click();
+		await expect(page.getByText(/Ambiente en uso: producción/i)).toBeVisible();
+		// «Lo que se emita…», no el aviso del certificado, que también dice «efecto fiscal».
+		await expect(page.getByText(/Lo que se emita tiene efecto fiscal/i)).toBeVisible();
+
+		// La puerta lateral (T-611): guardar la pantalla entera no mueve el ambiente.
+		const guardado = page.waitForResponse(
+			(r) => r.url().includes('/configuracion') && r.request().method() === 'POST'
+		);
+		await page.getByRole('button', { name: /Guardar cambios/i }).click();
+		expect((await guardado).ok(), 'no se pudo guardar la configuración').toBe(true);
+		await page.waitForLoadState('networkidle');
+		await pestana(page, /Factura electrónica/i, '[data-ambiente="sandbox"]');
+		await expect(page.getByText(/Ambiente en uso: producción/i)).toBeVisible();
+
+		// Volver a pruebas no pide confirmación (RN-35): un clic.
+		await page.getByRole('button', { name: /Volver a pruebas/i }).click();
+		await expect(page.getByText(/Ambiente en uso: pruebas/i)).toBeVisible();
+
+		// Y la bitácora tiene el antes y el después.
+		await salir(page);
+		await autenticar(page, SOPORTE);
+		await expect(page).toHaveURL(/\/admin$/);
+		await page.goto('/admin/bitacora?accion=fe_ambiente');
+		await expect(page.getByText('sandbox → production').first()).toBeVisible();
+	});
+
+	test('sin certificado se detiene, se ve en la lista y se reintenta a mano', async ({ page }) => {
+		await llenarVenta(page);
+		await abrirCobro(page);
+		const factura = await confirmarCobro(page);
+
+		// Se detiene en la firma y dice qué falta (RN-41, RF-35).
+		await esperarEstado(page, factura, 'stopped');
+		await expect(page.locator('[data-expediente]')).toContainText(/Falta el certificado/);
+		await expect(page.locator('[data-xml-firmado]')).toHaveCount(0);
+
+		await page.goto('/facturas');
+		await expect(page.locator('[data-detenidos]')).toBeVisible();
+		await expect(page.locator('[data-detenidos]')).toContainText(/Falta el certificado/);
+		await expect(page.locator('[data-hacienda="stopped"]').first()).toBeVisible();
+
+		// Se arregla la causa y se reintenta (RF-36): vuelve a la cola y llega.
+		await credencialesDePruebas(page);
+		await page.goto(factura);
+		// Se mira el resultado y no el aviso: antes de hidratar el envío es nativo
+		// y el aviso no sale, pero el reintento sí entra y el botón desaparece.
+		await expect(async () => {
+			const boton = page.locator('[data-reintentar]');
+			if (await boton.count()) await boton.click();
+			await expect(page.locator('[data-expediente]')).not.toHaveAttribute('data-estado', 'stopped', {
+				timeout: 1500
+			});
+		}).toPass({ timeout: 15_000 });
+		await esperarEstado(page, factura, 'accepted');
+		await expect(page.locator('[data-eventos]')).toContainText(/Reintentado a mano/);
 	});
 });

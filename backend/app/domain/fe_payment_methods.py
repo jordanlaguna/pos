@@ -17,7 +17,8 @@ from __future__ import annotations
 
 from typing import Final
 
-from .errors import InvalidSalePaymentMethod
+from .errors import InvalidPayment, InvalidSalePaymentMethod
+from .purchases import PAYMENT_METHODS as PURCHASE_PAYMENT_METHODS
 from .sale import PAYMENT_METHODS
 
 #: Los ocho de la nota 6.
@@ -43,6 +44,40 @@ FROM_SALE_METHOD: Final[dict[str, str]] = {
     "Transferencia bancaria": TRANSFER,
     "Pago móvil": SINPE,
 }
+
+
+#: De cómo se abonó una compra (`purchases.PAYMENT_METHODS`) al código del
+#: comprobante de compra (T-728). Un «otros» es un 99, y el 99 exige decir cuál
+#: en `MedioPagoOtros`: va el nombre del catálogo, que no es una frase para una
+#: persona sino el dato que Hacienda pide.
+FROM_PURCHASE_METHOD: Final[dict[str, str]] = {
+    "cash": CASH,
+    "transfer": TRANSFER,
+    "other": OTHER,
+}
+OTHER_DETAIL: Final = "Otros"
+
+
+def code_for_purchase(method: object) -> tuple[str, str]:
+    """El código y el detalle del medio de pago de una compra de contado.
+
+    Sin abono registrado —una compra de contado que quedó con saldo— va
+    efectivo, que es lo que una compra de contado dice ser. Un método que no
+    es de `purchases` es un dato roto, no una preferencia.
+    """
+    if method is None:
+        return CASH, ""
+    codigo = FROM_PURCHASE_METHOD.get(method)  # type: ignore[arg-type]
+    if codigo is None:
+        raise InvalidPayment("invalid_method")
+    return codigo, OTHER_DETAIL if codigo == OTHER else ""
+
+
+#: Los medios de abono de una compra que todavía no tienen código. Vacío a
+#: propósito; lo comprueba la misma prueba que `SIN_CODIGO`.
+PURCHASE_SIN_CODIGO: Final = tuple(
+    m for m in PURCHASE_PAYMENT_METHODS if m not in FROM_PURCHASE_METHOD
+)
 
 
 def code_for(method: object) -> str:
@@ -75,12 +110,16 @@ __all__ = [
     "CHECK",
     "CODES",
     "DIGITAL_PLATFORM",
+    "FROM_PURCHASE_METHOD",
     "FROM_SALE_METHOD",
     "OTHER",
+    "OTHER_DETAIL",
+    "PURCHASE_SIN_CODIGO",
     "SINPE",
     "SIN_CODIGO",
     "THIRD_PARTY",
     "TRANSFER",
     "check_code",
     "code_for",
+    "code_for_purchase",
 ]

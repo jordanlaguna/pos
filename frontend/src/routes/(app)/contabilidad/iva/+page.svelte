@@ -58,7 +58,7 @@
 			</p>
 			<p
 				class="mt-1 text-lg font-semibold tabular-nums {data.borrador.in_favor
-					? 'text-[var(--success)]'
+					? 'text-[var(--positive)]'
 					: ''}"
 			>
 				{formatMoney(Math.abs(data.borrador.balance))}

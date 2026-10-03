@@ -3,6 +3,7 @@
 	import Icon from '$lib/ui/components/Icon.svelte';
 	import PageHeader from '$lib/ui/components/PageHeader.svelte';
 	import Field from '$lib/ui/components/Field.svelte';
+	import Select from '$lib/ui/components/Select.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import { submit } from '$lib/ui/forms';
 	import { formatAmount } from '$lib/domain/money';
@@ -119,21 +120,20 @@
 				error={errores.identificacion}
 			/>
 			<div>
-				<label class="label" for="tipo-emisor">{m.settings_id_type()}</label>
-				<select
+				<Select
 					id="tipo-emisor"
 					name="tipo_identificacion"
-					class="input"
-					value={c.identification_type ?? ''}
+					label={m.settings_id_type()}
 				>
-					<option value="">{m.admin_issuer_type_auto()}</option>
+					<!-- Sin controlar, por lo del alta: con `value` se reinicia al hidratar. -->
+					<option value="" selected={!c.identification_type}>{m.admin_issuer_type_auto()}</option>
 					{#each ID_TYPES as tipo (tipo.code)}
-						<option value={tipo.code}>{tipo.label}</option>
+						<option value={tipo.code} selected={tipo.code === c.identification_type}>{tipo.label}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
-			<button class="btn btn-secondary w-full" disabled={guardandoEmisor}>
-				{#if guardandoEmisor}<Spinner size={14} />{/if}
+			<button class="btn btn-primary w-full" disabled={guardandoEmisor}>
+				{#if guardandoEmisor}<Spinner size={14} />{:else}<Icon name="check" size={15} />{/if}
 				{m.admin_issuer_save()}
 			</button>
 		</form>
@@ -213,16 +213,11 @@
 			class="grid gap-3"
 			use:enhance={submit({ setBusy: (ocupado) => (guardando = ocupado) })}
 		>
-			<div>
-				<label class="label" for="estado">{m.admin_label_state()}</label>
-				<select id="estado" name="estado" class="input">
-					{#each data.estados as estado (estado)}
-						<option value={estado} selected={estado === s.guardado}>
-							{companyStateLabel(estado)}
-						</option>
-					{/each}
-				</select>
-			</div>
+			<Select id="estado" name="estado" label={m.admin_label_state()}>
+				{#each data.estados as estado (estado)}
+					<option value={estado} selected={estado === s.guardado}>{companyStateLabel(estado)}</option>
+				{/each}
+			</Select>
 
 			<Field
 				label={m.admin_label_expires()}
@@ -232,14 +227,11 @@
 				error={errores.vence_el}
 			/>
 
-			<div>
-				<label class="label" for="plan_id">{m.admin_label_plan()}</label>
-				<select id="plan_id" name="plan_id" class="input">
-					{#each data.plans as plan (plan.id)}
-						<option value={plan.id} selected={plan.id === c.plan?.id}>{plan.nombre}</option>
-					{/each}
-				</select>
-			</div>
+			<Select id="plan_id" name="plan_id" label={m.admin_label_plan()}>
+				{#each data.plans as plan (plan.id)}
+					<option value={String(plan.id)} selected={plan.id === c.plan?.id}>{plan.nombre}</option>
+				{/each}
+			</Select>
 
 			<button type="submit" class="btn btn-primary" disabled={guardando}>
 				{#if guardando}

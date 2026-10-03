@@ -73,6 +73,12 @@ describe('documentKind — lo dice la venta, no la configuración (RN-85)', () =
 		expect(documentKind({ document_type: '04' })).toBe('eticket');
 	});
 
+	it('la de exportación también, y lleva su bloque fiscal (T-727)', () => {
+		expect(documentKind({ document_type: '09' })).toBe('eexport');
+		expect(isNote('eexport')).toBe(false);
+		expect(fiscalBlock({ document_type: '09' })?.kind).toBe('eexport');
+	});
+
 	it('las notas son lo que son, y no cobran', () => {
 		expect(documentKind({ document_type: '03' })).toBe('ecredit');
 		expect(documentKind({ document_type: '02' })).toBe('edebit');

@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from app.domain.modules import BASE, MODULES
+
 from .conftest import SOPORTE, Api, bootstrap, marca_unica
 
 pytestmark = pytest.mark.characterization
@@ -530,18 +532,28 @@ class TestLaSuscripcion:
 # --------------------------------------------------------------------------
 
 
+def modulos(**aparte: bool) -> dict[str, bool]:
+    """Los doce módulos (QA-01): la base siempre encendida y los que se venden
+    aparte como se digan. La base no se apaga acá porque el plan lo usan
+    compañías de otras pruebas, y sin ella no venden."""
+    return {**{n: n in BASE for n in MODULES}, **aparte}
+
+
 class TestLosModulosDelPlan:
-    def test_un_plan_nace_sin_ningun_modulo(self, soporte: Api, plan_id: int):
+    def test_un_plan_nace_con_la_base_y_sin_los_que_se_venden_aparte(
+        self, soporte: Api, plan_id: int
+    ):
         plan = next(p for p in soporte.ok("GET", "/support/plans") if p["id"] == plan_id)
-        # Apagados por omisión: un plan que ya existe es uno que alguien compró
-        # sin estos módulos.
-        assert (plan["purchases"], plan["accounting"], plan["payroll"]) == (False, False, False)
+        # La base es lo que el POS tuvo siempre (QA-01); lo demás, apagado: un
+        # plan del que no se dijo nada no incluye nada que se venda aparte.
+        assert all(plan[n] for n in BASE)
+        assert not any(plan[n] for n in ("purchases", "suppliers", "accounting", "payroll"))
 
     def test_se_encienden_y_se_apagan(self, soporte: Api, plan_id: int):
         encendido = soporte.ok(
             "PUT",
             f"/support/plans/{plan_id}/modules",
-            {"purchases": True, "accounting": True, "payroll": False},
+            modulos(purchases=True, accounting=True, payroll=False),
         )
         assert (encendido["purchases"], encendido["accounting"], encendido["payroll"]) == (
             True,
@@ -553,7 +565,7 @@ class TestLosModulosDelPlan:
         apagado = soporte.ok(
             "PUT",
             f"/support/plans/{plan_id}/modules",
-            {"purchases": False, "accounting": False, "payroll": False},
+            modulos(purchases=False, accounting=False, payroll=False),
         )
         assert apagado["purchases"] is False
         assert apagado["accounting"] is False
@@ -564,7 +576,7 @@ class TestLosModulosDelPlan:
         soporte.ok(
             "PUT",
             f"/support/plans/{plan_id}/modules",
-            {"purchases": True, "accounting": False, "payroll": False},
+            modulos(purchases=True, accounting=False, payroll=False),
         )
         lineas = soporte.ok("GET", "/support/audit?accion=plan_modulos&limite=10")["lineas"]
         assert lineas, "el cambio de módulos tiene que quedar registrado"
@@ -576,7 +588,7 @@ class TestLosModulosDelPlan:
         assert "compañías" in detalle
 
     def test_guardar_sin_cambiar_nada_se_registra_y_lo_dice(self, soporte: Api, plan_id: int):
-        apagar = {"purchases": False, "accounting": False, "payroll": False}
+        apagar = modulos(purchases=False, accounting=False, payroll=False)
         soporte.ok("PUT", f"/support/plans/{plan_id}/modules", apagar)
         soporte.ok("PUT", f"/support/plans/{plan_id}/modules", apagar)
 
@@ -590,7 +602,7 @@ class TestLosModulosDelPlan:
         estado, cuerpo = soporte.call(
             "PUT",
             "/support/plans/999999/modules",
-            {"purchases": True, "accounting": False, "payroll": False},
+            modulos(purchases=True),
         )
         assert estado == 404
         assert cuerpo["detail"]["code"] == "plan_not_found"
@@ -601,7 +613,7 @@ class TestLosModulosDelPlan:
         estado, cuerpo = api.call(
             "PUT",
             f"/support/plans/{plan_id}/modules",
-            {"purchases": True, "accounting": True, "payroll": True},
+            modulos(purchases=True, accounting=True, payroll=True),
         )
         assert estado == 403
         assert cuerpo["detail"]["code"] == "support_only"

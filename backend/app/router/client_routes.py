@@ -13,7 +13,7 @@ from app.schemas.schemas_clients import (
 )
 from app.services import crud_client
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user, require_module
 
 router = APIRouter()
 
@@ -32,6 +32,7 @@ def register_client(
     client: ClientRegister,
     db: Session = Depends(get_db),
     current: Sesion = Depends(get_current_user),
+    _modulo: Sesion = Depends(require_module("clients")),
 ):
     existing = db.query(Client).filter(Client.identification == client.identification).first()
     if existing:
@@ -53,6 +54,7 @@ def update_client(
     client_data: ClientUpdate,
     db: Session = Depends(get_db),
     current: Sesion = Depends(get_current_user),
+    _modulo: Sesion = Depends(require_module("clients")),
 ):
     existing = db.query(Client).filter(Client.id_client == id_client).first()
     if not existing:

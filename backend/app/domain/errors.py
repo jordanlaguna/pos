@@ -254,6 +254,100 @@ class DocumentTypeNotEnabled(DomainError):
         self.document_type = document_type
 
 
+class InvoiceNeedsResident(DomainError):
+    """Factura a un cliente del extranjero (RN-87, T-727).
+
+    La factura electrónica es para un receptor con cédula costarricense. A quien
+    no la tiene se le emite la factura de exportación, o un tiquete, como a
+    cualquier cliente.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("la factura electrónica necesita un receptor del país")
+
+
+class ExportNeedsReceiver(DomainError):
+    """Factura de exportación sin cliente: no hay a quién exportarle (RF-78)."""
+
+    def __init__(self) -> None:
+        super().__init__("la factura de exportación necesita un cliente")
+
+
+class ExportNeedsForeignReceiver(DomainError):
+    """Factura de exportación a un cliente del país (RN-87)."""
+
+    def __init__(self) -> None:
+        super().__init__("la factura de exportación necesita un cliente del extranjero")
+
+
+class ExportNeedsForeignAddress(DomainError):
+    """El cliente del extranjero no tiene dirección (RF-78).
+
+    La FEE lleva las otras señas extranjeras del receptor en vez de una
+    ubicación del país; sin ellas no se emite, y se dice antes de cobrar.
+    """
+
+    def __init__(self, client_id: int) -> None:
+        super().__init__(f"el cliente {client_id} no tiene dirección extranjera")
+        self.client_id = client_id
+
+
+class ExportLineNeedsTariffHeading(DomainError):
+    """Una mercancía de la venta sin partida arancelaria (RF-78).
+
+    Lleva el producto para que la frase pueda nombrarlo: «falta la partida» sin
+    decir de cuál obliga a revisar la venta entera.
+    """
+
+    def __init__(self, product_id: int) -> None:
+        super().__init__(f"el producto {product_id} no tiene partida arancelaria")
+        self.product_id = product_id
+
+
+class ExportTariffNotAllowed(DomainError):
+    """Una línea con una tarifa que la factura de exportación no admite (T-720).
+
+    La FEE no tiene balde de no sujeto: una línea con tarifa 01 u 11
+    desaparecería del resumen y el total dejaría de cuadrar.
+    """
+
+    def __init__(self, product_id: int, tax_code: str) -> None:
+        super().__init__(
+            f"el producto {product_id} tiene la tarifa {tax_code}, que la exportación no admite"
+        )
+        self.product_id = product_id
+        self.tax_code = tax_code
+
+
+class InvalidTariffHeading(DomainError):
+    """Una partida arancelaria que no son doce dígitos (XSD 4.4)."""
+
+    def __init__(self, value: object) -> None:
+        super().__init__(f"partida arancelaria no válida: {value!r}")
+        self.value = value
+
+
+class InvalidForeignAddress(DomainError):
+    """Unas señas extranjeras más largas que lo que admite el XML (300)."""
+
+    def __init__(self, length: int, max_length: int) -> None:
+        super().__init__(f"la dirección extranjera tiene {length} caracteres y caben {max_length}")
+        self.length = length
+        self.max_length = max_length
+
+
+class SupplierNeedsIdentification(DomainError):
+    """Una factura de compra a un proveedor sin cédula (T-728).
+
+    El proveedor es el emisor del XML y el emisor lleva identificación: sin
+    ella el comprobante nacería para detenerse. Se dice antes de numerar.
+    """
+
+    def __init__(self, supplier_id: int) -> None:
+        super().__init__(f"el proveedor {supplier_id} no tiene identificación")
+        self.supplier_id = supplier_id
+
+
 class AnnulAfterReturn(DomainError):
     """Anular una venta que ya tiene devoluciones (RN-89).
 
@@ -634,7 +728,7 @@ class IdentificationTypeRequired(DomainError):
 
 
 class InvalidIdentificationType(DomainError):
-    """Un tipo de identificación que no es ninguno de los cuatro de Hacienda.
+    """Un tipo de identificación que no es ninguno de los seis de Hacienda.
 
     Sale de una lista cerrada, así que llegar acá con un valor raro significa
     que alguien mandó el campo a mano. Se rechaza porque el tipo viaja dentro
@@ -725,6 +819,34 @@ class InvalidKeyPart(DomainError):
         super().__init__(f"pieza de la clave no válida: {part} = {value!r}")
         self.part = part
         self.value = value
+
+
+class InvalidSequenceStart(DomainError):
+    """El último consecutivo que se indica no es uno (T-616): no es un entero, es
+    negativo o no cabe en los diez dígitos de la clave."""
+
+    def __init__(self, value: object) -> None:
+        super().__init__(f"último consecutivo no válido: {value!r}")
+        self.value = value
+
+
+class SequenceCannotGoDown(DomainError):
+    """El arranque de una serie solo sube (RN-38): bajarlo es volver a emitir
+    números que ya se usaron, y eso es rechazo seguro."""
+
+    def __init__(self, current: int, requested: int) -> None:
+        super().__init__(f"la serie va en {current} y se pidió {requested}")
+        self.current = current
+        self.requested = requested
+
+
+class SequenceInUse(DomainError):
+    """La serie ya emitió con este sistema (RN-38): desde ahí el contador es
+    suyo y no se mueve a mano."""
+
+    def __init__(self, document_type: str) -> None:
+        super().__init__(f"la serie {document_type} ya emitió con este sistema")
+        self.document_type = document_type
 
 
 class IssuerIdentificationRequired(DomainError):
@@ -889,6 +1011,21 @@ class InvalidPayrollSettings(DomainError):
         self.value = value
 
 
+class ExportDataIncomplete(DomainError):
+    """Falta un dato para armar el archivo de la CCSS o del INS (RN-96, T-1211).
+
+    `missing` son pares `(employee_id, campos)` y `company`, los campos de la
+    compañía que faltan —el número patronal, la póliza—. Se dice antes de
+    exportar y no se exporta a medias: un archivo con un trabajador menos es un
+    trabajador sin seguro ese mes.
+    """
+
+    def __init__(self, missing: tuple[tuple[int, tuple[str, ...]], ...], company: tuple[str, ...]) -> None:
+        super().__init__(f"faltan datos para exportar: {missing} {company}")
+        self.missing = missing
+        self.company = company
+
+
 class InvalidTaxBrackets(DomainError):
     """Un juego de tramos de renta que no se puede sembrar (RN-73, T-1221).
 
@@ -903,3 +1040,36 @@ class InvalidTaxBrackets(DomainError):
         super().__init__(f"tramos de renta no válidos: {reason} (tramo {index})")
         self.reason = reason
         self.index = index
+
+
+# ------------------------------------------------------- la transmisión (F7)
+
+
+class UnknownDocument(DomainError):
+    """No hay comprobante con ese id en esta compañía."""
+
+    def __init__(self, document_id: int) -> None:
+        super().__init__(document_id)
+        self.document_id = document_id
+
+
+class DocumentNotStopped(DomainError):
+    """Se pidió reintentar a mano algo que no está detenido (RF-36).
+
+    Lo que está en cola ya se va a intentar solo, y lo aceptado o rechazado no
+    se vuelve a mandar: un rechazo se corrige con otro comprobante.
+    """
+
+    def __init__(self, document_id: int, status: str) -> None:
+        super().__init__(document_id, status)
+        self.document_id = document_id
+        self.status = status
+
+
+class ProductionGateLocked(DomainError):
+    """Falta ver aceptados en pruebas los comprobantes que Hacienda exige
+    antes de producción (RN-46, T-713). `missing` dice cuáles."""
+
+    def __init__(self, missing: tuple[str, ...]) -> None:
+        super().__init__(missing)
+        self.missing = missing

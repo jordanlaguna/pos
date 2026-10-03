@@ -250,6 +250,17 @@ class ContractOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EmployeeContractIn(BaseModel):
+    """El contrato que viene con el alta (RF-55). Rige desde el ingreso, así
+    que no lleva fecha: la pone `hired_on`."""
+
+    schedule_id: int
+    position_id: int
+    ins_policy_id: int | None = None
+    period_salary: Decimal
+    solidarista_rate: Decimal | None = None
+
+
 class EmployeeIn(BaseModel):
     """Lo que piden los archivos de la CCSS y del INS (RN-72)."""
 
@@ -272,6 +283,8 @@ class EmployeeIn(BaseModel):
     spouse_credit: bool = False
     #: La cuenta del POS, si es la misma persona (RN-72).
     user_id: int | None = None
+    #: El contrato, si se da en el alta. Sin él, va después por `/contracts`.
+    contract: EmployeeContractIn | None = None
 
 
 class EmployeeUpdate(BaseModel):
@@ -440,6 +453,14 @@ class RunIn(BaseModel):
     pay_date: date | None = None
 
 
+class AguinaldoIn(BaseModel):
+    """La corrida de aguinaldo de un año (RF-59): del 1 de diciembre anterior al
+    30 de noviembre. Sin fecha de pago, el 20 de diciembre (Ley 2412)."""
+
+    year: int = Field(ge=2000, le=2100)
+    pay_date: date | None = None
+
+
 class ItemOut(BaseModel):
     """Un rubro congelado: base, tasa y monto (RN-66)."""
 
@@ -480,6 +501,8 @@ class RunOut(BaseModel):
     pay_date: date
     #: 'draft' | 'approved' | 'paid' (RN-68).
     status: str
+    #: La pagada que este ajuste corrige (RF-63).
+    adjusts_run_id: int | None = None
     journal_entry_id: int | None = None
     employees: int
     gross: float
@@ -492,3 +515,237 @@ class RunOut(BaseModel):
 
 class RunDetailOut(RunOut):
     lines: list[LineOut]
+
+
+# ------------------------------------------------------- vacaciones (T-1209)
+
+
+class VacationMovementOut(BaseModel):
+    id: int
+    #: 'opening' | 'accrual' | 'taken' | 'paid'.
+    kind: str
+    #: Con signo: lo acumulado suma y lo disfrutado resta; una anulación de
+    #: vacaciones es un disfrute negativo.
+    days: float
+    on_date: date
+    run_id: int | None = None
+    action_id: int | None = None
+
+
+class VacationsOut(BaseModel):
+    """El saldo de un empleado y de dónde sale (RF-60, RN-70)."""
+
+    employee_id: int
+    balance: float
+    movements: list[VacationMovementOut]
+
+
+# ----------------------------------------------------------- boleta (T-1207)
+
+
+class PayslipRunOut(BaseModel):
+    id: int
+    kind: str
+    period_from: date
+    period_to: date
+    pay_date: date
+    status: str
+    paid_at: datetime | None = None
+    adjusts_run_id: int | None = None
+
+
+class PayslipEmployeeOut(BaseModel):
+    id: int
+    first_name: str
+    last_name_1: str
+    last_name_2: str | None = None
+    identification_type: str
+    identification: str
+    insured_number: str | None = None
+    hired_on: date
+    terminated_on: date | None = None
+    iban: str | None = None
+    position_name: str | None = None
+    schedule_name: str | None = None
+    frequency: str | None = None
+    period_salary: float | None = None
+
+
+class PayslipLineOut(BaseModel):
+    gross: float
+    employee_deductions: float
+    income_tax: float
+    other_deductions: float
+    net: float
+    employer_charges: float
+
+
+class PayslipItemOut(ItemOut):
+    #: De qué acción salió el rubro, para rotularlo (RN-90).
+    action_kind: str | None = None
+    action_memo: str | None = None
+
+
+class PayslipOut(BaseModel):
+    """La boleta de un empleado en una corrida, armada de los rubros congelados
+    (RF-58, RN-66). La plantilla la imprime en el idioma del documento."""
+
+    run: PayslipRunOut
+    employer_number: str | None = None
+    employee: PayslipEmployeeOut
+    line: PayslipLineOut
+    items: list[PayslipItemOut]
+
+
+# ------------------------------------------------------- importación (T-1220)
+
+
+class ImportPositionIn(BaseModel):
+    row: int
+    name: str
+    ccss_code: str
+    ins_code: str
+
+
+class ImportEmployeeIn(BaseModel):
+    """Un empleado con su contrato, con la jornada, el puesto y la póliza **por
+    nombre**: es lo que trae quien viene de otro sistema."""
+
+    row: int
+    identification_type: str
+    identification: str
+    first_name: str
+    last_name_1: str
+    last_name_2: str | None = None
+    insured_number: str | None = None
+    birth_date: date
+    gender: str
+    marital_status: str
+    nationality: str = "CR"
+    phone: str | None = None
+    email: str | None = None
+    is_pensioner: bool = False
+    iban: str | None = None
+    hired_on: date
+    dependent_children: int = 0
+    spouse_credit: bool = False
+    schedule: str
+    position: str
+    policy: str | None = None
+    period_salary: Decimal
+    solidarista_rate: Decimal | None = None
+    contract_from: date | None = None
+    #: Los días hábiles de vacaciones a la fecha de la importación.
+    vacation_days: Decimal | None = None
+
+
+class ImportEarningIn(BaseModel):
+    row: int
+    identification: str
+    #: Cualquier día del mes.
+    month: date
+    gross: Decimal
+
+
+class ImportDeductionIn(BaseModel):
+    row: int
+    identification: str
+    #: 'deduction' | 'child_support' | 'garnishment'.
+    kind: str
+    amount: Decimal
+    #: Lo que le queda por cobrar (RN-92).
+    balance: Decimal | None = None
+    starts_on: date
+    ends_on: date | None = None
+    is_recurring: bool = True
+    memo: str | None = Field(default=None, max_length=160)
+
+
+class ImportIn(BaseModel):
+    """Las filas ya leídas del Excel (RF-86, RN-97). `as_of` es la fecha a la que
+    están los saldos de apertura."""
+
+    as_of: date
+    positions: list[ImportPositionIn] = []
+    employees: list[ImportEmployeeIn] = []
+    earnings: list[ImportEarningIn] = []
+    deductions: list[ImportDeductionIn] = []
+
+
+class RowErrorOut(BaseModel):
+    #: 'positions' | 'employees' | 'earnings' | 'deductions'.
+    sheet: str
+    row: int
+    #: El mismo código que daría el formulario; la pantalla arma la misma frase.
+    code: str
+    field: str | None = None
+    reason: str | None = None
+
+
+class ImportResultOut(BaseModel):
+    dry_run: bool
+    ok: bool
+    errors: list[RowErrorOut]
+    #: Lo que entró, o entraría: puestos nuevos, empleados, meses y deducciones.
+    positions: int
+    employees: int
+    earnings: int
+    deductions: int
+
+
+# ------------------------------------------- los archivos del mes (T-1211, T-1219)
+
+
+class MovementOut(BaseModel):
+    """Un movimiento del mes para la CCSS, con sus fechas (RN-96)."""
+
+    #: 'inclusion' | 'exclusion' | 'sick_leave_sem' | 'sick_leave_ins' |
+    #: 'maternity' | 'leave_paid' | 'leave_unpaid' | 'occupation_change'.
+    kind: str
+    starts_on: date
+    ends_on: date | None = None
+    #: La causa de la exclusión o el código de la ocupación nueva.
+    detail: str | None = None
+
+
+class CcssRowOut(BaseModel):
+    employee_id: int
+    #: Como la pide el formulario: la cédula a nueve dígitos, o el asegurado.
+    identification: str
+    insured_number: str | None = None
+    full_name: str
+    ccss_code: str
+    #: 'diurna' | 'parcial' | 'mixta' | 'nocturna'.
+    shift: str
+    #: Lo que cotiza en el mes.
+    salary: float
+    days: float
+    movements: list[MovementOut]
+
+
+class CcssReportOut(BaseModel):
+    """El informe del mes para la CCSS (RF-62): lo que se teclea en Autogestión."""
+
+    employer_number: str
+    period_from: date
+    period_to: date
+    total_salary: float
+    rows: list[CcssRowOut]
+
+
+class IncomeTaxRowOut(BaseModel):
+    employee_id: int
+    identification: str
+    full_name: str
+    taxable: float
+    withheld: float
+
+
+class IncomeTaxReportOut(BaseModel):
+    """La renta retenida del mes, insumo de la declaración (RF-62, RN-73)."""
+
+    period_from: date
+    period_to: date
+    total_taxable: float
+    total_withheld: float
+    rows: list[IncomeTaxRowOut]

@@ -148,15 +148,18 @@ export const actions: Actions = {
 		// Sin proveedor esto sigue siendo una entrada y nada de lo de abajo se
 		// usa: no genera cuenta por pagar ni crédito fiscal (RN-52).
 		let supplierId = Number(form.get('supplier_id') ?? 0) || null;
-		// Con proveedor esto es una compra y exige el módulo; sin él es la
-		// entrada de siempre y no. Es la misma condición que el endpoint del
-		// backend, y por lo mismo: este formulario escribe dos cosas distintas.
-		if (supplierId || form.get('new_supplier')) {
-			requireModule(locals, 'purchases', url.pathname);
-		}
 		const documentKey = String(form.get('document_key') ?? '').trim() || null;
 		const documentDate = String(form.get('document_date') ?? '').trim() || null;
 		const paymentTerms = form.get('payment_terms') === 'credit' ? 'credit' : 'cash';
+		// Los módulos según lo que se escribe, como `create_entry` en el backend
+		// (QA-01): recibir es del inventario, nombrar al proveedor es de
+		// proveedores y comprar a crédito —que deja una cuenta por pagar— es de
+		// compras.
+		requireModule(locals, 'inventory', url.pathname);
+		if (supplierId || form.get('new_supplier')) {
+			requireModule(locals, 'suppliers', url.pathname);
+			if (paymentTerms === 'credit') requireModule(locals, 'purchases', url.pathname);
+		}
 		const paymentTermsDays = Number(form.get('payment_terms_days') ?? 0) || null;
 		const paymentMethod = String(form.get('payment_method') ?? '').trim() || null;
 

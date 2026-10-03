@@ -5,7 +5,7 @@ from app.models.model_note import SaleNote
 from app.schemas.schemas_note import NoteCreate, NoteCreateSuccess, NoteResponse
 from app.services import crud_note
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user, get_db, require_admin
+from app.utils.auth_dependency import Sesion, get_current_user, get_db, require_admin, require_module
 
 router = APIRouter()
 
@@ -15,6 +15,7 @@ def add_note(
     payload: NoteCreate,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("invoices")),
 ):
     """Emite una nota por monto sobre un comprobante (RF-77, T-726).
 

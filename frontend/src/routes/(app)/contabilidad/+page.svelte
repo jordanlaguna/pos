@@ -24,6 +24,13 @@
 
 	const abierto = $derived(data.periodos.find((p) => p.status === 'open') ?? null);
 	const hoy = new Date().toISOString().slice(0, 10);
+	/**
+	 * Estado y no un `value` suelto: con `value={expr}` Svelte vuelve a aplicar la
+	 * expresión cada vez que cambia otra cosa del formulario, y la fecha que la
+	 * persona escribió se perdía al teclear el primer saldo inicial. Se vio en
+	 * la prueba de punta a punta de planilla, que arranca los libros en enero.
+	 */
+	let inicio = $state(hoy.slice(0, 8) + '01');
 </script>
 
 {#if !data.status.active}
@@ -59,7 +66,7 @@
 						name="start_date"
 						type="date"
 						class="input"
-						value={hoy.slice(0, 8) + '01'}
+						bind:value={inicio}
 						required
 					/>
 					{#if form?.errors?.start_date}
@@ -124,7 +131,7 @@
 									{#if diferencia === 0}
 										<span class="text-[var(--text-subtle)]">{m.accounting_entry_balanced()}</span>
 									{:else}
-										<span class="text-[var(--danger)]">
+										<span class="text-[var(--negative)]">
 											{m.accounting_entry_out_of_balance({
 												amount: formatMoney(Math.abs(diferencia))
 											})}
@@ -148,7 +155,7 @@
 			</div>
 
 			{#if form?.errors?.form}
-				<p class="text-sm text-[var(--danger)]">{form.errors.form}</p>
+				<p class="text-sm text-[var(--negative)]">{form.errors.form}</p>
 			{/if}
 
 			<div>
@@ -161,7 +168,7 @@
 	</div>
 {:else}
 	{#if form?.success}
-		<p class="mb-4 rounded-lg bg-[var(--success-soft)] px-3 py-2 text-sm">{form.success}</p>
+		<p class="mb-4 rounded-lg bg-[var(--positive-bg)] px-3 py-2 text-sm">{form.success}</p>
 	{/if}
 
 	<div class="mb-4 grid gap-3 sm:grid-cols-3">
@@ -185,7 +192,7 @@
 			</p>
 			<p
 				class="mt-1 text-lg font-semibold tabular-nums {data.porClasificar !== 0
-					? 'text-[var(--danger)]'
+					? 'text-[var(--negative)]'
 					: ''}"
 			>
 				{formatMoney(data.porClasificar)}

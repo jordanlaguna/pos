@@ -23,12 +23,18 @@ from app.domain.errors import (
     DocumentTypeNotEnabled,
     DuplicateSaleNumber,
     EmptySale,
+    ExportLineNeedsTariffHeading,
+    ExportNeedsForeignAddress,
+    ExportNeedsForeignReceiver,
+    ExportNeedsReceiver,
+    ExportTariffNotAllowed,
     InsufficientPayment,
     InsufficientStock,
     InvalidQuantity,
     InvalidSaleDocumentType,
     InvalidSalePaymentMethod,
     InvoiceNeedsReceiver,
+    InvoiceNeedsResident,
     IssuerIdentificationRequired,
     TotalsMismatch,
 )
@@ -99,6 +105,35 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
         ) from None
     except InvoiceNeedsReceiver:
         raise api_error(400, "invoice_needs_receiver") from None
+    except InvoiceNeedsResident:
+        # Al cliente del extranjero no se le factura: se le exporta (RN-87).
+        raise api_error(400, "invoice_needs_resident") from None
+    except ExportNeedsReceiver:
+        raise api_error(400, "export_needs_receiver") from None
+    except ExportNeedsForeignReceiver:
+        raise api_error(400, "export_needs_foreign_receiver") from None
+    except ExportNeedsForeignAddress as e:
+        # Se arregla en la ficha del cliente, no en la caja.
+        raise api_error(400, "export_needs_foreign_address", client_id=e.client_id) from None
+    except ExportLineNeedsTariffHeading as e:
+        # Con el nombre del producto, como `insufficient_stock`: «falta la
+        # partida» sin decir de cuál obliga a revisar la venta entera.
+        producto = productos.get(e.product_id)
+        raise api_error(
+            400,
+            "export_line_needs_tariff_heading",
+            product_id=e.product_id,
+            name=producto.name if producto else None,
+        ) from None
+    except ExportTariffNotAllowed as e:
+        producto = productos.get(e.product_id)
+        raise api_error(
+            400,
+            "export_tariff_not_allowed",
+            product_id=e.product_id,
+            name=producto.name if producto else None,
+            tax_code=e.tax_code,
+        ) from None
     except IssuerIdentificationRequired as e:
         # La compañía emite y no tiene cédula de emisor, o la que tiene no cabe
         # en la clave (RN-45). Lo arregla soporte, no quien cobra.
@@ -169,7 +204,22 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
 
 
 def get_all_sales(db: Session):
-    return db.query(Sale).order_by(Sale.created_at.desc()).all()
+    ventas = db.query(Sale).order_by(Sale.created_at.desc()).all()
+    # El estado ante Hacienda de cada venta, en una sola consulta: el vigente
+    # de cada origen es el último (plan §7.2).
+    from app.models.model_fe import FeDocument
+
+    estados: dict[int, str] = {}
+    for fila in (
+        db.query(FeDocument.source_id, FeDocument.status)
+        .filter(FeDocument.source_type == "sale")
+        .order_by(FeDocument.id)
+        .all()
+    ):
+        estados[fila.source_id] = fila.status
+    for venta in ventas:
+        venta.einvoice_status = estados.get(venta.id)
+    return ventas
 
 
 def get_sale_detail(db: Session, sale_id: int) -> dict | None:
@@ -212,6 +262,8 @@ def get_sale_detail(db: Session, sale_id: int) -> dict | None:
                 # los imprime por línea. Nulos antes de la migración 016.
                 "cabys_code": detail.cabys_code,
                 "unit_of_measure": detail.unit_of_measure,
+                # La partida con que se exportó (T-727); nula fuera de la FEE.
+                "tariff_heading": detail.tariff_heading,
             }
         )
 

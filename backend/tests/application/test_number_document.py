@@ -145,7 +145,7 @@ def venta_con_numeracion(catalogo, issuer: FakeIssuerRepository | None = None, *
         products=catalogo,
         sales=ventas,
         clients=FakeClientRepository({CLIENTE}),
-        settings=FakeSettingsRepository(IVA, einvoicing=activa),
+        settings=FakeSettingsRepository(einvoicing=activa),
         uow=uow,
         clock=FixedClock(MOMENTO),
         numbering=numeracion,
@@ -223,7 +223,6 @@ class TestLaDevolucion:
             returns=mundo.devoluciones,
             notes=mundo.notas,
             products=mundo.productos,
-            settings=mundo.ajustes,
             uow=mundo.uow,
             clock=mundo.reloj,
             numbering=numeracion,
@@ -300,7 +299,7 @@ def test_sin_numeracion_conectada_la_venta_queda_pendiente(catalogo):
         products=catalogo,
         sales=FakeSaleRepository(),
         clients=FakeClientRepository({CLIENTE}),
-        settings=FakeSettingsRepository(IVA, einvoicing=True),
+        settings=FakeSettingsRepository(einvoicing=True),
         uow=FakeUnitOfWork(),
         clock=FixedClock(MOMENTO),
     )
@@ -312,3 +311,43 @@ def test_la_venta_no_confunde_montos(catalogo):
     # Que numerar no toque la plata: los totales son los mismos con y sin clave.
     caso, _, _, _ = venta_con_numeracion(catalogo)
     assert caso(peticion([(2, 1)])).totals.total == Money("4802.50")
+
+
+class TestLaContingencia:
+    """RN-43: el dígito de situación sale de lo que la cola observó."""
+
+    def test_sin_quien_lo_diga_es_siempre_normal(self):
+        caso, _ = numerador()
+        assert caso.situation() == SITUATION_NORMAL
+        assert numerar(caso).situation == SITUATION_NORMAL
+
+    def test_sin_alcanzar_a_hacienda_la_clave_lleva_un_tres(self):
+        """La 3, «sin internet», y no la 2: la 2 es la del comprobante que
+        sustituye uno físico hecho a mano (anexo 4.4, nota 3, inciso g)."""
+        from app.application.use_cases.number_document import NumberDocument
+        from app.domain.fe_key import SITUATION_NO_INTERNET
+
+        from .fakes import FakeContingency, FakeSecurityCodes
+
+        caso = NumberDocument(
+            issuer=FakeIssuerRepository(),
+            numbering=FakeDocumentNumbering(),
+            security_codes=FakeSecurityCodes(),
+            contingency=FakeContingency(activa=True),
+        )
+        hecho = numerar(caso)
+        assert hecho.situation == SITUATION_NO_INTERNET
+        assert hecho.clave[41] == "3"
+
+    def test_con_hacienda_arriba_sigue_siendo_normal(self):
+        from app.application.use_cases.number_document import NumberDocument
+
+        from .fakes import FakeContingency, FakeSecurityCodes
+
+        caso = NumberDocument(
+            issuer=FakeIssuerRepository(),
+            numbering=FakeDocumentNumbering(),
+            security_codes=FakeSecurityCodes(),
+            contingency=FakeContingency(activa=False),
+        )
+        assert numerar(caso).clave[41] == "1"

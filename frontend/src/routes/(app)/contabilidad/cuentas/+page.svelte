@@ -16,10 +16,10 @@
 </script>
 
 {#if form?.success}
-	<p class="mb-4 rounded-lg bg-[var(--success-soft)] px-3 py-2 text-sm">{form.success}</p>
+	<p class="mb-4 rounded-lg bg-[var(--positive-bg)] px-3 py-2 text-sm">{form.success}</p>
 {/if}
 {#if form?.errors?.form}
-	<p class="mb-4 rounded-lg bg-[var(--danger-soft)] px-3 py-2 text-sm">{form.errors.form}</p>
+	<p class="mb-4 rounded-lg bg-[var(--negative-bg)] px-3 py-2 text-sm">{form.errors.form}</p>
 {/if}
 
 <div class="mb-3 flex items-center justify-between gap-3">
@@ -59,13 +59,13 @@
 					</td>
 					<td class="px-3 py-2 text-[var(--text-subtle)]">{kindLabel(cuenta.kind)}</td>
 					<td class="px-3 py-2 text-right whitespace-nowrap">
-						<button type="button" class="btn btn-ghost btn-sm" onclick={() => (editando = cuenta)}>
+						<button type="button" class="btn btn-ghost px-2 py-1 text-xs" onclick={() => (editando = cuenta)}>
 							{m.accounting_edit_account()}
 						</button>
 						{#if !cuenta.is_system}
 							<button
 								type="button"
-								class="btn btn-ghost btn-sm text-[var(--danger)]"
+								class="btn btn-ghost px-2 py-1 text-xs text-[var(--negative)]"
 								onclick={() => (borrando = cuenta)}
 							>
 								<Icon name="trash" size={14} />

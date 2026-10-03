@@ -27,6 +27,12 @@ class ProductRegister(BaseModel):
     # Cuando viene, **manda sobre `tax_rate`**: la tarifa se deriva de él.
     tax_code: str | None = None
 
+    # --- F7: la partida arancelaria (RF-78, T-727) ---------------------------
+    #
+    # Doce dígitos. Solo la necesita una mercancía el día que se le venda a un
+    # cliente del extranjero; vacía es «no tiene».
+    tariff_heading: str | None = None
+
 class ProductUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
@@ -51,6 +57,9 @@ class ProductUpdate(BaseModel):
     # derecho a crédito (`01`) y el 0 % sin derecho (`11`) son el mismo número.
     # Cuando viene, **manda sobre `tax_rate`**: la tarifa se deriva de él.
     tax_code: str | None = None
+
+    # --- F7: la partida arancelaria (RF-78, T-727). Vacía la quita. ---------
+    tariff_heading: str | None = None
 
 class ProductResponse(BaseModel):
     id_product: int
@@ -77,6 +86,9 @@ class ProductResponse(BaseModel):
     # derecho a crédito (`01`) y el 0 % sin derecho (`11`) son el mismo número.
     # Cuando viene, **manda sobre `tax_rate`**: la tarifa se deriva de él.
     tax_code: str | None = None
+
+    # --- F7: la partida arancelaria (RF-78, T-727) ---------------------------
+    tariff_heading: str | None = None
 
     # --- F10: lo que cuesta, no lo que vale (RN-54) -------------------------
     #

@@ -195,6 +195,7 @@ SIN_SESION: dict[str, str] = {
     "support_routes.py:entrar_como": "panel de soporte: `require_soporte`",
     "support_routes.py:agregar_tasa_de_planilla": "panel de soporte: `require_soporte` (RN-67)",
     "support_routes.py:agregar_tramos_de_renta": "panel de soporte: `require_soporte` (RN-73, T-1221)",
+    "support_routes.py:elegir_idioma": "panel de soporte: `require_soporte` (QA-02)",
 }
 
 #: Las dependencias que sí aplican el control de suscripción, porque las tres

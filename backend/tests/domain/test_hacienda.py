@@ -9,6 +9,7 @@ from app.domain.errors import (
     InvalidSigningKey,
 )
 from app.domain.hacienda import (
+    is_foreign,
     DIMEX,
     ENVIRONMENTS,
     LEGAL,
@@ -69,12 +70,13 @@ class TestDondeViveHacienda:
     def test_sandbox_y_produccion_no_son_el_mismo_sitio(self):
         assert endpoints(SANDBOX) != endpoints(PRODUCTION)
 
-    def test_el_sandbox_es_otra_RUTA_y_no_otro_servidor(self):
-        # Es lo que se escribe mal de memoria: los dos salen del mismo dominio.
+    def test_el_sandbox_es_otro_SERVIDOR_con_la_misma_ruta(self):
+        # Al revés de lo que decía el README: `api.…/recepcion-sandbox/v1/` ya no
+        # existe y el Gateway de AWS contesta 403 a cualquier token (2026-10-03).
         pruebas, produccion = endpoints(SANDBOX), endpoints(PRODUCTION)
-        assert "recepcion-sandbox" in pruebas.api_url
-        assert "recepcion/v1" in produccion.api_url
-        assert pruebas.api_url.split("/recepcion")[0] == produccion.api_url.split("/recepcion")[0]
+        assert pruebas.api_url == "https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/"
+        assert produccion.api_url == "https://api.comprobanteselectronicos.go.cr/recepcion/v1/"
+        assert "recepcion-sandbox" not in pruebas.api_url
 
     def test_el_realm_y_el_client_id_de_cada_uno(self):
         assert (endpoints(SANDBOX).realm, endpoints(SANDBOX).client_id) == (
@@ -171,11 +173,18 @@ class TestElNombreDeLaLlaveDeFirma:
 
 
 class TestElTipoDeIdentificacion:
-    @pytest.mark.parametrize("bueno", ["01", "02", "03", "04"])
-    def test_los_cuatro_de_Hacienda(self, bueno):
+    def test_el_05_es_el_extranjero_y_se_le_exporta(self):
+        assert is_foreign("05")
+        for otro in ("01", "02", "03", "04", "06", None, ""):
+            assert not is_foreign(otro)
+
+    @pytest.mark.parametrize("bueno", ["01", "02", "03", "04", "05", "06"])
+    def test_los_seis_de_Hacienda(self, bueno):
+        # Los dos últimos entraron con F7: el extranjero no domiciliado recibe
+        # la factura de exportación y el no contribuyente la de compra.
         assert check_identification_type(bueno) == bueno
 
-    @pytest.mark.parametrize("malo", ["05", "1", 1, "", None, "fisica"])
+    @pytest.mark.parametrize("malo", ["07", "1", 1, "", None, "fisica"])
     def test_uno_inventado_no_lo_rechaza_el_sistema_sino_Hacienda(self, malo):
         with pytest.raises(InvalidIdentificationType):
             check_identification_type(malo)

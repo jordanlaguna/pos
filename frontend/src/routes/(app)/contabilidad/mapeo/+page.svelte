@@ -17,10 +17,10 @@
 </script>
 
 {#if form?.success}
-	<p class="mb-4 rounded-lg bg-[var(--success-soft)] px-3 py-2 text-sm">{form.success}</p>
+	<p class="mb-4 rounded-lg bg-[var(--positive-bg)] px-3 py-2 text-sm">{form.success}</p>
 {/if}
 {#if form?.errors?.form}
-	<p class="mb-4 rounded-lg bg-[var(--danger-soft)] px-3 py-2 text-sm">{form.errors.form}</p>
+	<p class="mb-4 rounded-lg bg-[var(--negative-bg)] px-3 py-2 text-sm">{form.errors.form}</p>
 {/if}
 
 <div class="mb-3">
@@ -39,7 +39,7 @@
 							<span
 								class="w-44 shrink-0 truncate font-mono text-xs {fila.account_id === null &&
 								!fila.unmapped_on_purpose
-									? 'text-[var(--danger)]'
+									? 'text-[var(--negative)]'
 									: 'text-[var(--text-subtle)]'}"
 							>
 								{fila.role}

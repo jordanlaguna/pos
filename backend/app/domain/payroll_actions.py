@@ -111,10 +111,13 @@ SUBSIDIES: dict[str, tuple[str, str, str]] = {
 MATERNITY_PAY = "maternity_pay"
 MATERNITY_RATE = "maternity_employer_rate"
 
+#: El rubro del salario del periodo: el que acumula vacaciones (RN-70).
+BASE = "base"
+
 #: Lo que cotiza a la CCSS. El subsidio de una incapacidad no es salario, y la
 #: maternidad cotiza sobre el salario entero (art. 95): ni su rebajo ni lo que
 #: paga el patrono mueven la base.
-CONTRIBUTORY = frozenset({"base", OVERTIME, DOUBLE_TIME, BONUS, SICK_LEAVE_CCSS, SICK_LEAVE_INS, UNPAID_LEAVE, ABSENCE})
+CONTRIBUTORY = frozenset({BASE, OVERTIME, DOUBLE_TIME, BONUS, SICK_LEAVE_CCSS, SICK_LEAVE_INS, UNPAID_LEAVE, ABSENCE})
 #: Lo que paga renta: lo que cotiza y, en la maternidad, lo que de verdad paga el
 #: patrono —la mitad de la CCSS no pasa por la planilla—.
 TAXABLE = CONTRIBUTORY | {MATERNITY, MATERNITY_PAY}
@@ -437,7 +440,7 @@ def base_item(period_salary: Money, schedule: Schedule, period: Period, active: 
         return None
     if desde == period.starts_on and hasta == period.ends_on:
         return PayItem(
-            "base",
+            BASE,
             EARNING,
             period_salary,
             None,
@@ -449,7 +452,7 @@ def base_item(period_salary: Money, schedule: Schedule, period: Period, active: 
     dias = counted_days(schedule, desde, hasta)
     dia = day_value(period_salary, schedule)
     return PayItem(
-        "base",
+        BASE,
         EARNING,
         Money(dia),
         None,

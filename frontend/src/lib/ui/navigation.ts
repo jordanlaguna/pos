@@ -41,26 +41,37 @@ export function nav(): NavGroup[] {
 		{
 			title: m.nav_group_operations(),
 			items: [
-				{ href: '/ventas', label: m.nav_sales(), icon: 'cart', shortcut: 'F2' },
-				{ href: '/caja', label: m.nav_cash(), icon: 'wallet' },
-				{ href: '/facturas', label: m.nav_invoices(), icon: 'receipt' },
-				{ href: '/devoluciones', label: m.nav_returns(), icon: 'undo' }
+				{ href: '/ventas', label: m.nav_sales(), icon: 'cart', shortcut: 'F2', module: 'sales' },
+				{ href: '/caja', label: m.nav_cash(), icon: 'wallet', module: 'cash' },
+				{ href: '/facturas', label: m.nav_invoices(), icon: 'receipt', module: 'invoices' },
+				{ href: '/devoluciones', label: m.nav_returns(), icon: 'undo', module: 'returns' }
 			]
 		},
 		{
 			title: m.nav_group_admin(),
 			items: [
-				{ href: '/dashboard', label: m.nav_reports(), icon: 'chart', roles: ['admin'] },
-				{ href: '/inventario', label: m.nav_inventory(), icon: 'box', roles: ['admin'] },
+				{ href: '/dashboard', label: m.nav_reports(), icon: 'chart', roles: ['admin'], module: 'reports' },
+				{ href: '/inventario', label: m.nav_inventory(), icon: 'box', roles: ['admin'], module: 'inventory' },
 				{
 					// Primera sección atada a un módulo del plan (RN-49). Con el
 					// módulo apagado se ve con candado y no desaparece: es lo único
 					// que le dice al dueño que el producto tiene compras.
-					href: '/compras',
+					// Directo a cuentas por pagar y no a `/compras`: desde QA-01 los
+					// proveedores son otra entrada, y con `/compras` como prefijo las
+					// dos se verían activas a la vez.
+					href: '/compras/cuentas-por-pagar',
 					label: m.nav_purchases(),
-					icon: 'truck',
+					icon: 'download',
 					roles: ['admin'],
 					module: 'purchases'
+				},
+				{
+					// Su propio módulo desde QA-01: el paquete Comercio lo trae sin compras.
+					href: '/compras/proveedores',
+					label: m.nav_suppliers(),
+					icon: 'truck',
+					roles: ['admin'],
+					module: 'suppliers'
 				},
 				{
 					href: '/contabilidad',
@@ -69,8 +80,17 @@ export function nav(): NavGroup[] {
 					roles: ['admin'],
 					module: 'accounting'
 				},
-				{ href: '/clientes', label: m.nav_clients(), icon: 'users' },
-				{ href: '/usuarios', label: m.nav_users(), icon: 'user', roles: ['admin'] },
+				{
+					// El tercer módulo del plan (F12). Como los otros dos: con candado
+					// si el plan no lo trae, y de administración también para leer.
+					href: '/planilla',
+					label: m.nav_payroll(),
+					icon: 'idcard',
+					roles: ['admin'],
+					module: 'payroll'
+				},
+				{ href: '/clientes', label: m.nav_clients(), icon: 'users', module: 'clients' },
+				{ href: '/usuarios', label: m.nav_users(), icon: 'user', roles: ['admin'], module: 'users' },
 				{
 					href: '/configuracion',
 					label: m.nav_settings(),

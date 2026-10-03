@@ -7,7 +7,6 @@ funcionando.
 """
 
 import json
-from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -23,7 +22,6 @@ MAX_DATA_BYTES = 20_000
 
 # El impuesto por omisión mientras nadie lo configure. Es el IVA de Costa Rica,
 # el mismo que traía fijo el WinForms.
-DEFAULT_TAX_RATE = Decimal("0.13")
 
 #: Campos de la configuración que **tienen su propia puerta** y que esta no
 #: puede mover (T-611).
@@ -114,26 +112,16 @@ def _parse(raw: str | None) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def tasa_declarada(data: dict) -> tuple[str, object] | None:
-    """Dónde y con qué valor viene la tasa, venga en la forma que venga.
+def sin_impuesto(data: dict) -> dict:
+    """La configuración sin impuesto (QA-05).
 
-    Son dos: `tax.rate` desde T-113 y el `impuesto.tasa` de antes. Una fila
-    guardada con la versión anterior tiene que seguir entendiéndose; si no,
-    actualizar el sistema haría que el POS cobrara con la tasa de fábrica sin
-    decir nada.
-
-    Existe como función porque los dos sitios que la leen —el que **valida** al
-    guardar y el que **calcula** al cobrar— tienen que mirar el mismo campo. Ya
-    no lo hacían: la validación leía solo la forma vieja mientras el POS escribía
-    la nueva, así que una tasa fuera de rango no levantaba `tax_rate_out_of_range`
-    y se la tragaba el respaldo de `get_tax_rate`. El dueño configuraba 500 %, la
-    pantalla se lo mostraba y el servidor cobraba 13 %, sin un solo error.
+    El impuesto ya no se configura: la tarifa de cada producto es la de su
+    CABYS y, sin ella, la general del IVA (`domain.tax.GENERAL_RATE`). Lo que
+    llegue como `tax` —o `impuesto`, la forma de antes de T-113— se descarta al
+    guardar, para que la fila no siga diciendo una tasa que nadie usa y que el
+    día de mañana alguien crea que manda.
     """
-    for contenedor, campo in (("tax", "rate"), ("impuesto", "tasa")):
-        seccion = data.get(contenedor)
-        if isinstance(seccion, dict) and seccion.get(campo) is not None:
-            return f"{contenedor}.{campo}", seccion[campo]
-    return None
+    return {k: v for k, v in data.items() if k not in ("tax", "impuesto")}
 
 
 def _emisor(db: Session) -> dict:
@@ -227,26 +215,11 @@ def save_settings(
     # Lo protegido se restaura ANTES de medir el tamaño y de validar: lo que se
     # mide tiene que ser lo que se va a guardar.
     row = _row(db)
-    data = _conservar_protegidos(dict(data), _parse(row.data))
+    data = sin_impuesto(_conservar_protegidos(dict(data), _parse(row.data)))
 
     serialized = json.dumps(data, ensure_ascii=False)
     if len(serialized.encode("utf-8")) > MAX_DATA_BYTES:
         raise api_error(400, "settings_too_large", max_bytes=MAX_DATA_BYTES)
-
-    # Único campo que este backend lee por su cuenta (crud_return lo usa para
-    # calcular el reembolso), así que es el único que valida aquí. Se busca con
-    # `tasa_declarada`, el mismo lector que usa `get_tax_rate`: si la validación
-    # mirara un campo y el cálculo otro, una tasa mala pasaría el control y se
-    # perdería después en el respaldo, en silencio.
-    declarada = tasa_declarada(data)
-    if declarada is not None:
-        _, valor = declarada
-        try:
-            rate = Decimal(str(valor))
-        except Exception:
-            raise api_error(400, "tax_rate_not_a_number", value=str(valor)) from None
-        if rate < 0 or rate > 1:
-            raise api_error(400, "tax_rate_out_of_range", value=float(rate))
 
     _validar_emisor(db, data)
 
@@ -304,26 +277,6 @@ def write_protected(db: Session, contenedor: str, campo: str, valor: object) -> 
     seccion[campo] = valor
     row.data = json.dumps(data, ensure_ascii=False)
     row.updated_at = clock.now()
-
-
-def get_tax_rate(db: Session) -> Decimal:
-    """Tasa de impuesto configurada, para quien la necesite del lado del servidor.
-
-    Devuelve la de Costa Rica mientras nadie configure otra. Cualquier valor
-    fuera de rango se ignora en vez de propagarse a un cálculo de plata.
-    """
-    try:
-        declarada = tasa_declarada(_parse(_row(db).data))
-        if declarada is None:
-            return DEFAULT_TAX_RATE
-        rate = Decimal(str(declarada[1]))
-        # El respaldo sigue acá porque una fila puede venir de antes de que
-        # `save_settings` validara las dos formas, o escrita a mano. Lo que ya no
-        # puede pasar es que este respaldo tape una tasa que el POS acaba de
-        # guardar: eso ahora se rechaza al guardarla.
-        return rate if 0 <= rate <= 1 else DEFAULT_TAX_RATE
-    except Exception:
-        return DEFAULT_TAX_RATE
 
 
 def get_einvoicing_enabled(db: Session) -> bool:

@@ -12,7 +12,8 @@ class ProductSale(BaseModel):
 
 
 class SaleRegister(BaseModel):
-    sale_number: str
+    # Opcional desde T-706: sin él, el servidor lo pone con su reloj.
+    sale_number: str | None = None
     # Opcional: las ventas de contado no llevan cliente asociado.
     client_id: int | None = None
     user_id: int
@@ -47,6 +48,9 @@ class SalesList(BaseModel):
     created_at: datetime.datetime
     # El comprobante que se emitió (RN-85). Nulo sin facturación electrónica.
     document_type: str | None = None
+    # En qué va ante Hacienda (RN-39): numbered, signed, sent, accepted,
+    # rejected, retrying, stopped. Nulo si la venta no tiene comprobante.
+    einvoice_status: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -75,6 +79,8 @@ class SaleItem(BaseModel):
     # nulo para lo anterior a la migración 016.
     cabys_code: str | None = None
     unit_of_measure: str | None = None
+    #: La partida arancelaria con que se exportó (T-727). Solo en la FEE.
+    tariff_heading: str | None = None
 
 
 class SaleDetailResponse(SalesList):

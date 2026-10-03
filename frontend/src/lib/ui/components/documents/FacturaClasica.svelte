@@ -169,6 +169,8 @@
 						</p>
 					{/if}
 					{#if client.address}<p class="text-xs text-slate-600">{client.address}</p>{/if}
+					<!-- Las señas del cliente del extranjero (T-727), como van en la exportación. -->
+					{#if client.foreign_address}<p class="text-xs text-slate-600">{client.foreign_address}</p>{/if}
 					{#if client.telephone}<p class="text-xs text-slate-600">{t.phone(client.telephone)}</p>{/if}
 					{#if client.email}<p class="text-xs text-slate-600">{client.email}</p>{/if}
 				{:else}

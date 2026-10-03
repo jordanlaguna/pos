@@ -70,6 +70,9 @@ MIGRACIONES = [
     "migrations/017-notas-por-monto.sql",
     "migrations/018-comprobantes-numerados.sql",
     "migrations/019-planilla.sql",
+    "migrations/020-transmision.sql",
+    "migrations/021-exportacion-y-compra.sql",
+    "migrations/022-paquetes-de-modulos.sql",
 ]
 
 #: `persons` es la única tabla que nace solo de `create_all`, en los dos caminos:

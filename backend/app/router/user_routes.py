@@ -23,7 +23,7 @@ from app.schemas.schemas_user import (
 from app.domain.locale import DEFAULT_LOCALE, effective_locale, normalize_locale
 from app.services import crud_company, crud_membership, crud_user
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user, get_db, require_admin
+from app.utils.auth_dependency import Sesion, get_current_user, get_db, require_admin, require_module
 from app.utils.tenancy import sin_filtro
 
 router = APIRouter()
@@ -119,6 +119,7 @@ def grant_membership(
     payload: MembershipGrant,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("users")),
 ):
     """Agrega a esta compañía a alguien que ya tiene cuenta en el sistema.
 
@@ -157,6 +158,7 @@ def update_role(
     payload: RoleUpdate,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("users")),
 ):
     """Cambia el rol de alguien **en esta compañía**.
 
@@ -220,6 +222,7 @@ def create_user(
     user: UserCreate,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("users")),
 ):
     _cabe_otra_persona(db, admin.company_id)
     created, membresia = crud_user.create_user(db, user, admin.company_id)

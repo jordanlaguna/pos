@@ -36,10 +36,10 @@
 </script>
 
 {#if form?.success}
-	<p class="mb-4 rounded-lg bg-[var(--success-soft)] px-3 py-2 text-sm">{form.success}</p>
+	<p class="mb-4 rounded-lg bg-[var(--positive-bg)] px-3 py-2 text-sm">{form.success}</p>
 {/if}
 {#if form?.errors?.form}
-	<p class="mb-4 rounded-lg bg-[var(--danger-soft)] px-3 py-2 text-sm">{form.errors.form}</p>
+	<p class="mb-4 rounded-lg bg-[var(--negative-bg)] px-3 py-2 text-sm">{form.errors.form}</p>
 {/if}
 
 <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
@@ -131,7 +131,7 @@
 					<tbody>
 						{#each data.detalle.lines ?? [] as linea (linea.account_id + '-' + linea.debit + '-' + linea.credit + '-' + (linea.memo ?? ''))}
 							<tr
-								class={linea.account_code === POR_CLASIFICAR ? 'text-[var(--danger)]' : ''}
+								class={linea.account_code === POR_CLASIFICAR ? 'text-[var(--negative)]' : ''}
 							>
 								<td class="py-1">
 									<span class="font-mono text-xs">{linea.account_code}</span>
@@ -243,7 +243,7 @@
 			</table>
 		</div>
 
-		<p class="text-xs {diferencia === 0 ? 'text-[var(--text-subtle)]' : 'text-[var(--danger)]'}">
+		<p class="text-xs {diferencia === 0 ? 'text-[var(--text-subtle)]' : 'text-[var(--negative)]'}">
 			{diferencia === 0
 				? m.accounting_entry_balance_hint()
 				: m.accounting_entry_out_of_balance({ amount: formatMoney(Math.abs(diferencia)) })}

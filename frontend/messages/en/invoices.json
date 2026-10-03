@@ -80,5 +80,83 @@
 	"amount_note_tab_title": "Note {number}",
 	"amount_note_registered_debit": "Debit note issued. Collect the amount from the customer.",
 	"amount_note_registered_credit": "Credit note issued. Hand over the refund from the drawer.",
-	"amount_note_back": "Back to the invoice"
+	"amount_note_back": "Back to the invoice",
+	"invoices_col_hacienda": "Hacienda",
+	"invoice_state": [
+		{
+			"declarations": ["input state"],
+			"selectors": ["state"],
+			"match": {
+				"state=numbered": "Numbered",
+				"state=signed": "Signed",
+				"state=sent": "Sent",
+				"state=accepted": "Accepted",
+				"state=rejected": "Rejected",
+				"state=retrying": "Retrying",
+				"state=stopped": "Stopped",
+				"state=*": "{state}"
+			}
+		}
+	],
+	"invoice_stop_reason": [
+		{
+			"declarations": ["input reason"],
+			"selectors": ["reason"],
+			"match": {
+				"reason=certificate_missing": "The signing certificate for this environment is missing.",
+				"reason=certificate_expired": "The signing certificate has expired.",
+				"reason=credentials_missing": "The ATV user or password is missing.",
+				"reason=credentials_rejected": "Hacienda did not accept the ATV user or password.",
+				"reason=document_invalid": "The document is missing data Hacienda requires.",
+				"reason=reception_rejected": "Hacienda rejected the submission before processing it.",
+				"reason=forbidden": "The credentials are not allowed for this issuer.",
+				"reason=hacienda_error": "Hacienda could not process it and gave no reason.",
+				"reason=retries_exhausted": "Tried for 72 hours without reaching Hacienda.",
+				"reason=no_verdict": "Hacienda received it 72 hours ago and has not decided yet.",
+				"reason=*": "{reason}"
+			}
+		}
+	],
+	"invoice_event": [
+		{
+			"declarations": ["input event"],
+			"selectors": ["event"],
+			"match": {
+				"event=signed": "Signed",
+				"event=sent": "Sent to Hacienda",
+				"event=polled": "Checked: Hacienda is still processing",
+				"event=accepted": "Accepted by Hacienda",
+				"event=rejected": "Rejected by Hacienda",
+				"event=deferred": "Could not; retrying later",
+				"event=stopped": "Stopped",
+				"event=resumed": "Retried by hand",
+				"event=xml_lost": "The signed XML was missing; signing again",
+				"event=*": "{event}"
+			}
+		}
+	],
+	"invoice_file_title": "With Hacienda",
+	"invoice_file_hint": "Where the document is and when each step happened. The XML you download is the one that was signed, byte for byte.",
+	"invoice_file_none": "This sale has no electronic document: it was charged without electronic invoicing.",
+	"invoice_xml": "Signed XML",
+	"invoice_response": "Hacienda's response",
+	"invoice_xml_pending": "The XML can be downloaded once the document is signed.",
+	"invoice_response_pending": "The response can be downloaded once Hacienda answers.",
+	"invoice_hacienda_detail": "What Hacienda said",
+	"invoice_next_attempt": "Next attempt: {when}",
+	"invoice_last_attempt": "Last attempt: {when}",
+	"invoice_in_queue": "Queued: the queue picks it up within seconds.",
+	"invoice_retry": "Retry",
+	"invoice_retry_hint": "Puts it back in the queue after fixing what stopped it. A rejection by Hacienda is not retried: a new document is issued.",
+	"invoice_retry_done": "The document is back in the queue.",
+	"invoice_retry_failed": "Could not retry.",
+	"invoice_events_title": "Steps",
+	"invoice_events_none": "Nothing yet: the queue picks it up within seconds.",
+	"invoices_stopped_title": "Stopped: they need a person",
+	"invoices_stopped_hint": "What the queue cannot solve on its own. Each one says why and how long it has been waiting; the deadline to transmit what was issued in contingency is about eight business days.",
+	"invoices_stopped_waiting": "Waiting since {since}",
+	"invoices_queue_pending": "{count} on their way to Hacienda",
+	"invoices_queue_alarm_warning": "Some documents have been waiting for Hacienda for more than a day ({count} pending, the oldest from {since}). Check the connection, the certificate and the credentials under Invoices.",
+	"invoices_queue_alarm_danger": "Some documents have had no answer from Hacienda for five days or more ({count} pending, the oldest from {since}). The contingency deadline is running out: deal with it today.",
+	"invoices_contingency": "The business is issuing in contingency: Hacienda has not answered since the last attempt. Documents are transmitted on their own when it comes back."
 }

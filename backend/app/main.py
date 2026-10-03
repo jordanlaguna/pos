@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +30,12 @@ from app.models.model_company import (  # noqa: F401
 from app.models.model_cabys import CabysCache  # noqa: F401
 from app.models.model_categories import Category  # noqa: F401
 from app.models.model_client import Client  # noqa: F401
-from app.models.model_fe import FeCredentials, FeDocument, FeSequence  # noqa: F401
+from app.models.model_fe import (  # noqa: F401
+    FeCredentials,
+    FeDocument,
+    FeDocumentEvent,
+    FeSequence,
+)
 from app.models.model_note import SaleNote, SaleNoteLine  # noqa: F401
 from app.models.model_person import Person  # noqa: F401
 from app.models.model_payroll import (  # noqa: F401
@@ -104,7 +110,20 @@ with SessionLocal() as _db:
     except IntegrityError:
         _db.rollback()
 
-app = FastAPI(title="Postsys API", version="2.0.0")
+from app.workers import fe_worker
+
+
+@asynccontextmanager
+async def _vida(_app: FastAPI):
+    """La cola de transmisión arranca con la API y se apaga con ella (T-708)."""
+    fe_worker.start()
+    try:
+        yield
+    finally:
+        fe_worker.stop()
+
+
+app = FastAPI(title="Postsys API", version="2.0.0", lifespan=_vida)
 
 # ---------------------------------------------------------------------------
 # CORS

@@ -651,6 +651,10 @@ FUERA_DE_LA_BATERIA = {
     # `test_soporte.py::TestLaPuertaDelPanel`, que recorre las siete rutas y
     # exige 403 con el token de un administrador (T-302).
     "/support/me": "panel de soporte; el 403 al token de compañía está en test_soporte.py",
+    "/support/locale": (
+        "escribe el idioma de quien trae el token de soporte; no es de ninguna "
+        "compañía (QA-02). El 403 a un token de compañía está en test_idioma.py"
+    ),
     "/support/plans": "panel de soporte; ídem",
     "/support/plans/{plan_id}/modules": (
         "panel de soporte; ídem. Y además no es de una compañía: edita el "
@@ -698,6 +702,14 @@ FUERA_DE_LA_BATERIA = {
     "/payroll/runs/{run_id}/calculate": "probado con el token de B en test_planilla.py",
     "/payroll/runs/{run_id}/approve": "probado con el token de B en test_planilla.py",
     "/payroll/runs/{run_id}/pay": "probado con el token de B en test_planilla.py",
+    "/payroll/runs/aguinaldo": "crea en la compañía de la sesión; probado en test_planilla.py",
+    "/payroll/runs/{run_id}/payslips/{employee_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/runs/{run_id}/adjust": "probado con el token de B en test_planilla.py",
+    "/payroll/vacations/{employee_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/import": "escribe en la compañía de la sesión; probado en test_planilla.py",
+    "/payroll/exports/ccss": "lee las corridas pagadas de la compañía de la sesión; probado en test_planilla.py",
+    "/payroll/exports/income-tax": "lee las corridas pagadas de la compañía de la sesión; probado en test_planilla.py",
+    "/payroll/exports/ins": "la póliza ajena responde 404; probado en test_planilla.py",
     "/support/payroll/brackets": "panel de soporte; los tramos son del país (T-1221)",
     # CABYS es el catálogo del país, no dato de nadie: `cabys_cache` no lleva
     # `company_id` ni hereda `TenantMixin` a propósito (T-501). La premisa de esta
@@ -796,6 +808,15 @@ FUERA_DE_LA_BATERIA = {
     "/fe/{ambiente}/atv": "idem",
     "/fe/{ambiente}/atv/verify": "idem",
     "/fe/active": "sin id; el ambiente activo es de la compañía de la sesión",
+    "/fe/queue": "sin id; la cola es de la compañía de la sesión; probado en test_emision.py",
+    "/fe/documents/{document_id}": "el comprobante ajeno responde 404; probado en test_emision.py",
+    "/fe/documents/{document_id}/xml": "idem",
+    "/fe/documents/{document_id}/response": "idem",
+    "/fe/documents/{document_id}/retry": "idem",
+    "/fe/sequences": (
+        "las series de la compañía de la sesión; la caja de otra responde 404 "
+        "terminal_not_found, probado en test_series_fe.py (T-616)"
+    ),
     # T-608. Estas SÍ llevan id, y el aislamiento se prueba en
     # `test_sucursales.py`: con el token de A, tocar la sucursal de B da 404 por
     # el filtro automático, que es lo mismo que comprueba esta batería. Se

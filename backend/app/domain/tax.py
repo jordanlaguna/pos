@@ -92,3 +92,11 @@ class TaxRate:
 
     def __str__(self) -> str:
         return f"{self.as_percent} %"
+
+
+#: La tarifa general del IVA (Ley 9635, art. 10): la que paga un producto que no
+#: tiene tarifa propia, o sea que no tiene CABYS (RN-9). **No se configura**
+#: (QA-05): antes era «la tasa del negocio» de Configuración, y con la tarifa
+#: por CABYS ese campo solo servía para equivocarse —un 10 % escrito ahí se
+#: cobraba en todo producto sin clasificar—.
+GENERAL_RATE = TaxRate(Decimal("0.13"))

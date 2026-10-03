@@ -4,8 +4,9 @@ from datetime import date
 
 import pytest
 
-from app.domain.errors import InvalidKeyPart
+from app.domain.errors import InvalidKeyPart, InvalidSequenceStart, SequenceCannotGoDown, SequenceInUse
 from app.domain.fe_key import (
+    check_sequence_start,
     CONSECUTIVE_LENGTH,
     COUNTRY_CODE,
     MAX_SEQUENCE,
@@ -186,3 +187,32 @@ class TestLoQueNoArmaUnaClave:
 
     def test_las_tres_situaciones_del_anexo(self):
         assert SITUATIONS == ("1", "2", "3")
+
+
+class TestElArranqueDeUnaSerie:
+    """T-616, RN-36 a RN-38: el último consecutivo de quien viene de otro sistema."""
+
+    def test_sube_desde_cero(self):
+        assert check_sequence_start(document_type="01", current=0, requested=500209, emitted=False) == 500209
+
+    def test_igual_al_de_ahora_no_es_error(self):
+        assert check_sequence_start(document_type="01", current=500209, requested=500209, emitted=False) == 500209
+
+    def test_no_baja(self):
+        with pytest.raises(SequenceCannotGoDown) as e:
+            check_sequence_start(document_type="01", current=500209, requested=500200, emitted=False)
+        assert (e.value.current, e.value.requested) == (500209, 500200)
+
+    def test_con_la_serie_ya_usada_por_el_sistema_no_se_toca(self):
+        with pytest.raises(SequenceInUse) as e:
+            check_sequence_start(document_type="04", current=3, requested=900, emitted=True)
+        assert e.value.document_type == "04"
+
+    @pytest.mark.parametrize("malo", [-1, 10**10, "500209", 12.5, True, None])
+    def test_tiene_que_caber_en_la_clave(self, malo):
+        with pytest.raises(InvalidSequenceStart) as e:
+            check_sequence_start(document_type="01", current=0, requested=malo, emitted=False)
+        assert e.value.value == malo
+
+    def test_el_tope_cabe(self):
+        assert check_sequence_start(document_type="01", current=0, requested=MAX_SEQUENCE, emitted=False) == MAX_SEQUENCE

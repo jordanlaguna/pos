@@ -3,7 +3,8 @@
 Son listas en memoria que cumplen `ports/payroll.py` sin heredar nada. Lo único
 con lógica es `applied`: igual que el adaptador real, mira los rubros de las
 corridas aprobadas o pagadas, así que las pruebas de la segunda corrida pueden
-aprobar la primera y ver cómo cambia lo que se aplica.
+aprobar la primera y ver cómo cambia lo que se aplica. Lo mismo `paid_earnings`
+y `month_withholding`, que leen las líneas que las corridas ya escribieron.
 """
 
 from __future__ import annotations
@@ -13,12 +14,18 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Sequence
 
-from app.application.ports.payroll import CalculatedLine
+from app.application.ports.payroll import CalculatedLine, StoredLine
 from app.domain.ledger import PaidPayroll
 from app.domain.money import Money
 from app.domain.payroll import EARNING, Rate, TaxBracket, TaxCredits
 from app.domain.payroll_actions import TAXABLE
+from app.domain.payroll_benefits import EARNED_CONCEPTS, SeveranceBracket
 from app.domain.payroll_calendar import Period
+
+PAGADA = ("paid",)
+APROBADA_O_PAGADA = ("approved", "paid")
+#: Lo que suma para la renta y para lo devengado: regulares y ajustes.
+CON_SALARIO = ("regular", "adjustment")
 
 
 class RelojFijo:
@@ -105,11 +112,23 @@ class FilaDeCorrida:
     created_by: int
     created_at: datetime
     status: str = "draft"
+    adjusts_run_id: int | None = None
     journal_entry_id: int | None = None
     approved_by: int | None = None
     approved_at: datetime | None = None
     paid_by: int | None = None
     paid_at: datetime | None = None
+
+
+@dataclass
+class FilaDeVacacion:
+    id: int
+    employee_id: int
+    kind: str
+    days: Decimal
+    on_date: date
+    run_id: int | None = None
+    action_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -156,14 +175,18 @@ class FakeEmployeeRepository:
     def contracts_of(self, employee_id: int) -> list[FilaDeContrato]:
         return sorted((c for c in self.contratos if c.employee_id == employee_id), key=lambda c: c.valid_from)
 
-    def contracts_in(self, schedule_id: int, period: Period) -> list[FilaDeContrato]:
-        return [
+    def _tocan(self, period: Period):
+        return (
             c
             for c in self.contratos
-            if c.schedule_id == schedule_id
-            and c.valid_from <= period.ends_on
-            and (c.valid_to is None or c.valid_to >= period.starts_on)
-        ]
+            if c.valid_from <= period.ends_on and (c.valid_to is None or c.valid_to >= period.starts_on)
+        )
+
+    def contracts_in(self, schedule_id: int, period: Period) -> list[FilaDeContrato]:
+        return [c for c in self._tocan(period) if c.schedule_id == schedule_id]
+
+    def contracts_between(self, period: Period) -> list[FilaDeContrato]:
+        return list(self._tocan(period))
 
     def add_contract(self, **datos) -> int:
         nuevo = FilaDeContrato(
@@ -200,7 +223,7 @@ class FakePayrollRepository:
     def get_run(self, run_id: int) -> FilaDeCorrida | None:
         return self.corridas.get(run_id)
 
-    def find_run(self, *, schedule_id: int, period_to: date, kind: str) -> FilaDeCorrida | None:
+    def find_run(self, *, schedule_id: int | None, period_to: date, kind: str) -> FilaDeCorrida | None:
         return next(
             (
                 c
@@ -217,6 +240,23 @@ class FakePayrollRepository:
 
     def line_count(self, run_id: int) -> int:
         return len(self.lineas.get(run_id, []))
+
+    def lines(self, run_id: int) -> list[StoredLine]:
+        return [
+            StoredLine(
+                id=run_id * 100 + n,
+                employee_id=l.employee_id,
+                contract_id=l.contract_id,
+                gross=l.gross,
+                employee_deductions=l.employee_deductions,
+                income_tax=l.income_tax,
+                other_deductions=l.other_deductions,
+                net=l.net,
+                employer_charges=l.employer_charges,
+                items=tuple(l.items),
+            )
+            for n, l in enumerate(self.lineas.get(run_id, []), start=1)
+        ]
 
     def replace_lines(self, run_id: int, lines: Sequence[CalculatedLine]) -> None:
         self.lineas[run_id] = list(lines)
@@ -235,11 +275,26 @@ class FakePayrollRepository:
             net=Money.sum(l.net for l in lineas),
         )
 
+    def paid_earnings(self, employee_id: int, period: Period) -> list[tuple[date, Money]]:
+        salida = []
+        for corrida in sorted(self.corridas.values(), key=lambda c: (c.period_to, c.id)):
+            if corrida.status not in PAGADA or corrida.kind not in CON_SALARIO or corrida.period_to not in period:
+                continue
+            for linea in self.lineas.get(corrida.id, []):
+                if linea.employee_id == employee_id:
+                    salida.append(
+                        (
+                            corrida.period_to,
+                            Money.sum(i.amount for i in linea.items if i.payer == EARNING and i.concept in EARNED_CONCEPTS),
+                        )
+                    )
+        return salida
+
     def month_withholding(self, employee_id: int, year: int, month: int, *, exclude_run_id: int) -> tuple[Money, Money]:
         base = Money.zero()
         retenido = Money.zero()
         for corrida in self.corridas.values():
-            if corrida.id == exclude_run_id or corrida.kind != "regular" or corrida.status not in ("approved", "paid"):
+            if corrida.id == exclude_run_id or corrida.kind not in CON_SALARIO or corrida.status not in APROBADA_O_PAGADA:
                 continue
             if (corrida.period_to.year, corrida.period_to.month) != (year, month):
                 continue
@@ -298,7 +353,7 @@ class FakeActionRepository:
     def applied(self, action_id: int) -> list[RubroAplicado]:
         rubros = []
         for corrida in self.runs.corridas.values():
-            if corrida.status not in ("approved", "paid"):
+            if corrida.status not in APROBADA_O_PAGADA:
                 continue
             for linea in self.runs.lineas.get(corrida.id, []):
                 for i in linea.items:
@@ -319,11 +374,58 @@ class FakeActionRepository:
         return rubros
 
 
+class FakeVacationRepository:
+    def __init__(self, movimientos: list[FilaDeVacacion] | None = None) -> None:
+        self.movimientos = list(movimientos or [])
+
+    def movements(self, employee_id: int) -> list[FilaDeVacacion]:
+        return [m for m in self.movimientos if m.employee_id == employee_id]
+
+    def add(self, employee_id: int, *, kind: str, days: Decimal, on_date: date, run_id=None, action_id=None) -> int:
+        fila = FilaDeVacacion(
+            id=max((m.id for m in self.movimientos), default=0) + 1,
+            employee_id=employee_id,
+            kind=kind,
+            days=days,
+            on_date=on_date,
+            run_id=run_id,
+            action_id=action_id,
+        )
+        self.movimientos.append(fila)
+        return fila.id
+
+    def update_for_action(self, action_id: int, *, days: Decimal, on_date: date) -> None:
+        fila = next(m for m in self.movimientos if m.action_id == action_id)
+        fila.days = days
+        fila.on_date = on_date
+
+
+class FakeOpeningRepository:
+    def __init__(self, meses: list[tuple[int, date, Decimal]] | None = None) -> None:
+        #: (employee_id, primer día del mes, bruto)
+        self.meses = list(meses or [])
+        self.agregados: list[tuple] = []
+
+    def earnings(self, employee_id: int, period: Period) -> list[tuple[date, Money]]:
+        return [(mes, Money(bruto)) for e, mes, bruto in sorted(self.meses, key=lambda m: m[1]) if e == employee_id and mes in period]
+
+    def add_earning(self, employee_id: int, *, month: date, gross: Money, by: int, at: datetime) -> None:
+        self.meses.append((employee_id, month, gross.amount))
+        self.agregados.append((employee_id, month, gross, by, at))
+
+
 class FakeRateTable:
-    def __init__(self, tasas: list[Rate], tramos: list[TaxBracket] | None = None, creditos: TaxCredits | None = None) -> None:
+    def __init__(
+        self,
+        tasas: list[Rate],
+        tramos: list[TaxBracket] | None = None,
+        creditos: TaxCredits | None = None,
+        cesantia: list[SeveranceBracket] | None = None,
+    ) -> None:
         self.tasas = tasas
         self.tramos = tramos or []
         self.creditos = creditos or TaxCredits(Money.zero(), Money.zero())
+        self.cesantia = cesantia or []
 
     def rates(self, country: str) -> list[Rate]:
         return self.tasas
@@ -333,6 +435,9 @@ class FakeRateTable:
 
     def credits_at(self, on: date, country: str) -> TaxCredits:
         return self.creditos
+
+    def severance_at(self, on: date, country: str) -> list[SeveranceBracket]:
+        return self.cesantia
 
 
 class FakePayrollSettings:
@@ -356,3 +461,66 @@ class LibroEspia:
 
     def post(self, entry):  # pragma: no cover - no se usa acá
         return None
+
+
+class FakeImportRepository:
+    """Los catálogos por nombre y las altas que hace la importación (T-1220)."""
+
+    def __init__(
+        self,
+        *,
+        puestos: dict[str, tuple[int, bool]] | None = None,
+        jornadas: list[FilaDeJornada] | None = None,
+        polizas: dict[str, int] | None = None,
+        empleados: dict[str, int] | None = None,
+    ) -> None:
+        self.puestos = dict(puestos or {})
+        self.jornadas = {j.name: j for j in (jornadas or [])}
+        self.polizas = dict(polizas or {})
+        self.empleados = dict(empleados or {})
+        self.puestos_nuevos: list[dict] = []
+        self.empleados_nuevos: list[dict] = []
+
+    def position_by_name(self, name: str) -> tuple[int, bool] | None:
+        return self.puestos.get(name)
+
+    def add_position(self, *, name: str, ccss_code: str, ins_code: str) -> int:
+        nuevo = max((i for i, _ in self.puestos.values()), default=100) + 1
+        self.puestos[name] = (nuevo, True)
+        self.puestos_nuevos.append({"id": nuevo, "name": name, "ccss_code": ccss_code, "ins_code": ins_code})
+        return nuevo
+
+    def schedule_by_name(self, name: str) -> FilaDeJornada | None:
+        return self.jornadas.get(name)
+
+    def policy_by_number(self, number: str) -> int | None:
+        return self.polizas.get(number)
+
+    def employee_by_identification(self, identification: str) -> int | None:
+        return self.empleados.get(identification)
+
+    def add_employee(self, **fields) -> int:
+        nuevo = max(self.empleados.values(), default=500) + 1
+        self.empleados[str(fields["identification"])] = nuevo
+        self.empleados_nuevos.append({"id": nuevo, **fields})
+        return nuevo
+
+
+class FakePayrollReports:
+    """Lo que el mes pagado sabe de cada trabajador, ya armado (T-1211, T-1219)."""
+
+    def __init__(self, *, workers=None, employer=None, policies: dict[int, str] | None = None) -> None:
+        self.workers = list(workers or [])
+        self.employer_ = employer
+        self.policies = dict(policies or {})
+        self.pedidos: list[tuple[int, int]] = []
+
+    def month(self, year: int, month: int):
+        self.pedidos.append((year, month))
+        return list(self.workers)
+
+    def employer(self):
+        return self.employer_
+
+    def policy_number(self, policy_id: int) -> str | None:
+        return self.policies.get(policy_id)

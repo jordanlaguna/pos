@@ -474,21 +474,25 @@ class TestElAmbienteActivo:
         _, cuerpo = empresa.call("GET", "/fe")
         assert cuerpo["active"] == "sandbox"
 
-    def test_confirmado_si(self, empresa: Api):
-        estado, cuerpo = empresa.call(
+    def test_confirmado_si_pero_la_puerta_dura_manda(self, empresa: Api):
+        """Desde T-713 confirmar no alcanza: a producción se pasa con una
+        factura, un tiquete y una nota de crédito **aceptados** en pruebas
+        (RN-46), y mientras falten lo dice. El paso con la puerta abierta —y la
+        asimetría de RN-35, y la bitácora— están en `test_emision.py`, que es
+        donde hay comprobantes que contar."""
+        respuesta = empresa.call(
             "PUT", "/fe/active", {"environment": "production", "confirm": True}
         )
-        assert estado == 200
-        assert cuerpo["active"] == "production"
+        assert codigo(respuesta, 409) == "production_gate_locked"
+        assert respuesta[1]["detail"]["missing"] == ["01", "04", "03"]
+        _, cuerpo = empresa.call("GET", "/fe")
+        assert cuerpo["active"] == "sandbox"
+        assert cuerpo["production_gate"] == {"ready": False, "missing": ["01", "04", "03"]}
 
     def test_volver_a_pruebas_no_pide_confirmacion(self, empresa: Api):
-        """La asimetría de RN-35, comprobada.
-
-        Exigir confirmación para deshacer convierte la salida de un error en un
-        segundo trámite, justo cuando alguien acaba de darse cuenta de que
-        emitió en el ambiente equivocado.
-        """
-        empresa.call("PUT", "/fe/active", {"environment": "production", "confirm": True})
+        """La asimetría de RN-35: deshacer no se confirma. Con la puerta cerrada
+        acá solo se puede comprobar la mitad barata —a pruebas sin `confirm` es
+        200—; la vuelta desde producción de verdad está en `test_emision.py`."""
         estado, cuerpo = empresa.call("PUT", "/fe/active", {"environment": "sandbox"})
         assert estado == 200
         assert cuerpo["active"] == "sandbox"
@@ -510,19 +514,9 @@ class TestElAmbienteActivo:
         _, cuerpo_b = otra_empresa.call("GET", "/fe")
         assert cuerpo_b["active"] == "sandbox"
 
-    def test_queda_en_bitacora_con_el_antes_y_el_despues(self, empresa: Api, soporte: Api):
-        """«Cambió el ambiente» no sirve para nada dentro de seis meses.
-
-        La pregunta que se hace de verdad es desde cuándo estas facturas tienen
-        efecto fiscal, y eso solo lo contesta el antes y el después.
-        """
-        empresa.call("PUT", "/fe/active", {"environment": "production", "confirm": True})
-
-        estado, bitacora = soporte.call("GET", "/support/audit?accion=fe_ambiente&limit=20")
-        if estado != 200:
-            pytest.skip("el panel de soporte no está disponible en esta corrida")
-        detalles = [linea["detalle"] for linea in bitacora["lineas"]]
-        assert "sandbox → production" in detalles
+    # La bitácora del cambio («sandbox → production») se comprueba en
+    # `test_emision.py::TestLaPuertaDeProduccion`: acá la puerta está cerrada y
+    # no hay cambio que anotar.
 
 
 class TestLaPuertaLateral:
@@ -544,44 +538,6 @@ class TestLaPuertaLateral:
         _, cuerpo = empresa.call("GET", "/fe")
         assert cuerpo["active"] == "sandbox"
 
-    def test_y_tampoco_lo_borra(self, empresa: Api):
-        # El caso simétrico y más fácil de pasar por alto: el POS manda la
-        # configuración completa, y una versión suya que no conozca el campo lo
-        # dejaría fuera. Devolver a pruebas por omisión sería peor que el hueco.
-        empresa.call("PUT", "/fe/active", {"environment": "production", "confirm": True})
-
-        _, actual = empresa.call("GET", "/settings/")
-        datos = {k: v for k, v in actual["data"].items() if k != "eInvoicing"}
-        empresa.call("PUT", "/settings/", {"data": datos, "keep_logo": True})
-
-        _, cuerpo = empresa.call("GET", "/fe")
-        assert cuerpo["active"] == "production"
-
-
-class TestComprobarLaConexion:
-    """RF-31, T-612.
-
-    **Sin salir a internet.** Lo que se ejercita acá es el borde: quién puede
-    pedirlo y qué contesta cuando no hay nada que comprobar. Los tres desenlaces
-    con el IdP contestando viven en `test_idp_fe.py` —contra un Keycloak de
-    mentira— y en `tests/application/test_credenciales_fe.py`.
-    """
-
-    def test_sin_credenciales_no_hay_nada_que_comprobar(self, empresa: Api):
-        respuesta = empresa.call("POST", "/fe/sandbox/atv/verify", {})
-        # No es «no sirven»: no hay nada que corregir, hay algo que escribir.
-        assert codigo(respuesta, 409) == "atv_not_configured"
-
-    def test_el_usuario_sin_contrasena_tampoco(self, empresa: Api):
-        # No se puede llegar por el API —`password` es obligatoria— pero sí
-        # restaurando un respaldo: el usuario viaja y la contraseña no (RN-47).
-        respuesta = empresa.call("POST", "/fe/production/atv/verify", {})
-        assert codigo(respuesta, 409) == "atv_not_configured"
-
-    def test_un_ambiente_inventado(self, empresa: Api):
-        respuesta = empresa.call("POST", "/fe/qa/atv/verify", {})
-        assert codigo(respuesta, 400) == "invalid_environment"
-
-    def test_un_cajero_no_puede_comprobar(self, cajero: Api):
-        respuesta = cajero.call("POST", "/fe/sandbox/atv/verify", {})
-        assert codigo(respuesta, 403) == "admin_only"
+    # El caso simétrico —guardar la configuración sin la sección no devuelve el
+    # ambiente a pruebas— exige estar en producción, y eso exige la puerta
+    # abierta: vive en `test_emision.py::TestLaPuertaDeProduccion`.

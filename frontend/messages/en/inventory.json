@@ -55,7 +55,7 @@
   "inventory_cabys_bad_code": "A CABYS code is thirteen digits.",
   "inventory_cabys_assign": "Assign {description}",
   "inventory_label_tax_rate": "Rate (%)",
-  "inventory_tax_rate_inherited": "Blank: the configured business rate, {rate} %.",
+  "inventory_tax_rate_inherited": "Blank: the general VAT rate, {rate} %.",
   "inventory_tax_rate_differs": "Differs from the catalogue's, which is {rate} %.",
   "inventory_col_tax": "Rate",
   "inventory_col_cabys": "CABYS",
@@ -92,5 +92,7 @@
   "inventory_tax_code_08": "Standard 13 %",
   "inventory_tax_code_09": "Reduced 0.5 %",
   "inventory_tax_code_10": "Exempt",
-  "inventory_tax_code_11": "0 % without credit entitlement"
+  "inventory_tax_code_11": "0 % without credit entitlement",
+  "inventory_label_tariff_heading": "Tariff heading",
+  "inventory_tariff_heading_hint": "12 digits. Only needed to sell to a foreign customer, with an export invoice."
 }

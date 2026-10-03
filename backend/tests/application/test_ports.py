@@ -22,6 +22,7 @@ import pytest
 from app.application.ports import (
     clock,
     documents,
+    fe_documents,
     numbering,
     payroll,
     repositories,
@@ -75,10 +76,11 @@ PUERTOS = [
     (repositories.NoteRepository, {"adjustments", "add", "in_window"}),
     # Desde F7: si la compañía factura electrónicamente, que es lo que decide si
     # la venta lleva tipo de comprobante (RN-85).
-    (repositories.SettingsRepository, {"tax_rate", "einvoicing_enabled", "document_types"}),
-    # F7: el receptor de la venta tiene que ser de la compañía. Una sola
-    # pregunta, porque es lo único que la venta necesita saber de un cliente.
-    (repositories.ClientRepository, {"exists"}),
+    (repositories.SettingsRepository, {"einvoicing_enabled", "document_types"}),
+    # F7: el receptor de la venta tiene que ser de la compañía, y desde T-727
+    # la venta necesita saber quién es ante Hacienda: al del extranjero se le
+    # exporta. Una sola pregunta, que devuelve eso.
+    (repositories.ClientRepository, {"get"}),
     (
         repositories.CashRepository,
         {"open_session", "create_session", "close_session", "add_movement", "movements"},
@@ -103,6 +105,33 @@ PUERTOS = [
     # aunque T-612 lo tire: F7 lo necesita para transmitir, y un puerto que
     # devolviera `bool` habría que cambiarlo entonces.
     (transmission.HaciendaIdp, {"token"}),
+    # F7: la otra mitad de hablar con Hacienda (T-708, T-709): entregar el XML y
+    # preguntar qué decidió. Dos métodos y no uno por recurso: son los dos del
+    # README §7, y el resto —el 202, el 404, el token vencido— son excepciones.
+    (transmission.HaciendaReception, {"submit", "status"}),
+    # F7: lo que la firma necesita del certificado público (T-712). Aparte de
+    # `CertificateReader`, que abre el `.p12` y se olvida de él.
+    (signing.CertificateParser, {"facts"}),
+    # F7: el recorrido (T-707 a T-713). El repositorio es ancho a propósito: la
+    # cola, la pantalla, la contingencia y la puerta de producción leen lo
+    # mismo, y partirlo en cuatro sería cuatro adaptadores sobre una tabla.
+    (
+        fe_documents.TransmissionRepository,
+        {
+            "get",
+            "latest_for",
+            "due",
+            "update",
+            "add_event",
+            "events",
+            "health",
+            "stopped",
+            "counts",
+            "accepted_by_type",
+        },
+    ),
+    (fe_documents.ComprobanteSource, {"comprobante"}),
+    (fe_documents.ContingencyMode, {"active"}),
     # F7: la numeración (T-704, T-705). Tres puertos porque son tres razones de
     # cambio: quién emite, el contador con su bloqueo, y el azar de la clave.
     (numbering.IssuerRepository, {"issuer"}),
@@ -111,8 +140,8 @@ PUERTOS = [
         {"office", "last_sequence", "save_sequence", "record"},
     ),
     (numbering.SecurityCodes, {"new"}),
-    # F12: la planilla (T-1205, T-1206, T-1218). Siete puertos por siete
-    # razones de cambio; el libro es el de F11.
+    # F12: la planilla (T-1205, T-1206, T-1218, T-1209, T-1210). Nueve puertos
+    # por nueve razones de cambio; el libro es el de F11.
     (payroll.ScheduleRepository, {"get"}),
     (
         payroll.EmployeeRepository,
@@ -120,6 +149,7 @@ PUERTOS = [
             "get",
             "contracts_of",
             "contracts_in",
+            "contracts_between",
             "add_contract",
             "close_contract",
             "terminate",
@@ -135,23 +165,45 @@ PUERTOS = [
             "find_run",
             "add_run",
             "line_count",
+            "lines",
             "replace_lines",
             "totals",
+            "paid_earnings",
             "month_withholding",
             "approve",
             "pay",
         },
     ),
-    (payroll.RateTable, {"rates", "brackets_at", "credits_at"}),
+    (payroll.RateTable, {"rates", "brackets_at", "credits_at", "severance_at"}),
     (payroll.PayrollSettings, {"payroll"}),
+    # Las vacaciones son una suma de movimientos (RN-70) y lo de apertura son
+    # meses (RN-97): cada uno con su puerta, porque los importa T-1220 aparte.
+    (payroll.VacationRepository, {"movements", "add", "update_for_action"}),
+    (payroll.OpeningRepository, {"earnings", "add_earning"}),
+    # Los archivos del mes (T-1211, T-1219) leen un mes pagado ya armado.
+    (payroll.PayrollReports, {"month", "employer", "policy_number"}),
+    # La importación (T-1220) busca por nombre lo que el formulario busca por id.
+    (
+        payroll.ImportRepository,
+        {
+            "position_by_name",
+            "add_position",
+            "schedule_by_name",
+            "policy_by_number",
+            "employee_by_identification",
+            "add_employee",
+        },
+    ),
     (repositories.ProductSnapshot, set()),
     (repositories.SupplierSnapshot, set()),
+    (repositories.ClientSnapshot, set()),
     (payroll.ScheduleSnapshot, set()),
     (payroll.EmployeeSnapshot, set()),
     (payroll.ContractSnapshot, set()),
     (payroll.ActionSnapshot, set()),
     (payroll.AppliedItem, set()),
     (payroll.RunSnapshot, set()),
+    (payroll.VacationSnapshot, set()),
 ]
 
 
@@ -196,6 +248,19 @@ def test_ProductSnapshot_dice_que_necesita_la_venta_de_un_producto():
         # porque el comprobante los imprime y el producto puede cambiarlos.
         "cabys_code",
         "unit_of_measure",
+        # Desde T-727: la partida arancelaria, que la factura de exportación
+        # exige en cada mercancía.
+        "tariff_heading",
+    }
+
+
+def test_ClientSnapshot_dice_quien_es_el_receptor_ante_hacienda():
+    # Ni nombre ni correo: la venta guarda el id y el comprobante los lee
+    # después. Lo que decide al vender es el tipo de identificación (RN-87).
+    assert set(get_type_hints(repositories.ClientSnapshot)) == {
+        "id_client",
+        "identification_type",
+        "foreign_address",
     }
 
 
@@ -207,6 +272,10 @@ def test_SupplierSnapshot_dice_lo_justo_para_comprarle():
         "name",
         "is_active",
         "payment_terms_days",
+        # Desde T-728: a un no contribuyente se le emite la factura de compra,
+        # y él es su emisor: sin cédula no se numera.
+        "identification_type",
+        "identification",
     }
 
 
@@ -224,6 +293,7 @@ def test_los_puertos_no_conocen_la_persistencia_ni_HTTP():
     for modulo in (
         clock,
         documents,
+        fe_documents,
         payroll,
         repositories,
         secrets,

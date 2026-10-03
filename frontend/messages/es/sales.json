@@ -72,5 +72,6 @@
   "sales_confirm_charge": "Confirmar cobro",
   "sales_line_unclassified": "sin clasificar",
   "sales_choose_client": "Elija un cliente",
-  "sales_only_invoices_needs_client": "Este negocio solo emite facturas electrónicas: elija un cliente para cobrar."
+  "sales_only_invoices_needs_client": "Este negocio solo emite facturas electrónicas: elija un cliente para cobrar.",
+  "sales_export_client": "Al cliente del extranjero se le emite factura de exportación o tiquete."
 }

@@ -71,6 +71,19 @@ class Plan(Base):
     accounting = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     payroll = Column(Boolean, nullable=False, default=False, server_default=text("0"))
 
+    # Las secciones del POS, módulos desde QA-01 (migración 022). Apagadas por
+    # omisión como las de arriba; la migración se las deja encendidas a los
+    # planes que ya existían, y `bootstrap.py` a los que crea sin decir más.
+    sales = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    cash = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    invoices = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    returns = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    reports = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    inventory = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    suppliers = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    clients = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    users = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+
 
 class Company(Base):
     """Un cliente del producto.

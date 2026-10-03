@@ -11,5 +11,11 @@
 	"checkout_amount_insufficient": "Valor insuficiente.",
 	"checkout_invoice_needs_client": "A fatura eletrônica precisa de um cliente. Escolha um ou emita um cupom.",
 	"checkout_document_type_not_enabled": "Este negócio não emite esse documento. Escolha outro.",
-	"checkout_bad_document_type": "Esse documento não é emitido no caixa."
+	"checkout_bad_document_type": "Esse documento não é emitido no caixa.",
+	"checkout_invoice_needs_resident": "Um cliente do exterior não recebe fatura eletrônica: emita uma fatura de exportação ou um tíquete.",
+	"checkout_export_needs_client": "A fatura de exportação precisa de um cliente do exterior.",
+	"checkout_export_needs_foreign_client": "A fatura de exportação é para clientes do exterior. Para este cliente, emita uma fatura ou um tíquete.",
+	"checkout_export_needs_foreign_address": "O cliente não tem endereço no exterior. Preencha-o no cadastro antes de exportar.",
+	"checkout_export_line_needs_tariff_heading": "{product} não tem posição tarifária. Preencha-a no cadastro do produto antes de exportar.",
+	"checkout_export_tariff_not_allowed": "{product} usa a alíquota {tax_code}, que a fatura de exportação não admite. Altere-a no cadastro do produto ou emita um tíquete."
 }

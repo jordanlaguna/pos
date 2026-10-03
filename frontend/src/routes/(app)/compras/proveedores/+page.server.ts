@@ -8,8 +8,8 @@ import { m } from '$lib/paraglide/messages.js';
 import { apiMessage, validationErrors } from '$lib/ui/messages';
 import type { Actions, PageServerLoad } from './$types';
 
-/** Los cuatro de Hacienda. La lista vive en el backend; acá se copia el orden. */
-const TIPOS = ['01', '02', '03', '04'];
+/** Los seis de Hacienda (F7). La lista vive en el backend; acá se copia el orden. */
+const TIPOS = ['01', '02', '03', '04', '05', '06'];
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	requireAdmin(locals, url.pathname);
@@ -33,7 +33,7 @@ export const actions: Actions = {
 		// esto impide que se ofrezca, que es lo que RN-2 pide para el bloqueo por
 		// suscripción y vale igual acá: enterarse después de llenar la ficha es
 		// la peor manera de enterarse.
-		requireModule(locals, 'purchases', url.pathname);
+		requireModule(locals, 'suppliers', url.pathname);
 		const form = await request.formData();
 		const v = new Validator(form);
 

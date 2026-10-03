@@ -19,19 +19,30 @@ from app.domain.payroll_benefits import (
     MUTUAL,
     RESIGNATION,
     TERMINATION_CAUSES,
+    VACATION_ACCRUAL,
+    VACATION_OPENING,
+    VACATION_PAID,
+    VACATION_TAKEN,
     SettlementInput,
     SeveranceBracket,
     aguinaldo,
     aguinaldo_item,
     aguinaldo_period,
+    aguinaldo_period_containing,
     average_salary,
+    average_window,
+    by_month,
+    calendar_days,
+    month_of,
     months_between,
     notice_days,
     proportional_vacation,
     settlement,
+    settlement_vacation_days,
     severance_days,
     severance_years,
     vacation_accrual,
+    vacation_balance,
 )
 from app.domain.payroll_calendar import Period
 
@@ -189,3 +200,63 @@ class TestLaLiquidacionDependeDeLaCausa:
 
     def test_son_cinco_causas(self):
         assert len(set(TERMINATION_CAUSES)) == 5
+
+
+class TestLoDevengado:
+    """Los meses con que se arman el aguinaldo y el promedio (RN-69, RN-71, RN-97)."""
+
+    def test_el_periodo_de_aguinaldo_en_que_cae_un_dia(self):
+        assert aguinaldo_period_containing(date(2026, 3, 15)) == aguinaldo_period(2026)
+        assert aguinaldo_period_containing(date(2026, 11, 30)) == aguinaldo_period(2026)
+        # Diciembre ya es del aguinaldo del año siguiente.
+        assert aguinaldo_period_containing(date(2026, 12, 1)) == aguinaldo_period(2027)
+
+    def test_el_mes_de_una_fecha(self):
+        assert month_of(date(2026, 2, 28)) == date(2026, 2, 1)
+
+    def test_la_ventana_del_promedio_son_los_seis_meses_anteriores(self):
+        # Quien sale el 15 de marzo: de setiembre a febrero, el mes de la salida no.
+        assert average_window(date(2026, 3, 15)) == Period(date(2025, 9, 1), date(2026, 2, 28))
+        assert average_window(date(2026, 1, 31)) == Period(date(2025, 7, 1), date(2025, 12, 31))
+
+    def test_por_mes_suma_las_corridas_del_mismo_mes_y_salta_los_vacios(self):
+        meses = by_month(
+            [
+                (date(2026, 1, 15), Money(300000)),
+                (date(2026, 1, 31), Money(310000)),
+                (date(2026, 3, 31), Money(600000)),  # febrero no tuvo nada
+                (date(2025, 12, 31), Money(590000)),
+            ]
+        )
+        assert meses == [Money(590000), Money(610000), Money(600000)]
+        assert by_month([]) == []
+
+    def test_los_dias_de_calendario_cuentan_los_dos_extremos(self):
+        assert calendar_days(date(2026, 1, 1), date(2026, 1, 15)) == 15
+        assert calendar_days(date(2026, 1, 15), date(2026, 1, 1)) == 0
+
+
+class TestElSaldoDeVacaciones:
+    def test_es_la_suma_con_signo_de_los_movimientos(self):
+        saldo = vacation_balance(
+            [(VACATION_OPENING, D(5)), (VACATION_ACCRUAL, D("1.03")), (VACATION_TAKEN, D(2)), (VACATION_PAID, D("0.5"))]
+        )
+        assert saldo == D("3.53")
+        assert vacation_balance([]) == 0
+
+    def test_un_tipo_que_no_existe_revienta(self):
+        with pytest.raises(KeyError):
+            vacation_balance([("bonus", D(1))])
+
+    def test_al_salir_se_liquida_lo_ganado_menos_lo_usado(self):
+        # Dos años: lo acumulado manda y el piso de un día por mes no aplica.
+        assert settlement_vacation_days(date(2024, 1, 1), date(2025, 12, 31), earned=D("24.5"), used=D(10)) == D("14.5")
+
+    def test_antes_de_las_cincuenta_semanas_rige_el_piso_de_un_dia_por_mes(self):
+        # Cuatro meses en semana de cinco: acumuló 3,43 pero el piso son 4.
+        assert settlement_vacation_days(date(2026, 1, 1), date(2026, 4, 30), earned=D("3.43"), used=D(0)) == D(4)
+        # Y si ya disfrutó dos, quedan dos.
+        assert settlement_vacation_days(date(2026, 1, 1), date(2026, 4, 30), earned=D("3.43"), used=D(2)) == D(2)
+
+    def test_nunca_negativo(self):
+        assert settlement_vacation_days(date(2024, 1, 1), date(2025, 12, 31), earned=D(10), used=D(12)) == 0

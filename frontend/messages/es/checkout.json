@@ -11,5 +11,11 @@
 	"checkout_amount_insufficient": "Monto insuficiente.",
 	"checkout_invoice_needs_client": "La factura electrónica necesita un cliente. Elija uno o emita un tiquete.",
 	"checkout_document_type_not_enabled": "Este negocio no emite ese comprobante. Elija otro.",
-	"checkout_bad_document_type": "Ese comprobante no se emite al cobrar."
+	"checkout_bad_document_type": "Ese comprobante no se emite al cobrar.",
+	"checkout_invoice_needs_resident": "A un cliente del extranjero no se le emite factura electrónica: emítale una factura de exportación o un tiquete.",
+	"checkout_export_needs_client": "La factura de exportación necesita un cliente del extranjero.",
+	"checkout_export_needs_foreign_client": "La factura de exportación es para un cliente del extranjero. A este cliente emítale una factura o un tiquete.",
+	"checkout_export_needs_foreign_address": "El cliente no tiene dirección en el extranjero. Complétela en su ficha antes de exportar.",
+	"checkout_export_line_needs_tariff_heading": "{product} no tiene partida arancelaria. Complétela en la ficha del producto antes de exportar.",
+	"checkout_export_tariff_not_allowed": "{product} tiene la tarifa {tax_code}, que la factura de exportación no admite. Cámbiela en la ficha del producto o emita un tiquete."
 }

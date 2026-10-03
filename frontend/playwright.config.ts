@@ -92,6 +92,20 @@ export default defineConfig({
 		 * unos segundos por corrida y quita una forma silenciosa de mentir.
 		 */
 		reuseExistingServer: false,
-		timeout: 120_000
+		/*
+		 * **Diez minutos, no dos.** Casi todo el arranque es la compilación de
+		 * Paraglide dentro del plugin de Vite: con 2 250 mensajes en tres idiomas
+		 * tarda tres minutos y veinte segundos en una máquina de dieciséis núcleos
+		 * (medido el 2026-10-02: «ready in 203058 ms»), y crece más que
+		 * proporcional con los catálogos —antes de F12, con 1 833, eran dos
+		 * minutos—. El tiempo no es nuestro: el hilo principal de Node está
+		 * ocioso el 95 % de la compilación y el trabajo lo hace la base SQLite del
+		 * SDK de inlang. Con el límite viejo la suite moría con «Timed out waiting
+		 * 120000ms from config.webServer» sin haber abierto una página. Un
+		 * servidor que de verdad no arranca sigue fallando rápido: con
+		 * `--strictPort` Vite sale si el puerto está ocupado y Playwright lo
+		 * reporta al instante.
+		 */
+		timeout: 600_000
 	}
 });

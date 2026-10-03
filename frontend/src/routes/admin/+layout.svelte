@@ -25,6 +25,17 @@
 		{ href: '/admin/bitacora', label: m.admin_nav_audit(), icon: 'clock' as const }
 	]);
 
+	/*
+	 * Los idiomas del panel (QA-02). Sin «el de la compañía», que es la opción
+	 * del POS: soporte no tiene compañía de la que heredar (RN-4). `$derived` y
+	 * no constante de módulo, por lo mismo que en el POS (defecto 17).
+	 */
+	const IDIOMAS = $derived([
+		{ value: 'es', label: m.language_es() },
+		{ value: 'en', label: m.language_en() },
+		{ value: 'pt', label: m.language_pt() }
+	]);
+
 	function isActive(href: string): boolean {
 		// `/admin` es la raíz: solo está activa cuando la ruta es exactamente eso,
 		// porque si no queda marcada también estando en la bitácora.
@@ -121,6 +132,22 @@
 				{/each}
 			</div>
 
+			<!-- Sin controlar, por lo mismo que el del POS: ver (app)/+layout.svelte. -->
+			<form method="POST" action="/admin/idioma" class="flex items-center gap-1" data-idioma-panel>
+				<input type="hidden" name="redirectTo" value={page.url.pathname} />
+				<label class="sr-only" for="panel-idioma">{m.nav_language()}</label>
+				<select id="panel-idioma" name="locale" class="input h-8 w-32 min-w-0 py-0 text-xs">
+					{#each IDIOMAS as opcion (opcion.value)}
+						<option value={opcion.value} selected={opcion.value === data.support.locale}>
+							{opcion.label}
+						</option>
+					{/each}
+				</select>
+				<button type="submit" class="btn btn-ghost h-8 px-2" aria-label={m.nav_language_apply()}>
+					<Icon name="check" size={14} />
+				</button>
+			</form>
+
 			{#if data.demo}
 				<span class="badge hidden bg-[var(--warning-bg)] text-[var(--warning)] sm:inline-flex">
 					<Icon name="info" size={12} />
@@ -138,7 +165,8 @@
 			</button>
 		</header>
 
-		<main class="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+		<!-- `relative`, como en el POS: ver la nota en (app)/+layout.svelte. -->
+		<main class="relative min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
 			{@render children()}
 		</main>
 	</div>

@@ -20,6 +20,10 @@ class Client(TenantMixin, Base):
     email = Column(String(100), nullable=False)
     telephone = Column(Integer, nullable=True)
     address = Column(String(100), nullable=True)
+    # Las otras señas de un cliente del extranjero (F7, RF-78, T-727): van en
+    # el receptor de la factura de exportación en lugar de la ubicación del
+    # país, que un extranjero no domiciliado no tiene. 300 es el largo del XSD.
+    foreign_address = Column(String(300), nullable=True)
     register_date = Column(DATE, nullable=True)
 
     # ------------------------------------------- la exoneración (F7, T-717)

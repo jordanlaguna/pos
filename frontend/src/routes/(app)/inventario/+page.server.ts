@@ -1,3 +1,4 @@
+import { TARIFF_HEADING_LENGTH } from '$lib/domain/export';
 import { fail } from '@sveltejs/kit';
 import { api, apiSafe } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth';
@@ -65,7 +66,15 @@ function readProduct(v: Validator, form: FormData) {
 		// contra la lista acá: el desplegable solo ofrece los ocho vendibles y
 		// el servidor la comprueba igual, así que repetir la tabla en un tercer
 		// sitio sería un lugar más donde desincronizarse.
-		tax_code: String(form.get('tax_code') ?? '').trim() || null
+		tax_code: String(form.get('tax_code') ?? '').trim() || null,
+		// La partida arancelaria (T-727): doce dígitos si viene; en blanco es «no
+		// tiene», que solo importa el día que se le venda a alguien del extranjero.
+		tariff_heading:
+			v.digits('tariff_heading', F.tariffHeading(), {
+				required: false,
+				min: TARIFF_HEADING_LENGTH,
+				max: TARIFF_HEADING_LENGTH
+			}) || null
 	};
 }
 

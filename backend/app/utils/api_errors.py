@@ -107,6 +107,25 @@ CODES: frozenset[str] = frozenset(
         # `document_type`: la compañía no emite ese comprobante (RN-88). La
         # pantalla no lo ofrece; llegar acá es una pantalla vieja o el API.
         "document_type_not_enabled",
+        # Factura a un cliente del extranjero (RN-87, T-727): lo suyo es la
+        # factura de exportación, o un tiquete.
+        "invoice_needs_resident",
+        # Exportación sin cliente, o a uno del país.
+        "export_needs_receiver",
+        "export_needs_foreign_receiver",
+        # `client_id`: el cliente del extranjero no tiene dirección (RF-78).
+        "export_needs_foreign_address",
+        # `product_id`, `name`: una mercancía de la venta sin partida
+        # arancelaria (RF-78). Se arregla en la ficha del producto.
+        "export_line_needs_tariff_heading",
+        # `product_id`, `name`, `tax_code`: la exportación no admite la tarifa
+        # 01 ni la 11 (T-720).
+        "export_tariff_not_allowed",
+        # `tariff_heading`: una partida que no son doce dígitos.
+        "invalid_tariff_heading",
+        # `max_length`: una dirección extranjera más larga que lo que admite
+        # el XML.
+        "invalid_foreign_address",
         "product_not_found",
         "product_without_price",
         "insufficient_stock",
@@ -331,7 +350,6 @@ CODES: frozenset[str] = frozenset(
         # -------------------------------------------------- configuración
         "unsupported_locale",
         "settings_too_large",
-        "tax_rate_not_a_number",
         "tax_rate_out_of_range",
         # La ubicación del emisor (T-722, RN-83). `field` dice cuál de los cinco
         # y `reason` qué le pasa: `required`, `unknown`, `too_short`, `too_long`.
@@ -353,6 +371,14 @@ CODES: frozenset[str] = frozenset(
         # 503 dice «reintentá», que es exactamente el caso de alguien que
         # reinició la VM y no abrió Vault.
         "signing_unavailable",
+        # ------------------------------------------------- la transmisión (F7)
+        "document_not_found",
+        "document_not_stopped",
+        "document_not_signed",
+        "document_not_resolved",
+        "document_file_missing",
+        "storage_unavailable",
+        "production_gate_locked",
         # --------------------------- comprobar la transmisión (T-612, RF-31)
         # Los tres desenlaces de RF-31 son tres códigos y no uno con un dato
         # adentro: cada uno manda a hacer algo distinto, y el POS tiene que
@@ -391,6 +417,12 @@ CODES: frozenset[str] = frozenset(
         "terminal_code_taken",
         "branch_not_found",
         "terminal_not_found",
+        # El arranque de una serie (T-616, RN-36 a RN-38). `value` lo que llegó;
+        # `document_type` la serie que ya usó el sistema; `current` y
+        # `requested`, dónde va y adónde se la quería bajar.
+        "invalid_sequence_start",
+        "sequence_in_use",
+        "sequence_cannot_go_down",
         # `sales` y `terminals`: tiene historia o cajas colgando, así que se
         # desactiva en vez de borrarse (RN-7). Van las dos cuentas porque quien
         # lo lee necesita saber qué mover primero.
@@ -478,6 +510,22 @@ CODES: frozenset[str] = frozenset(
         # `missing` y `on`: a la fecha de corte falta una tasa (RN-67). Sin
         # ella la boleta saldría cobrando de menos, sin que nadie lo note.
         "rates_missing_for_date",
+        # `run_id` y `status`: solo una corrida pagada se ajusta (RN-68, T-1212);
+        # un borrador se recalcula.
+        "run_not_paid",
+        # `run_id` y `employee_id`: una liquidación de alguien que no está dado
+        # de baja no tiene qué liquidar (RN-71, T-1210).
+        "settlement_requires_termination",
+        # `employee_id`, `balance` y `requested`: pide más días de vacaciones
+        # de los que tiene (RN-70, T-1209).
+        "vacation_balance_exceeded",
+        # `errors`: las filas con error de una importación que pidió escribir
+        # (RN-97, T-1220). Cada una trae hoja, fila y el código que daría el
+        # formulario. No se escribió nada.
+        "import_has_errors",
+        # `missing` (empleado y campos) y `company`: lo que falta para armar el
+        # archivo de la CCSS o del INS (RN-96, T-1211). No se exporta a medias.
+        "export_data_incomplete",
     }
 )
 

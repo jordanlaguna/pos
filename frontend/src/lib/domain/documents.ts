@@ -1,5 +1,5 @@
 import { readableInk, withLightness } from './color';
-import { CREDIT_NOTE, DEBIT_NOTE, INVOICE, TICKET } from './documentType';
+import { CREDIT_NOTE, EXPORT_INVOICE, DEBIT_NOTE, INVOICE, TICKET } from './documentType';
 import { locationNames } from './location';
 import { round2 } from './money';
 import type { Settings } from './settings';
@@ -120,7 +120,7 @@ export function brandTones(hex: string): BrandTones {
 }
 
 /** Qué documento es, en código. El nombre lo pone la plantilla. */
-export type DocumentKind = 'invoice' | 'einvoice' | 'eticket' | 'ecredit' | 'edebit';
+export type DocumentKind = 'invoice' | 'einvoice' | 'eexport' | 'eticket' | 'ecredit' | 'edebit';
 
 /** Las notas no cobran: no llevan efectivo recibido ni vuelto (RN-89). */
 export function isNote(kind: DocumentKind): boolean {
@@ -142,6 +142,8 @@ export function documentKind(sale: { document_type?: string | null }): DocumentK
 			return 'einvoice';
 		case TICKET:
 			return 'eticket';
+		case EXPORT_INVOICE:
+			return 'eexport';
 		case CREDIT_NOTE:
 			return 'ecredit';
 		case DEBIT_NOTE:

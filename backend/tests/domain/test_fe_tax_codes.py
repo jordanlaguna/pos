@@ -14,6 +14,7 @@ import pytest
 
 from app.domain.errors import DomainError
 from app.domain.fe_tax_codes import (
+    purchase_line_code,
     CODES,
     GENERAL,
     ONLY_IN_NOTES,
@@ -103,3 +104,23 @@ class TestDeLaTarifaAlCodigo:
     def test_el_cuatro_por_ciento_tiene_dos_pero_uno_es_transitorio(self):
         assert codes_for(TaxRate.percent(4)) == ("04", "06")
         assert suggested_code(TaxRate.percent(4)) == "04"
+
+
+class TestElCodigoDeLaLineaDeCompra:
+    """T-728, RN-53: la tarifa es la del documento del proveedor; el código, el
+    del producto si dice esa tarifa, y si no el que se propone para ella."""
+
+    def test_el_del_producto_si_dice_la_misma_tarifa(self):
+        assert purchase_line_code("08", TaxRate.percent(13)) == "08"
+        # Entre los tres del 0 %, el del producto decide.
+        assert purchase_line_code("10", TaxRate.percent(0)) == "10"
+
+    def test_si_el_producto_dice_otra_tarifa_manda_la_del_documento(self):
+        assert purchase_line_code("08", TaxRate.percent(1)) == "02"
+        assert purchase_line_code("10", TaxRate.percent(13)) == "08"
+
+    @pytest.mark.parametrize("sin", [None, "", "99", 8])
+    def test_sin_codigo_del_producto_el_que_se_propone(self, sin):
+        assert purchase_line_code(sin, TaxRate.percent(13)) == "08"
+        # Y en el 0 % nadie adivina el derecho a crédito.
+        assert purchase_line_code(sin, TaxRate.percent(0)) is None

@@ -25,8 +25,9 @@ class ClientRegister(BaseModel):
     # client attributes
     identification: str
     #: El tipo de Hacienda (T-617): '01' física, '02' jurídica, '03' DIMEX,
-    #: '04' NITE. Sin él se deduce de la cédula; si tampoco así se sabe, el
-    #: cliente no se guarda.
+    #: '04' NITE, y desde T-727 '05' extranjero no domiciliado —que recibe
+    #: factura de exportación— y '06' no contribuyente. Sin él se deduce de la
+    #: cédula; si tampoco así se sabe, el cliente no se guarda.
     identification_type: str | None = None
     name: str
     last_name: str
@@ -35,6 +36,9 @@ class ClientRegister(BaseModel):
     telephone: int | None = None
     address: str | None = None
     register_date: str | None = None
+    #: Las otras señas de un cliente del extranjero (RF-78, T-727): van en el
+    #: receptor de la factura de exportación en lugar de la ubicación del país.
+    foreign_address: str | None = None
 
     # --- F7: la exoneración del cliente (RF-67, RN-78) ----------------------
     #
@@ -61,6 +65,9 @@ class ClientUpdate(BaseModel):
     telephone: int | None = None
     address: str | None = None
     register_date: str | None = None
+    #: Las otras señas de un cliente del extranjero (RF-78, T-727): van en el
+    #: receptor de la factura de exportación en lugar de la ubicación del país.
+    foreign_address: str | None = None
 
     # --- F7: la exoneración del cliente (RF-67, RN-78) ----------------------
     #
@@ -87,6 +94,9 @@ class ClientResponse(BaseModel):
     telephone: int | None = None
     address: str | None = None
     register_date: str | None = None
+    #: Las otras señas de un cliente del extranjero (RF-78, T-727): van en el
+    #: receptor de la factura de exportación en lugar de la ubicación del país.
+    foreign_address: str | None = None
 
     model_config = {
         "from_attributes": True

@@ -54,6 +54,8 @@ export function documentLabels(locale: string) {
 				return m.doc_einvoice({}, o);
 			case 'eticket':
 				return m.doc_eticket({}, o);
+			case 'eexport':
+				return m.doc_eexport({}, o);
 			case 'ecredit':
 				return m.doc_ecredit({}, o);
 			case 'edebit':
@@ -139,6 +141,9 @@ export function documentLabels(locale: string) {
 		/** Lo mismo como rótulo de una columna, para el tiquete: el tipo, o «Cédula». */
 		idLabel: (type: string | null | undefined) =>
 			identificationTypeName(type) ?? m.doc_client_id({}, o),
+
+		/** El rótulo de las señas del cliente del extranjero (T-727). */
+		foreignAddress: m.doc_foreign_address({}, o),
 
 		date: m.doc_date({}, o),
 		issueDate: m.doc_issue_date({}, o),
@@ -276,6 +281,63 @@ export function documentLabels(locale: string) {
 }
 
 export type DocumentLabels = ReturnType<typeof documentLabels>;
+
+/**
+ * Los rótulos de la boleta de pago (RF-58, T-1207), en el idioma del documento.
+ *
+ * La cuarta plantilla de documento. Como las tres de la venta, no habla el
+ * idioma de la pantalla sino el de la compañía (RN-29): la boleta es para el
+ * empleado y para un reclamo laboral, no para quien la imprime. Los conceptos
+ * de los rubros son datos del API (`base`, `sem`, `income_tax`…) y acá se les
+ * pone nombre.
+ */
+export function payslipLabels(locale: string) {
+	const o = { locale: comoLocale(locale) } as const;
+	return {
+		locale: o.locale,
+		title: (kind: string) => {
+			switch (kind) {
+				case 'aguinaldo':
+					return m.doc_payslip_aguinaldo({}, o);
+				case 'settlement':
+					return m.doc_payslip_settlement({}, o);
+				case 'adjustment':
+					return m.doc_payslip_adjustment({}, o);
+				default:
+					return m.doc_payslip({}, o);
+			}
+		},
+		employee: m.doc_payslip_employee({}, o),
+		identification: m.doc_payslip_identification({}, o),
+		position: m.doc_payslip_position({}, o),
+		period: m.doc_payslip_period({}, o),
+		periodRange: (from: string, to: string) => m.doc_payslip_period_range({ from, to }, o),
+		payDate: m.doc_payslip_pay_date({}, o),
+		employerNumber: m.doc_payslip_employer_number({}, o),
+		salary: m.doc_payslip_salary({}, o),
+		earnings: m.doc_payslip_earnings({}, o),
+		deductions: m.doc_payslip_deductions({}, o),
+		employerCharges: m.doc_payslip_employer_charges({}, o),
+		gross: m.doc_payslip_gross({}, o),
+		totalDeductions: m.doc_payslip_total_deductions({}, o),
+		net: m.doc_payslip_net({}, o),
+		colConcept: m.doc_payslip_col_concept({}, o),
+		colDetail: m.doc_payslip_col_detail({}, o),
+		colAmount: m.doc_payslip_col_amount({}, o),
+		hours: (hours: number) => m.doc_payslip_hours({ hours }, o),
+		days: (days: number) => m.doc_payslip_days({ days }, o),
+		rate: (rate: number) => m.doc_payslip_rate({ rate }, o),
+		account: m.doc_payslip_account({}, o),
+		received: m.doc_payslip_received({}, o),
+		draft: m.doc_payslip_draft({}, o),
+		adjusts: (from: string, to: string) => m.doc_payslip_adjusts({ from, to }, o),
+		cause: m.doc_payslip_cause({}, o),
+		concept: (concept: string) => m.doc_payslip_concept({ concept }, o),
+		causeName: (cause: string) => m.doc_payslip_cause_name({ cause }, o)
+	};
+}
+
+export type PayslipLabels = ReturnType<typeof payslipLabels>;
 
 /** Las líneas del emisor, ya en texto, en el idioma del documento. */
 export function issuerText(lineas: IssuerLine[], labels: DocumentLabels): string[] {

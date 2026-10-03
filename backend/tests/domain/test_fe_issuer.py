@@ -84,6 +84,14 @@ class TestLaCedulaQueFijaSoporte:
             check_issuer_identity(mala, None)
         assert e.value.reason == "invalid"
 
+    @pytest.mark.parametrize("ajeno", ["05", "06"])
+    def test_un_tipo_que_recibe_comprobantes_pero_no_los_emite(self, ajeno):
+        # Son de clientes y proveedores (T-727, T-728): un emisor «extranjero no
+        # domiciliado» firmaría claves que Hacienda rechaza.
+        with pytest.raises(InvalidIdentificationType) as e:
+            check_issuer_identity("3101702934", ajeno)
+        assert e.value.value == ajeno
+
     def test_un_tipo_que_no_existe(self):
         with pytest.raises(InvalidIdentificationType):
             check_issuer_identity("3101702934", "07")

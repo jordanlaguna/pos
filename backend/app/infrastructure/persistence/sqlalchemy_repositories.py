@@ -50,6 +50,9 @@ class ProductData:
     #: El CABYS y la unidad del comprobante (RN-86), para congelarlos en la línea.
     cabys_code: str | None = None
     unit_of_measure: str | None = None
+    #: La partida arancelaria (T-727): se congela en la línea de una factura de
+    #: exportación y decide, antes de cobrar, si la mercancía puede exportarse.
+    tariff_heading: str | None = None
 
 
 def _a_producto(fila: Product) -> ProductData:
@@ -65,6 +68,7 @@ def _a_producto(fila: Product) -> ProductData:
         cost=Money(fila.cost) if fila.cost is not None else Money.zero(),
         cabys_code=fila.cabys_code,
         unit_of_measure=fila.unit_of_measure,
+        tariff_heading=fila.tariff_heading,
     )
 
 
@@ -151,6 +155,10 @@ class SupplierData:
     name: str
     is_active: bool
     payment_terms_days: int
+    #: Quién es ante Hacienda (T-728): el `06` da lugar a la factura de compra,
+    #: y su cédula va en ella como emisor.
+    identification_type: str | None = None
+    identification: str | None = None
 
 
 class SqlAlchemySupplierRepository:
@@ -166,6 +174,8 @@ class SqlAlchemySupplierRepository:
             name=fila.name,
             is_active=bool(fila.is_active),
             payment_terms_days=fila.payment_terms_days or 0,
+            identification_type=fila.identification_type,
+            identification=fila.identification,
         )
 
 
@@ -212,6 +222,7 @@ class SqlAlchemyStockEntryRepository:
         due_date: date | None = None,
         subtotal: Money | None = None,
         tax: Money | None = None,
+        document_type: str | None = None,
     ) -> int:
         entrada = StockEntry(
             # A qué sucursal entró. Sale del token, no del cuerpo de la
@@ -235,6 +246,8 @@ class SqlAlchemyStockEntryRepository:
             # total y el impuesto cero: es lo que esa entrada fue.
             subtotal=(subtotal or total_cost).amount,
             tax=(tax or Money.zero()).amount,
+            # La factura electrónica de compra, si la hay (T-728).
+            document_type=document_type,
         )
         self._db.add(entrada)
         self._db.flush()
@@ -386,6 +399,7 @@ class SqlAlchemySaleRepository:
                     # producto.
                     cabys_code=linea.cabys_code,
                     unit_of_measure=linea.unit_of_measure,
+                    tariff_heading=linea.tariff_heading,
                 )
             )
 
@@ -706,14 +720,6 @@ class SqlAlchemySettingsRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def tax_rate(self) -> TaxRate:
-        # `get_tax_rate` ya devuelve la de Costa Rica cuando no hay fila o el
-        # valor guardado está fuera de rango: nunca propaga basura a un cálculo
-        # de plata.
-        from app.services.crud_settings import get_tax_rate
-
-        return TaxRate(get_tax_rate(self._db))
-
     def einvoicing_enabled(self) -> bool:
         from app.services.crud_settings import get_einvoicing_enabled
 
@@ -725,20 +731,36 @@ class SqlAlchemySettingsRepository:
         return get_document_types(self._db)
 
 
+@dataclass(frozen=True)
+class ClientData:
+    """Un cliente visto desde la venta. Cumple `ClientSnapshot`."""
+
+    id_client: int
+    identification_type: str | None
+    foreign_address: str | None
+
+
 class SqlAlchemyClientRepository:
     """Cumple `ClientRepository`. El filtro por compañía lo pone la sesión."""
 
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def exists(self, client_id: int) -> bool:
+    def get(self, client_id: int) -> ClientData | None:
         # La entidad y no `query(Client.id_client)`: el filtro de `tenancy.py`
         # se engancha al ORM, y consultar la fila entera es la forma que ya se
         # sabe filtrada. Un cliente de otra compañía da `None`, igual que uno
         # que no existe.
         from app.models.model_client import Client
 
-        return self._db.query(Client).filter(Client.id_client == client_id).first() is not None
+        fila = self._db.query(Client).filter(Client.id_client == client_id).first()
+        if fila is None:
+            return None
+        return ClientData(
+            id_client=fila.id_client,
+            identification_type=fila.identification_type,
+            foreign_address=fila.foreign_address,
+        )
 
 
 class SqlAlchemyUnitOfWork:

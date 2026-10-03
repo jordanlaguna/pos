@@ -2,6 +2,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { m } from '$lib/paraglide/messages.js';
 import { api, apiSafe, ApiError } from '$lib/server/api';
 import { requireAdmin, requireUser, requireWrite } from '$lib/server/auth';
+import { reintentarComprobante } from '$lib/server/fe';
 import { formError, Validator } from '$lib/application/validation';
 import { F } from '$lib/ui/fields';
 import { apiMessage, validationErrors } from '$lib/ui/messages';
@@ -10,6 +11,7 @@ import { CORRECTS_AMOUNT } from '$lib/domain/documents';
 import type {
 	AmountNote,
 	Client,
+	DocumentFile,
 	Product,
 	Sale,
 	SaleDetail,
@@ -67,6 +69,13 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		? (clients.find((c) => c.id_client === sale.client_id) ?? null)
 		: null;
 
+	// El expediente ante Hacienda (T-721): solo si la venta tiene comprobante, y
+	// con `apiSafe` porque un backend anterior a F7 no lo tiene y la factura se
+	// abre igual.
+	const expediente = sale.einvoice?.id
+		? await apiSafe<DocumentFile | null>(`/fe/documents/${sale.einvoice.id}`, null, { token })
+		: null;
+
 	/*
 	 * Códigos de barras de las líneas de esta venta. La venta guarda el nombre
 	 * del producto pero no su código, y la plantilla puede pedirlo. Solo se
@@ -85,11 +94,17 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		barcodes,
 		saleReturns: returns.filter((r) => r.sale_id === id),
 		saleNotes: notes,
+		expediente,
 		isNew: url.searchParams.get('nueva') === '1'
 	};
 };
 
 export const actions: Actions = {
+	/** RF-36: vuelve a la cola el comprobante detenido. Solo el administrador. */
+	reintentar: async ({ request, locals, url }) => {
+		requireWrite(requireAdmin(locals, url.pathname));
+		return reintentarComprobante(locals.token, await request.formData());
+	},
 	/**
 	 * Anular el comprobante (RN-89): una devolución entera con motivo «anula».
 	 *

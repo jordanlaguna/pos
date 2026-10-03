@@ -9,6 +9,7 @@
 	"nav_reports": "Reportes",
 	"nav_inventory": "Inventario",
 	"nav_purchases": "Compras",
+	"nav_suppliers": "Proveedores",
 	"nav_accounting": "Contabilidad",
 	"nav_clients": "Clientes",
 	"nav_users": "Usuarios",
@@ -36,5 +37,6 @@
 	"role_cashier": "Cajero",
 	"$comentario_rol": "Los rótulos en minúscula son para cuando el rol va dentro de una frase: «le proponen entrar como cajero». En inglés no hay diferencia; en español y portugués sí.",
 	"role_admin_lower": "administrador",
-	"role_cashier_lower": "cajero"
+	"role_cashier_lower": "cajero",
+	"nav_payroll": "Planilla"
 }

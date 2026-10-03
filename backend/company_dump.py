@@ -124,6 +124,9 @@ TABLAS_DE_COMPANIA = [
     # Y tienen que viajar: sin ellos, una compañía restaurada reimprime sus
     # facturas sin clave y el contador volvería a entregar números ya usados.
     "fe_documents",
+    # La bitácora del recorrido de cada comprobante (F7, migración 020): cuelga
+    # de `fe_documents` y viaja después de él.
+    "fe_document_events",
     # Planilla (F12). Las jornadas, los puestos y las pólizas antes del contrato
     # que los nombra; el empleado antes de todo lo suyo; la acción antes del
     # rubro que la aplicó. Las dos que se referencian a sí mismas —el ajuste a

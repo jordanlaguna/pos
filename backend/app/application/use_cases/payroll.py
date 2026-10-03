@@ -35,43 +35,63 @@ from app.application.ports.payroll import (
     CalculatedLine,
     ContractSnapshot,
     EmployeeRepository,
+    OpeningRepository,
     PayrollRepository,
     PayrollSettings,
     RateTable,
     RunSnapshot,
     ScheduleRepository,
     ScheduleSnapshot,
+    StoredLine,
+    VacationRepository,
 )
 from app.application.ports.repositories import UnitOfWork
+from app.application.use_cases.payroll_special import (
+    INCOME_TAX,
+    RunNotPaid,
+    SettlementRequiresTermination,
+    VacationBalanceExceeded,
+    aguinaldo_lines,
+    difference_lines,
+    empty_line,
+    line_totals,
+    settlement_lines,
+)
 from app.domain.errors import DomainError, InvalidAction, InvalidContract, InvalidSchedule
 from app.domain.money import Money
 from app.domain.payroll import (
     EARNING,
     EMPLOYEE,
-    EMPLOYER,
     INA_CONCEPT,
     PayItem,
     RateSet,
+    TaxBracket,
+    TaxCredits,
     employee_deductions,
     employer_charges,
     income_tax_withholding,
     rates_at,
 )
 from app.domain.payroll_actions import (
+    BASE,
     CHILD_SUPPORT,
     DEDUCTION,
     DEDUCTION_ORDER,
     GARNISHMENT,
     POSITION_CHANGE,
     RAISE,
+    SINGLE_DAY_KINDS,
     TERMINATION,
+    VACATION,
     Action,
+    Portion,
     action_items,
     apply_deductions,
     base_item,
     check_action,
     child_support_capacity,
     contribution_base,
+    counted_days,
     deduction_due,
     deduction_order,
     garnishment_capacity,
@@ -80,8 +100,25 @@ from app.domain.payroll_actions import (
     remaining_balance,
     taxable_base,
 )
-from app.domain.payroll_calendar import Period, Schedule, closes_month, period_for
+from app.domain.payroll_benefits import (
+    VACATION_ACCRUAL,
+    VACATION_PAID,
+    VACATION_PAYOUT,
+    VACATION_TAKEN,
+    aguinaldo_period,
+    calendar_days,
+    vacation_accrual,
+    vacation_balance,
+)
+from app.domain.payroll_calendar import Period, Schedule, closes_month, next_cut, period_for
 from app.domain.payroll_staff import check_termination
+
+__all__ = [
+    "INCOME_TAX",
+    "RunNotPaid",
+    "SettlementRequiresTermination",
+    "VacationBalanceExceeded",
+]
 
 REGULAR = "regular"
 AGUINALDO = "aguinaldo"
@@ -98,8 +135,9 @@ SYSTEM = "system"
 #: Las que cambian el contrato y no la boleta: se aplican al registrarlas.
 CONTRACT_KINDS = frozenset({RAISE, POSITION_CHANGE, TERMINATION})
 
-INCOME_TAX = "income_tax"
 SOLIDARISTA = "solidarista"
+#: La Ley 2412 manda pagar el aguinaldo en los primeros veinte días de diciembre.
+AGUINALDO_PAY_DAY = 20
 #: La regla de RN-93: el menor salario mensual del decreto de salarios mínimos.
 UNSEIZABLE_RULE = "minimum_wage_unseizable"
 
@@ -336,11 +374,13 @@ class RegisterAction:
         *,
         employees: EmployeeRepository,
         actions: ActionRepository,
+        vacations: VacationRepository,
         uow: UnitOfWork,
         clock: Clock,
     ) -> None:
         self._employees = employees
         self._actions = actions
+        self._vacations = vacations
         self._uow = uow
         self._clock = clock
 
@@ -357,6 +397,11 @@ class RegisterAction:
         contrato = _contract_on(self._employees.contracts_of(empleado.id), request.starts_on)
         if contrato is None:
             raise ContractMissing(empleado.id)
+        if request.kind == VACATION:
+            # El disfrute sale del saldo (RN-70): pedir más de lo que hay no es
+            # una acción, es un reclamo.
+            assert request.days is not None
+            _check_balance(self._vacations, empleado.id, request.days)
 
         with self._uow:
             if request.kind in (RAISE, POSITION_CHANGE):
@@ -369,6 +414,11 @@ class RegisterAction:
                 created_by=user_id,
                 created_at=self._clock.now(),
             )
+            if request.kind == VACATION:
+                assert request.days is not None
+                self._vacations.add(
+                    empleado.id, kind=VACATION_TAKEN, days=request.days, on_date=request.starts_on, action_id=action_id
+                )
             self._uow.commit()
         return action_id
 
@@ -405,6 +455,21 @@ class RegisterAction:
         )
 
 
+def _balance(vacations: VacationRepository, employee_id: int) -> Decimal:
+    return vacation_balance((m.kind, m.days) for m in vacations.movements(employee_id))
+
+
+def _check_balance(vacations: VacationRepository, employee_id: int, days: Decimal, *, giving_back: Decimal = Decimal(0)) -> None:
+    """`VacationBalanceExceeded` si pide más días de los que tiene (RN-70).
+
+    `giving_back` son los días de la acción que se está corrigiendo: vuelven al
+    saldo antes de comparar.
+    """
+    saldo = _balance(vacations, employee_id) + giving_back
+    if days > saldo:
+        raise VacationBalanceExceeded(employee_id, saldo, days)
+
+
 def _editable(action: ActionSnapshot, siblings: list[ActionSnapshot], actions: ActionRepository) -> None:
     """Lo que tiene que cumplir una acción para editarse o anularse (RN-91)."""
     if action.cancels_action_id is not None:
@@ -425,8 +490,9 @@ class UpdateAction:
     registra otra (RN-91).
     """
 
-    def __init__(self, *, actions: ActionRepository, uow: UnitOfWork) -> None:
+    def __init__(self, *, actions: ActionRepository, vacations: VacationRepository, uow: UnitOfWork) -> None:
         self._actions = actions
+        self._vacations = vacations
         self._uow = uow
 
     def __call__(self, action_id: int, request: ActionRequest) -> None:
@@ -450,8 +516,14 @@ class UpdateAction:
             memo=request.memo,
         )
         check_action(corregida.as_action())
+        if accion.kind == VACATION:
+            assert corregida.days is not None
+            _check_balance(self._vacations, accion.employee_id, corregida.days, giving_back=Decimal(accion.days or 0))
         with self._uow:
             self._actions.update(action_id, **corregida.fields())
+            if accion.kind == VACATION:
+                assert corregida.days is not None
+                self._vacations.update_for_action(action_id, days=corregida.days, on_date=corregida.starts_on)
             self._uow.commit()
 
 
@@ -464,8 +536,9 @@ class CancelAction:
     siguiente escribe sus rubros al revés.
     """
 
-    def __init__(self, *, actions: ActionRepository, uow: UnitOfWork, clock: Clock) -> None:
+    def __init__(self, *, actions: ActionRepository, vacations: VacationRepository, uow: UnitOfWork, clock: Clock) -> None:
         self._actions = actions
+        self._vacations = vacations
         self._uow = uow
         self._clock = clock
 
@@ -499,6 +572,16 @@ class CancelAction:
                 created_by=user_id,
                 created_at=self._clock.now(),
             )
+            if accion.kind == VACATION and accion.days:
+                # Los días vuelven al saldo con un movimiento al revés, para que
+                # el historial diga que se pidieron y se devolvieron.
+                self._vacations.add(
+                    accion.employee_id,
+                    kind=VACATION_TAKEN,
+                    days=-Decimal(accion.days),
+                    on_date=accion.starts_on,
+                    action_id=nueva,
+                )
             self._uow.commit()
         return nueva
 
@@ -563,10 +646,15 @@ class TerminateEmployee:
         if empleado.terminated_on is not None:
             raise EmployeeTerminated(employee_id, empleado.terminated_on)
         check_termination(empleado.hired_on, on, cause)
+        contratos = self._employees.contracts_of(employee_id)
+        if not contratos:
+            # Sin contrato no hay salario del que liquidar; se corrige la ficha
+            # antes de darla de baja.
+            raise ContractMissing(employee_id)
 
         ahora = self._clock.now()
         with self._uow:
-            for contrato in self._employees.contracts_of(employee_id):
+            for contrato in contratos:
                 if contrato.valid_to is None or contrato.valid_to > on:
                     self._employees.close_contract(contrato.id, valid_to=on)
             self._employees.terminate(employee_id, on=on, cause=cause)
@@ -596,11 +684,81 @@ class TerminateEmployee:
                 created_by=user_id,
                 created_at=ahora,
             )
+            # La línea vacía es lo que dice de quién es la liquidación: la
+            # corrida no tiene columna de empleado porque las demás son de muchos.
+            self._runs.replace_lines(liquidacion.id, [empty_line(employee_id, contratos[-1].id)])
             self._uow.commit()
         return liquidacion.id
 
 
 # ------------------------------------------------------------------ corridas
+
+
+class CreateAguinaldoRun:
+    """La corrida de aguinaldo de un año (RF-59, RN-69): del 1 de diciembre
+    anterior al 30 de noviembre, para toda la compañía. Una por año; la fecha de
+    pago, si no se dice, el 20 de diciembre, que es el último día que da la ley.
+    """
+
+    def __init__(self, *, runs: PayrollRepository, uow: UnitOfWork, clock: Clock) -> None:
+        self._runs = runs
+        self._uow = uow
+        self._clock = clock
+
+    def __call__(self, year: int, *, pay_date: date | None = None, user_id: int) -> RunSnapshot:
+        periodo = aguinaldo_period(year)
+        existente = self._runs.find_run(schedule_id=None, period_to=periodo.ends_on, kind=AGUINALDO)
+        if existente is not None:
+            raise RunAlreadyExists(existente.id)
+        with self._uow:
+            corrida = self._runs.add_run(
+                kind=AGUINALDO,
+                schedule_id=None,
+                period_from=periodo.starts_on,
+                period_to=periodo.ends_on,
+                pay_date=pay_date or date(year, 12, AGUINALDO_PAY_DAY),
+                created_by=user_id,
+                created_at=self._clock.now(),
+            )
+            self._uow.commit()
+        return corrida
+
+
+class AdjustRun:
+    """Una corrida de ajuste sobre una pagada (RF-63, RN-68).
+
+    Nace vacía y referenciando a la original, con su mismo periodo; calcularla
+    escribe la diferencia entre lo que se pagó y lo que hoy daría. Solo las
+    regulares pagadas se ajustan: un borrador se recalcula, y el aguinaldo o
+    una liquidación equivocados se corrigen con otra corrida de su clase.
+    """
+
+    def __init__(self, *, runs: PayrollRepository, uow: UnitOfWork, clock: Clock) -> None:
+        self._runs = runs
+        self._uow = uow
+        self._clock = clock
+
+    def __call__(self, run_id: int, *, user_id: int) -> RunSnapshot:
+        original = self._runs.get_run(run_id)
+        if original is None:
+            raise RunNotFound(run_id)
+        if original.status != PAID:
+            raise RunNotPaid(run_id, original.status)
+        if original.kind != REGULAR:
+            raise RunNotEditable(run_id, original.kind)
+        with self._uow:
+            ajuste = self._runs.add_run(
+                kind=ADJUSTMENT,
+                schedule_id=original.schedule_id,
+                period_from=original.period_from,
+                period_to=original.period_to,
+                pay_date=self._clock.today(),
+                created_by=user_id,
+                created_at=self._clock.now(),
+                adjusts_run_id=original.id,
+            )
+            self._uow.commit()
+        return ajuste
 
 
 class CreateRun:
@@ -658,23 +816,65 @@ class CalculatedRun:
     lines: tuple[CalculatedLine, ...]
 
 
+@dataclass(frozen=True)
+class _Context:
+    """Lo que se resuelve una vez por corrida: la jornada y lo que rige al corte."""
+
+    schedule: Schedule
+    schedule_id: int
+    period: Period
+    rates: RateSet
+    brackets: tuple[TaxBracket, ...]
+    credits: TaxCredits
+    exempt: frozenset[str]
+    closes: bool
+
+
+def _ccss(rates: RateSet) -> frozenset[str]:
+    """Los conceptos de las cargas obreras que rigen: lo que va a la Caja."""
+    return frozenset(r.concept for r in rates.contributions(EMPLOYEE))
+
+
+def _applied_portions(line: StoredLine) -> dict[int, list[tuple[date, date]]]:
+    """Qué tramo de cada acción aplicó una línea ya pagada, por sus fechas.
+
+    Un ajuste vuelve a valorar **esos** tramos y no otros (RN-91): lo que la
+    pagada no aplicó entra en la corrida regular siguiente, como siempre.
+    """
+    tramos: dict[int, list[tuple[date, date]]] = {}
+    for i in line.items:
+        if i.action_id is None or i.payer != EARNING or i.applied_from is None or i.applied_to is None:
+            continue
+        par = (i.applied_from, i.applied_to)
+        suyos = tramos.setdefault(i.action_id, [])
+        if par not in suyos:
+            suyos.append(par)
+    return tramos
+
+
+def _copied(line: StoredLine, action_id: int) -> list[PayItem]:
+    """Los rubros que una línea pagada dejó por una acción, tal cual."""
+    return [i for i in line.items if i.action_id == action_id]
+
+
 class CalculateRun:
-    """Calcula un borrador: toma las acciones, las parte y congela los rubros.
+    """Calcula un borrador: toma lo que le toca y congela los rubros (RN-66).
 
-    Por cada empleado con contrato en el periodo:
+    Cada clase de corrida tiene su cálculo:
 
-    1. El salario base de cada contrato que tocó el periodo (entero o
-       proporcional, RN-94).
-    2. Los tramos de sus acciones que ninguna corrida aplicó, con sus fechas
-       (RN-90, RN-91), y las anulaciones de lo que sí se aplicó, al revés.
-    3. Las cargas obreras sobre lo que cotiza, el solidarista si el contrato lo
-       tiene, y la renta del mes (RN-73).
-    4. Las deducciones en el orden de RN-93 —pensión, embargo, las demás— sin
-       dejar el neto negativo.
-    5. Las cargas patronales y la prima de riesgos del trabajo de su póliza.
+    - **Regular**: por cada empleado con contrato en el periodo, el salario base
+      (entero o proporcional, RN-94), los tramos de sus acciones que ninguna
+      corrida aplicó (RN-90, RN-91) y las anulaciones de lo que sí se aplicó, las
+      cargas obreras sobre lo que cotiza, el solidarista del contrato, la renta
+      del mes (RN-73), las deducciones en el orden de RN-93 sin dejar el neto
+      negativo, y las cargas patronales con la prima de su póliza.
+    - **Aguinaldo**, **liquidación** y **ajuste**: `payroll_special.py`. El
+      ajuste vuelve a correr el cálculo regular sobre el periodo de la pagada,
+      valorando los mismos tramos que ella aplicó con los datos de hoy, y
+      escribe solo la diferencia.
 
-    Solo las corridas regulares: el aguinaldo, la liquidación y el ajuste
-    tienen cada uno su cálculo (T-1208, T-1210, T-1212).
+    Recalcular un borrador lo reescribe entero; una aprobada o pagada no se
+    recalcula nunca.
     """
 
     def __init__(
@@ -686,6 +886,8 @@ class CalculateRun:
         actions: ActionRepository,
         rates: RateTable,
         settings: PayrollSettings,
+        vacations: VacationRepository,
+        opening: OpeningRepository,
         uow: UnitOfWork,
         country: str = "CR",
     ) -> None:
@@ -695,6 +897,8 @@ class CalculateRun:
         self._actions = actions
         self._rates = rates
         self._settings = settings
+        self._vacations = vacations
+        self._opening = opening
         self._uow = uow
         self._country = country
 
@@ -706,44 +910,28 @@ class CalculateRun:
             raise RunAlreadyPaid(run_id)
         if corrida.status != DRAFT:
             raise RunNotEditable(run_id, corrida.status)
-        if corrida.kind != REGULAR:
-            raise RunNotEditable(run_id, corrida.kind)
 
-        assert corrida.schedule_id is not None
-        jornada = self._schedules.get(corrida.schedule_id)
-        assert jornada is not None
-        schedule = _schedule(jornada)
         periodo = Period(corrida.period_from, corrida.period_to)
-        corte = corrida.period_to
-
-        # Las cargas se exigen todas al resolver (`RatesMissing`); las reglas,
-        # cuando hacen falta.
-        tasas = rates_at(self._rates.rates(self._country), corte, self._country)
-        tramos = tuple(self._rates.brackets_at(corte, self._country))
-        creditos = self._rates.credits_at(corte, self._country)
-        exentas = frozenset({INA_CONCEPT}) if self._settings.payroll().get("ina_exempt") else frozenset()
-        cierra = closes_month(schedule, corte)
-
-        por_empleado: dict[int, list[ContractSnapshot]] = {}
-        for contrato in self._employees.contracts_in(jornada.id, periodo):
-            por_empleado.setdefault(contrato.employee_id, []).append(contrato)
-
-        lineas: list[CalculatedLine] = []
-        for employee_id in sorted(por_empleado):
-            linea = self._line(
-                employee_id,
-                por_empleado[employee_id],
-                schedule=schedule,
-                period=periodo,
-                rates=tasas,
-                brackets=tramos,
-                credits=creditos,
-                exempt=exentas,
-                closes=cierra,
-                run_id=corrida.id,
+        cierra = False
+        if corrida.kind == AGUINALDO:
+            lineas = aguinaldo_lines(corrida, employees=self._employees, runs=self._runs, opening=self._opening)
+        elif corrida.kind == SETTLEMENT:
+            lineas = settlement_lines(
+                corrida,
+                employees=self._employees,
+                runs=self._runs,
+                opening=self._opening,
+                vacations=self._vacations,
+                rates=self._rates,
+                schedules=self._schedules,
+                country=self._country,
             )
-            if linea is not None:
-                lineas.append(linea)
+        elif corrida.kind == ADJUSTMENT:
+            lineas = self._adjustment(corrida)
+        else:
+            contexto = self._context(corrida)
+            cierra = contexto.closes
+            lineas = self._regular(contexto, run_id=corrida.id)
 
         with self._uow:
             self._runs.replace_lines(corrida.id, lineas)
@@ -752,22 +940,86 @@ class CalculateRun:
 
     # ------------------------------------------------------------ por dentro
 
+    def _context(self, corrida: RunSnapshot) -> _Context:
+        assert corrida.schedule_id is not None
+        jornada = self._schedules.get(corrida.schedule_id)
+        assert jornada is not None
+        schedule = _schedule(jornada)
+        corte = corrida.period_to
+        # Las cargas se exigen todas al resolver (`RatesMissing`); las reglas,
+        # cuando hacen falta.
+        tasas = rates_at(self._rates.rates(self._country), corte, self._country)
+        return _Context(
+            schedule=schedule,
+            schedule_id=jornada.id,
+            period=Period(corrida.period_from, corte),
+            rates=tasas,
+            brackets=tuple(self._rates.brackets_at(corte, self._country)),
+            credits=self._rates.credits_at(corte, self._country),
+            exempt=frozenset({INA_CONCEPT}) if self._settings.payroll().get("ina_exempt") else frozenset(),
+            closes=closes_month(schedule, corte),
+        )
+
+    def _regular(
+        self,
+        ctx: _Context,
+        *,
+        run_id: int,
+        originals: dict[int, StoredLine] | None = None,
+        exclude_run_id: int | None = None,
+    ) -> list[CalculatedLine]:
+        """Las líneas del periodo. Con `originals`, es el recálculo de un ajuste:
+        cada empleado que estaba en la pagada se valora sobre los tramos que
+        ella aplicó, y la renta se liquida contra el mes sin contar la pagada."""
+        por_empleado: dict[int, list[ContractSnapshot]] = {}
+        for contrato in self._employees.contracts_in(ctx.schedule_id, ctx.period):
+            por_empleado.setdefault(contrato.employee_id, []).append(contrato)
+
+        lineas: list[CalculatedLine] = []
+        for employee_id in sorted(por_empleado):
+            linea = self._line(
+                employee_id,
+                por_empleado[employee_id],
+                ctx,
+                exclude_run_id=exclude_run_id if exclude_run_id is not None else run_id,
+                original=originals.get(employee_id) if originals is not None else None,
+            )
+            if linea is not None:
+                lineas.append(linea)
+        return lineas
+
+    def _adjustment(self, corrida: RunSnapshot) -> list[CalculatedLine]:
+        """La diferencia entre lo que se pagó y lo que daría hoy (RN-68, T-1212)."""
+        assert corrida.adjusts_run_id is not None
+        original = self._runs.get_run(corrida.adjusts_run_id)
+        assert original is not None
+        ctx = self._context(corrida)
+        originales = {l.employee_id: l for l in self._runs.lines(original.id)}
+        recalculadas = {
+            l.employee_id: l
+            for l in self._regular(ctx, run_id=corrida.id, originals=originales, exclude_run_id=original.id)
+        }
+        return difference_lines(
+            originales,
+            recalculadas,
+            ccss=_ccss(ctx.rates),
+            contract_of=lambda employee_id: originales[employee_id].contract_id,
+        )
+
     def _line(
         self,
         employee_id: int,
         contratos: list[ContractSnapshot],
+        ctx: _Context,
         *,
-        schedule: Schedule,
-        period: Period,
-        rates: RateSet,
-        brackets: tuple,
-        credits,
-        exempt: frozenset[str],
-        closes: bool,
-        run_id: int,
+        exclude_run_id: int,
+        original: StoredLine | None,
     ) -> CalculatedLine | None:
         empleado = self._employees.get(employee_id)
         assert empleado is not None
+        period = ctx.period
+        schedule = ctx.schedule
+        rates = ctx.rates
         empleo = Period(empleado.hired_on, empleado.terminated_on or period.ends_on)
         contratos = sorted(contratos, key=lambda c: c.valid_from)
 
@@ -789,15 +1041,30 @@ class CalculateRun:
         salario = Money(actual.period_salary)
         acciones = self._actions.for_employee(employee_id)
         anuladas = {a.cancels_action_id for a in acciones if a.cancels_action_id is not None}
+        cancelaciones = {a.id for a in acciones if a.cancels_action_id is not None}
+        # En un ajuste se valoran los tramos que la pagada aplicó, ni más ni menos.
+        fijas = _applied_portions(original) if original is not None else None
 
         revertidas: list[PayItem] = []
         for accion in acciones:
             if accion.cancels_action_id is not None:
-                revertidas.extend(self._reversal(accion))
+                if original is not None:
+                    revertidas.extend(_copied(original, accion.id))
+                else:
+                    revertidas.extend(self._reversal(accion))
                 continue
-            if accion.id in anuladas or accion.kind in CONTRACT_KINDS or accion.kind in DEDUCTION_ORDER:
+            if accion.kind in CONTRACT_KINDS or accion.kind in DEDUCTION_ORDER:
                 continue
-            devengos.extend(self._portions(accion, acciones, anuladas, schedule, period, salario, rates))
+            if fijas is None:
+                if accion.id in anuladas:
+                    continue
+                devengos.extend(self._portions(accion, acciones, anuladas, schedule, period, salario, rates))
+            else:
+                # Una anulada después de pagarse sigue acá: su reverso va en la
+                # regular siguiente (RN-91), y quitarla del ajuste la revertiría dos veces.
+                devengos.extend(
+                    self._repriced(accion, acciones, anuladas, fijas.get(accion.id, ()), schedule, salario, rates)
+                )
         devengos.extend(r for r in revertidas if r.payer == EARNING)
 
         cotiza = contribution_base(devengos)
@@ -806,31 +1073,65 @@ class CalculateRun:
             tasa = Decimal(actual.solidarista_rate)
             obreras.append(PayItem(SOLIDARISTA, EMPLOYEE, cotiza, tasa, cotiza * tasa))
         patronales = employer_charges(
-            cotiza, rates, Decimal(self._employees.rt_rate(actual.ins_policy_id)), exempt=exempt
+            cotiza, rates, Decimal(self._employees.rt_rate(actual.ins_policy_id)), exempt=ctx.exempt
         )
 
         gravable = taxable_base(devengos)
         base_antes, retenido_antes = self._runs.month_withholding(
-            employee_id, period.ends_on.year, period.ends_on.month, exclude_run_id=run_id
+            employee_id, period.ends_on.year, period.ends_on.month, exclude_run_id=exclude_run_id
         )
         renta = income_tax_withholding(
             gravable,
             schedule.frequency,
-            closes_month=closes,
+            # Un ajuste de un mes ya cerrado liquida contra el mes: lo que debió
+            # retener la pagada para que, con lo demás que ya se retuvo, cuadre.
+            # Con el mes abierto proyecta como la pagada, y la que cierre ajusta.
+            closes_month=ctx.closes or (original is not None and self._month_closed(ctx)),
             month_taxable_before=base_antes,
             month_withheld_before=retenido_antes,
-            brackets=brackets,
-            credits=credits.for_employee(empleado.dependent_children, empleado.spouse_credit),
+            brackets=ctx.brackets,
+            credits=ctx.credits.for_employee(empleado.dependent_children, empleado.spouse_credit),
         )
         retenciones = obreras + [PayItem(INCOME_TAX, EMPLOYEE, gravable, None, renta)]
         retenciones += [r for r in revertidas if r.payer == EMPLOYEE]
 
         bruto = Money.sum(i.amount for i in devengos)
         neto = bruto - Money.sum(i.amount for i in retenciones)
-        otras = self._deductions(acciones, anuladas, period, schedule, rates, neto)
+        if original is None:
+            otras = self._deductions(acciones, anuladas, period, schedule, rates, neto)
+        else:
+            # Las cuotas que ya se cobraron no se vuelven a calcular: se copian.
+            otras = [
+                i
+                for i in original.items
+                if i.payer == EMPLOYEE and i.concept in DEDUCTION_ORDER and i.action_id not in cancelaciones
+            ]
 
         rubros = tuple(devengos + retenciones + otras + list(patronales))
-        return self._totals(employee_id, actual.id, rubros, rates)
+        return line_totals(employee_id, actual.id, rubros, _ccss(rates))
+
+    def _month_closed(self, ctx: _Context) -> bool:
+        """Si la corrida que cierra el mes del periodo ya está aprobada o pagada."""
+        corte = ctx.period.ends_on
+        ultimo = corte
+        while True:
+            siguiente = next_cut(ctx.schedule, ultimo)
+            if (siguiente.year, siguiente.month) != (corte.year, corte.month):
+                break
+            ultimo = siguiente
+        # Si el propio corte fuera el último del mes, `ctx.closes` ya lo habría
+        # dicho y nadie preguntaría acá.
+        cierre = self._runs.find_run(schedule_id=ctx.schedule_id, period_to=ultimo, kind=REGULAR)
+        return cierre is not None and cierre.status in (APPROVED, PAID)
+
+    @staticmethod
+    def _extends(accion: ActionSnapshot, acciones: list[ActionSnapshot], anuladas: set[int]) -> bool:
+        """Una incapacidad que prolonga a otra sin interrupción: los días del
+        patrono ya se pagaron en la anterior."""
+        return any(
+            o.kind == accion.kind and o.ends_on == accion.starts_on - UN_DIA and o.id not in anuladas
+            for o in acciones
+        )
 
     def _portions(
         self,
@@ -847,14 +1148,33 @@ class CalculateRun:
         fechas = [i.applied_to for i in aplicados if i.applied_to is not None]
         primero = max(fechas) + UN_DIA if fechas else accion.starts_on
         action = _action(accion)
-        # Una incapacidad que prolonga a otra sin interrupción: los días del
-        # patrono ya se pagaron en la anterior.
-        extiende = any(
-            o.kind == accion.kind and o.ends_on == accion.starts_on - UN_DIA and o.id not in anuladas
-            for o in acciones
-        )
+        extiende = self._extends(accion, acciones, anuladas)
         rubros: list[PayItem] = []
         for tramo in portions(action, schedule, primero, period):
+            rubros.extend(action_items(action, tramo, salario, schedule, rates, extends_previous=extiende))
+        return rubros
+
+    def _repriced(
+        self,
+        accion: ActionSnapshot,
+        acciones: list[ActionSnapshot],
+        anuladas: set[int],
+        tramos: list[tuple[date, date]] | tuple[()],
+        schedule: Schedule,
+        salario: Money,
+        rates: RateSet,
+    ) -> list[PayItem]:
+        """Los mismos tramos que aplicó la pagada, valorados con los datos de hoy."""
+        if not tramos:
+            return []
+        action = _action(accion)
+        extiende = self._extends(accion, acciones, anuladas)
+        rubros: list[PayItem] = []
+        for desde, hasta in tramos:
+            if accion.kind in SINGLE_DAY_KINDS:
+                tramo = Portion(desde, desde, Decimal(0), 0)
+            else:
+                tramo = Portion(desde, hasta, counted_days(schedule, desde, hasta), (desde - accion.starts_on).days)
             rubros.extend(action_items(action, tramo, salario, schedule, rates, extends_previous=extiende))
         return rubros
 
@@ -957,32 +1277,6 @@ class CalculateRun:
             # y una no recurrente que no entró tiene que poder entrar después.
             if monto.is_positive
         ]
-
-    @staticmethod
-    def _totals(employee_id: int, contract_id: int, rubros: tuple[PayItem, ...], rates: RateSet) -> CalculatedLine:
-        ccss = {r.concept for r in rates.contributions(EMPLOYEE)}
-        bruto = Money.sum(i.amount for i in rubros if i.payer == EARNING)
-        cargas = Money.sum(i.amount for i in rubros if i.payer == EMPLOYEE and i.concept in ccss)
-        renta = Money.sum(i.amount for i in rubros if i.payer == EMPLOYEE and i.concept == INCOME_TAX)
-        otras = Money.sum(
-            i.amount
-            for i in rubros
-            if i.payer == EMPLOYEE and i.concept not in ccss and i.concept != INCOME_TAX
-        )
-        patrono = Money.sum(i.amount for i in rubros if i.payer == EMPLOYER)
-        return CalculatedLine(
-            employee_id=employee_id,
-            contract_id=contract_id,
-            items=rubros,
-            gross=bruto,
-            employee_deductions=cargas,
-            income_tax=renta,
-            other_deductions=otras,
-            net=bruto - cargas - renta - otras,
-            employer_charges=patrono,
-        )
-
-
 class ApproveRun:
     """Borrador → aprobada (RN-68). Solo con líneas: aprobar el vacío es nada."""
 
@@ -1010,11 +1304,27 @@ class PayRun:
     """Aprobada → pagada, con fecha del servidor y el asiento si hay libro
     (RN-68, RN-75). La planilla no mueve la caja (RN-74): marcarla pagada es
     todo lo que pasa acá; la plata sale por transferencia, afuera.
+
+    Pagar también mueve las vacaciones (RN-70, T-1209): una corrida regular
+    acumula lo ganado por los días del periodo, y una liquidación deja pagados
+    los días que liquidó. Van en la misma transacción que el pago: una corrida
+    pagada sin su acumulación sería un saldo que nadie puede explicar.
     """
 
-    def __init__(self, *, runs: PayrollRepository, ledger: Ledger, uow: UnitOfWork, clock: Clock) -> None:
+    def __init__(
+        self,
+        *,
+        runs: PayrollRepository,
+        ledger: Ledger,
+        vacations: VacationRepository,
+        schedules: ScheduleRepository,
+        uow: UnitOfWork,
+        clock: Clock,
+    ) -> None:
         self._runs = runs
         self._ledger = ledger
+        self._vacations = vacations
+        self._schedules = schedules
         self._uow = uow
         self._clock = clock
 
@@ -1029,5 +1339,42 @@ class PayRun:
         with self._uow:
             asiento = self._ledger.record_payroll(self._runs.totals(run_id))
             self._runs.pay(run_id, by=user_id, at=self._clock.now(), journal_entry_id=asiento)
+            self._vacations_after(corrida)
             self._uow.commit()
         return asiento
+
+    def _vacations_after(self, corrida: RunSnapshot) -> None:
+        if corrida.kind == REGULAR:
+            assert corrida.schedule_id is not None
+            jornada = self._schedules.get(corrida.schedule_id)
+            assert jornada is not None
+            for linea in self._runs.lines(corrida.id):
+                # Los días de calendario que el salario base cubrió: quien entró
+                # el 20 acumula por once días, no por quince.
+                dias = sum(
+                    calendar_days(i.applied_from, i.applied_to)
+                    for i in linea.items
+                    if i.concept == BASE
+                    and i.payer == EARNING
+                    and i.applied_from is not None
+                    and i.applied_to is not None
+                )
+                # Toda línea regular tiene su salario base con fechas: siempre hay días.
+                self._vacations.add(
+                    linea.employee_id,
+                    kind=VACATION_ACCRUAL,
+                    days=vacation_accrual(dias, int(jornada.workdays_per_week)),
+                    on_date=corrida.period_to,
+                    run_id=corrida.id,
+                )
+        elif corrida.kind == SETTLEMENT:
+            for linea in self._runs.lines(corrida.id):
+                for i in linea.items:
+                    if i.concept == VACATION_PAYOUT and i.quantity:
+                        self._vacations.add(
+                            linea.employee_id,
+                            kind=VACATION_PAID,
+                            days=Decimal(i.quantity),
+                            on_date=corrida.period_to,
+                            run_id=corrida.id,
+                        )

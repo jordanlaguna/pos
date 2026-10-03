@@ -79,6 +79,18 @@ export function checkoutMessage(r: CheckoutRejection): string {
 			return m.checkout_document_type_not_enabled();
 		case 'checkout_bad_document_type':
 			return m.checkout_bad_document_type();
+		case 'checkout_invoice_needs_resident':
+			return m.checkout_invoice_needs_resident();
+		case 'checkout_export_needs_client':
+			return m.checkout_export_needs_client();
+		case 'checkout_export_needs_foreign_client':
+			return m.checkout_export_needs_foreign_client();
+		case 'checkout_export_needs_foreign_address':
+			return m.checkout_export_needs_foreign_address();
+		case 'checkout_export_line_needs_tariff_heading':
+			return m.checkout_export_line_needs_tariff_heading({ product: r.product });
+		case 'checkout_export_tariff_not_allowed':
+			return m.checkout_export_tariff_not_allowed({ product: r.product, tax_code: r.taxCode });
 		default:
 			return faltaMensaje(r);
 	}
@@ -262,6 +274,22 @@ export const API_CODES = [
 	'invalid_sale_document_type',
 	'invoice_needs_receiver',
 	'document_type_not_enabled',
+	'invoice_needs_resident',
+	'export_needs_receiver',
+	'export_needs_foreign_receiver',
+	'export_needs_foreign_address',
+	'export_line_needs_tariff_heading',
+	'export_tariff_not_allowed',
+	'invalid_tariff_heading',
+	'invalid_foreign_address',
+	// F7: el recorrido hasta Hacienda
+	'document_not_found',
+	'document_not_stopped',
+	'document_not_signed',
+	'document_not_resolved',
+	'document_file_missing',
+	'storage_unavailable',
+	'production_gate_locked',
 	'product_not_found',
 	'product_without_price',
 	'insufficient_stock',
@@ -356,7 +384,6 @@ export const API_CODES = [
 	// configuración
 	'unsupported_locale',
 	'settings_too_large',
-	'tax_rate_not_a_number',
 	'tax_rate_out_of_range',
 	// la ubicación del emisor y lo que falta para encender la facturación (T-722)
 	'invalid_location',
@@ -426,12 +453,21 @@ export const API_CODES = [
 	'run_not_approved',
 	'run_already_paid',
 	'rates_missing_for_date',
+	// planilla (F12: T-1207 a T-1220)
+	'run_not_paid',
+	'settlement_requires_termination',
+	'vacation_balance_exceeded',
+	'import_has_errors',
+	'export_data_incomplete',
 	// sucursales y terminales (T-608)
 	'invalid_office_code',
 	'branch_code_taken',
 	'terminal_code_taken',
 	'branch_not_found',
 	'terminal_not_found',
+	'invalid_sequence_start',
+	'sequence_in_use',
+	'sequence_cannot_go_down',
 	'branch_in_use',
 	'terminal_in_use',
 	'last_active_branch',
@@ -771,6 +807,22 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_document_type_not_enabled({
 				document: documentTypeLabel(texto(d.document_type)) ?? texto(d.document_type)
 			});
+		case 'invoice_needs_resident':
+			return m.api_invoice_needs_resident();
+		case 'export_needs_receiver':
+			return m.api_export_needs_receiver();
+		case 'export_needs_foreign_receiver':
+			return m.api_export_needs_foreign_receiver();
+		case 'export_needs_foreign_address':
+			return m.api_export_needs_foreign_address();
+		case 'export_line_needs_tariff_heading':
+			return m.api_export_line_needs_tariff_heading({ product: producto(d) });
+		case 'export_tariff_not_allowed':
+			return m.api_export_tariff_not_allowed({ product: producto(d), tax_code: texto(d.tax_code) });
+		case 'invalid_tariff_heading':
+			return m.api_invalid_tariff_heading();
+		case 'invalid_foreign_address':
+			return m.api_invalid_foreign_address({ max_length: numero(d.max_length) });
 		case 'product_not_found':
 			return m.api_product_not_found({ product: producto(d) });
 		case 'product_without_price':
@@ -1004,8 +1056,6 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_unsupported_locale({ locale: texto(d.locale) });
 		case 'settings_too_large':
 			return m.api_settings_too_large();
-		case 'tax_rate_not_a_number':
-			return m.api_tax_rate_not_a_number();
 		case 'tax_rate_out_of_range':
 			return m.api_tax_rate_out_of_range();
 		case 'invalid_location':
@@ -1103,6 +1153,24 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_atv_password_unreadable({ environment: ambiente(d.environment) });
 		case 'confirmation_required':
 			return m.api_confirmation_required({ environment: ambiente(d.environment) });
+		case 'document_not_found':
+			return m.api_document_not_found();
+		case 'document_not_stopped':
+			return m.api_document_not_stopped();
+		case 'document_not_signed':
+			return m.api_document_not_signed();
+		case 'document_not_resolved':
+			return m.api_document_not_resolved();
+		case 'document_file_missing':
+			return m.api_document_file_missing();
+		case 'storage_unavailable':
+			return m.api_storage_unavailable();
+		case 'production_gate_locked':
+			return m.api_production_gate_locked({
+				missing: (Array.isArray(d.missing) ? d.missing.map(texto) : [])
+					.map((t) => documentTypeLabel(t) ?? t)
+					.join(', ')
+			});
 
 		// ------------------------------------------ tasas de planilla (T-1204)
 		case 'invalid_payroll_rate':
@@ -1185,6 +1253,26 @@ function frase(code: ApiCode, d: Failure['data']): string {
 				on: formatDate(texto(d.on)),
 				missing: Array.isArray(d.missing) ? d.missing.map(texto).join(', ') : ''
 			});
+		case 'run_not_paid':
+			return m.api_run_not_paid();
+		case 'settlement_requires_termination':
+			return m.api_settlement_requires_termination();
+		case 'vacation_balance_exceeded':
+			return m.api_vacation_balance_exceeded({ balance: numero(d.balance), requested: numero(d.requested) });
+		case 'import_has_errors':
+			// La pantalla lista las filas; la frase solo dice cuántas y que no entró nada.
+			return m.api_import_has_errors({ count: Array.isArray(d.errors) ? d.errors.length : 0 });
+		case 'export_data_incomplete': {
+			// Los campos de la empresa se nombran como los del formulario; los de
+			// cada empleado los lista la pantalla.
+			const empresa = Array.isArray(d.company)
+				? d.company.map((campo) => m.api_payroll_field({ field: texto(campo) })).join(', ')
+				: '';
+			return m.api_export_data_incomplete({
+				count: Array.isArray(d.missing) ? d.missing.length : 0,
+				company: empresa ? m.api_export_data_incomplete_company({ fields: empresa }) : ''
+			});
+		}
 
 		// --------------------------------------- sucursales y terminales (T-608)
 		case 'invalid_office_code':
@@ -1210,6 +1298,18 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_branch_not_found();
 		case 'terminal_not_found':
 			return m.api_terminal_not_found();
+		// El arranque de una serie (T-616, RN-36 a RN-38).
+		case 'invalid_sequence_start':
+			return m.api_invalid_sequence_start({ value: texto(d.value) });
+		case 'sequence_in_use':
+			return m.api_sequence_in_use({
+				document: documentTypeLabel(texto(d.document_type)) ?? texto(d.document_type)
+			});
+		case 'sequence_cannot_go_down':
+			return m.api_sequence_cannot_go_down({
+				current: String(d.current ?? ''),
+				requested: String(d.requested ?? '')
+			});
 		case 'branch_in_use':
 			return m.api_branch_in_use({
 				sales: numero(d.sales),
@@ -1358,12 +1458,30 @@ export function companyStateLabel(state: string): string {
  */
 export function moduleLabel(module: ModuleName): string {
 	switch (module) {
+		case 'sales':
+			return m.module_sales();
+		case 'cash':
+			return m.module_cash();
+		case 'invoices':
+			return m.module_invoices();
+		case 'returns':
+			return m.module_returns();
+		case 'reports':
+			return m.module_reports();
+		case 'inventory':
+			return m.module_inventory();
 		case 'purchases':
 			return m.module_purchases();
+		case 'suppliers':
+			return m.module_suppliers();
 		case 'accounting':
 			return m.module_accounting();
 		case 'payroll':
 			return m.module_payroll();
+		case 'clients':
+			return m.module_clients();
+		case 'users':
+			return m.module_users();
 		default: {
 			const nunca: never = module;
 			return nunca;

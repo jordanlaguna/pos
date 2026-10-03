@@ -138,3 +138,31 @@ test.describe('el selector del menú', () => {
 		await expect(selectorDeIdioma(page)).toHaveValue('en');
 	});
 });
+
+test.describe('el selector del panel de soporte', () => {
+	/*
+	 * QA-02. Soporte no tiene compañía, así que su selector no ofrece «el de la
+	 * compañía» y va por `/support/locale`. Devuelve el idioma al final por lo
+	 * mismo que la de arriba.
+	 */
+	test('soporte pasa el panel a inglés y vuelve', async ({ page }) => {
+		await page.goto('/login');
+		await page.locator(correo).fill('soporte@ventasys.cr');
+		await page.locator(clave).fill('soporte123');
+		await page.getByRole('button', { name: /^entrar$/i }).click();
+		await expect(page).toHaveURL(/\/admin$/);
+
+		const selector = page.locator('#panel-idioma');
+		const aplicar = page.locator('[data-idioma-panel] button[type="submit"]');
+		await expect(selector.locator('option[value="auto"]')).toHaveCount(0);
+
+		await selector.selectOption('en');
+		await aplicar.click();
+		await expect(page.getByRole('link', { name: 'Companies' })).toBeVisible();
+		await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+
+		await selector.selectOption('es');
+		await aplicar.click();
+		await expect(page.getByRole('link', { name: 'Compañías' })).toBeVisible();
+	});
+});

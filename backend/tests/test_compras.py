@@ -86,6 +86,61 @@ def esperado(cliente: Api) -> float:
     return cliente.ok("GET", "/cash/current")["expected_amount"]
 
 
+def no_contribuyente(api: Api) -> dict:
+    """Quien vende sin estar inscrito: a él se le emite la factura de compra."""
+    marca = marca_unica()
+    return api.ok(
+        "POST",
+        "/suppliers",
+        {
+            "name": f"Doña Flor {marca}",
+            "identification_type": "06",
+            "identification": f"1{marca[-8:]}",
+            "payment_terms_days": 0,
+        },
+    )
+
+
+class TestLaFacturaDeCompra:
+    """RF-79, RN-87, T-728, contra el stack: comprarle a un no contribuyente
+    emite la FEC en la serie 08, y a un proveedor inscrito, nada."""
+
+    TIPOS = ["01", "04", "03", "02", "08"]
+
+    def test_al_no_contribuyente_se_le_emite_en_la_serie_08(self, api: Api, producto, facturacion):
+        facturacion(True, tipos=self.TIPOS)
+        compra = comprar(api, no_contribuyente(api), producto("Verduras", 1000, 0), payment_terms="cash")
+        entrada = api.ok("GET", f"/inventory/entry/{compra['id_entry']}")
+        assert entrada["document_type"] == "08"
+        assert entrada["einvoice"]["document_type"] == "08"
+        assert entrada["einvoice"]["consecutive"][8:10] == "08"
+        assert entrada["einvoice"]["source_type"] == "purchase"
+        # Y la lista la trae igual.
+        listada = next(e for e in api.ok("GET", "/inventory/entries") if e["id"] == compra["id_entry"])
+        assert listada["document_type"] == "08"
+
+    def test_al_proveedor_inscrito_nada(self, api: Api, proveedor, producto, facturacion):
+        facturacion(True, tipos=self.TIPOS)
+        compra = comprar(api, proveedor, producto("Comprado", 1000, 0))
+        entrada = api.ok("GET", f"/inventory/entry/{compra['id_entry']}")
+        assert entrada["document_type"] is None
+        assert entrada["einvoice"] is None
+
+    def test_con_la_compra_apagada_la_compra_entra_sin_comprobante(
+        self, api: Api, producto, facturacion
+    ):
+        facturacion(True)
+        compra = comprar(api, no_contribuyente(api), producto("Verduras", 1000, 0))
+        assert api.ok("GET", f"/inventory/entry/{compra['id_entry']}")["document_type"] is None
+
+    def test_el_tipo_06_se_acepta_en_el_proveedor_y_el_07_no(self, api: Api):
+        estado, cuerpo = api.call(
+            "POST", "/suppliers", {"name": "Nadie", "identification_type": "07", "identification": "1"}
+        )
+        assert codigo((estado, cuerpo), 400) == "invalid_identification_type"
+        assert no_contribuyente(api)["identification_type"] == "06"
+
+
 class TestElAbono:
     def test_por_transferencia_baja_el_saldo(self, api: Api, proveedor, producto):
         compra = comprar(api, proveedor, producto("Comprado", 2000, 0))

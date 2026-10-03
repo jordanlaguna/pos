@@ -8,7 +8,87 @@
 > importe para quien retome va a `progress.json`; este archivo es la lista de
 > trabajo, no el registro histórico.
 >
-> Actualizado: 2026-10-02
+> Actualizado: 2026-10-03
+
+---
+
+## QA · 2026-10-03 — va antes que las fases que faltan
+
+> Lo que el usuario encontró probando, en `fix_y_feat_qa.txt`. Primero los
+> arreglos, después los análisis contra la KB de GeneXus
+> (`KbSws20_actualizado.xpz`) y T-616. Decidido con el usuario el 2026-10-03:
+> **el paquete decide** los módulos (RN-49 sigue), el paquete con compras
+> lleva clientes y usuarios, el producto sin tarifa propia paga **el 13 % de
+> ley**, y las listas desplegables son **un componente de Svelte** sobre la
+> lista nativa.
+
+- [x] **QA-01** Paquetes de módulos. Cada sección del POS es un módulo
+      —ventas, caja, facturas, devoluciones, reportes, inventario, compras,
+      proveedores, contabilidad, planilla, clientes, usuarios— y
+      Configuración no, porque sin ella no hay negocio. Cuatro paquetes como
+      planes: **Restaurante** (ventas, facturas, clientes, usuarios),
+      **Comercio** (más caja, devoluciones, inventario y proveedores),
+      **Comercio con compras** (más reportes y compras) y **Completo** (todo).
+      El alta muestra los módulos del paquete elegido. Los planes que ya
+      existen conservan lo que tenían. RN-49 a RN-51.
+
+      **Verificación:** una compañía en Restaurante ve Caja con candado y no
+      puede abrirla, ni escribir por el API; en Completo ve todo; cambiarle el
+      paquete cambia el menú en la siguiente petición.
+
+      **Hecha el 2026-10-03.** Migración 022 y `domain/modules.py` (`MODULES`,
+      `BASE`, `PACKAGES`); `require_module` en cada escritura; proveedores es
+      su propio módulo y tiene su entrada en el menú; la entrada de inventario
+      pide inventario, proveedores si nombra uno y compras si es a crédito;
+      anular es de facturas. El «Comercio» que ya existía en la base de
+      desarrollo conserva todo: se ajusta desde Planes. Precio y límites de los
+      paquetes: **los carga soporte a mano** (decidido con el usuario el
+      2026-10-03), así que nacen en 0 y 1/3/10 y no quedan pendientes. Pruebas: `test_modules.py`,
+      `test_soporte.py`, `navigation.test.ts` y `soporte.spec.ts`.
+
+- [x] **QA-02** El selector de idioma en el panel de soporte, como en el POS.
+
+      **Verificación:** soporte elige inglés y el panel queda en inglés.
+
+- [x] **QA-03** Planes muestra las compañías de cada plan y permite pasarlas a
+      otro, porque el plan de una compañía cambia con el tiempo.
+
+      **Verificación:** pasar una compañía de un plan a otro desde Planes la
+      mueve de tarjeta y queda en la bitácora.
+
+- [x] **QA-04** El alta propone el siguiente afiliado libre con su compañía 1,
+      y si se escribe un afiliado que ya existe, su siguiente compañía.
+
+      **Verificación:** con el afiliado 1 y su compañía 1, el alta propone el
+      afiliado 2; al escribir 1, propone la compañía 2.
+
+- [x] **QA-05** Quitar el impuesto de «Moneda e impuesto». La tarifa la da el
+      CABYS de cada producto y, sin ella, el 13 % de ley, que ya no se
+      configura. RN-9.
+
+      **Verificación:** la pestaña no tiene el campo; un producto sin tarifa
+      se cobra al 13 %; una venta, una devolución y una nota cuadran igual.
+
+- [x] **QA-06** Los botones del certificado y de las credenciales usaban
+      `btn-secondary`, una clase que no existe, y salían sin estilo; y un
+      componente `Select` de Svelte para que todas las listas desplegables se
+      vean iguales en tema claro y oscuro.
+
+      **Verificación:** ninguna `btn-secondary` en el árbol; las listas de
+      Configuración y del panel usan `Select`.
+
+- [x] **QA-07** **T-616**: el último consecutivo por tipo de comprobante, que
+      solo sube y queda en bitácora (en F6, abajo).
+
+- [x] **QA-08** Analizar Proveedores en la KB y escribirlo como fase nueva.
+      **Hecha:** es **F13**, abajo, con lo que trae la KB, lo que falta y lo
+      que hay que decidir.
+
+- [x] **QA-09** Analizar Compras en la KB y profundizar F10 con lo que falte.
+      **Hecha:** es **F14**, abajo.
+
+- [x] **QA-10** Analizar Inventario en la KB y anotar lo que valga la pena.
+      **Hecha:** es **F15**, abajo.
 
 ---
 
@@ -1907,6 +1987,33 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       adentro de `data`, así que **siempre** devolvía `sandbox`. Era invisible
       porque hasta hoy no había forma de poner otra cosa; T-611 lo hizo visible
       el mismo día que lo habría hecho falso.
+- [ ] **T-625** Un campo protegido **no tapa la forma vieja** de la
+      configuración. Por decidir con el usuario; apareció el 2026-10-03 al
+      cerrar F7.
+
+      `eInvoicing.environment` se escribe por `write_protected` y
+      `_conservar_protegidos` lo repone en cada guardado, así que una compañía
+      que todavía guarda `electronica.activa` —de antes de T-113— y toca «Pasar
+      a producción» o «Volver a pruebas» queda con `eInvoicing:
+      {"environment": …}` y nada más. Y la regla de lectura es «manda la clave
+      nueva si está, aunque no sirva» (`_seccion_electronica` en el backend,
+      `legacy()` en el POS): la facturación aparece **apagada** en las dos
+      aplicaciones, sin error. La venta sale sin tipo y sin comprobante hasta
+      que alguien vuelva a guardar la pantalla.
+
+      Hoy no afecta a nadie —no hay compañía real anterior a T-113—, pero «una
+      fila vieja tiene que seguir queriendo decir lo mismo» ya no se cumple en
+      ese caso. Dos salidas, cada una con su costo: que la lectura caiga a
+      `electronica` **campo por campo** cuando la clave nueva no trae `enabled`
+      (cambia la regla en los dos lados), o que `write_protected` traduzca la
+      sección vieja a la nueva al crearla (el backend aprende los nombres
+      viejos). No se decidió dentro de F7.
+
+      **Verificación:** `test_la_forma_vieja_de_la_configuracion_tambien_cuenta`
+      sobre una compañía que **ya** cambió de ambiente. Hoy corre sobre una
+      recién dada de alta, que es la única donde la forma vieja sigue
+      existiendo; la compañía A de la batería pasó a producción y volvió en
+      `test_emision.py`, y por eso dejó de servir para esa prueba.
 - [x] **T-613** `client_id`, realm y URL base **se derivan del ambiente en un
       solo sitio**, y salen de configuración y no del código. Mitigación del
       riesgo TRIBU-CR (plan §7.1 y §10).
@@ -2091,7 +2198,7 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       **no se recorta** — recortar en silencio sería cambiarle el número a
       alguien, que es justo el defecto que el tipo existe para no tener.
 
-- [ ] **T-616** Arranque del consecutivo: la oficina y la última secuencia **por
+- [x] **T-616** Arranque del consecutivo: la oficina y la última secuencia **por
       tipo de comprobante**, para el negocio que ya venía facturando con otro
       sistema. RF-32, RN-36 a RN-38.
 
@@ -2102,6 +2209,15 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       **Verificación:** el valor **solo sube**. Bajarlo significa volver a
       emitir números ya usados —rechazo seguro— así que se rechaza y queda en
       bitácora el intento.
+
+      **Hecha el 2026-10-03 (QA-07).** Por caja y por tipo encendido, en el
+      ambiente en uso, desde Configuración → Factura electrónica.
+      `check_sequence_start` en el dominio; `GET/PUT /fe/sequences`; una serie
+      con la que el sistema ya emitió no se toca (`sequence_in_use`) y bajarla
+      es `sequence_cannot_go_down`; cada cambio queda en bitácora como
+      `serie_arranque`. Lo que queda en bitácora es el cambio, no el intento
+      rechazado. Pruebas: `test_fe_key.py`, `test_series_fe.py`,
+      `series.spec.ts`.
 - [x] **T-609** Comprobar que el PIN **y la contraseña de ATV** no aparecen en
       respuestas, ni en bitácora, ni en trazas de error. Buscarlos a propósito.
 
@@ -2274,16 +2390,22 @@ T-602b ya decía de Vault, ahora vale para los dos—.
 
 ---
 
-## F7 · Emisión
+## F7 · Emisión — ✅ cerrada 2026-10-03, con tareas abiertas a propósito (ver «Lo que quedó abierto» al final de la sección)
 
-Bloqueada hasta decidir la ruta: implementación directa o proveedor autorizado
-(plan §7.2). Lo que se construya en F5 y F6 sirve para las dos.
+**Ruta directa, decidida el 2026-10-03** (T-701): VentaSys firma y transmite.
+Lo que queda detrás de los puertos —`DocumentSigner`, `HaciendaIdp`,
+`HaciendaReception`— es lo que cambiaría con un proveedor autorizado.
 
 En `docs/hacienda/costa-rica/` están los esquemas XSD 4.4, comprobantes reales
 de ejemplo y la normativa de PIN y llaves. La ruta directa deja de depender de
 deducir el formato.
 
-- [ ] **T-701** Decidir la ruta.
+- [x] **T-701** Decidir la ruta. **Directa, el 2026-10-03.** El usuario ya
+      había cargado el certificado y las credenciales de ATV, F6 dejó la llave
+      en Vault y el IdP probado, y los comprobantes aceptados de
+      `docs/hacienda/costa-rica/XML-Ejemplos/` dan la forma exacta de la firma.
+      Un proveedor autorizado sigue siendo posible: cambia el adaptador de
+      `HaciendaReception` y el de la firma, y el recorrido no se entera.
 - [x] **T-702** Leer los XSD 4.4 y los comprobantes de ejemplo, y contrastar el
       modelo de datos de F5/F6 contra los campos obligatorios reales. Es lo que
       dice si falta algo antes de escribir código. **Incluye comprobar RN-34**:
@@ -2314,7 +2436,16 @@ deducir el formato.
          referencia escriben `TipoDoc` y `FechaEmision`, y 4.4 pide `TipoDocIR` y
          `FechaEmisionIR`. Copiarlo tal cual produce un XML que no valida.
 
-- [ ] **T-703** Definir la interfaz `EmisorFE` y dejar la implementación detrás.
+- [x] **T-703** Definir la interfaz `EmisorFE` y dejar la implementación detrás.
+      **Hecha el 2026-10-03.** No es una interfaz sino cuatro puertos, por cuatro
+      razones de cambio: `DocumentSigner` (la llave, en Vault),
+      `HaciendaReception` (`submit` y `status`, en
+      `application/ports/transmission.py`), `CertificateParser` (lo público del
+      certificado) y `TransmissionRepository` (`fe_documents` como recorrido,
+      en `application/ports/fe_documents.py`). El recorrido son los casos de uso
+      de `use_cases/fe_transmission.py`: `SignDocument`, `SubmitDocument`,
+      `PollVerdict`, `ProcessDue`, `RetryDocument`, `QueueSummary`,
+      `ProductionGate`.
 
 ### El contenido del comprobante
 
@@ -2454,6 +2585,13 @@ modelo de F5/F6 no tiene, y ninguna depende de la ruta de T-701.
       **Falta** conectarlo: quien arme el comprobante desde una venta tiene que
       llamar a `vat_refund`, y ese armador todavía no existe.
 
+      **Conectado el 2026-10-03, sin cerrar:** `SqlAlchemyComprobanteSource._cierre`
+      llama a `vat_refund` en la venta, la devolución y la nota. Lo que falta es
+      su verificación fuera del dominio: una venta con un CABYS de salud pagada
+      con tarjeta, contra MySQL, que llegue con `TotalIVADevuelto` y el medio de
+      pago rebajado. Sin eso la tarea sigue a medias, y está en «Lo que quedó
+      abierto».
+
 - [~] **T-719** **Protocolo de comprador por cliente**: qué datos exige y dónde
       van, en `Otros` o en `InformacionReferencia`. RF-70, RN-80.
 
@@ -2480,10 +2618,19 @@ modelo de F5/F6 no tiene, y ninguna depende de la ruta de T-701.
       de compra con su fecha y número de recepción por documento, y la pantalla
       donde se arma el protocolo de cada cliente.
 
-- [ ] **T-721** **La pantalla de facturas enseña el expediente completo** de
+- [x] **T-721** **La pantalla de facturas enseña el expediente completo** de
       cada comprobante: el XML que se envió, la respuesta de Hacienda, por dónde
       va el proceso con la hora de cada paso, y un botón que **genera la
       representación impresa al vuelo**. RF-72, RN-82.
+
+      **Hecha el 2026-10-03.** `FeExpediente.svelte` en la factura, la
+      devolución y la nota: el estado, el motivo si se detuvo, lo que dijo
+      Hacienda, el próximo intento, cada paso con su hora
+      (`fe_document_events`) y el botón de reintentar para el administrador.
+      Los dos XML se bajan desde la cabecera de la factura —primero, donde
+      estaba «Devolver», que sigue después— por `/facturas/{id}/xml` y
+      `/facturas/{id}/respuesta`, que pasan los bytes del almacén sin tocarlos.
+      La impresión al vuelo ya era así desde T-724.
 
       **Verificación:** el XML que se muestra es **byte por byte** el que se
       firmó —no uno regenerado— y la firma verifica sobre esos bytes. El PDF se
@@ -2561,6 +2708,9 @@ modelo de F5/F6 no tiene, y ninguna depende de la ruta de T-701.
       T-705), y desde dónde se emiten. Una FEC nace de una compra a un no
       contribuyente y un REP de cobrar una factura a crédito: son flujos, no
       botones. **Desde el 2026-09-26 cada flujo tiene su tarea: T-725 a T-729.**
+
+      **Al cerrar F7 solo falta el REP**, que es T-729: la FEE y la FEC se
+      emiten desde el 2026-10-03.
 
 - [x] **T-723** **El tipo de comprobante se elige al cobrar y queda en la
       venta.** RF-74, RN-85. `sales.document_type` (migración 014), la regla en
@@ -2687,7 +2837,7 @@ clave—. Lo que cada tarea puede dejar hecho antes es lo que no depende de eso:
 capturar los datos que faltan y decidir y guardar el tipo en su flujo, como
 T-723 hizo con la venta.
 
-- [ ] **T-727** **FEE al cobrar a un cliente del extranjero.** RF-78, RN-87.
+- [x] **T-727** **FEE al cobrar a un cliente del extranjero.** RF-78, RN-87.
       `COUNTER_TYPES` pasa a tres; el cliente con identificación `05`
       —extranjero no domiciliado— sugiere FEE y no admite FE. Hace falta la
       **partida arancelaria** en la ficha del producto, la **dirección
@@ -2698,6 +2848,28 @@ T-723 hizo con la venta.
       cobrar la FEE** y dice cuál es; un producto con tarifa `01` tampoco,
       porque la FEE no la admite (T-720); y el tiquete a ese cliente sigue
       pudiéndose.
+
+      **Hecha el 2026-10-03.** La regla en `domain/fe_document_type.py`
+      —`COUNTER_TYPES` son tres y `DOMESTIC_COUNTER_TYPES` los dos con que se
+      le vende a la gente del país— y lo que la exportación exige en
+      `domain/fe_export.py`: la partida de cada **mercancía**, una tarifa que
+      la FEE admita y la dirección del cliente. `IDENTIFICATION_TYPES` son los
+      seis de la 4.4 para clientes y proveedores; **el emisor sigue siendo de
+      los cuatro primeros** (`fe_issuer`). Migración 021: `products.tariff_heading`
+      (doce dígitos, lo que dice el XSD), `clients.foreign_address` (300) y
+      `sale_details.tariff_heading`, congelada como el CABYS. La venta lo
+      comprueba **antes** de escribir y con el producto en el error; el armador
+      pone al receptor `05` tal como se escribió —un pasaporte no son dígitos—,
+      sin ubicación y con sus señas, y sin exoneración, que el perfil 09 no
+      admite. En el POS: la ficha del producto y la del cliente, el cobro —al
+      extranjero no se le ofrece la factura—, las plantillas, el simulado y el
+      recorrido de punta a punta hasta «aceptada».
+
+      **Una interpretación que conviene dejar escrita.** RF-78 dice «algún
+      producto»; el XSD deja la partida opcional y el anexo la exige en las
+      mercancías. Se exige a las mercancías —CABYS 0 a 4, o sin CABYS— y no a
+      los servicios, que no la llevan: pedírsela a una asesoría sería inventar
+      un dato.
 
 - [x] **T-730** **Los comprobantes que emite cada compañía.** RF-81, RN-88.
       `eInvoicing.documentTypes` con los siete en Configuración, saneado al leer
@@ -2722,6 +2894,14 @@ T-723 hizo con la venta.
       no se envía con el formulario, así que sin más la primera vez que alguien
       guardara la pantalla se perdían la NC y la ND. Las bloqueadas y encendidas
       viajan además en un campo oculto.
+
+      **Desde el cierre de F7 solo el REP queda bloqueado.** La ND tenía flujo
+      desde T-726 y no estaba en `AVAILABLE`, así que su casilla seguía
+      bloqueada «sin flujo»: una compañía cuya lista guardada no la traía no
+      podía encenderla, y la nota se rechazaba con `document_type_not_enabled`.
+      Corregido el 2026-10-03; la FEE y la FEC entraron con T-727 y T-728. La
+      prueba de punta a punta comprueba que la ND, la FEE y la FEC se mueven y
+      el REP no.
 
 - [x] **T-725** **NC al devolver o anular.** RF-76, RN-87, RN-89. Devolver
       mercadería de una venta con comprobante emite una NC `03` con motivo `06`;
@@ -2804,7 +2984,20 @@ T-723 hizo con la venta.
       exoneración de 9 puntos emite una NC `12` por el 9 % de la base, con la
       exoneración en la línea, y la gaveta devuelve eso y nada más.
 
-- [ ] **T-728** **FEC al comprarle a un no contribuyente.** RF-79, RN-87. El
+      **Bloqueada el 2026-10-03, por confirmar.** El anexo 4.4 (p. 72, nota 34)
+      solo dice **cuándo** se usa el código 12 —«una exoneración concreta de
+      impuestos locales aprobada posterior a la transacción»— y no cómo se
+      arman sus líneas, y en `docs/` no hay ninguna NC-12 aceptada. Con la
+      exoneración en la línea, la aritmética del anexo da `MontoTotalLinea` =
+      base + impuesto neto: eso acredita base y 4 %, no el 9 % que se devuelve.
+      Una línea «solo impuesto», exenta, acredita el monto correcto pero lo
+      declara como venta y no como impuesto. La tercera salida es anular (NC
+      `01`) y refacturar con la exoneración, que usa solo piezas que ya
+      existen. Inventar la forma sería lo que RN-80 prohíbe: hay que
+      confirmarla con Hacienda o con el contador antes de emitirla, y la
+      decisión es del usuario.
+
+- [x] **T-728** **FEC al comprarle a un no contribuyente.** RF-79, RN-87. El
       proveedor gana el tipo `06` —no contribuyente— en `IDENTIFICATION_TYPES`,
       y registrar una compra a uno de ellos le pone tipo `08` a la entrada, con
       el negocio como comprador.
@@ -2812,6 +3005,34 @@ T-723 hizo con la venta.
       **Verificación:** una compra a un proveedor `06` guarda la FEC en la serie
       `08`; a un proveedor inscrito, no; y una entrada que no es compra
       (RN-52: sin proveedor) nunca.
+
+      **Hecha el 2026-10-03.** La decisión es `purchase_document_type`
+      (`domain/fe_document_type.py`): proveedor `06`, facturación encendida y
+      la FEC entre lo que la compañía emite; si no, la compra entra sin
+      comprobante, como la venta. `RegisterStockEntry` la numera **en la misma
+      transacción** que la mercadería (`SOURCE_PURCHASE`) y
+      `stock_entries.document_type` la guarda (021). **El XML es el de la FEC
+      aceptada de `docs/`:** el proveedor como emisor, el negocio como receptor
+      con su actividad en los dos campos, la condición y el medio de pago de la
+      compra, y la referencia tipo 14 —el respaldo del proveedor— con el número
+      del documento si lo dio y sin él si no, que es lo normal en quien no
+      factura. La pantalla de entradas la enseña con su estado, su expediente,
+      sus dos archivos y el reintento, y la lista de detenidos de Facturas
+      llega a ella con `?entrada=`. Los proveedores admiten el `05` y el `06`.
+      Antes de numerar se exige la cédula del proveedor, que es el emisor del
+      XML: sin ella el comprobante nacería para detenerse.
+      Probado sin base, contra MySQL y la Hacienda de mentira hasta «aceptada»,
+      y en el navegador con el simulado.
+
+      **El impuesto de la FEC es el que se tecleó en la línea de la compra**
+      (RN-53), con el código del producto si dice la misma tarifa o el que se
+      propone para ella. El recibo de un no contribuyente no trae IVA, y la
+      persona lo teclea —como en el recorrido de F10—; si deja el 0 % en un
+      producto del 13 %, el comprobante **se detiene** con
+      `linea_sin_codigo_de_tarifa`, porque el 0 % tiene tres códigos y
+      adivinar uno es lo que RN-80 prohíbe. La salida hoy es anular la compra y
+      cargarla con su impuesto; que la entrada pida el código por línea es
+      T-735, por decidir.
 
 - [ ] **T-729** **REP al cobrar una venta a crédito.** RF-80, RN-81, RN-87.
       **Bloqueada**: el POS no vende a crédito —`check_payment` exige el total
@@ -2853,7 +3074,7 @@ T-723 hizo con la venta.
       environment, consecutive)` de `fe_documents` es la red si el bloqueo
       fallara.
 
-- [~] **T-705** La clave de 50 dígitos, con la **situación** decidida al vender
+- [x] **T-705** La clave de 50 dígitos, con la **situación** decidida al vender
       (RN-43). La clave se imprime y se entrega, así que no se puede diferir.
 
       **Y el QR** que la codifica, en las tres plantillas (T-731): la factura de
@@ -2894,53 +3115,127 @@ T-723 hizo con la venta.
       el codificador. Comprobado leyéndolo: las capturas de las tres plantillas
       decodifican con zxing a la clave de su cabecera.
 
-      **Falta, y por eso queda a medias:**
+      **Cerrada el 2026-10-03 con T-708 y T-709:** la situación la decide
+      `NumberDocument.situation()` por `ContingencyMode`, que
+      `ObservedContingency` cumple con lo que la cola observó: 3 si el último
+      intento contra Hacienda falló por algo transitorio y desde entonces no
+      hubo contacto bueno, dentro de las últimas 24 horas; si no, 1.
 
-      * **La situación es siempre 1, normal.** La contingencia se decide por el
-        estado de las transmisiones recientes (RN-43), y todavía no se transmite
-        nada: marcar un 2 sin haber observado una falla es causa de rechazo. Se
-        cierra con T-708 y T-709.
+      **Corregida el mismo día, al cerrar la fase, dos veces.** Primero el
+      dígito: era 2 y es **3**. El anexo 4.4 (nota 3, inciso g, p. 67) dice que
+      la 2, «contingencia», es la del comprobante electrónico que **sustituye uno
+      físico** hecho a mano durante una caída, y la 3, «sin internet», la del
+      que se generó electrónicamente sin poder transmitirlo, que es lo que hace
+      VentaSys; y solo admite una fecha de emisión anterior a la validación con
+      la 3 (p. 19). El README de `docs/` decía 2 y estaba mal. Después, qué
+      cuenta: cualquier `retrying` disparaba la situación, incluido Vault
+      sellado o el almacén caído, que son nuestros. Ahora solo cuenta
+      `fe_documents.unreachable_at`, que anota el paso cuando no contestó
+      Hacienda o su IdP (migración 021).
 
-- [ ] **T-706** `sale_number` deja de venir del navegador. Hoy lo fabrica
+- [x] **T-706** `sale_number` deja de venir del navegador. Hoy lo fabrica
       `cart.ts` con `yyyyMMddHHmmss` y el **reloj del cliente**: dos cajas
       cobrando en el mismo segundo chocan y una venta se rechaza en la cara del
       cliente. Decidir si pasa a ser el consecutivo o convive con él.
 
-- [ ] **T-707** Estados del comprobante en la pantalla de facturas: numerado,
+      **Hecha el 2026-10-03: convive.** El consecutivo es el número fiscal y
+      `sale_number` el recibo interno, el que se imprime sin comprobante. Lo
+      pone `RegisterSale` con el reloj del servidor —`yyyyMMddHHmmss` y un
+      sufijo `-2`, `-3`… si ese segundo ya tiene venta— cuando no viene; el POS
+      ya no lo manda (`cart.saleNumber` se fue) y un cliente viejo que lo mande
+      sigue pudiendo. El simulado hace lo mismo.
+
+- [x] **T-707** Estados del comprobante en la pantalla de facturas: numerado,
       firmado, enviado, aceptado, rechazado, reintentando, detenido. RF-33,
       RN-39.
 
-- [ ] **T-708** Consulta del veredicto con su cadencia propia —10 s → 30 s → 1 →
+      **Hecha el 2026-10-03.** Migración 020: el recorrido cuelga de
+      `fe_documents` (`status`, intentos, horas de cada paso, motivo, llaves del
+      almacén) y la bitácora en `fe_document_events`. El listado de ventas
+      publica `einvoice_status` y la columna «Hacienda» lo pinta; el detalle
+      publica `einvoice` entero con el recorrido. Las reglas —qué paso sigue,
+      cadencias, qué falla detiene— están en `domain/fe_transmission.py`.
+
+- [x] **T-708** Consulta del veredicto con su cadencia propia —10 s → 30 s → 1 →
       2 → 5 min—, distinta de la del reenvío. RN-40.
 
       **El trabajador corre fuera de una petición**, así que cada documento va
       dentro de un `with compania(cid)`: sin eso la primera lectura lanza
       `SinCompania` y la cola no avanza nunca.
 
-- [ ] **T-709** Reenvío con espera creciente —5 → 15 → 30 min → … → 72 h— y
+      **Hecha el 2026-10-03.** `PollVerdict` consulta con `poll_delay`: 10 s,
+      30 s, 1, 2 y 5 minutos, y de ahí cada 5; a las 72 horas sin veredicto se
+      detiene (`no_verdict`). Un 404 en los segundos que siguen al 202 es
+      «todavía no» y no una falla. La respuesta firmada se archiva **antes** de
+      cerrar el documento (RN-44); si el almacén no responde, se vuelve a
+      consultar más tarde. El trabajador es `workers/fe_worker.py`: un hilo del
+      proceso de la API que despierta cada `FE_WORKER_INTERVAL_SECONDS` (5),
+      recorre las compañías y atiende lo debido; `FE_WORKER=0` lo apaga.
+
+- [x] **T-709** Reenvío con espera creciente —5 → 15 → 30 min → … → 72 h— y
       **solo para fallas transitorias**. RN-41.
 
       Un rechazo es una respuesta y se detiene. Un certificado vencido o unas
       credenciales rotadas se detienen **en el primer intento**: reintentar tres
       días para llegar a la misma conclusión es demorar el aviso.
 
-- [ ] **T-710** Lo **detenido** se ve y se puede reintentar a mano. RF-35, RF-36,
+      **Hecha el 2026-10-03.** `after_transient_failure`: 5, 15 y 30 minutos,
+      1, 2, 4, 8, 16 y 24 horas, hasta 72 desde la primera falla
+      (`retries_exhausted`). Transitorio es el IdP o Hacienda que no contestan,
+      un 5xx, un 429, Vault sellado y el almacén caído. Detienen en el primer
+      intento: sin certificado o vencido, sin credenciales o rechazadas, un
+      400 de la recepción (con su `X-Error-Cause`), un 403, y un comprobante
+      al que le falta un dato (`document_invalid`, con el código:
+      `linea_sin_cabys:1`). Un token vencido entre pedirlo y usarlo se pide
+      otra vez, una sola.
+
+- [x] **T-710** Lo **detenido** se ve y se puede reintentar a mano. RF-35, RF-36,
       RN-42. Agotar los reintentos no es rendirse: el plazo de contingencia sigue
       corriendo y el documento sigue siendo transmitible.
 
-- [ ] **T-711** **Alarma de antigüedad de la cola.** Es lo único que avisa antes
+      **Hecha el 2026-10-03.** `GET /fe/queue` trae lo detenido con su motivo y
+      su fecha; la lista de facturas lo enseña arriba, con enlace a la venta, la
+      devolución o la nota de donde nació, y el administrador lo reintenta desde
+      ahí o desde el expediente (`POST /fe/documents/{id}/retry`). El reintento
+      vuelve el documento al paso en que estaba —firmar, enviar o consultar,
+      según sus huellas— y la cola lo toma en el próximo turno; lo que no está
+      detenido responde `document_not_stopped`. Queda en bitácora
+      (`fe_reintento`).
+
+- [x] **T-711** **Alarma de antigüedad de la cola.** Es lo único que avisa antes
       de que se acabe el plazo de contingencia —unos 8 días hábiles, y Hacienda
       rechaza pasados los 30 días— y lo que hace visible un Vault sellado, un
       disco lleno o un certificado que venció el sábado.
 
-- [ ] **T-712** Archivo: el XML firmado **tal como se envió, byte por byte**, y
+      **Hecha el 2026-10-03.** `queue_alarm`: `warning` con 24 horas de lo
+      pendiente más viejo, `danger` con cinco días. Va en el marco de la
+      aplicación para el administrador —`(app)/+layout`, como el aviso de la
+      suscripción— y en la lista de facturas, con cuántos esperan y desde
+      cuándo. La misma cola dice si el negocio está en contingencia.
+
+- [x] **T-712** Archivo: el XML firmado **tal como se envió, byte por byte**, y
       la respuesta de Hacienda. Cinco años, los dos, y descargables. RF-34,
       RN-44.
 
       **Verificación:** lo descargado es idéntico a lo enviado —no regenerado—;
       la firma cubre esos bytes y regenerarlo da otra firma.
 
-- [ ] **T-713** La puerta dura de la certificación: producción **no se habilita**
+      **Hecha el 2026-10-03.** La firma es `domain/fe_signature.py`: XAdES-EPES
+      envuelta, exclusiva, SHA-256 y RSA PKCS#1 v1.5, con la política de la 4.4
+      y la forma de los comprobantes aceptados de `docs/…/XML-Ejemplos/`. **No
+      firma**: arma los resúmenes y le pide a Vault la firma del `SignedInfo`
+      (`DocumentSigner.sign`). La canonicalización es la de la biblioteca
+      estándar (C14N 2.0), que sobre estos documentos coincide con la exclusiva
+      1.0; `tests/domain/test_fe_signature.py` lo comprueba byte por byte contra
+      `lxml`, verifica la firma con el certificado y valida el tiquete firmado
+      contra el XSD oficial. El XML se guarda en el almacén **antes** de marcar
+      el documento firmado y no se vuelve a firmar nunca; `GET
+      /fe/documents/{id}/xml` y `/response` devuelven los bytes del almacén.
+      `SqlAlchemyComprobanteSource` arma el `Comprobante` desde la venta, la
+      devolución o la nota con el emisor de la configuración y el receptor de la
+      ficha; lo que falte detiene con `document_invalid` y el código.
+
+- [x] **T-713** La puerta dura de la certificación: producción **no se habilita**
       sin una factura, un tiquete y una nota de crédito **aceptados** en pruebas.
       RN-46.
 
@@ -2951,6 +3246,98 @@ T-723 hizo con la venta.
       **Verificación:** con dos de los tres aceptados no habilita y **dice cuál
       falta**; «no se puede todavía» sin decir qué falta es lo que convierte una
       regla en un misterio. Se cuentan **aceptados**, no enviados.
+
+      **Hecha el 2026-10-03.** `production_gate` cuenta los `accepted` en
+      `sandbox` por tipo; `PUT /fe/active` a producción responde
+      `production_gate_locked` con `missing`, `GET /fe` publica
+      `production_gate` y la pestaña lo dice con los nombres de los
+      comprobantes. Probado contra el stack real en `test_emision.py`.
+
+      **Y partió en dos la prueba de punta a punta de T-611.** Pasar a
+      producción ya no se puede sin los tres aceptados, así que
+      `factura-electronica.spec.ts` comprueba la puerta cerrada —el diálogo
+      avisa, confirmar no alcanza y el aviso dice qué falta— y el paso de
+      verdad vive en el recorrido de `tipo-de-comprobante.spec.ts`: tiquete,
+      factura y nota de crédito aceptados, la puerta abierta, la confirmación,
+      la puerta lateral de guardar la pantalla, la vuelta a pruebas sin
+      confirmar y la bitácora con el antes y el después.
+
+- [ ] **T-733** **Entrega al receptor por correo**, con el XML y la
+      representación impresa, cuando Hacienda acepta (plan §7.2, «piezas que
+      faltan»). Necesita un remitente configurado y decidir si se manda al
+      aceptar o a pedido.
+
+      **Verificación:** una factura aceptada a un cliente con correo le llega
+      con los dos adjuntos; un tiquete sin receptor no manda nada.
+
+- [ ] **T-734** **`callbackUrl` en el despliegue hospedado** (plan §7.2): el
+      puerto admite la consulta y el aviso; el primario sigue siendo la
+      consulta porque un POS en la LAN no tiene URL pública.
+
+      **Verificación:** con la URL configurada, el veredicto llega por el
+      callback y la consulta no se dispara.
+
+- [ ] **T-735** **La línea de la entrada pide el código de tarifa** cuando la
+      tarifa deja más de uno. Salió de T-728: el recibo de un no contribuyente
+      no trae IVA, y una compra cargada al 0 % sobre un producto del 13 % emite
+      una FEC que se detiene con `linea_sin_codigo_de_tarifa` —el 0 % tiene tres
+      códigos y adivinarlo es lo que RN-80 prohíbe—. Hoy la salida es anular y
+      volver a cargar. Por decidir con el usuario: que la entrada lo pida, o que
+      baste con la tarifa.
+
+      **Verificación:** una compra a un `06` con 0 % en un producto del 13 % y
+      sin código se rechaza **antes de guardar**, con su código de error; con
+      código, la FEC llega a «aceptada».
+
+- [ ] **T-736** **Reemitir un comprobante rechazado.** Un rechazo es final
+      (RN-41) y la clave no se reusa: hay que emitir otro con consecutivo nuevo
+      (plan §7.2, «Un rechazo sí deja hueco»). Hoy no hay cómo: `RetryDocument`
+      solo toma lo detenido, y corregir el dato que causó el rechazo —la cédula
+      del receptor, digamos— no llega al documento, que ya está firmado. Salió
+      de la revisión del plan al cerrar F7; **no tiene requisito en el spec**, y
+      por eso se consulta antes de construirla. Lo que hay que decidir: quién
+      puede reemitir, si el nuevo referencia al rechazado (la nota 10 del anexo
+      tiene el tipo `10`, «comprobante rechazado por el Ministerio de
+      Hacienda») y qué ve el cliente que ya se llevó el papel.
+
+      **Verificación:** una clave terminada en `99` contra la Hacienda de mentira
+      queda rechazada; reemitirla crea un segundo comprobante del mismo origen,
+      con consecutivo nuevo, que llega a «aceptado»; el detalle de la venta
+      publica el vigente y el rechazado sigue visible en su expediente.
+
+- [ ] **T-737** **Un turno de la cola con presupuesto de tiempo.** El hilo
+      atiende las compañías una tras otra, hasta 20 documentos cada una, y cada
+      paso puede esperar 15 s al IdP y 30 s a la recepción. Con Hacienda lenta y
+      muchas compañías, un turno dura más que la cadencia de 10 s del veredicto
+      y la cola entera se atrasa. Salió de la revisión del plan; no estaba en
+      ningún documento.
+
+      **Verificación:** con una recepción que tarda el máximo en cada llamada,
+      un turno no pasa de su presupuesto y lo que no alcanzó queda para el
+      siguiente, empezando por la compañía donde se cortó.
+
+### Lo que quedó abierto al cerrar la fase (2026-10-03)
+
+La ruta directa emite y transmite el tiquete, la factura, la de exportación, la
+nota de crédito, la de débito y la factura de compra, con su recorrido, su
+archivo y su puerta de producción. Lo que sigue queda abierto a propósito, cada
+cosa con su porqué escrito en su entrada:
+
+| Tarea | Por qué no entró | Qué la destraba |
+|---|---|---|
+| T-729 REP (y lo que queda de T-720) | El POS no vende a crédito; es una fase propia (condición de venta, saldo, abonos, caja, libro). | Decidir esa fase. |
+| T-732 NC-12 | El anexo no dice cómo se arman sus líneas y no hay ejemplo aceptado; inventarlo viola RN-80. | Confirmar la forma con Hacienda o el contador. |
+| T-733 correo al receptor | Necesita un remitente configurado y decidir si se manda al aceptar o a pedido. | Esa decisión y un servicio de correo. |
+| T-734 `callbackUrl` | Un POS en la LAN no tiene URL pública; es del despliegue hospedado. | Que exista ese despliegue. |
+| T-735 el código de tarifa por línea en la entrada | Con 0 % en un producto del 13 % la FEC se detiene, y la entrada no deja elegir el código. | Decidir si la entrada lo pide. |
+| T-736 reemitir un rechazado | No tiene requisito; un rechazo hoy no tiene salida. **Es la que más conviene antes de producción.** | Decidir quién reemite y si referencia al rechazado. |
+| T-737 presupuesto del turno de la cola | Riesgo con muchas compañías y Hacienda lenta. | Construirla; no pide decisión. |
+| T-716 varios medios de pago | El XML ya los arma; falta `sale_payments`, y que el arqueo y el libro lean de ahí antes del primer cobro partido. | Diseñarlo en el plan, que hoy no lo tiene. |
+| T-718 IVA devuelto de salud | Conectado al armador; falta su prueba contra MySQL con tarjeta y un CABYS de salud. | Escribir esa prueba. |
+| T-719 protocolos de comprador | El XML los copia; falta capturarlos por cliente y por documento. | Diseñar la captura. |
+| ~~T-616 (F6) arrancar la numeración~~ | **Hecha el 2026-10-03 (QA-07).** | — |
+| El sandbox real | **La FE ya pasó (2026-10-03):** consecutivo 0000500210, aceptada en once segundos —firma, política y `ProveedorSistemas` juzgados por Hacienda—. Antes, la cola nunca había llegado: la URL del sandbox era una ruta muerta y el Gateway contestaba 403 (ver `progress.json`). Hacienda dejó dos avisos sin rechazar: la provincia, el cantón y el distrito del emisor no coinciden con su RUT (-37), y la tarifa del 1 % (-300, no aplica a canasta básica). Los dos TE detenidos con `forbidden` se pueden reintentar. | Que el usuario emita un TE y una NC, y corrija la ubicación del emisor en Configuración. |
+| `lxml` en `requirements-dev.txt` | Las pruebas contra el XSD se saltan en silencio en una máquina sin él. | Decidir si se agrega; es de desarrollo, no de producción. |
 
 ---
 
@@ -4597,6 +4984,13 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       salario menor —tiempo parcial— la CCSS cobra sobre la base mínima y la
       boleta, sobre el salario real, así que no coinciden.
 
+      **Y dos más, aparecidas al cerrar la fase (2026-10-02):** las vacaciones
+      que se pagan en la liquidación salen hoy sin cargas ni renta, como el
+      preaviso y la cesantía, y la CCSS las considera salario; y el aguinaldo
+      cuenta de la maternidad lo que pagó el patrono (la mitad), cuando el art.
+      95 podría pedir el salario entero. Las dos están aisladas en
+      `EARNED_CONCEPTS` y en `settlement`, y se cambian en un sitio.
+
 - [x] **T-1221** Tramos y créditos de renta del año siguiente por el panel.
       Hoy entran con la siembra, y el decreto sale cada diciembre: soporte
       tendría que poder cargar el juego nuevo con su `valid_from` sin esperar
@@ -4724,14 +5118,22 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       balancea entre las seis cuentas; `planilla_pagada` en la bitácora; y las
       diecisiete rutas por id responden 404 con el token de otra compañía.
 
-- [ ] **T-1207** Boleta: la cuarta plantilla de documento, en el idioma del
+- [x] **T-1207** Boleta: la cuarta plantilla de documento, en el idioma del
       documento (RN-29), armada **desde los rubros congelados**, con cada
       acción aplicada y sus fechas. RF-58, RN-66.
 
       **Verificación:** la boleta de una corrida pagada antes de un cambio de
       tasa muestra la tasa vieja; T-922 cuenta cuatro documentos.
 
-- [ ] **T-1208** Aguinaldo como corrida `aguinaldo`: suma lo devengado de las
+      **Hecha el 2026-10-02.** `GET /payroll/runs/{id}/payslips/{employee}`
+      devuelve los rubros congelados con el nombre del puesto, la jornada y de
+      qué acción salió cada uno; `Boleta.svelte` los imprime con
+      `payslipLabels(docLocale)` —los rótulos y los nombres de los rubros en
+      `documents.json`, en los tres idiomas— y `loose-text.test.ts` la cuida
+      como a las otras tres. La prueba HTTP compara la boleta con los rubros de
+      la corrida pagada después de insertar una tasa nueva.
+
+- [x] **T-1208** Aguinaldo como corrida `aguinaldo`: suma lo devengado de las
       pagadas del 1 de diciembre al 30 de noviembre y los saldos de apertura
       del mismo periodo, y divide entre doce, sin rubros de CCSS ni renta.
       RF-59, RN-69, RN-97.
@@ -4739,14 +5141,31 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       **Verificación:** doce corridas de 500 000 → 500 000 exacto; los rubros
       de la línea son todos `earning`.
 
-- [ ] **T-1209** Vacaciones: acumulación al pagar cada corrida, disfrute como
+      **Hecha el 2026-10-02.** `CreateAguinaldoRun(year)` (`POST
+      /payroll/runs/aguinaldo`, una por año, pago el 20 de diciembre si no se
+      dice otra fecha) y `aguinaldo_lines` en `use_cases/payroll_special.py`:
+      suma `paid_earnings` de las regulares y ajustes pagados más los meses de
+      apertura; quien salió antes del corte no entra (su proporcional fue en la
+      liquidación) y quien no devengó nada tampoco. Lo que cuenta como salario
+      es `EARNED_CONCEPTS` (lo que paga renta: sin subsidios).
+
+- [x] **T-1209** Vacaciones: acumulación al pagar cada corrida, disfrute como
       acción `vacation`, saldo de apertura, saldo por empleado
       (`vacation_balance_exceeded`). RF-60, RN-70.
 
       **Verificación:** 350 días trabajados → 12; disfrutar 20 → código; el
       saldo es la suma de `vacation_movements`, no una columna.
 
-- [ ] **T-1210** Liquidación: `TerminateEmployee` deja una corrida `settlement`
+      **Hecha el 2026-10-02.** `PayRun` acumula por los días de calendario que
+      cubrió el salario base de cada línea (una quincena de quince días da 0,51
+      hábiles) y, en una liquidación, deja pagados los días que liquidó;
+      `RegisterAction` revisa el saldo antes de aceptar un disfrute y deja el
+      movimiento `taken` con la acción; corregirla lo corrige y anularla lo
+      devuelve con un movimiento negativo. `GET /payroll/vacations/{employee}`
+      da el saldo —la suma, `vacation_balance`— y los movimientos. La
+      acumulación no descuenta los días de permiso sin goce: anotado.
+
+- [x] **T-1210** Liquidación: `TerminateEmployee` deja una corrida `settlement`
       con preaviso, cesantía, vacaciones y aguinaldo proporcionales según la
       causa, sobre el promedio de los últimos seis meses;
       `settlement_requires_termination`. RF-61, RN-71.
@@ -4755,7 +5174,19 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       causa, con causa) dan los rubros que dice la tabla; con dos meses de
       apertura el promedio los cuenta; sin baja → código.
 
-- [ ] **T-1211** Archivo para la CCSS y resumen de renta retenida. **Empieza
+      **Hecha el 2026-10-02.** La liquidación nace con **una línea vacía** que
+      dice de quién es (la corrida no tiene columna de empleado), y
+      `settlement_lines` la llena: el promedio de los seis meses calendario
+      **anteriores** al de la salida —pagados o de apertura, o el salario del
+      contrato si no hay ninguno—, las vacaciones del saldo con el piso de un
+      día por mes para quien no llegó a las cincuenta semanas, el aguinaldo
+      desde el 1 de diciembre, y preaviso y cesantía solo en el despido sin
+      causa con la tabla de `severance_table` (`RatesMissing` si no hay). La
+      tabla de cesantía entra por `RateTable.severance_at`. Conviene calcularla
+      después de pagar la última corrida regular: la acumulación de vacaciones
+      de esos días llega con ese pago.
+
+- [x] **T-1211** Archivo para la CCSS y resumen de renta retenida. **Empieza
       por leer la especificación oficial del SICERE** y guardarla en
       `docs/ccss/`, como los XSD en `docs/hacienda/`; el archivo sale de un
       adaptador `CcssFileWriter` con prueba contra un ejemplo real, con los
@@ -4768,7 +5199,24 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       la renta retenida del mes es la suma de los rubros `income_tax` de las
       corridas pagadas del mes.
 
-- [ ] **T-1219** Archivo para el INS, uno por póliza. **Empieza por leer la
+      **Hecha el 2026-10-02, con un cambio de forma que hay que saber.** La
+      CCSS **no publica** la estructura del archivo de texto: la carga por
+      archivo es de «grandes clientes» (unos mil patronos) y su trazado no
+      está en ccss.sa.cr ni en ningún documento abierto; el 98 % de los
+      patronos presenta la planilla por el formulario de Autogestión. Lo que
+      sí hay es la guía oficial de ese formulario (GF-DSCR-F004) y el
+      formulario de ajuste (GF-DSCR-F071), guardados en `docs/ccss/` con un
+      README que lo explica. Como el formato no se supone (plan §14.8), `GET
+      /payroll/exports/ccss` entrega **el informe del mes con exactamente lo
+      que el formulario pide** —identificación como la pide la Caja,
+      ocupación, jornada, salario que cotiza, días y cada movimiento con sus
+      fechas, juntando los tramos de una misma incapacidad— y la pantalla lo
+      muestra y lo baja en CSV. La renta retenida es `GET
+      /payroll/exports/income-tax`. `export_data_incomplete` lista empleados
+      y campos, y los de la compañía. El archivo de texto queda como
+      **T-1222**.
+
+- [x] **T-1219** Archivo para el INS, uno por póliza. **Empieza por leer la
       especificación oficial de RT-Virtual** y guardarla en `docs/ins/`;
       adaptador `InsFileWriter` con prueba contra un ejemplo real. RF-85,
       RN-96.
@@ -4777,13 +5225,35 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       ingresó y salió en el mes lleva esa condición; dos pólizas → dos
       archivos que suman la planilla del mes.
 
-- [ ] **T-1212** Corrida de ajuste sobre una pagada, que la referencia y no la
+      **Hecha el 2026-10-02, con una salvedad.** El INS publica la estructura
+      **dentro** de RT-Virtual, con la sesión de la póliza; lo que hay afuera
+      es el generador público que reproduce su plantilla (`RTVirtual.html`,
+      versión **V08D**: tres líneas de encabezado y un registro de 114
+      posiciones por trabajador) y la charla oficial del INS con las reglas de
+      identificación. El trazado está en `docs/ins/README.md` con su
+      procedencia, `domain/payroll_files.py` lo escribe (`ins_file`, en
+      ISO-8859-1, con el nombre `PL<póliza>M<año><mes>-V08D (Texto).txt`) y
+      `GET /payroll/exports/ins?policy=` lo entrega. **Falta cotejarlo con el
+      documento del INS**: T-1223.
+
+- [x] **T-1212** Corrida de ajuste sobre una pagada, que la referencia y no la
       toca. RF-63, RN-68.
 
       **Verificación:** el ajuste tiene `adjusts_run_id`; la boleta de la
       original no cambia; el asiento del ajuste es solo la diferencia.
 
-- [ ] **T-1220** Importación: `ImportPayroll` con `dry_run` —puestos,
+      **Hecha el 2026-10-02.** `AdjustRun` (`POST /payroll/runs/{id}/adjust`,
+      solo sobre una regular pagada: `run_not_paid`) abre una corrida
+      `adjustment` con el mismo periodo; calcularla vuelve a correr el cálculo
+      regular **valorando los mismos tramos de acciones que la pagada aplicó**
+      con los datos de hoy —salario, prima, tasas—, copia las cuotas y las
+      anulaciones tal cual, y escribe la diferencia rubro por rubro
+      (`difference_lines`): quien no estaba entra entero, quien no debía estar
+      sale en negativo. La renta se proyecta como la pagada si el mes sigue
+      abierto y se liquida contra el mes si ya cerró. Las retenciones del mes
+      cuentan ahora regulares **y ajustes**.
+
+- [x] **T-1220** Importación: `ImportPayroll` con `dry_run` —puestos,
       empleados con contrato, vacaciones y devengado de apertura, deducciones
       recurrentes con su saldo— en una transacción, y la plantilla
       descargable. `import_has_errors`. RF-86, RN-97.
@@ -4793,9 +5263,21 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       repetida o un puesto que no existe no entra; los saldos quedan con
       `source = 'import'` y su fecha.
 
+      **Hecha el 2026-10-02.** `POST /payroll/import?dry_run=` recibe cuatro
+      listas ya leídas —puestos, empleados con su contrato por **nombre** de
+      jornada, puesto y póliza, devengado por mes y deducciones con su saldo—
+      y `ImportPayroll` las revisa con las mismas reglas del formulario
+      (`check_position`, `check_employee`, `check_contract`, `check_action`),
+      responde fila por fila con el mismo código y, sin ensayo, escribe todo
+      o nada (`import_has_errors`). Un puesto que ya existe se reutiliza; una
+      cédula que ya está no entra; el saldo de una deducción entra como lo
+      pactado que falta por cobrar. El POS lee una hoja por archivo (`.xlsx` o
+      `.csv`, encabezados por sinónimo, valores en español o del API) en
+      `$lib/server/import/payroll.ts`, con una plantilla CSV por hoja.
+
 ### Frontend
 
-- [ ] **T-1213** Pantallas de `/planilla` (plan §14.4): resumen con lo que
+- [x] **T-1213** Pantallas de `/planilla` (plan §14.4): resumen con lo que
       vence y los datos que faltan para los archivos, empleados, acciones,
       corridas, vacaciones, configuración (datos patronales, jornadas, puestos
       y pólizas), importar con vista previa y tasas. RF-55 a RF-63, RF-82 a
@@ -4806,16 +5288,38 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       aprobar, pagar, imprimir la boleta; importar un Excel con una fila
       mala, corregirla y confirmar.
 
-- [ ] **T-1214** Simulado y catálogos: unos treinta endpoints con contrato
+      **Hecha el 2026-10-02.** Nueve pestañas bajo `/planilla` —resumen,
+      empleados (lista y ficha con contrato, historial, vacaciones y baja),
+      acciones (para uno o varios empleados, con anular y suspender),
+      corridas (lista, detalle con rubros, boleta y lista de IBAN para la
+      transferencia), vacaciones, **archivos del mes** (la novena, que el plan
+      no listaba: el informe de la CCSS, la renta y el archivo del INS por
+      póliza), configuración, importar y tasas— con `payroll.json` en los
+      tres idiomas y la entrada «Planilla» en el menú con su candado de
+      módulo. Leer no exige el módulo; escribir sí, en cada acción. La
+      importación por Excel con una fila mala está en la prueba HTTP; la de
+      punta a punta la deja para cuando Playwright suba archivos (T-1215).
+
+- [x] **T-1214** Simulado y catálogos: unos treinta endpoints con contrato
       idéntico, dos empleados, dos jornadas, dos puestos, una póliza y un
       juego de tasas en el seed, `messages/es/payroll.json` declarado, y los
       quince códigos en los cuatro lugares (los dos de las tasas ya están, T-1204).
 
       **Verificación:** `npm test`; `npm run check` en 0/0.
 
+      **Hecha el 2026-10-02.** `mock/payroll.ts` (las treinta y cuatro rutas
+      de `/payroll/*`, mismos códigos y mismos estados) y `mock/payrollCalc.ts`
+      (los cortes de las cuatro periodicidades, lo que vale un día, las cargas,
+      la renta del mes, el trazado V08D): una versión compacta del dominio,
+      para que las pantallas y Playwright tengan cifras con la misma forma; la
+      aritmética al céntimo es la del backend. La compañía de demostración trae
+      dos jornadas, dos puestos, una póliza y dos empleados con contrato
+      (`SEED_VERSION` 17). Los treinta y tres códigos de F12 están en los
+      cuatro lugares.
+
 ### Verificación — sin esto la fase no está terminada
 
-- [ ] **T-1215** Punta a punta en una compañía que la prueba da de alta: dos
+- [x] **T-1215** Punta a punta en una compañía que la prueba da de alta: dos
       empleados (mensual y quincenal), una incapacidad que cruza la quincena,
       un préstamo recurrente, una corrida pagada; una tasa nueva con vigencia
       futura; reimprimir → igual; la corrida siguiente → distinta y con el
@@ -4824,6 +5328,352 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
       **Verificación:** Playwright contra el simulado y, a mano, contra el
       stack real; `pytest`, `npm test` y `npm run check` en verde.
+
+      **Hecha el 2026-10-02.** `tests/e2e/planilla.spec.ts` recorre todo eso
+      en el simulado, menos la tasa nueva con vigencia futura: la carga
+      soporte por el API y no tiene pantalla, así que esa parte vive en
+      `backend/tests/test_planilla.py` contra el stack real (la pagada no
+      cambia, la siguiente sí). Lo que falta de la verificación: el recorrido
+      **a mano** contra el stack de desarrollo, que es del usuario.
+
+- [ ] **T-1222** El archivo de texto de la planilla para la CCSS («grandes
+      clientes»), el día que la Dirección SICERE entregue su estructura
+      (`plautogestion@ccss.sa.cr`): el escritor va en `domain/payroll_files.py`
+      al lado del del INS, con la prueba contra el ejemplo que venga con la
+      especificación. Los datos ya están (`ccss_report`). RF-62, RN-96.
+
+      **Verificación:** el archivo del mes valida contra el ejemplo oficial.
+
+- [ ] **T-1223** Cotejar el trazado V08D del archivo del INS con «Estructura
+      del archivo» de RT-Virtual (requiere la sesión de la póliza) y, si
+      difiere, corregir `ins_record`/`ins_header` y su prueba. Hasta entonces,
+      un rechazo del INS se corrige acá y no en la planilla. RF-85.
+
+      **Verificación:** RT-Virtual acepta el archivo de un mes real.
+
+- [ ] **T-1224** Acortar el arranque del POS. La compilación de Paraglide tarda
+      tres minutos con los 2 250 mensajes de hoy (dos antes de F12, y crece
+      más que proporcional) y la pagan `npm run dev`, `npm test` y `npm run
+      check` cada vez. No es la máquina ni los catálogos: el hilo principal de
+      Node está ocioso el 95 % y el trabajo lo hace la base SQLite del SDK de
+      inlang; subir a 2.25.4 (SDK 3.0.6) tarda lo mismo. **Decidir con el
+      usuario:** abrir el caso arriba, quitar el plugin de Vite y compilar solo
+      con `npm run i18n` (se pierde la recompilación automática al editar un
+      catálogo), o aceptar el costo. Mientras tanto el `webServer` de
+      Playwright espera diez minutos en vez de dos.
+
+      **Verificación:** `npm run dev` dice «ready» en menos de treinta segundos
+      con los catálogos de hoy.
+
+- [x] **T-1225** El alta del empleado con su contrato (RF-55). La ficha de
+      alta lo creaba sin contrato y el contrato iba después, desde el detalle,
+      así que cada alta pasaba por la lista como «Sin contrato» hasta que
+      alguien se acordaba. `POST /payroll/employees` acepta `contract`
+      (jornada, puesto, póliza, salario del periodo, aporte solidarista) y
+      guarda los dos en la misma transacción, rigiendo desde la fecha de
+      ingreso; la ficha del POS trae la sección con la casilla «Asignarle el
+      contrato ahora», marcada si hay jornada y puesto activos. Los contratos
+      que siguen —un aumento, otro puesto— van por la ficha, como antes.
+
+      **Verificación:** `test_planilla.py::TestElAltaConSuContrato` (entra
+      con su contrato desde el ingreso; si el contrato no pasa, el empleado
+      tampoco queda y la cédula sigue libre); `planilla.spec.ts` da de alta a
+      una persona con el contrato en la ficha y a otra sin él, que se contrata
+      desde el detalle.
+
+      **Hecha el 2026-10-03.** El contrato **no tiene número**: el usuario lo
+      pidió como «el número de contrato», y ni el spec ni el modelo lo traen.
+      Se le consultó si hace falta uno propio. La acción del alta avisa ahora
+      el primer error de validación (`message`): antes un dato mal escrito no
+      decía nada.
+
+---
+
+## F13 · Proveedores — alcance decidido el 2026-10-03; va segunda (F15 → F13 → F14)
+
+> El módulo `suppliers` de QA-01 (el paquete Comercio lo trae sin compras),
+> analizado contra la KB del ERP (`KbSws20_actualizado.xpz`, prefijo `Pro`:
+> 9 transacciones, 110 procedimientos y 24 pantallas, más `BanPago` en Bancos).
+> Hoy un proveedor es casi solo una agenda: nombre, identificación, contacto,
+> plazo y si está activo. En la KB es la mitad de las cuentas por pagar.
+
+**Lo que trae la KB.**
+
+- **La ficha** (`ProProveedor`): tipo e identificación —validada por tipo, y
+  con la consulta al padrón al crear—, nombre, **clase** (servicios,
+  mercancías, tráfico), **tipo de proveedor** (un catálogo de la compañía),
+  ubicación de Hacienda o señas del extranjero con el tipo `05`, país,
+  teléfonos, correo (y si rebota), **plazo y moneda**, saldo, inactivo, si se le
+  manda el XML, y dos marcas fiscales: **no emisor de factura electrónica** y
+  **gasto menor**. Cada activar, desactivar y cambio de esas marcas queda en
+  bitácora.
+- **Lo que se le compra** (`ProProveedorConcepto`): conceptos por proveedor con
+  su CABYS, su tarifa y si dan crédito fiscal, sacados de **tipos de concepto**
+  (`ProConceptoTipo`: adelanto, no declarable, retención de renta o de IVA; los
+  tipos 1 a 9 reservados —1 compras, 2 seguro, 3 flete, 4 envío y manejo—).
+- **Contactos** (nombre, puesto, teléfono, extensión, correo) y **cuentas
+  bancarias** (`ProCuenta`: número, SINPE, IBAN, banco, moneda).
+- **El documento del proveedor** (`ProDocumento`): factura, nota de crédito o
+  de débito **por concepto**, que es la cuenta por pagar de lo que no es
+  inventario —servicios y gastos—, con plazo, vencimiento, moneda, tipo de
+  cambio y crédito o gasto del IVA. Reglas: la nota de crédito va en negativo y
+  la factura en positivo, nada en cero, nada a un proveedor inactivo, y un
+  concepto sin CABYS no pasa si el proveedor no emite.
+- **Aplicaciones** (`ProAplicacion`): una nota de crédito o un adelanto
+  aplicados a facturas, sin pasarse del saldo y nunca con fecha posterior.
+- **Pagos** (`BanPago`): uno solo paga **varias facturas** de un proveedor, o es
+  un **adelanto** —no las dos cosas—, sin pasarse del saldo; y la
+  **liquidación** (`ProLiquidacion`) paga en lote lo que vence, hasta un límite.
+- **El buzón de comprobantes recibidos** (`XMLProveedores`): el XML que manda
+  el proveedor, el **mensaje de receptor** a Hacienda (aceptar, aceptar
+  parcial, rechazar) con la condición del impuesto, y el documento que generó.
+- Consultas: estado de cuenta, antigüedad de saldos, pendientes, por línea,
+  facturas recibidas y saldos.
+
+**Lo que ya tenemos (F10).** Proveedores con tipo e identificación (`01` a
+`06`), nombre, correo, teléfono, plazo y activo; la compra de mercadería como
+entrada con proveedor (también leída del XML del proveedor); un abono por
+compra, en efectivo o por transferencia, que sale de la caja; cuentas por
+pagar con antigüedad; la FEC para el no contribuyente.
+
+**Lo que falta, por valor para un comercio.**
+
+1. Una ficha más completa: tipo de proveedor, clase (servicios o mercancías),
+   moneda, ubicación de Hacienda, contactos, cuentas bancarias, la marca «no
+   emite factura electrónica» —hoy se deduce del tipo `06`— y la bitácora de
+   activar y desactivar.
+2. **Los gastos y servicios**: el documento del proveedor por concepto, con su
+   CABYS y su crédito fiscal, sin tocar inventario (alquiler, luz, fletes). Hoy
+   solo se compra mercadería, así que el IVA de los gastos no llega al reporte.
+3. Notas de crédito y de débito del proveedor, y aplicarlas a sus facturas.
+4. Adelantos a proveedores y su aplicación.
+5. Un pago a varias facturas a la vez.
+6. El estado de cuenta del proveedor.
+7. El buzón de comprobantes recibidos con su mensaje de receptor. Pide firmar y
+   transmitir, como F7 pero con lo recibido; la investigación está en
+   `docs/hacienda/costa-rica/recepcion-comprobantes-mensaje-receptor.md`.
+
+**Lo que no conviene traer:** la clase «tráfico», las retenciones de El
+Salvador y República Dominicana, caja chica, centros de costo, producción, la
+consulta al padrón (es un servicio aparte) y las integraciones con otros
+sistemas.
+
+- [ ] **T-1301** Requisitos al spec y diseño al plan de lo que se decida de la
+      lista, con el revisor de cada documento.
+
+      **Verificación:** `spec-reviewer` y `plan-reviewer` sin observaciones.
+- [ ] **T-1302** La ficha completa (punto 1): migración, dominio, rutas,
+      simulado y pantalla.
+
+      **Verificación:** activar y desactivar quedan en bitácora; un proveedor
+      `05` pide señas del extranjero.
+- [ ] **T-1303** Los gastos (punto 2): tipos de concepto, conceptos por
+      proveedor y el documento del proveedor que no mueve inventario.
+
+      **Verificación:** un gasto de ₡100 000 al 13 % aparece en cuentas por
+      pagar y su IVA en el reporte por tarifa, sin tocar existencias.
+- [ ] **T-1304** Notas del proveedor, adelantos y aplicaciones (puntos 3 y 4).
+
+      **Verificación:** una nota de crédito aplicada baja el saldo de la
+      factura y no puede pasarse de él.
+- [ ] **T-1305** Un pago a varias facturas y el estado de cuenta (puntos 5 y 6).
+
+      **Verificación:** el pago se reparte entre las facturas y el arqueo
+      cuadra.
+- [ ] **T-1306** El buzón de comprobantes recibidos con mensaje de receptor
+      (punto 7). Depende de F7.
+
+      **Verificación:** un XML recibido se acepta ante Hacienda en el sandbox y
+      queda enlazado a su compra o su gasto.
+
+**Decidido con el usuario el 2026-10-03:** entran los siete puntos, con el
+buzón (punto 7) en esta misma fase. Los gastos y servicios son del módulo de
+**proveedores**, no de compras: el paquete Comercio los registra sin tener
+compras, que queda para la mercadería a crédito y la orden de compra. Las
+fases van en el orden **F15 → F13 → F14**.
+
+---
+
+## F14 · Compras a fondo — alcance decidido el 2026-10-03; va tercera
+
+> El módulo `purchases`, contra la KB (prefijo `Cpa`: 4 transacciones, 47
+> procedimientos, 15 pantallas). F10 dejó la compra de mercadería como una
+> entrada con proveedor, documento, condición de pago y crédito fiscal por
+> línea, con costo promedio y anulación sin abonos. La KB la rodea de lo que
+> pasa antes —el pedido— y de lo que cuesta además de la mercadería.
+
+**Lo que trae la KB.**
+
+- **La orden de compra** (`CpaOrden`): el pedido al proveedor, con bodega,
+  moneda, descripción, instrucciones y condiciones; **aprobaciones**
+  (`CpaConfigurador`: cuántas hacen falta y quiénes aprueban); al aprobarse se
+  le **manda por correo** al proveedor; y después se **aplica a la compra**
+  cuando llega la factura, con la cantidad disponible por línea.
+- **La compra** (`CpaCompra`): solo a proveedores de clase mercancías y de
+  productos inventariables; bodega y moneda con tipo de cambio; por línea el
+  producto con su **unidad y factor**, **descuento**, costo unitario y total;
+  y los **costos adicionales** —flete, seguro, envío y manejo, otros— que se
+  **reparten al costo** de cada línea por su participación. Separa el IVA
+  acreditable del que va al costo (**proporcionalidad**), no se borra si ya
+  tiene pagos, y genera su cuenta por pagar y su asiento.
+- **La importación** (`CpaImportacion`): nacionalizar lo comprado en el
+  extranjero con su DUA, valor declarado y tipo de cambio, de un almacén
+  fiscal a una bodega.
+- Consultas: compras, compras detalladas, por proveedor, **estadística por
+  producto**, **reabastecimiento** (lo que hay que pedir según mínimos y días
+  de reposición), semestral por proveedor y órdenes.
+
+**Lo que ya tenemos (F10).** La compra como entrada con proveedor, documento
+(con su clave), fecha, condición contado o crédito, plazo y vencimiento;
+líneas con costo e impuesto; crédito fiscal por línea; costo promedio;
+anulación solo sin abonos; el documento duplicado se rechaza
+(`duplicate_document`); y el XML del proveedor leído para llenarla.
+
+**Lo que falta, por valor para un comercio.**
+
+1. Los **costos adicionales** (flete, envío, seguro) repartidos al costo de
+   las líneas: sin ellos el costo promedio queda bajo y el margen, inflado.
+2. El **descuento por línea** de la factura del proveedor.
+3. **Unidades de compra con factor**: comprar la caja de 12 y que entren 12
+   unidades al precio de cada una.
+4. **Moneda y tipo de cambio** de la compra, para el que compra en dólares.
+5. La **orden de compra**: pedir, mandarla al proveedor y convertirla en
+   compra al recibir, completa o en partes. Las aprobaciones, opcionales.
+6. El **reabastecimiento**: qué pedir según el mínimo de cada producto y lo que
+   se vende (depende del mínimo por producto de F15).
+7. Reportes de compras por proveedor y por producto.
+8. La **proporcionalidad del IVA**, para quien vende gravado y exento a la vez.
+   Toca el crédito fiscal y la contabilidad: conviene confirmarla con un
+   contador.
+
+**Lo que no conviene traer:** importaciones con DUA y almacén fiscal (un
+importador es otro tipo de cliente), y la clase de proveedor como candado (con
+la ficha de F13 alcanza).
+
+- [ ] **T-1401** Requisitos al spec y diseño al plan, con sus revisores.
+
+      **Verificación:** `spec-reviewer` y `plan-reviewer` sin observaciones.
+- [ ] **T-1402** Costos adicionales y descuento por línea (puntos 1 y 2).
+
+      **Verificación:** una compra de ₡100 000 con ₡10 000 de flete deja el
+      costo de cada línea con su parte del flete, y el costo promedio la
+      refleja.
+- [ ] **T-1403** Unidades con factor (punto 3). Toca la ficha del producto
+      (F15).
+
+      **Verificación:** 2 cajas de 12 entran como 24 unidades.
+- [ ] **T-1404** Moneda y tipo de cambio de la compra (punto 4).
+
+      **Verificación:** una compra en dólares queda en colones al tipo del día
+      del documento, y su abono también.
+- [ ] **T-1405** La orden de compra (punto 5).
+
+      **Verificación:** una orden de 10 recibida en dos compras de 6 y 4 queda
+      cerrada, y no se puede recibir más de lo pedido.
+- [ ] **T-1406** Reabastecimiento y reportes (puntos 6 y 7).
+
+      **Verificación:** un producto bajo su mínimo aparece con la cantidad
+      sugerida.
+
+- [ ] **T-1407** La proporcionalidad del IVA (punto 8). **Bloqueada:** se
+      construye después de confirmar con un contador cómo se calcula para los
+      clientes que venden gravado y exento.
+
+      **Verificación:** a definir con el contador.
+
+**Decidido con el usuario el 2026-10-03:** entran los puntos 1 a 7. La orden de
+compra lleva **aprobación opcional por compañía** —cada una elige si la
+necesita y cuántas; por omisión, ninguna—. La proporcionalidad espera al
+contador (T-1407). F14 va tercera, después de F15 y F13: el reabastecimiento
+necesita el mínimo por producto de F15.
+
+---
+
+## F15 · Inventario — alcance decidido el 2026-10-03; va primera
+
+> Contra la KB (prefijo `Inv`: 17 transacciones, 143 procedimientos, 42
+> pantallas, y la ficha `FaeProducto` de facturación). El nuestro está completo
+> para un local con una sola existencia: productos con dos niveles de
+> categoría, CABYS y tarifa, código de barras, unidad y costo promedio;
+> entradas manuales, importadas y por compra, con anulación; la venta y la
+> devolución mueven el stock. Lo que la KB tiene y nosotros no es **dónde** está
+> la mercadería y **por qué** se movió.
+
+**Lo que trae la KB.**
+
+- **Bodegas** (`InvBodega`), con **existencias por bodega** (`InvExistencia`:
+  cantidad, reservada, disponible, costo) y bodegas bloqueadas.
+- **El kárdex** (`InvMovimiento`): cada movimiento con la existencia y el costo
+  de antes y de después, el documento que lo causó y quién.
+- **Entradas y salidas con motivo** (`InvEntrada`, `InvSalida`, `InvMotivo`:
+  merma, daño, consumo interno…), y **traslados** entre bodegas.
+- **La toma física** (`InvTomaFisica`): contar por bodega, marca, tipo o
+  grupo, y aplicar las diferencias como ajuste.
+- En la ficha del producto: **mínimo** y **días de reabastecimiento**,
+  **marca**, códigos alternos, unidad con factor, código sanitario y su
+  vencimiento; y por línea de movimiento, **lote y vencimiento**.
+- Reservados (apartados), préstamos, consignación, requisición, alisto,
+  empaque y despacho, y las tiendas en línea.
+- Consultas: existencias, **bajo mínimo**, **rotación**, **valorado**, consumo,
+  movimientos, saldos y resumen.
+
+**Lo que falta, por valor para un comercio.**
+
+1. **Salidas con motivo** —merma, daño, vencido, consumo interno—: hoy lo único
+   que baja el stock es vender, así que una merma se arregla vendiendo de
+   mentira o editando el número.
+2. **El kárdex** por producto: sin él no hay cómo explicar por qué un producto
+   tiene la existencia que tiene.
+3. **La toma física**: contar y aplicar las diferencias como ajuste con motivo.
+4. **El mínimo por producto** —hoy es uno solo para todos, de configuración—
+   y el reporte de lo que está bajo mínimo.
+5. **Existencias por sucursal**: ya hay sucursales y cajas (F6), pero el stock
+   es uno solo por producto. Una cadena necesita saber cuánto hay en cada local
+   y trasladar entre ellos. Es el cambio más grande de la lista.
+6. Reportes: inventario valorado y rotación.
+7. Marca, lote y vencimiento, para quien los necesita (farmacias, alimentos).
+
+**Lo que no conviene traer:** préstamos, consignación, requisición, alisto,
+empaque y despacho, producción y las tiendas en línea: son de otro tipo de
+negocio.
+
+- [ ] **T-1501** Requisitos al spec y diseño al plan, con sus revisores.
+
+      **Verificación:** `spec-reviewer` y `plan-reviewer` sin observaciones.
+- [ ] **T-1502** Salidas con motivo y kárdex (puntos 1 y 2): cada cambio de
+      stock deja un movimiento con antes y después.
+
+      **Verificación:** una venta, una devolución, una entrada y una merma
+      aparecen en el kárdex del producto y la existencia final es la suma.
+- [ ] **T-1503** Toma física (punto 3).
+
+      **Verificación:** contar 8 donde el sistema dice 10 deja un ajuste de −2
+      con su motivo y en el kárdex.
+- [ ] **T-1504** Mínimo por producto y bajo mínimo (punto 4).
+
+      **Verificación:** el reporte lista los que están por debajo de su propio
+      mínimo.
+- [ ] **T-1505** Existencias por sucursal y traslados (punto 5).
+
+      **Verificación:** vender en la sucursal 2 no baja la existencia de la 1, y
+      un traslado mueve las dos.
+- [ ] **T-1506** Valorado y rotación (punto 6).
+
+      **Verificación:** el valorado suma existencia por costo promedio y
+      cuadra con el saldo de inventario de la contabilidad.
+
+- [ ] **T-1507** Marca, y lote y vencimiento por línea de entrada y de salida
+      (punto 7). Lote y vencimiento **se activan por compañía**: quien no los
+      usa no los ve.
+
+      **Verificación:** con lote activado, una entrada con lote y vencimiento
+      aparece en el kárdex y en el reporte de lo que vence; sin activarlo, la
+      pantalla no los pide.
+
+**Decidido con el usuario el 2026-10-03:** entran los siete puntos, con las
+existencias por sucursal (punto 5) y con lote y vencimiento activables por
+compañía. F15 va **primera**: el kárdex y el mínimo por producto los usan F13 y
+F14.
 
 ---
 
@@ -5356,3 +6206,25 @@ y el guardián que los vigila.
       tabla que ya existe, y **ninguna prueba ejecuta las migraciones**. Una
       migración con un error de sintaxis no la caza nadie hasta el día de
       aplicarla. Vale la pena una prueba que las aplique sobre una base vacía.
+- [x] **T-931** La página entera se desplazaba y se llevaba el menú. En el
+      detalle de una venta con el tiquete, el menú quedaba cortado a media
+      pantalla y debajo, fondo vacío. La causa era un `sr-only` —el rótulo
+      invisible del monto en letras—: es `position: absolute`, y como `main`
+      desplazaba sin estar posicionado, el rótulo no quedaba dentro de él sino
+      del documento, y lo estiraba hasta su altura. `main` es `relative` en el
+      POS y en el panel de soporte.
+
+      **Verificación:** `tests/e2e/desplazamiento.spec.ts` recorre las treinta
+      y cuatro pantallas del POS y las cinco del panel con una ventana baja
+      (480 px) y comprueba que el documento no pase de la ventana. Sin el
+      arreglo fallaban el detalle de una venta y la configuración de planilla.
+
+- [x] **T-932** Configuración: «Guardar cambios» volvía siempre a la pestaña
+      Negocio. Guardar recarga la pantalla entera —para que la moneda y el
+      acento lleguen a todo el POS— y la pestaña vivía solo en memoria. Ahora
+      va en la dirección (`?seccion=moneda`), con `replaceState`: sobrevive a
+      la recarga y el servidor ya la pinta abierta.
+
+      **Verificación:** `tests/e2e/configuracion.spec.ts`: guardar desde
+      «Moneda e impuesto» deja abierta esa pestaña; sin pestaña en la
+      dirección, o con una que no existe, abre Negocio.

@@ -14,13 +14,16 @@ from datetime import date
 
 from app.application.ports.clock import Clock
 from app.application.ports.ledger import Ledger, NullLedger
+from app.application.ports.numbering import NumberedDocument
 from app.application.ports.repositories import (
     ProductRepository,
+    SettingsRepository,
     StockEntryRepository,
     SupplierPaymentRepository,
     SupplierRepository,
     UnitOfWork,
 )
+from app.application.use_cases.number_document import SOURCE_PURCHASE, NumberDocument
 from app.application.use_cases.supplier_payment import PaymentRequest, PaySupplier
 from app.domain.errors import (
     AlreadyCancelled,
@@ -30,6 +33,7 @@ from app.domain.errors import (
     LineWithoutProduct,
     PurchaseHasPayments,
 )
+from app.domain.fe_document_type import check_purchase_issuer, purchase_document_type
 from app.domain.ledger import PurchasedDocument, PurchasedLine
 from app.domain.money import Money
 from app.domain.purchases import due_date as fecha_de_vencimiento
@@ -161,6 +165,10 @@ class RegisteredEntry:
     due_date: date | None = None
     #: El abono de una compra de contado, cuando se dijo cómo se pagó.
     id_payment: int | None = None
+    #: La factura electrónica de compra (T-728): '08' y su número, cuando la
+    #: compra fue a un no contribuyente y la compañía la emite.
+    document_type: str | None = None
+    einvoice: NumberedDocument | None = None
 
 
 class RegisterStockEntry:
@@ -174,6 +182,8 @@ class RegisterStockEntry:
         suppliers: SupplierRepository | None = None,
         payer: PaySupplier | None = None,
         ledger: Ledger | None = None,
+        settings: SettingsRepository | None = None,
+        numbering: NumberDocument | None = None,
     ) -> None:
         self._products = products
         self._entries = entries
@@ -184,6 +194,10 @@ class RegisterStockEntry:
         self._suppliers = suppliers
         self._payer = payer
         self._ledger = ledger or NullLedger()
+        # La factura de compra (T-728): sin configuración o sin numeración la
+        # compra entra sin comprobante, como las anteriores a F7.
+        self._settings = settings
+        self._numbering = numbering
 
     def __call__(self, request: EntryRequest) -> RegisteredEntry:
         if not request.lines:
@@ -191,6 +205,29 @@ class RegisterStockEntry:
         check_source(request.source)
 
         proveedor = self._proveedor(request)
+
+        # La factura electrónica de compra (RF-79, RN-87, T-728): nace de
+        # comprarle a un no contribuyente, si la compañía la emite. Se decide y
+        # se prepara el emisor **antes** de la transacción, como en la venta: sin
+        # cédula no hay clave, y eso se dice sin haber tocado existencias.
+        document_type = (
+            purchase_document_type(
+                einvoicing=self._settings.einvoicing_enabled(),
+                enabled=self._settings.document_types(),
+                supplier_identification_type=proveedor.identification_type,
+            )
+            if proveedor is not None and self._settings is not None
+            else None
+        )
+        # El proveedor es el emisor de la factura de compra: sin cédula no hay
+        # comprobante que armar, y se dice ahora y no en la cola.
+        if document_type is not None and proveedor is not None:
+            check_purchase_issuer(proveedor.id, proveedor.identification)
+        emisor = (
+            self._numbering.prepare()
+            if document_type is not None and self._numbering is not None
+            else None
+        )
 
         # Una misma factura cargada dos veces duplica el inventario en silencio,
         # que es justo el error que este caso de uso tiene que hacer imposible.
@@ -277,6 +314,7 @@ class RegisterStockEntry:
                 due_date=vence,
                 subtotal=subtotal,
                 tax=impuesto,
+                document_type=document_type,
             )
 
             # El costo **antes** que el stock, y las dos cosas en el mismo paso
@@ -322,6 +360,21 @@ class RegisterStockEntry:
 
             id_payment = self._abono_de_contado(request, id_entry, total, vence)
 
+            # El número y la clave de la factura de compra, en la misma
+            # transacción que la mercadería (plan §7.2): si algo falla, la serie
+            # 08 no queda con un hueco.
+            comprobante = (
+                self._numbering.number(
+                    emisor,
+                    source_type=SOURCE_PURCHASE,
+                    source_id=id_entry,
+                    document_type=document_type,
+                    issued_at=ahora,
+                )
+                if emisor is not None and self._numbering is not None and document_type
+                else None
+            )
+
             self._uow.commit()
 
         return RegisteredEntry(
@@ -333,6 +386,8 @@ class RegisterStockEntry:
             tax=impuesto,
             due_date=vence,
             id_payment=id_payment,
+            document_type=document_type,
+            einvoice=comprobante,
         )
 
     # ------------------------------------------------------------- compra

@@ -201,6 +201,7 @@ test.describe('F10 de punta a punta', () => {
 		);
 		await page.locator('#form-proveedor input[name="name"]').fill('No debería entrar');
 		await page.locator('button[type="submit"][form="form-proveedor"]').click();
-		await expect(page.locator('body')).toContainText(/no incluye Compras/i);
+		// Desde QA-01 los proveedores son su propio módulo: el aviso nombra ese.
+		await expect(page.locator('body')).toContainText(/no incluye Proveedores/i);
 	});
 });

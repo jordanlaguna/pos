@@ -142,8 +142,9 @@ SOPORTE = {
 #:
 #: El límite se prueba aparte y a propósito, con un plan chico, en
 #: `test_soporte.py::TestElLimiteDelPlan`. −1 es «sin techo» (`domain/limits.py`).
-#: Y **con los tres módulos** (F10). La batería tiene que poder escribir en
-#: compras, contabilidad y planilla; que el plan los incluya se prueba aparte, en
+#: Y **con los módulos que se venden aparte** (F10, QA-01): la base la pone
+#: `bootstrap.py`, y la batería tiene que poder escribir en compras,
+#: proveedores, contabilidad y planilla; que el plan los incluya se prueba aparte, en
 #: `test_modulos.py` y en `test_soporte.py::TestLosModulosDelPlan`, con un plan
 #: que no los tiene.
 PLAN_DE_PRUEBAS = {
@@ -151,7 +152,7 @@ PLAN_DE_PRUEBAS = {
     "plan_max_sucursales": -1,
     "plan_max_terminales": -1,
     "plan_max_usuarios": -1,
-    "plan_modulos": "purchases,accounting,payroll",
+    "plan_modulos": "purchases,suppliers,accounting,payroll",
 }
 
 BACKEND = Path(__file__).resolve().parent.parent

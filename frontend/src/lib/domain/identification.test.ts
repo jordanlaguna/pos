@@ -1,15 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import {
+	FOREIGN,
+	NON_TAXPAYER,
 	identificationTypeFor,
 	identificationTypeName,
+	isForeign,
 	isIdentificationType
 } from './identification';
 
 describe('el tipo de identificación (T-617)', () => {
-	it('son los cuatro de Hacienda', () => {
-		for (const code of ['01', '02', '03', '04']) expect(isIdentificationType(code)).toBe(true);
-		expect(isIdentificationType('05')).toBe(false);
+	it('son los seis de Hacienda', () => {
+		for (const code of ['01', '02', '03', '04', '05', '06']) {
+			expect(isIdentificationType(code)).toBe(true);
+		}
+		expect(isIdentificationType('07')).toBe(false);
 		expect(isIdentificationType(null)).toBe(false);
+	});
+
+	it('el 05 es el extranjero y el 06 el no contribuyente (F7)', () => {
+		expect(FOREIGN).toBe('05');
+		expect(NON_TAXPAYER).toBe('06');
+		expect(identificationTypeName('05')).toBe('Extranjero no domiciliado');
+		expect(identificationTypeName('06')).toBe('No contribuyente');
+		expect(isForeign('05')).toBe(true);
+		for (const otro of ['01', '06', null, undefined, '']) expect(isForeign(otro)).toBe(false);
 	});
 
 	it('la longitud de la cédula deja ver el tipo, como en el backend', () => {

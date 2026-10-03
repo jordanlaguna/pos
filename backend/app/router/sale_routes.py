@@ -5,7 +5,7 @@ from app.database.database import SessionLocal
 from app.schemas.schemas_sales import SaleDetailResponse, SaleRegister, SaleRegisterSuccess, SalesList
 from app.services import crud_sale
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user, require_module
 
 router = APIRouter()
 
@@ -23,6 +23,7 @@ def register_sale(
     sale: SaleRegister,
     db: Session = Depends(get_db),
     current: Sesion = Depends(get_current_user),
+    _modulo: Sesion = Depends(require_module("sales")),
 ):
     # Este endpoint solo transporta (T-110). Las reglas se fueron al caso de
     # uso, y con motivo:

@@ -242,7 +242,15 @@ describe('apiMessage', () => {
 		run_already_exists: { run_id: 3 },
 		run_not_editable: { reason: 'approved' },
 		run_not_approved: { status: 'draft' },
-		rates_missing_for_date: { missing: ['ivm:employee'], on: '2025-12-31' }
+		rates_missing_for_date: { missing: ['ivm:employee'], on: '2025-12-31' },
+		run_not_paid: { run_id: 1, status: 'draft' },
+		settlement_requires_termination: { run_id: 1, employee_id: null },
+		vacation_balance_exceeded: { employee_id: 1, balance: 0.51, requested: 15 },
+		import_has_errors: { errors: [{ sheet: 'employees', row: 3, code: 'invalid_employee' }] },
+		export_data_incomplete: {
+			missing: [{ employee_id: 1, fields: ['insured_number'] }],
+			company: ['employer_number']
+		}
 	};
 
 	it.each(API_CODES.map((code) => [code] as const))('%s tiene frase', (code) => {

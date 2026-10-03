@@ -41,6 +41,12 @@ export interface Ticket {
 	 * ausente vale lo mismo que nulo.
 	 */
 	documentType?: CounterDocumentType | null;
+	/**
+	 * Si el cliente elegido es del extranjero (T-727): al del extranjero se le
+	 * exporta, no se le factura. Lo dice la ficha del cliente al elegirlo; ausente
+	 * en las ventas guardadas antes, y ausente vale «del país».
+	 */
+	clientForeign?: boolean;
 	createdAt: number;
 }
 
@@ -191,10 +197,16 @@ class Cart {
 	 * frecuente no dice nada de lo que quiere el siguiente, y el que llega sin
 	 * elección recibe la sugerencia, que es factura (RN-85).
 	 */
-	setClient(value: string) {
+	setClient(value: string, foreign = false) {
 		this.active.clientId = value;
+		this.active.clientForeign = value !== '' && foreign;
 		this.active.documentType = null;
 		this.save();
+	}
+
+	/** Si el cliente de la venta activa es del extranjero (T-727). */
+	get clientForeign(): boolean {
+		return this.active.clientForeign ?? false;
 	}
 
 	/**
@@ -205,7 +217,12 @@ class Cart {
 	 * Recibe lo encendido en vez de leerlo: el carrito no sabe de configuración.
 	 */
 	documentTypeFor(enabled: readonly string[]): CounterDocumentType | null {
-		return effectiveDocumentType(this.active.documentType, this.active.clientId !== '', enabled);
+		return effectiveDocumentType(
+			this.active.documentType,
+			this.active.clientId !== '',
+			enabled,
+			this.clientForeign
+		);
 	}
 
 	setDocumentType(value: CounterDocumentType) {

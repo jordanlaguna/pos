@@ -83,10 +83,18 @@ un cliente se le pide a su administrador, o se le crea una membresía de verdad
 
 ### Módulos
 
-Compras, contabilidad y planilla no son parte del POS: son **módulos** que un
-plan incluye o no, como ya pasa con la factura electrónica
-(`plans.factura_electronica`). Un abarrotes que solo quiere cobrar no tiene por
-qué ver un libro mayor, y el producto tiene que poder cobrarlos aparte.
+**Cada sección del POS es un módulo** que un plan incluye o no —ventas, caja,
+facturas, devoluciones, reportes, inventario, compras, proveedores,
+contabilidad, planilla, clientes y usuarios—, y **los planes son paquetes** de
+ellos (QA-01, decidido con el usuario el 2026-10-03). Configuración no es un
+módulo: sin ella no hay negocio. Un restaurante no necesita caja ni
+inventario, un abarrotes que solo quiere cobrar no tiene por qué ver un libro
+mayor, y el producto tiene que poder venderlos por separado. Los paquetes de
+fábrica son **Restaurante** (ventas, facturas, clientes, usuarios),
+**Comercio** (más caja, devoluciones, inventario y proveedores), **Comercio con
+compras** (más reportes y compras) y **Completo** (todo). Hasta QA-01 los
+módulos eran solo compras, contabilidad y planilla, y el resto lo tenía todo el
+mundo; los planes que ya existían conservan esas secciones.
 
 **RN-49.** Un módulo se activa **por plan** y se aplica **en el servidor**. Una
 compañía cuyo plan no incluye el módulo recibe un código —no un redirect— en
@@ -244,8 +252,11 @@ el resto. Verificado contra el catálogo de Hacienda el 2026-08-16:
 | Medicamentos uterotónicos | — | 2 % |
 | Libros infantiles impresos | — | 0 % |
 
-**RN-9.** Cada producto lleva su tarifa. La tasa de Configuración pasa a ser
-**el valor por omisión de un producto nuevo**, no la del sistema.
+**RN-9.** Cada producto lleva su tarifa, la de su CABYS. Uno sin tarifa paga
+**la general del IVA, el 13 % de ley**, que **no se configura**: la tasa de
+Configuración se quitó el 2026-10-03 (QA-05) porque con la tarifa por CABYS
+solo servía para equivocarse —un 10 % escrito ahí se cobraba en todo producto
+sin clasificar—.
 **RN-10.** El impuesto de una venta es la **suma de los impuestos de sus
 líneas**, no el subtotal por una tasa.
 **RN-11.** Al asignarle un CABYS a un producto se copia la tarifa del catálogo.
@@ -375,7 +386,12 @@ tiempo a la vista**. Lo que no puede pasar es que se pierda en silencio.
 venta**. El comprobante declara en su clave si se emitió en contingencia, y esa
 clave se imprime y se entrega en el mostrador — o sea que se decide al vender,
 no al transmitir. Se decide por el estado de las transmisiones recientes, no
-preguntándole al cajero.
+preguntándole al cajero. Y solo cuenta que **Hacienda** no haya contestado: una
+falla del propio sistema no es una caída de Hacienda y no se declara como tal.
+Lo que la clave dice en ese caso es «sin internet» (anexo 4.4, nota 3): el
+comprobante se generó electrónicamente y no se pudo transmitir. «Contingencia»
+es otra cosa —el comprobante que sustituye uno físico hecho a mano— y VentaSys
+no la emite.
 
 **RN-44.** El **XML firmado se conserva tal como se envió**, byte por byte. La
 firma cubre esos bytes: regenerarlo produce otra firma y deja de ser el
@@ -899,12 +915,10 @@ sin salida:
 - **Al menos uno de TE y FE.** Con los dos apagados no se podría vender.
 - **La NC no se apaga.** Devolver una venta emitida tiene que pasar por una nota
   de crédito; sin ella, la devolución no tendría respaldo fiscal.
-- **Lo que todavía no tiene flujo se ve pero no se mueve**, con el motivo: la ND
-  hasta que se pueda emitir desde la factura, la FEE hasta que existan la
-  partida arancelaria y la dirección extranjera, la FEC hasta que el proveedor
-  pueda ser «no contribuyente», el REP hasta que exista la venta a crédito.
-  Moverlos antes sería una casilla que promete algo que no pasa. La ND, que nace
-  encendida, queda encendida para cuando llegue su flujo.
+- **Lo que todavía no tiene flujo se ve pero no se mueve**, con el motivo.
+  Desde F7 es solo el REP, hasta que exista la venta a crédito: la ND, la FEE y
+  la FEC ya tienen el suyo. Moverlo antes sería una casilla que promete algo que
+  no pasa.
 
 **RN-89.** **Una nota siempre referencia un comprobante emitido**, y lo que
 decide si hay nota es **el comprobante original, no la configuración de hoy**.
@@ -1076,8 +1090,9 @@ Son los campos sin los cuales hay negocios enteros que no se pueden facturar.
   por el usuario el 2026-09-26: sin venta a crédito no hay saldo del cliente
   donde dejarlas. RN-87, RN-89.
 - **RF-78** Al cobrar a un **cliente del extranjero** se ofrece la **factura de
-  exportación**, y no se emite mientras algún producto de la venta no tenga su
-  partida arancelaria o el cliente su dirección extranjera: se dice cuál falta.
+  exportación**, y no se emite mientras alguna **mercancía** de la venta no tenga
+  su partida arancelaria o el cliente su dirección extranjera: se dice cuál
+  falta. Los servicios no llevan partida, y por eso el XSD la deja opcional.
   RN-87.
 - **RF-79** Registrar una compra a un proveedor **no contribuyente** emite la
   **factura electrónica de compra**, con el negocio como comprador. RN-87.

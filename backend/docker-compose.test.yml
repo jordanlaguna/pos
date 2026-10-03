@@ -124,6 +124,24 @@ services:
     networks:
       - test-net
 
+  # Una Hacienda de mentira (tests/stub_hacienda.py): token, 202 y veredicto,
+  # sin internet. Es lo que permite ver un comprobante recorrer la cola entera
+  # dentro del contenedor, con Vault y MinIO de verdad. La API le habla porque
+  # los overrides de abajo la apuntan acá (T-613).
+  hacienda-stub:
+    image: python:3.11-slim
+    command: ["python", "/stub/stub_hacienda.py", "8080"]
+    volumes:
+      - ./tests/stub_hacienda.py:/stub/stub_hacienda.py:ro
+    networks:
+      - test-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 3s
+
   fastapi:
     build:
       context: .
@@ -149,6 +167,13 @@ services:
       FE_STORAGE_SECRET_KEY: testtest
       FE_VAULT_ADDR: http://vault:8200
       FE_VAULT_TOKEN: test-root-token
+      # Hacienda es la de mentira (F7). Los dos ambientes caen en el mismo stub:
+      # las pruebas no distinguen sandbox de producción por la URL.
+      FE_HACIENDA_API_URL: http://hacienda-stub:8080/recepcion/v1/
+      FE_HACIENDA_IDP_URL: http://hacienda-stub:8080/token
+      # La cola despierta cada segundo para que una prueba vea el recorrido
+      # entero sin esperar los cinco de fábrica.
+      FE_WORKER_INTERVAL_SECONDS: "1"
     ports:
       # 8002 para no chocar con el 8001 del stack de trabajo, que puede estar
       # levantado al mismo tiempo.
@@ -164,6 +189,8 @@ services:
         condition: service_healthy
       vault-init:
         condition: service_completed_successfully
+      hacienda-stub:
+        condition: service_healthy
     networks:
       - test-net
 

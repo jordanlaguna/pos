@@ -14,21 +14,28 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.schemas.schemas_payroll import (
     ActionIn,
     ActionOut,
     ActionUpdate,
+    AguinaldoIn,
     CancelIn,
+    CcssReportOut,
     ContractIn,
     ContractOut,
     EmployeeIn,
     EmployeeOut,
     EmployeeUpdate,
+    ImportIn,
+    ImportResultOut,
+    IncomeTaxReportOut,
     PayrollRatesOut,
     PayrollSettingsIn,
     PayrollSettingsOut,
+    PayslipOut,
     PolicyIn,
     PolicyOut,
     PolicyUpdate,
@@ -44,6 +51,7 @@ from app.schemas.schemas_payroll import (
     SuspendIn,
     TerminatedOut,
     TerminationIn,
+    VacationsOut,
 )
 from app.services import crud_payroll, crud_payroll_rates
 from app.utils import clock
@@ -193,8 +201,9 @@ def crear_empleado(
     admin: Sesion = Depends(require_admin),
     _: None = Depends(require_module("payroll")),
 ):
-    """El alta, con lo que piden la CCSS y el INS (RF-55, RN-72). Sin contrato
-    todavía: ese va por `POST /payroll/contracts`."""
+    """El alta, con lo que piden la CCSS y el INS (RF-55, RN-72), y su contrato
+    si viene: los dos en la misma transacción, rigiendo desde el ingreso. Los
+    contratos que siguen van por `POST /payroll/contracts`."""
     return crud_payroll.crear_empleado(db, payload)
 
 
@@ -325,10 +334,40 @@ def crear_corrida(
     return crud_payroll.crear_corrida(db, payload, user_id=admin.user.id_user)
 
 
+@router.post("/runs/aguinaldo", response_model=RunDetailOut)
+def crear_aguinaldo(
+    payload: AguinaldoIn,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _: None = Depends(require_module("payroll")),
+):
+    """La corrida de aguinaldo del año, para toda la compañía (RF-59, RN-69)."""
+    return crud_payroll.crear_aguinaldo(db, payload, user_id=admin.user.id_user)
+
+
 @router.get("/runs/{run_id}", response_model=RunDetailOut)
 def corrida(run_id: int, db: Session = Depends(get_db), admin: Sesion = Depends(require_admin)):
     """Las líneas y los rubros congelados (RN-66)."""
     return crud_payroll.corrida(db, run_id)
+
+
+@router.get("/runs/{run_id}/payslips/{employee_id}", response_model=PayslipOut)
+def boleta(
+    run_id: int, employee_id: int, db: Session = Depends(get_db), admin: Sesion = Depends(require_admin)
+):
+    """La boleta, de los rubros congelados: reimprimirla da lo mismo (RF-58, RN-66)."""
+    return crud_payroll.boleta(db, run_id, employee_id)
+
+
+@router.post("/runs/{run_id}/adjust", response_model=RunDetailOut)
+def ajustar(
+    run_id: int,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _: None = Depends(require_module("payroll")),
+):
+    """Una corrida de ajuste sobre esta, que tiene que estar pagada (RF-63, RN-68)."""
+    return crud_payroll.ajustar(db, run_id, user_id=admin.user.id_user)
 
 
 @router.post("/runs/{run_id}/calculate", response_model=RunDetailOut)
@@ -362,3 +401,71 @@ def pagar(
 ):
     """Pagada, con fecha del servidor, bitácora y el asiento si hay libro (RN-68, RN-75)."""
     return crud_payroll.pagar(db, run_id, sesion=admin, ip=_ip(request))
+
+
+# --------------------------------------------------------- vacaciones (T-1209)
+
+
+@router.get("/vacations/{employee_id}", response_model=VacationsOut)
+def vacaciones(employee_id: int, db: Session = Depends(get_db), admin: Sesion = Depends(require_admin)):
+    """El saldo y los movimientos de un empleado (RF-60, RN-70)."""
+    return crud_payroll.vacaciones(db, employee_id)
+
+
+# -------------------------------------------------------- importación (T-1220)
+
+
+@router.post("/import", response_model=ImportResultOut)
+def importar(
+    payload: ImportIn,
+    dry_run: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _: None = Depends(require_module("payroll")),
+):
+    """Las filas ya leídas del Excel, con ensayo (RF-86, RN-97). Con `dry_run`
+    responde fila por fila sin escribir; sin él, entra todo o nada."""
+    return crud_payroll.importar(db, payload, dry_run=dry_run, user_id=admin.user.id_user)
+
+
+# ------------------------------------------ los archivos del mes (T-1211, T-1219)
+
+
+@router.get("/exports/ccss", response_model=CcssReportOut)
+def informe_ccss(
+    year: int = Query(ge=2000, le=2100),
+    month: int = Query(ge=1, le=12),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """Lo que el formulario de Autogestión de la CCSS pide del mes, por
+    trabajador (RF-62, RN-96). Sale de las corridas pagadas."""
+    return crud_payroll.informe_ccss(db, year, month)
+
+
+@router.get("/exports/income-tax", response_model=IncomeTaxReportOut)
+def resumen_renta(
+    year: int = Query(ge=2000, le=2100),
+    month: int = Query(ge=1, le=12),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """La renta retenida del mes: la suma de los rubros de las corridas pagadas (RF-62)."""
+    return crud_payroll.resumen_renta(db, year, month)
+
+
+@router.get("/exports/ins")
+def archivo_ins(
+    year: int = Query(ge=2000, le=2100),
+    month: int = Query(ge=1, le=12),
+    policy: int = Query(...),
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """El archivo de texto de una póliza para RT-Virtual (RF-85, RN-96)."""
+    archivo = crud_payroll.archivo_ins(db, year, month, policy)
+    return Response(
+        content=archivo.encoded,
+        media_type="text/plain; charset=iso-8859-1",
+        headers={"Content-Disposition": f'attachment; filename="{archivo.filename}"'},
+    )

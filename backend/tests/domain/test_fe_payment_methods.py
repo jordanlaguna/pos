@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.domain.errors import InvalidSalePaymentMethod
+from app.domain.errors import InvalidPayment, InvalidSalePaymentMethod
 from app.domain.fe_payment_methods import (
+    FROM_PURCHASE_METHOD,
+    OTHER_DETAIL,
+    PURCHASE_SIN_CODIGO,
+    code_for_purchase,
     CARD,
     CASH,
     CODES,
@@ -20,6 +24,7 @@ from app.domain.fe_payment_methods import (
     check_code,
     code_for,
 )
+from app.domain.purchases import PAYMENT_METHODS as PURCHASE_METHODS
 from app.domain.sale import CASH_METHOD, PAYMENT_METHODS
 
 
@@ -56,3 +61,32 @@ def test_los_codigos_se_comprueban_contra_la_nota():
     assert check_code("06") == "06"
     with pytest.raises(InvalidSalePaymentMethod):
         check_code("08")
+
+
+# ------------------------------------------------- el abono de una compra (T-728)
+
+
+def test_ningun_medio_de_abono_de_una_compra_se_queda_sin_codigo():
+    assert PURCHASE_SIN_CODIGO == ()
+    assert set(FROM_PURCHASE_METHOD) == set(PURCHASE_METHODS)
+
+
+def test_el_efectivo_y_la_transferencia_van_con_su_codigo_y_sin_detalle():
+    assert code_for_purchase("cash") == ("01", "")
+    assert code_for_purchase("transfer") == ("04", "")
+
+
+def test_otros_es_el_99_y_dice_cual():
+    # El 99 exige `MedioPagoOtros`; va el nombre del catálogo.
+    assert code_for_purchase("other") == ("99", OTHER_DETAIL)
+    assert OTHER_DETAIL == "Otros"
+
+
+def test_sin_abono_registrado_una_compra_de_contado_es_efectivo():
+    assert code_for_purchase(None) == ("01", "")
+
+
+@pytest.mark.parametrize("malo", ["efectivo", "card", "", 1])
+def test_un_metodo_que_no_es_de_compras_es_un_dato_roto(malo):
+    with pytest.raises(InvalidPayment):
+        code_for_purchase(malo)

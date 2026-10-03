@@ -5,6 +5,7 @@
 	import Modal from '$lib/ui/components/Modal.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import DocumentSheet from '$lib/ui/components/documents/DocumentSheet.svelte';
+	import FeExpediente from '$lib/ui/components/FeExpediente.svelte';
 	import { formatMoney } from '$lib/domain/money';
 	import { formatDateTime } from '$lib/ui/format';
 	import { businessName } from '$lib/domain/settings';
@@ -80,6 +81,35 @@
 	</a>
 
 	<div class="flex flex-wrap gap-2">
+		<!--
+			Los dos XML del expediente (RF-34, T-721), primero: cuando Hacienda
+			rechaza, lo primero que alguien quiere es lo que se mandó y lo que
+			contestaron. Apagados hasta que existan, y diciendo por qué.
+		-->
+		{#if sale.einvoice?.id}
+			{#if sale.einvoice.has_xml}
+				<a href="/facturas/{sale.id}/xml" class="btn btn-ghost" data-xml-firmado>
+					<Icon name="download" size={15} />
+					{m.invoice_xml()}
+				</a>
+			{:else}
+				<button type="button" class="btn btn-ghost" disabled title={m.invoice_xml_pending()}>
+					<Icon name="download" size={15} />
+					{m.invoice_xml()}
+				</button>
+			{/if}
+			{#if sale.einvoice.has_response}
+				<a href="/facturas/{sale.id}/respuesta" class="btn btn-ghost" data-respuesta-hacienda>
+					<Icon name="download" size={15} />
+					{m.invoice_response()}
+				</a>
+			{:else}
+				<button type="button" class="btn btn-ghost" disabled title={m.invoice_response_pending()}>
+					<Icon name="download" size={15} />
+					{m.invoice_response()}
+				</button>
+			{/if}
+		{/if}
 		{#if !isFullyReturned}
 			<a href="/devoluciones?venta={sale.id}" class="btn btn-ghost">
 				<Icon name="undo" size={15} />
@@ -110,6 +140,8 @@
 		</button>
 	</div>
 </div>
+
+<FeExpediente document={sale.einvoice} file={data.expediente} canRetry={data.user?.role === 'admin'} />
 
 {#if data.saleReturns.length}
 	<div
@@ -142,7 +174,7 @@
 {/if}
 
 {#if data.saleNotes.length}
-	<div class="no-print mb-4 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-sm">
+	<div class="no-print mb-4 rounded-lg border border-[var(--border)] bg-[var(--surface-sunken)] p-3 text-sm">
 		<p class="flex items-center gap-2 font-semibold text-[var(--text)]">
 			<Icon name="edit" size={15} />
 			{m.invoice_notes_list()}

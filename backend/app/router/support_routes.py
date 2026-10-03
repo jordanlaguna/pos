@@ -33,9 +33,10 @@ from app.domain.fe_issuer import check_issuer_identity
 from app.domain.locations import is_blank, location_from_settings
 from app.domain.limits import hay_lugar
 from app.domain.locale import DEFAULT_LOCALE, effective_locale, normalize_locale
-from app.domain.modules import Modules
+from app.domain.modules import MODULES, Modules
 from app.domain.subscription import ESTADOS
 from app.models.model_user import User
+from app.schemas.schemas_auth import LocaleChoice, LocaleResponse
 from app.schemas.schemas_payroll import PayrollRateIn, PayrollRateOut, TaxBracketsIn, TaxBracketsOut
 from app.schemas.schemas_support import (
     AuditLine,
@@ -83,9 +84,7 @@ def _plan_out(plan) -> PlanOut | None:
         max_terminales=plan.max_terminales,
         max_usuarios=plan.max_usuarios,
         factura_electronica=bool(plan.factura_electronica),
-        **Modules(
-            purchases=plan.purchases, accounting=plan.accounting, payroll=plan.payroll
-        ).as_dict(),
+        **Modules(**{nombre: bool(getattr(plan, nombre)) for nombre in MODULES}).as_dict(),
     )
 
 
@@ -122,6 +121,42 @@ def quien_soy(db: Session = Depends(get_db), soporte: User = Depends(require_sop
         name=crud_user.display_name(db, soporte),
         is_support=True,
         locale=effective_locale(soporte.locale, None),
+    )
+
+
+@router.post("/locale", response_model=LocaleResponse)
+def elegir_idioma(
+    datos: LocaleChoice,
+    request: Request,
+    db: Session = Depends(get_db),
+    soporte: User = Depends(require_soporte),
+):
+    """El idioma del panel (QA-02), como `/auth/locale` en el POS.
+
+    Hace falta uno propio porque aquel arma un token **de sesión**, con
+    compañía, y el de soporte no la tiene (RN-4). Emite un token de soporte
+    nuevo: el idioma vive en el token, y sin re-emitirlo el cambio no se vería
+    hasta el siguiente login. Nulo no tiene compañía de la que heredar, así que
+    es español.
+    """
+    elegido = None if datos.locale is None else normalize_locale(datos.locale)
+    if datos.locale is not None and elegido is None:
+        raise api_error(400, "unsupported_locale", locale=datos.locale)
+
+    soporte.locale = elegido
+    token = crud_session.token_de_soporte(soporte)
+    efectivo = effective_locale(elegido, None)
+    crud_membership.registrar(
+        db,
+        user_id=soporte.id_user,
+        company_id=None,
+        accion="idioma_usuario",
+        detalle=f"{elegido or 'hereda'} → {efectivo}",
+        ip=_ip(request),
+    )
+    db.commit()
+    return LocaleResponse(
+        access_token=token, locale=efectivo, user_locale=elegido, document_locale=DEFAULT_LOCALE
     )
 
 

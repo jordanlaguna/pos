@@ -3,8 +3,13 @@ from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
-from app.domain.errors import IdentificationTypeRequired, InvalidIdentificationType
+from app.domain.errors import (
+    IdentificationTypeRequired,
+    InvalidForeignAddress,
+    InvalidIdentificationType,
+)
 from app.domain.fe_exemptions import Exemption, InvalidExemption
+from app.domain.fe_export import normalize_foreign_address
 from app.domain.hacienda import check_identification_type, client_identification_type
 from app.models.model_client import Client
 from app.schemas.schemas_clients import ClientRegister
@@ -101,6 +106,15 @@ def revisar_exoneracion(datos: dict) -> dict:
     }
 
 
+def _senas_extranjeras(valor: object) -> str | None:
+    """La dirección de un cliente del extranjero (RF-78), como la guarda el
+    dominio, o el «no» con su código."""
+    try:
+        return normalize_foreign_address(valor)
+    except InvalidForeignAddress as e:
+        raise api_error(400, "invalid_foreign_address", max_length=e.max_length) from None
+
+
 def _tipo(requested: object, identification: str) -> str:
     """El tipo de identificación con que se guarda (T-617), o el «no» con su código."""
     try:
@@ -123,6 +137,7 @@ def create_client(db: Session, client: ClientRegister):
         email=client.email,
         telephone=client.telephone,
         address=client.address,
+        foreign_address=_senas_extranjeras(client.foreign_address),
         register_date=client.register_date,
         **revisar_exoneracion(client.model_dump(exclude_unset=True)),
     )
@@ -162,6 +177,12 @@ def update_client_information(db: Session, id_client: int, client_data: dict):
             raise api_error(
                 400, "invalid_identification_type", identification_type=str(tipo)
             ) from None
+
+    # Las señas extranjeras se ponen y se quitan con el campo (T-727): en
+    # blanco es «ya no», no «no lo toqué», porque es lo que manda la ficha al
+    # borrarlas.
+    if "foreign_address" in client_data:
+        db_client.foreign_address = _senas_extranjeras(client_data.pop("foreign_address"))
 
     for key, value in client_data.items():
         if key in CAMPOS_EXONERACION:

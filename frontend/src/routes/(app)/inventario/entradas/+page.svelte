@@ -6,9 +6,12 @@
 	import PageHeader from '$lib/ui/components/PageHeader.svelte';
 	import Modal from '$lib/ui/components/Modal.svelte';
 	import EmptyState from '$lib/ui/components/EmptyState.svelte';
+	import FeExpediente from '$lib/ui/components/FeExpediente.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import { formatMoney } from '$lib/domain/money';
+	import { knownState } from '$lib/domain/transmission';
 	import { formatDate, formatDateTime, formatInt } from '$lib/ui/format';
+	import { documentTypeLabel } from '$lib/ui/messages';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { StockEntry } from '$lib/domain/types';
 	import type { PageData } from './$types';
@@ -33,6 +36,21 @@
 	$effect(() => {
 		if (anular === null) motivo = '';
 	});
+
+	// La lista de detenidos de Facturas llega acá con `?entrada=`: se abre esa
+	// compra directo, que es donde está su expediente (T-728).
+	$effect(() => {
+		const pedida = page.url.searchParams.get('entrada');
+		if (pedida) detalle = data.entries.find((e) => String(e.id) === pedida) ?? null;
+	});
+
+	/** El estado ante Hacienda de la factura de compra, para su insignia. */
+	function claseHacienda(state: string): string {
+		if (state === 'accepted') return 'bg-[var(--positive-bg)] text-[var(--positive)]';
+		if (state === 'rejected' || state === 'stopped')
+			return 'bg-[var(--negative-bg)] text-[var(--negative)]';
+		return 'bg-[var(--surface-sunken)] text-[var(--text-muted)]';
+	}
 
 	/**
 	 * El rótulo y el icono de cada origen.
@@ -122,7 +140,21 @@
 					<tr class:opacity-60={entry.status === 'anulada'}>
 						<td class="whitespace-nowrap text-xs">{formatDateTime(entry.created_at)}</td>
 						<td class="max-w-[14rem] truncate">{entry.supplier ?? '—'}</td>
-						<td class="font-mono text-xs">{entry.document_number ?? '—'}</td>
+						<td class="font-mono text-xs">
+							{entry.document_number ?? '—'}
+							{#if entry.document_type}
+								<!-- La factura de compra que emitió el negocio (T-728), con su
+								     estado ante Hacienda: es lo que se busca en esta lista
+								     cuando algo se detuvo. -->
+								{@const estado = knownState(entry.einvoice?.status)}
+								<span
+									class="badge mt-1 block w-fit font-sans {claseHacienda(estado)}"
+									data-hacienda={estado}
+								>
+									{documentTypeLabel(entry.document_type)} · {m.invoice_state({ state: estado })}
+								</span>
+							{/if}
+						</td>
 						<td>
 							<span class="badge bg-[var(--surface-sunken)] text-[var(--text-muted)]">
 								<Icon name={icono} size={11} />
@@ -227,6 +259,34 @@
 			<p class="mb-4 rounded-lg bg-[var(--surface-sunken)] p-3 text-sm text-[var(--text-muted)]">
 				{detalle.notes}
 			</p>
+		{/if}
+
+		{#if detalle.document_type && detalle.einvoice}
+			<!-- La factura electrónica de compra (T-728): el negocio la emitió como
+			     comprador, y acá está su número, sus dos archivos y su recorrido. -->
+			<div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
+				<span class="font-semibold text-[var(--text)]">
+					{documentTypeLabel(detalle.document_type)}
+				</span>
+				<span class="font-mono text-xs text-[var(--text-muted)]">{detalle.einvoice.consecutive}</span>
+				{#if detalle.einvoice.has_xml}
+					<a href="/inventario/entradas/{detalle.id}/xml" class="btn btn-ghost py-1 text-xs" data-xml-firmado>
+						<Icon name="download" size={13} />
+						{m.invoice_xml()}
+					</a>
+				{/if}
+				{#if detalle.einvoice.has_response}
+					<a
+						href="/inventario/entradas/{detalle.id}/respuesta"
+						class="btn btn-ghost py-1 text-xs"
+						data-respuesta-hacienda
+					>
+						<Icon name="download" size={13} />
+						{m.invoice_response()}
+					</a>
+				{/if}
+			</div>
+			<FeExpediente document={detalle.einvoice} file={data.expedientes[detalle.id] ?? null} canRetry />
 		{/if}
 
 		<div class="table-wrap">

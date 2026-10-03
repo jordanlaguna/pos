@@ -7,7 +7,7 @@
 	import Field from '$lib/ui/components/Field.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import EmptyState from '$lib/ui/components/EmptyState.svelte';
-	import { quickCash, saleNumber } from '$lib/domain/cart';
+	import { quickCash } from '$lib/domain/cart';
 	import { cart } from '$lib/ui/stores/cart.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import {
@@ -21,7 +21,8 @@
 	} from '$lib/domain/money';
 	import { PAYMENT_METHODS, type Product } from '$lib/domain/types';
 	import { buildTree, withDescendants } from '$lib/domain/categories';
-	import { COUNTER_TYPES, INVOICE } from '$lib/domain/documentType';
+	import { COUNTER_TYPES, EXPORT_INVOICE, INVOICE } from '$lib/domain/documentType';
+	import { isForeign } from '$lib/domain/identification';
 	import { m } from '$lib/paraglide/messages.js';
 	import { cartMessage, documentTypeLabel, paymentLabel } from '$lib/ui/messages';
 	import type { ActionData, PageData } from './$types';
@@ -41,7 +42,6 @@
 
 	let paymentMethod = $state<string>(PAYMENT_METHODS[0]);
 	let cashInput = $state('');
-	let currentSaleNumber = $state('');
 
 	const totals = $derived(cart.totals);
 	const hasCashSession = $derived(data.cashSession != null);
@@ -55,8 +55,26 @@
 	const einvoicing = $derived(data.settings.eInvoicing.enabled);
 	/** Lo que la compañía emite (RN-88): el selector ofrece solo eso. */
 	const enabledTypes = $derived(data.settings.eInvoicing.documentTypes);
-	const counterTypes = $derived(COUNTER_TYPES.filter((tipo) => enabledTypes.includes(tipo)));
+	/**
+	 * Si el cliente de la venta es del extranjero (RN-87, T-727): a él no se le
+	 * ofrece la factura sino la de exportación, y al del país al revés. El
+	 * tiquete se le ofrece a cualquiera.
+	 */
+	const clientForeign = $derived(cart.clientForeign);
+	const counterTypes = $derived(
+		COUNTER_TYPES.filter(
+			(tipo) =>
+				enabledTypes.includes(tipo) &&
+				(tipo !== EXPORT_INVOICE || clientForeign) &&
+				(tipo !== INVOICE || !clientForeign)
+		)
+	);
 	const documentType = $derived(einvoicing ? cart.documentTypeFor(enabledTypes) : null);
+	/** La factura y la de exportación llevan receptor; el tiquete no. */
+	const conReceptor = (tipo: string | null) => tipo === INVOICE || tipo === EXPORT_INVOICE;
+	/** Lo que dice la ficha del cliente elegido: el carrito no conoce la lista. */
+	const esExtranjero = (id: string) =>
+		isForeign(data.clients.find((c) => String(c.id_client) === id)?.identification_type);
 	const documentName = $derived(documentTypeLabel(documentType));
 	/** Solo factura y sin cliente: no hay qué emitir hasta elegir uno. */
 	const needsClient = $derived(einvoicing && documentType === null);
@@ -176,7 +194,6 @@
 			cashOpen = true;
 			return;
 		}
-		currentSaleNumber = saleNumber(new Date());
 		paymentMethod = PAYMENT_METHODS[0];
 		cashInput = String(totals.total.toFixed(2));
 		paymentOpen = true;
@@ -676,7 +693,7 @@
 					<span class="text-[var(--text-subtle)]">{m.sales_document_type()}</span>
 					{#if documentName}
 						<span class="flex items-center gap-1.5 font-semibold text-[var(--text)]">
-							<Icon name={documentType === INVOICE ? 'idcard' : 'receipt'} size={14} />
+							<Icon name={conReceptor(documentType) ? 'idcard' : 'receipt'} size={14} />
 							{documentName}
 						</span>
 					{:else}
@@ -704,9 +721,7 @@
 <Modal
 	open={paymentOpen}
 	title={m.sales_charge_sale()}
-	description={einvoicing && documentName
-		? m.sales_document_number({ document: documentName, number: currentSaleNumber })
-		: m.sales_invoice_number({ number: currentSaleNumber })}
+	description={einvoicing && documentName ? documentName : undefined}
 	busy={submitting}
 	onclose={() => (paymentOpen = false)}
 >
@@ -724,7 +739,6 @@
 		})}
 		class="space-y-4"
 	>
-		<input type="hidden" name="sale_number" value={currentSaleNumber} />
 		<input
 			type="hidden"
 			name="lines"
@@ -816,7 +830,7 @@
 				id="client-select"
 				name="client_id"
 				value={cart.clientId}
-				onchange={(e) => cart.setClient(e.currentTarget.value)}
+				onchange={(e) => cart.setClient(e.currentTarget.value, esExtranjero(e.currentTarget.value))}
 				class="input"
 			>
 				<option value="">{m.sales_client_walk_in()}</option>
@@ -850,7 +864,7 @@
 				<legend class="label">{m.sales_document_type()}</legend>
 				<div class="grid gap-2 {counterTypes.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}">
 					{#each counterTypes as tipo (tipo)}
-						{@const bloqueado = tipo === INVOICE && !cart.clientId}
+						{@const bloqueado = conReceptor(tipo) && !cart.clientId}
 						<label
 							class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors {documentType ===
 							tipo
@@ -868,7 +882,7 @@
 								onchange={() => cart.setDocumentType(tipo)}
 								class="sr-only"
 							/>
-							<Icon name={tipo === INVOICE ? 'idcard' : 'receipt'} size={15} />
+							<Icon name={conReceptor(tipo) ? 'idcard' : 'receipt'} size={15} />
 							{documentTypeLabel(tipo)}
 						</label>
 					{/each}
@@ -877,6 +891,8 @@
 					<p class="mt-1.5 text-xs font-semibold text-[var(--warning)]">
 						{m.sales_only_invoices_needs_client()}
 					</p>
+				{:else if clientForeign}
+					<p class="mt-1.5 text-xs text-[var(--text-subtle)]">{m.sales_export_client()}</p>
 				{:else if !cart.clientId && enabledTypes.includes(INVOICE)}
 					<p class="mt-1.5 text-xs text-[var(--text-subtle)]">{m.sales_invoice_needs_client()}</p>
 				{/if}

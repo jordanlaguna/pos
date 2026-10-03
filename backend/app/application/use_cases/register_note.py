@@ -40,7 +40,7 @@ from app.domain.fe_notes import (
 from app.domain.ledger import ReturnDocument, SoldDocument, SoldLine
 from app.domain.money import Money
 from app.domain.sale import check_payment_method
-from app.domain.tax import TaxRate
+from app.domain.tax import GENERAL_RATE, TaxRate
 
 
 class EmptyNote(DomainError):
@@ -158,7 +158,7 @@ class RegisterAmountNote:
         # La tarifa del encabezado, para las ventas anteriores a la 006, que no la
         # tienen en la línea y llevan una sola (igual que la devolución).
         del_encabezado = TaxRate.of_sale(
-            Money(venta.subtotal), Money(venta.tax), default=self._settings.tax_rate()
+            Money(venta.subtotal), Money(venta.tax), default=GENERAL_RATE
         )
 
         lineas: list[NoteLine] = []

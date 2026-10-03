@@ -73,8 +73,7 @@ class Mundo:
         self.libro = LibroEspia()
         self.uow = FakeUnitOfWork()
         self.reloj = FixedClock(AHORA)
-        self.ajustes = FakeSettingsRepository(
-            TRECE, einvoicing=True, **({"document_types": encendidos} if encendidos else {})
+        self.ajustes = FakeSettingsRepository(einvoicing=True, **({"document_types": encendidos} if encendidos else {})
         )
         self.productos = FakeProductRepository(
             [FakeProduct(1, "Arroz", Money(1000), stock=10), FakeProduct(2, "Café", Money(4250), stock=10)]
@@ -115,7 +114,6 @@ class Mundo:
             returns=self.devoluciones,
             notes=self.notas,
             products=self.productos,
-            settings=self.ajustes,
             uow=self.uow,
             clock=self.reloj,
         )

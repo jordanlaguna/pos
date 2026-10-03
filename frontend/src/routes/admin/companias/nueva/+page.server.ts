@@ -3,7 +3,7 @@ import { api } from '$lib/server/api';
 import { requireSoporte } from '$lib/server/auth';
 import { formError, Validator } from '$lib/application/validation';
 import { locales } from '$lib/paraglide/runtime.js';
-import type { NewCompanyResult, Plan } from '$lib/domain/types';
+import type { NewCompanyResult, Plan, SupportCompany } from '$lib/domain/types';
 import { F } from '$lib/ui/fields';
 import { initialDocumentTexts } from '$lib/ui/documents';
 import { ID_TYPES } from '$lib/domain/settings';
@@ -35,7 +35,10 @@ const DIAS_DE_PRUEBA = 30;
 export const load: PageServerLoad = async ({ locals, url }) => {
 	requireSoporte(locals, url.pathname);
 
-	const plans = await api<Plan[]>('/support/plans', { token: locals.token });
+	const [plans, companias] = await Promise.all([
+		api<Plan[]>('/support/plans', { token: locals.token }),
+		api<SupportCompany[]>('/support/companies', { token: locals.token })
+	]);
 
 	/*
 	 * La fecha que propone el formulario la calcula el **servidor**.
@@ -51,6 +54,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	return {
 		plans,
+		// Solo el par: es lo que hace falta para proponer la numeración (QA-04).
+		pares: companias.map(({ afiliado, compania }) => ({ afiliado, compania })),
 		estados: ESTADOS_AL_CREAR,
 		// La lista sale de Paraglide y no de una constante escrita a mano: es la de
 		// los catálogos que de verdad se compilaron, así que no puede quedar vieja.

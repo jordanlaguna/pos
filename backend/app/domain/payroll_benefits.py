@@ -28,6 +28,7 @@ from typing import Iterable, Sequence
 
 from .money import Money
 from .payroll import EARNING, PayItem
+from .payroll_actions import TAXABLE
 from .payroll_calendar import Period
 
 RESIGNATION = "resignation"
@@ -57,6 +58,29 @@ VACATION_CYCLE_DAYS = Decimal(350)
 
 DAYS_IN_MONTH = Decimal(30)
 
+#: Los rubros que dejan el aguinaldo y la liquidación. Son devengos sin cargas
+#: ni renta: el aguinaldo está exento (Ley 2412) y el preaviso y la cesantía son
+#: indemnizaciones, no salario.
+AGUINALDO = "aguinaldo"
+NOTICE = "notice"
+SEVERANCE = "severance"
+VACATION_PAYOUT = "vacation_payout"
+
+#: Lo que cuenta como **salario devengado** para el aguinaldo y para el promedio
+#: de la liquidación: lo mismo que paga renta. El subsidio de una incapacidad
+#: no es salario (MTSS, DAJ-AE-201-12) y por eso no entra; la ausencia sin goce
+#: entra en negativo porque rebaja lo ganado.
+EARNED_CONCEPTS = TAXABLE
+
+#: Los movimientos de vacaciones (RN-70). El saldo es su suma con signo: lo de
+#: apertura y lo acumulado suman; lo disfrutado y lo pagado restan.
+VACATION_OPENING = "opening"
+VACATION_ACCRUAL = "accrual"
+VACATION_TAKEN = "taken"
+VACATION_PAID = "paid"
+VACATION_KINDS: tuple[str, ...] = (VACATION_OPENING, VACATION_ACCRUAL, VACATION_TAKEN, VACATION_PAID)
+_VACATION_SIGN = {VACATION_OPENING: 1, VACATION_ACCRUAL: 1, VACATION_TAKEN: -1, VACATION_PAID: -1}
+
 
 def aguinaldo_period(year: int) -> Period:
     """Del 1 de diciembre del año anterior al 30 de noviembre."""
@@ -73,9 +97,89 @@ def aguinaldo(earned: Iterable[Money]) -> Money:
     return Money(Money.sum(earned).amount / 12)
 
 
-def aguinaldo_item(amount: Money) -> PayItem:
-    """El único rubro de una corrida de aguinaldo: sin CCSS y sin renta."""
-    return PayItem("aguinaldo", EARNING, amount, None, amount)
+def aguinaldo_item(amount: Money, *, earned: Money | None = None) -> PayItem:
+    """El único rubro de una corrida de aguinaldo: sin CCSS y sin renta.
+
+    La base es lo devengado que lo respalda (RF-59), para que la boleta diga de
+    dónde salió; si no se da, el monto mismo.
+    """
+    return PayItem(AGUINALDO, EARNING, amount if earned is None else earned, None, amount)
+
+
+def aguinaldo_period_containing(day: date) -> Period:
+    """El periodo de aguinaldo en que cae un día: el que cierra el 30 de noviembre
+    siguiente. Un día de diciembre ya es del aguinaldo del año que viene."""
+    return aguinaldo_period(day.year + 1 if day.month == 12 else day.year)
+
+
+def month_of(day: date) -> date:
+    """El primer día del mes de una fecha, que es como se guarda un mes de apertura."""
+    return day.replace(day=1)
+
+
+def _previous_month(first_day: date) -> date:
+    return (first_day - timedelta(days=1)).replace(day=1)
+
+
+def average_window(terminated_on: date) -> Period:
+    """Los seis meses calendario **anteriores** al de la salida (art. 30).
+
+    El mes de la salida no entra: está incompleto, y promediarlo rebajaría la
+    liquidación de quien se fue el día cinco.
+    """
+    primero = month_of(terminated_on)
+    desde = primero
+    for _ in range(6):
+        desde = _previous_month(desde)
+    return Period(desde, primero - timedelta(days=1))
+
+
+def by_month(earned: Iterable[tuple[date, Money]]) -> list[Money]:
+    """Lo devengado agrupado por mes calendario, del más viejo al más nuevo.
+
+    Recibe pares `(fecha, monto)` —el corte de una corrida pagada o el mes de
+    apertura— y devuelve un monto por mes **con algo**: un mes sin corridas no
+    es un mes de cero, es un mes que no cuenta (`average_salary` promedia los
+    que haya).
+    """
+    meses: dict[date, Money] = {}
+    for dia, monto in earned:
+        mes = month_of(dia)
+        meses[mes] = meses.get(mes, Money.zero()) + monto
+    return [meses[m] for m in sorted(meses)]
+
+
+def calendar_days(start: date, end: date) -> int:
+    """Los días de calendario entre dos fechas, las dos incluidas."""
+    return max(0, (end - start).days + 1)
+
+
+def vacation_balance(movements: Iterable[tuple[str, Decimal]]) -> Decimal:
+    """El saldo de vacaciones: la suma de los movimientos con su signo (RN-70).
+
+    Nunca es una columna: lo de apertura y lo acumulado suman, lo disfrutado y
+    lo pagado restan. Un tipo que no existe revienta, porque sería un movimiento
+    que nadie sabe si suma o resta.
+    """
+    saldo = Decimal(0)
+    for kind, days in movements:
+        saldo += _VACATION_SIGN[kind] * Decimal(days)
+    return saldo
+
+
+def settlement_vacation_days(hired_on: date, terminated_on: date, *, earned: Decimal, used: Decimal) -> Decimal:
+    """Los días que se liquidan al salir: lo ganado menos lo disfrutado o pagado.
+
+    Si la persona no llegó a las cincuenta semanas, lo ganado tiene el piso de
+    un día por mes del art. 153 (`proportional_vacation`); después del primer
+    ciclo lo acumulado ya lo supera y el piso no aplica, porque se contaría
+    toda la antigüedad y no lo que queda. Nunca negativo.
+    """
+    ganados = earned
+    if calendar_days(hired_on, terminated_on) < VACATION_CYCLE_DAYS:
+        ganados = proportional_vacation(hired_on, terminated_on, earned)
+    quedan = ganados - used
+    return max(Decimal(0), quedan).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def vacation_accrual(days_worked: int, workdays_per_week: int = 6) -> Decimal:
@@ -201,10 +305,9 @@ def settlement(data: SettlementInput, table: Sequence[SeveranceBracket]) -> tupl
         rubros.append(PayItem(concept, EARNING, Money(diario), None, Money(dias * diario), quantity=dias))
 
     if data.cause in OWES_NOTICE_AND_SEVERANCE:
-        rubro("notice", Decimal(notice_days(months_between(data.hired_on, data.terminated_on))))
-        rubro("severance", severance_days(months_between(data.hired_on, data.terminated_on), table))
+        rubro(NOTICE, Decimal(notice_days(months_between(data.hired_on, data.terminated_on))))
+        rubro(SEVERANCE, severance_days(months_between(data.hired_on, data.terminated_on), table))
     if data.vacation_days:
-        rubro("vacation_payout", data.vacation_days)
-    proporcional = aguinaldo([data.aguinaldo_earned])
-    rubros.append(PayItem("aguinaldo", EARNING, data.aguinaldo_earned, None, proporcional))
+        rubro(VACATION_PAYOUT, data.vacation_days)
+    rubros.append(aguinaldo_item(aguinaldo([data.aguinaldo_earned]), earned=data.aguinaldo_earned))
     return tuple(rubros)

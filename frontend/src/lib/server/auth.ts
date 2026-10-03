@@ -11,6 +11,7 @@ import type {
 	Subscription,
 	SupportUser
 } from '$lib/domain/types';
+import { MODULES } from '$lib/domain/types';
 
 /**
  * Sesión del POS.
@@ -239,11 +240,9 @@ export async function resolveUser(token: string | null): Promise<SessionUser | n
 			 * todavía no manda el campo, la navegación no ofrece módulos que el
 			 * servidor va a rechazar igual.
 			 */
-			modules: {
-				purchases: me.modules?.purchases === true,
-				accounting: me.modules?.accounting === true,
-				payroll: me.modules?.payroll === true
-			},
+			modules: Object.fromEntries(
+				MODULES.map((nombre) => [nombre, me.modules?.[nombre] === true])
+			) as Modules,
 			locale: me.locale ?? 'es',
 			user_locale: me.user_locale ?? null,
 			company_locale: me.company_locale ?? 'es',

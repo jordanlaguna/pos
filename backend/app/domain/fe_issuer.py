@@ -21,9 +21,14 @@ import re
 from dataclasses import dataclass
 from typing import Final
 
-from .errors import EInvoicingNeedsIssuer, InvalidLocation, IssuerIdentificationRequired
+from .errors import (
+    EInvoicingNeedsIssuer,
+    InvalidIdentificationType,
+    InvalidLocation,
+    IssuerIdentificationRequired,
+)
 from .fe_key import ISSUER_DIGITS
-from .hacienda import client_identification_type
+from .hacienda import ISSUER_IDENTIFICATION_TYPES, client_identification_type
 from .locations import is_blank, location_from_settings
 
 #: El largo del XSD para `CorreoElectronico`.
@@ -106,7 +111,10 @@ def check_issuer_identity(identification: object, identification_type: object) -
         or not ISSUER_ID_MIN <= len(digitos) <= ISSUER_DIGITS
     ):
         raise IssuerIdentificationRequired("invalid")
-    return IssuerIdentity(
-        identification=digitos,
-        identification_type=client_identification_type(identification_type, digitos),
-    )
+    tipo = client_identification_type(identification_type, digitos)
+    # Los seis tipos son de clientes y proveedores; quien emite tiene cédula del
+    # país y está inscrito (T-727). Un emisor «extranjero no domiciliado» firmaría
+    # claves que Hacienda rechaza.
+    if tipo not in ISSUER_IDENTIFICATION_TYPES:
+        raise InvalidIdentificationType(tipo)
+    return IssuerIdentity(identification=digitos, identification_type=tipo)

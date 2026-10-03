@@ -202,6 +202,76 @@ export async function api<T = unknown>(path: string, options: ApiOptions = {}): 
 	return payload as T;
 }
 
+/** Un archivo que el backend devuelve tal cual, sin pasar por JSON. */
+export interface ApiFile {
+	bytes: Uint8Array;
+	contentType: string;
+	filename: string | null;
+}
+
+/**
+ * Baja un archivo del backend (T-1219: el de la planilla del INS).
+ *
+ * Aparte de `api()` porque este no se deserializa ni se decodifica: el archivo
+ * del INS va en ISO-8859-1 y pasarlo por `text()` lo leería como UTF-8 y le
+ * rompería las tildes. En modo simulado el manejador devuelve `{ __file }` con
+ * el texto y acá se codifica igual que lo haría el backend.
+ */
+export async function apiFile(path: string, options: ApiOptions = {}): Promise<ApiFile> {
+	const { method = 'GET', token, query, signal } = options;
+	const url = buildUrl(path, query);
+
+	if (USE_MOCK) {
+		const respuesta = await mockRequest<{
+			__file?: { filename: string; content: string; content_type: string };
+		}>({ method, path: url, token });
+		const archivo = respuesta.__file;
+		if (!archivo) throw new ApiError(500, 'unexpected', { mock: 'la ruta no devolvió un archivo' });
+		const latin1 = /iso-8859-1/i.test(archivo.content_type);
+		return {
+			bytes: new Uint8Array(Buffer.from(archivo.content, latin1 ? 'latin1' : 'utf-8')),
+			contentType: archivo.content_type,
+			filename: archivo.filename
+		};
+	}
+
+	const headers: Record<string, string> = {};
+	if (token) headers['Authorization'] = `Bearer ${token}`;
+	const timeout = AbortSignal.timeout(API_TIMEOUT_MS);
+	let response: Response;
+	try {
+		response = await fetch(`${API_BASE_URL}${url}`, {
+			method,
+			headers,
+			signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+		});
+	} catch (error) {
+		const isTimeout = error instanceof DOMException && error.name === 'TimeoutError';
+		throw new ApiError(503, isTimeout ? 'timeout' : 'unreachable', {
+			base: API_BASE_URL,
+			ms: API_TIMEOUT_MS,
+			cause: error
+		});
+	}
+	if (!response.ok) {
+		let payload: unknown = null;
+		try {
+			payload = JSON.parse(await response.text());
+		} catch {
+			payload = null;
+		}
+		const { code, data } = extractFailure(payload);
+		throw new ApiError(response.status, code, data);
+	}
+	const disposicion = response.headers.get('content-disposition') ?? '';
+	const nombre = /filename="([^"]+)"/.exec(disposicion)?.[1] ?? null;
+	return {
+		bytes: new Uint8Array(await response.arrayBuffer()),
+		contentType: response.headers.get('content-type') ?? 'application/octet-stream',
+		filename: nombre
+	};
+}
+
 /**
  * Variante tolerante: devuelve `fallback` en vez de lanzar. Se usa en el dashboard,
  * donde un widget caído no debe tumbar la pantalla entera.

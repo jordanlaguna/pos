@@ -133,6 +133,12 @@
 			<dd class="text-right break-all text-[var(--text)]">{client.email}</dd>
 		{/if}
 
+		{#if fiscal && client?.foreign_address}
+			<!-- Las señas del cliente del extranjero (T-727), como van en la exportación. -->
+			<dt class="text-[var(--text-subtle)]">{t.foreignAddress}</dt>
+			<dd class="text-right text-[var(--text)]">{client.foreign_address}</dd>
+		{/if}
+
 		<dt class="text-[var(--text-subtle)]">{t.servedBy}</dt>
 		<dd class="text-right text-[var(--text)]">{sale.user_name ?? '—'}</dd>
 

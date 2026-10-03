@@ -172,22 +172,34 @@ export interface SupportUser {
 
 /** Un plan: lo que el sistema deja hacer, no una lista de precios. */
 /**
- * Los módulos que un plan incluye o no (RN-49, F10 a F12).
- *
- * Las tres claves están siempre, también en `false`: una clave ausente y una en
- * `false` no se leen igual, y la navegación tiene que poder distinguir «no lo
- * tiene» de «no vino el dato».
+ * Los módulos, en el orden del menú (RN-49, QA-01). Desde QA-01 cada sección
+ * del POS es uno, y los planes son paquetes de ellos; Configuración no, porque
+ * sin ella no hay negocio. Es la misma lista que `MODULES` en
+ * `backend/app/domain/modules.py`.
  */
-export interface Modules {
-	purchases: boolean;
-	accounting: boolean;
-	payroll: boolean;
-}
-
-/** Los nombres de los módulos, para recorrerlos sin escribirlos tres veces. */
-export const MODULES = ['purchases', 'accounting', 'payroll'] as const;
+export const MODULES = [
+	'sales',
+	'cash',
+	'invoices',
+	'returns',
+	'reports',
+	'inventory',
+	'purchases',
+	'suppliers',
+	'accounting',
+	'payroll',
+	'clients',
+	'users'
+] as const;
 
 export type ModuleName = (typeof MODULES)[number];
+
+/**
+ * Los módulos que un plan incluye o no. Las claves están siempre, también en
+ * `false`: una clave ausente y una en `false` no se leen igual, y la navegación
+ * tiene que poder distinguir «no lo tiene» de «no vino el dato».
+ */
+export type Modules = Record<ModuleName, boolean>;
 
 export interface Plan extends Modules {
 	id: number;
@@ -315,6 +327,11 @@ export interface Client {
 	email: string;
 	telephone: number;
 	address: string;
+	/**
+	 * Las otras señas de un cliente del extranjero (RF-78, T-727): van en el
+	 * receptor de la factura de exportación en lugar de la ubicación del país.
+	 */
+	foreign_address?: string | null;
 	register_date: string;
 
 	// --- F7: la exoneración del cliente (RF-67, RN-78) -----------------------
@@ -369,6 +386,11 @@ export interface Product {
 	tax_rate?: number | null;
 	/** Unidad de medida del comprobante de Hacienda. 'Unid' por omisión. */
 	unit_of_measure?: string;
+	/**
+	 * La partida arancelaria (RF-78, T-727): doce dígitos, lo que una mercancía
+	 * necesita para salir en una factura de exportación. Nula es «no tiene».
+	 */
+	tariff_heading?: string | null;
 
 	// --- F7: el código de tarifa de Hacienda (RN-76) -------------------------
 
@@ -433,6 +455,8 @@ export interface Sale {
 	 * tenga configurado hoy.
 	 */
 	document_type?: string | null;
+	/** En qué va ante Hacienda (RN-39); nulo sin comprobante o en un backend anterior a F7. */
+	einvoice_status?: DocumentState | null;
 }
 
 /**
@@ -455,6 +479,87 @@ export interface EmittedDocument {
 	economic_activity?: string | null;
 	/** 1 normal, 2 contingencia, 3 sin internet: la posición 42 de la clave. */
 	situation?: string;
+
+	// ------------------------------------------- el recorrido (F7, T-707)
+	/** El id del comprobante en `fe_documents`; con él se pide el expediente. */
+	id?: number | null;
+	document_type?: string | null;
+	/** De dónde nació, para ir a su pantalla desde la lista de detenidos. */
+	source_type?: 'sale' | 'return' | 'note' | 'purchase' | null;
+	source_id?: number | null;
+	/** Ver `DocumentState`. Nulo en un backend anterior a F7. */
+	status?: DocumentState | null;
+	/** Por qué se detuvo (`StopReason`), y lo que dijo Hacienda o la falla. */
+	stop_reason?: StopReason | null;
+	stop_detail?: string | null;
+	hacienda_status?: string | null;
+	failures?: number;
+	polls?: number;
+	issued_at?: string | null;
+	signed_at?: string | null;
+	sent_at?: string | null;
+	resolved_at?: string | null;
+	last_attempt_at?: string | null;
+	next_attempt_at?: string | null;
+	has_xml?: boolean;
+	has_response?: boolean;
+}
+
+/** Los siete estados del recorrido (RN-39). */
+export type DocumentState =
+	| 'numbered'
+	| 'signed'
+	| 'sent'
+	| 'accepted'
+	| 'rejected'
+	| 'retrying'
+	| 'stopped';
+
+/** Por qué un comprobante se detuvo (`domain/fe_transmission.STOP_*`). */
+export type StopReason =
+	| 'certificate_missing'
+	| 'certificate_expired'
+	| 'credentials_missing'
+	| 'credentials_rejected'
+	| 'document_invalid'
+	| 'reception_rejected'
+	| 'forbidden'
+	| 'hacienda_error'
+	| 'retries_exhausted'
+	| 'no_verdict';
+
+/** Un paso del recorrido, con su hora (T-721). */
+export interface DocumentEvent {
+	at: string;
+	event:
+		| 'signed'
+		| 'sent'
+		| 'polled'
+		| 'accepted'
+		| 'rejected'
+		| 'deferred'
+		| 'stopped'
+		| 'resumed'
+		| 'xml_lost';
+	detail?: string | null;
+}
+
+/** El expediente de un comprobante: `GET /fe/documents/{id}`. */
+export interface DocumentFile {
+	document: EmittedDocument;
+	source_type: 'sale' | 'return' | 'note' | 'purchase';
+	source_id: number;
+	events: DocumentEvent[];
+}
+
+/** La cola de la compañía: `GET /fe/queue` (RF-33, RF-35, T-711). */
+export interface FeQueue {
+	counts: Record<string, number>;
+	pending: number;
+	stopped: EmittedDocument[];
+	oldest_pending_at: string | null;
+	alarm: 'ok' | 'warning' | 'danger';
+	contingency: boolean;
 }
 
 /** Línea del carrito en el navegador. Nunca se envía tal cual al backend. */
@@ -506,6 +611,8 @@ export interface SaleItem {
 	 */
 	cabys_code?: string | null;
 	unit_of_measure?: string | null;
+	/** La partida arancelaria con que se exportó (T-727). Solo en la FEE. */
+	tariff_heading?: string | null;
 }
 
 /** Respuesta de GET /sales/sale/{id} — endpoint añadido por este proyecto. */
@@ -773,6 +880,13 @@ export interface StockEntry {
 	 * las de siempre y nada de lo de abajo significa nada.
 	 */
 	supplier_id?: number | null;
+	/**
+	 * La factura electrónica de compra (T-728): `'08'` y su recorrido ante
+	 * Hacienda cuando la compra fue a un no contribuyente y la compañía la
+	 * emite. Nulos en toda compra a un proveedor inscrito.
+	 */
+	document_type?: string | null;
+	einvoice?: EmittedDocument | null;
 	/** La clave de 50 dígitos del comprobante, cuando vino de un XML. */
 	document_key?: string | null;
 	/** La del documento, que no es la de carga: el IVA es del día de la factura. */

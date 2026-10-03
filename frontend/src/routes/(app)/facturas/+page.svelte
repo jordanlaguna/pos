@@ -7,6 +7,10 @@
 	import { PAYMENT_METHODS } from '$lib/domain/types';
 	import { m } from '$lib/paraglide/messages.js';
 	import { documentTypeLabel, paymentLabel } from '$lib/ui/messages';
+	import { enhance } from '$app/forms';
+	import { submit } from '$lib/ui/forms';
+	import { knownState } from '$lib/domain/transmission';
+	import type { EmittedDocument } from '$lib/domain/types';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -20,6 +24,24 @@
 	const conComprobante = $derived(
 		data.settings.eInvoicing.enabled || data.sales.some((s) => s.document_type)
 	);
+
+	/** El color del estado ante Hacienda (RN-39): lo que importa resalta. */
+	function claseEstado(state: string | null | undefined): string {
+		const s = knownState(state);
+		if (s === 'accepted') return 'bg-[var(--positive-bg)] text-[var(--positive)]';
+		if (s === 'rejected' || s === 'stopped') return 'bg-[var(--negative-bg)] text-[var(--negative)]';
+		if (s === 'retrying') return 'bg-[var(--warning-bg)] text-[var(--warning)]';
+		return 'bg-[var(--surface-sunken)] text-[var(--text-muted)]';
+	}
+
+	/** A qué pantalla pertenece un comprobante detenido: la venta, la devolución, la nota o la compra. */
+	function pantallaDe(doc: EmittedDocument): string {
+		if (doc.source_type === 'return') return `/devoluciones/${doc.source_id}`;
+		if (doc.source_type === 'note') return `/notas/${doc.source_id}`;
+		if (doc.source_type === 'purchase') return `/inventario/entradas?entrada=${doc.source_id}`;
+		return `/facturas/${doc.source_id}`;
+	}
+	const esAdmin = $derived(data.user?.role === 'admin');
 
 	let search = $state('');
 	let method = $state('');
@@ -140,9 +162,80 @@
 	{/if}
 </div>
 
+{#if data.queue}
+	{#if data.queue.alarm !== 'ok'}
+		<!-- T-711: la antigüedad de la cola es lo único que avisa antes del plazo. -->
+		<div
+			class="mb-4 flex gap-2 rounded-lg border p-3 text-xs {data.queue.alarm === 'danger'
+				? 'border-[var(--negative)] bg-[var(--negative-bg)] text-[var(--negative)]'
+				: 'border-[var(--warning)] bg-[var(--warning-bg)] text-[var(--warning)]'}"
+			role="status"
+			data-alarma-cola={data.queue.alarm}
+		>
+			<Icon name="alert" size={15} class="mt-px shrink-0" />
+			<p>
+				{data.queue.alarm === 'danger'
+					? m.invoices_queue_alarm_danger({
+							count: data.queue.pending,
+							since: formatDateTime(data.queue.oldest_pending_at ?? '')
+						})
+					: m.invoices_queue_alarm_warning({
+							count: data.queue.pending,
+							since: formatDateTime(data.queue.oldest_pending_at ?? '')
+						})}
+			</p>
+		</div>
+	{/if}
+	{#if data.queue.contingency}
+		<p
+			class="mb-4 flex gap-2 rounded-lg border border-[var(--warning)] bg-[var(--warning-bg)] p-3 text-xs text-[var(--warning)]"
+			role="status"
+			data-contingencia
+		>
+			<Icon name="info" size={15} class="mt-px shrink-0" />
+			{m.invoices_contingency()}
+		</p>
+	{/if}
+	{#if data.queue.stopped.length}
+		<!-- RF-35: lo detenido, con el motivo y el tiempo que lleva esperando. -->
+		<section class="card mb-4 p-4" data-detenidos>
+			<h2 class="text-sm font-bold text-[var(--negative)]">{m.invoices_stopped_title()}</h2>
+			<p class="mt-0.5 text-xs text-[var(--text-subtle)]">{m.invoices_stopped_hint()}</p>
+			<ul class="mt-3 divide-y divide-[var(--border)] text-xs">
+				{#each data.queue.stopped as doc (doc.id)}
+					<li class="flex flex-wrap items-center gap-x-4 gap-y-1 py-2" data-detenido={doc.id}>
+						<a href={pantallaDe(doc)} class="font-mono font-semibold text-[var(--accent)] hover:underline">
+							{doc.consecutive}
+						</a>
+						<span class="text-[var(--text-muted)]">{documentTypeLabel(doc.document_type) ?? ''}</span>
+						<span class="min-w-0 flex-1 text-[var(--text)]">
+							{doc.stop_reason ? m.invoice_stop_reason({ reason: doc.stop_reason }) : ''}
+						</span>
+						<span class="text-[var(--text-subtle)]">
+							{m.invoices_stopped_waiting({ since: formatDateTime(doc.issued_at ?? '') })}
+						</span>
+						{#if esAdmin}
+							<form method="POST" action="?/reintentar" use:enhance={submit()}>
+								<input type="hidden" name="document_id" value={doc.id} />
+								<button type="submit" class="btn btn-ghost py-1 text-xs">
+									<Icon name="refresh" size={13} />
+									{m.invoice_retry()}
+								</button>
+							</form>
+						{/if}
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+{/if}
+
 <div class="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
 	<p class="text-[var(--text-muted)]">
 		{m.invoices_count({ count: filtered.length })}
+		{#if data.queue?.pending}
+			· {m.invoices_queue_pending({ count: data.queue.pending })}
+		{/if}
 	</p>
 	<p class="text-[var(--text-muted)]">
 		{m.invoices_sum({ total: formatMoney(sumTotal) })}
@@ -157,6 +250,7 @@
 					<th scope="col">{m.invoices_col_invoice()}</th>
 					{#if conComprobante}
 						<th scope="col">{m.invoices_col_document()}</th>
+						<th scope="col">{m.invoices_col_hacienda()}</th>
 					{/if}
 					<th scope="col">{m.invoices_col_date()}</th>
 					<th scope="col">{m.invoices_payment_method()}</th>
@@ -173,6 +267,15 @@
 						{#if conComprobante}
 							<td class="whitespace-nowrap" data-comprobante={sale.document_type ?? ''}>
 								{documentTypeLabel(sale.document_type) ?? '—'}
+							</td>
+							<td class="whitespace-nowrap" data-hacienda={sale.einvoice_status ?? ''}>
+								{#if sale.einvoice_status}
+									<span class="badge {claseEstado(sale.einvoice_status)}">
+										{m.invoice_state({ state: knownState(sale.einvoice_status) })}
+									</span>
+								{:else}
+									—
+								{/if}
 							</td>
 						{/if}
 						<td class="whitespace-nowrap">{formatDateTime(sale.created_at)}</td>
@@ -194,7 +297,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan={conComprobante ? 8 : 7}>
+						<td colspan={conComprobante ? 9 : 7}>
 							<EmptyState
 								icon="receipt"
 								title={hasFilters ? m.invoices_no_results() : m.invoices_none()}

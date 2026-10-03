@@ -135,13 +135,18 @@ test.describe('F11 de punta a punta', () => {
 				timeout: 1000
 			});
 		}).toPass({ timeout: 15_000 });
-		await page.getByRole('button', { name: /Arroz/i }).first().click();
+		// Con reintento: el catálogo se pinta en el servidor, así que el botón se
+		// ve antes de hidratar y un clic temprano no agrega nada. Se vio el
+		// 2026-10-02, cuando los catálogos de F12 alargaron la hidratación.
+		const agregar = page.getByRole('button', { name: /Agregar una unidad de Arroz/i });
+		await clicHasta(page.getByRole('button', { name: /Arroz/i }).first(), () =>
+			expect(agregar).toBeVisible({ timeout: 1000 })
+		);
 		// Con el botón de la línea y no volviendo al catálogo: con el producto ya
 		// en la venta, «Arroz» también nombra a los botones del carrito y
 		// `.first()` deja de ser el del catálogo. Y por el botón y no llenando el
 		// contador, porque escribir en el campo no dispara lo que la pantalla
 		// escucha.
-		const agregar = page.getByRole('button', { name: /Agregar una unidad de Arroz/i });
 		await agregar.click();
 		await agregar.click();
 		await expect(page.locator('body')).toContainText('4.915,50');
@@ -195,6 +200,10 @@ test.describe('F11 de punta a punta', () => {
 		);
 		await contado.fill('54000');
 		await page.locator('button[type="submit"][form="close-form"]').click();
+		// Primero que la caja quede cerrada: «915,50» ya estaba en la pantalla
+		// dentro del esperado (54 915,50), y seguir antes de que el cierre
+		// termine hacía que el asiento todavía no estuviera en el libro.
+		await expect(page.getByText(/La caja está cerrada/i).first()).toBeVisible();
 		await expect(page.locator('body')).toContainText('915,50');
 
 		await page.goto('/contabilidad/asientos');

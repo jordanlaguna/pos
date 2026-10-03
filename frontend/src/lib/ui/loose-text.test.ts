@@ -411,7 +411,12 @@ const DATOS = new Map<string, string>([
 		'nombre legal del documento en Costa Rica: no se traduce a portugués, se ' +
 			'cambia por la lista de otro país'
 	],
-	['Cédula jurídica', 'ídem: nombre legal del documento en Costa Rica']
+	['Cédula jurídica', 'ídem: nombre legal del documento en Costa Rica'],
+	[
+		'Extranjero no domiciliado',
+		'ídem: el tipo 05 de Hacienda (T-727), nombre del catálogo y no una frase'
+	],
+	['No contribuyente', 'ídem: el tipo 06 de Hacienda (T-728)']
 ]);
 
 /**
@@ -473,7 +478,9 @@ describe('ni en las plantillas de documento, que hablan otro idioma (RN-29)', ()
 		'FacturaClasica.svelte',
 		'FacturaModerna.svelte',
 		// El bloque fiscal que usan las tres (RN-86): habla el idioma del documento.
-		'FiscalBlock.svelte'
+		'FiscalBlock.svelte',
+		// La boleta de pago (RF-58, T-1207): la cuarta plantilla, también del documento.
+		'Boleta.svelte'
 	];
 
 	it.each(PLANTILLAS)('%s no importa $lib/paraglide', (nombre) => {

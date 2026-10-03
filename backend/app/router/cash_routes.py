@@ -13,7 +13,7 @@ from app.schemas.schemas_cash import (
 )
 from app.services import crud_cash
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user, require_module
 
 router = APIRouter()
 
@@ -47,6 +47,7 @@ def open_cash(
     payload: CashOpen,
     db: Session = Depends(get_db),
     current: Sesion = Depends(get_current_user),
+    _modulo: Sesion = Depends(require_module("cash")),
 ):
     if payload.user_id != current.id_user and current.rol != "admin":
         raise api_error(403, "cash_open_not_yours")
@@ -58,6 +59,7 @@ def add_movement(
     payload: MovementCreate,
     db: Session = Depends(get_db),
     current: Sesion = Depends(get_current_user),
+    _modulo: Sesion = Depends(require_module("cash")),
 ):
     if payload.user_id != current.id_user and current.rol != "admin":
         raise api_error(403, "cash_movement_not_yours")
@@ -71,6 +73,7 @@ def close_cash(
     payload: CashClose,
     db: Session = Depends(get_db),
     current: Sesion = Depends(get_current_user),
+    _modulo: Sesion = Depends(require_module("cash")),
 ):
     if payload.user_id != current.id_user and current.rol != "admin":
         raise api_error(403, "cash_close_not_yours")

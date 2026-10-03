@@ -1,10 +1,11 @@
 import { error } from '@sveltejs/kit';
 import { m } from '$lib/paraglide/messages.js';
 import { api, apiSafe, ApiError } from '$lib/server/api';
-import { requireUser } from '$lib/server/auth';
+import { requireAdmin, requireUser, requireWrite } from '$lib/server/auth';
+import { reintentarComprobante } from '$lib/server/fe';
 import { amountNoteDocument } from '$lib/domain/documents';
-import type { AmountNote, Client } from '$lib/domain/types';
-import type { PageServerLoad } from './$types';
+import type { AmountNote, Client, DocumentFile } from '$lib/domain/types';
+import type { Actions, PageServerLoad } from './$types';
 
 /**
  * Una nota por monto, lista para imprimir (RF-77, T-726).
@@ -37,6 +38,18 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		nota,
 		documento,
 		client: clients.find((c) => c.id_client === documento.client_id) ?? null,
+		// El expediente ante Hacienda de la nota (T-721), si el backend lo tiene.
+		expediente: nota.einvoice?.id
+			? await apiSafe<DocumentFile | null>(`/fe/documents/${nota.einvoice.id}`, null, { token })
+			: null,
 		isNew: url.searchParams.get('nueva') === '1'
 	};
+};
+
+export const actions: Actions = {
+	/** RF-36: vuelve a la cola la nota detenida. Solo el administrador. */
+	reintentar: async ({ request, locals, url }) => {
+		requireWrite(requireAdmin(locals, url.pathname));
+		return reintentarComprobante(locals.token, await request.formData());
+	}
 };

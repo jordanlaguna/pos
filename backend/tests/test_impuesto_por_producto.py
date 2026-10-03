@@ -200,9 +200,9 @@ class TestElCatalogoPuedeCambiarDespues:
         devolucion = devolver(api, venta["id_sale"], [(canasta["medicamento"], 1)])
         assert devolucion["total"] == 1020.0, "la devolución usó la tarifa de hoy"
 
-    def test_un_producto_sin_clasificar_cobra_la_tasa_configurada(self, api: Api, producto):
-        """RN-9: en nulo significa «la configurada», que es lo que aplica
-        mientras nadie lo clasifique. No es lo mismo que 0."""
+    def test_un_producto_sin_clasificar_cobra_la_general_del_iva(self, api: Api, producto):
+        """RN-9: en nulo significa «la general del IVA», el 13 % de ley, que es
+        lo que aplica mientras nadie lo clasifique (QA-05). No es lo mismo que 0."""
         suelto = producto("Sin clasificar", 1000, 5)
         assert suelto["tax_rate"] is None
 
