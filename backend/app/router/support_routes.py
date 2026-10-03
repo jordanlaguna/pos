@@ -23,17 +23,27 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from app.domain.errors import (
+    IdentificationTypeRequired,
+    InvalidIdentificationType,
+    InvalidLocation,
+    IssuerIdentificationRequired,
+)
+from app.domain.fe_issuer import check_issuer_identity
+from app.domain.locations import is_blank, location_from_settings
 from app.domain.limits import hay_lugar
 from app.domain.locale import DEFAULT_LOCALE, effective_locale, normalize_locale
 from app.domain.modules import Modules
 from app.domain.subscription import ESTADOS
 from app.models.model_user import User
+from app.schemas.schemas_payroll import PayrollRateIn, PayrollRateOut, TaxBracketsIn, TaxBracketsOut
 from app.schemas.schemas_support import (
     AuditLine,
     AuditPage,
     CompanyOut,
     ImpersonateRequest,
     ImpersonateResponse,
+    IssuerUpdate,
     NewCompany,
     NewCompanyResponse,
     PlanModulesUpdate,
@@ -43,7 +53,15 @@ from app.schemas.schemas_support import (
     SuscripcionOut,
     UsoOut,
 )
-from app.services import crud_company, crud_membership, crud_session, crud_support, crud_user
+from app.services import (
+    crud_company,
+    crud_membership,
+    crud_payroll_rates,
+    crud_session,
+    crud_support,
+    crud_user,
+)
+from app.utils import clock
 from app.utils.api_errors import api_error
 from app.utils.auth_dependency import get_db, require_soporte
 
@@ -79,6 +97,7 @@ def _company_out(fila: crud_support.CompaniaConEstado) -> CompanyOut:
         compania=c.compania,
         nombre=c.nombre,
         identificacion=c.identificacion,
+        identification_type=c.identification_type,
         creada_el=c.creada_el,
         locale=normalize_locale(c.locale) or DEFAULT_LOCALE,
         document_locale=normalize_locale(c.document_locale) or DEFAULT_LOCALE,
@@ -216,6 +235,12 @@ def alta_de_compania(
         if not hay_lugar(0, maximo):
             raise api_error(400, "plan_limit_reached", resource=recurso, current=0, max=maximo)
 
+    # La identificación del emisor, si viene, se guarda limpia y con tipo: va
+    # dentro de la clave de cada comprobante (RN-45, T-705).
+    identificacion, tipo = _emisor(datos.identificacion, datos.identification_type)
+    # Y la ubicación, si viene (RF-73): opcional al dar de alta, pero a medias no.
+    _ubicacion_de_alta(datos.settings)
+
     afiliado = datos.afiliado or crud_company.siguiente_afiliado(db)
     compania = datos.compania or crud_company.siguiente_par(db, afiliado)
 
@@ -239,7 +264,8 @@ def alta_de_compania(
             nombre=datos.nombre,
             email=datos.admin.email,
             password=datos.admin.password,
-            identificacion=datos.identificacion,
+            identificacion=identificacion,
+            identification_type=tipo,
             plan_id=plan.id,
             estado=datos.estado,
             vence_el=datos.vence_el,
@@ -334,6 +360,126 @@ def cambiar_suscripcion(
     return _company_out(fila)
 
 
+@router.put("/companies/{company_id}/issuer", response_model=CompanyOut)
+def cambiar_emisor(
+    company_id: int,
+    datos: IssuerUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    soporte: User = Depends(require_soporte),
+):
+    """Corregir la identificación del emisor (RN-45, T-621).
+
+    La fija soporte al dar de alta y la corrige soporte: el negocio la ve en
+    Configuración sin poder editarla, porque su certificado se emite a ella. Y
+    queda en bitácora con el antes y el después.
+    """
+    company = crud_company.por_id(db, company_id)
+    if company is None:
+        raise api_error(404, "company_not_found")
+
+    identificacion, tipo = _emisor(datos.identificacion, datos.identification_type)
+    if identificacion is None or tipo is None:
+        raise api_error(400, "identification_required")
+
+    detalle = crud_support.cambiar_emisor(company, identificacion=identificacion, tipo=tipo)
+    crud_membership.registrar(
+        db,
+        user_id=soporte.id_user,
+        company_id=company_id,
+        accion="emisor",
+        detalle=detalle,
+        ip=_ip(request),
+    )
+    db.commit()
+
+    fila = crud_support.una_compania(db, company_id)
+    if fila is None:  # pragma: no cover - acaba de existir dos líneas arriba
+        raise api_error(404, "company_not_found")
+    return _company_out(fila)
+
+
+def _ubicacion_de_alta(settings: dict | None) -> None:
+    """La misma regla que `crud_settings._validar_emisor` para la ubicación."""
+    negocio = (settings or {}).get("business")
+    ubicacion = negocio.get("location") if isinstance(negocio, dict) else None
+    if is_blank(ubicacion):
+        return
+    try:
+        location_from_settings(ubicacion)
+    except InvalidLocation as e:
+        raise api_error(400, "invalid_location", field=e.field, reason=e.reason) from None
+
+
+def _emisor(identificacion: str | None, tipo: str | None) -> tuple[str | None, str | None]:
+    """La identificación limpia y su tipo, o el «no» que corresponde.
+
+    Vacía es «todavía no se sabe» en el alta —la compañía que no emite no la
+    necesita— y se guarda nula.
+    """
+    if identificacion is None or not identificacion.strip():
+        return None, None
+    try:
+        emisor = check_issuer_identity(identificacion, tipo)
+    except IssuerIdentificationRequired as e:
+        raise api_error(409, "issuer_identification_required", reason=e.reason) from None
+    except InvalidIdentificationType as e:
+        raise api_error(
+            400, "invalid_identification_type", identification_type=str(e.value)
+        ) from None
+    except IdentificationTypeRequired:
+        raise api_error(400, "identification_type_required") from None
+    return emisor.identification, emisor.identification_type
+
+
+@router.put("/payroll/rates", response_model=PayrollRateOut)
+def agregar_tasa_de_planilla(
+    datos: PayrollRateIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    soporte: User = Depends(require_soporte),
+):
+    """Agrega una tasa de planilla con su vigencia (RF-56, T-1204).
+
+    **Alcanza a todas las compañías del país**: las tasas son de la plataforma
+    (RN-67). No edita la vigente —una tasa no se edita—: agrega una fila
+    posterior a la última del mismo concepto, y desde su `valid_from` la toman
+    las corridas que se calculen. Las pagadas no la ven, porque llevan sus
+    rubros congelados (RN-66).
+    """
+    hoy = clock.today()
+    fila = crud_payroll_rates.agregar(
+        db,
+        concept=datos.concept,
+        payer=datos.payer,
+        value=datos.value,
+        valid_from=datos.valid_from,
+        source=datos.source,
+        today=hoy,
+        country=datos.country,
+    )
+    crud_membership.registrar(
+        db,
+        user_id=soporte.id_user,
+        # Sin compañía: la tasa es del país, no de un cliente.
+        company_id=None,
+        accion="tasa_planilla",
+        detalle=f"{fila.concept}:{fila.payer} = {fila.value} desde {fila.valid_from.isoformat()}",
+        ip=_ip(request),
+    )
+    db.commit()
+    return {
+        "concept": fila.concept,
+        "payer": fila.payer,
+        "value": fila.value,
+        "valid_from": fila.valid_from,
+        "valid_to": fila.valid_to,
+        "source": fila.source,
+        "verified_at": fila.verified_at,
+        "stale": False,
+    }
+
+
 @router.post("/companies/{company_id}/enter", response_model=ImpersonateResponse)
 def entrar_como(
     company_id: int,
@@ -405,3 +551,39 @@ def leer_bitacora(
         lineas=[AuditLine(**vars(linea)) for linea in lineas],
         acciones=crud_support.acciones(db),
     )
+
+
+@router.put("/payroll/brackets", response_model=TaxBracketsOut)
+def agregar_tramos_de_renta(
+    datos: TaxBracketsIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    soporte: User = Depends(require_soporte),
+):
+    """El juego de tramos y créditos de renta del año siguiente (RF-56, T-1221).
+
+    El decreto sale cada diciembre y rige desde el 1 de enero: soporte lo carga
+    con su vigencia sin esperar un despliegue. Entra el juego entero —no se
+    edita el vigente— y `GET /payroll/rates?on=` devuelve cada uno desde su
+    fecha (RN-67, RN-73).
+    """
+    hoy = clock.today()
+    salida = crud_payroll_rates.agregar_tramos(
+        db,
+        valid_from=datos.valid_from,
+        brackets=[(t.lower, t.upper, t.rate) for t in datos.brackets],
+        credits={"child": datos.child_credit, "spouse": datos.spouse_credit},
+        source=datos.source,
+        today=hoy,
+        country=datos.country,
+    )
+    crud_membership.registrar(
+        db,
+        user_id=soporte.id_user,
+        company_id=None,
+        accion="tramos_renta",
+        detalle=f"{len(datos.brackets)} tramos desde {datos.valid_from.isoformat()}",
+        ip=_ip(request),
+    )
+    db.commit()
+    return salida

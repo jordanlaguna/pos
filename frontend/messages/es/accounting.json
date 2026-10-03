@@ -143,5 +143,6 @@
 	"accounting_vat_empty": "No hubo ventas ni compras en este periodo.",
 	"accounting_vat_net_hint": "El débito va neto de devoluciones.",
 	"accounting_filter": "Filtrar",
-	"accounting_status": "Estado"
+	"accounting_status": "Estado",
+	"accounting_auto_note": "Nota n.º {id}"
 }

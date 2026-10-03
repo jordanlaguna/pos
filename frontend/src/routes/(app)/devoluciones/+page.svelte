@@ -302,6 +302,18 @@
 										>
 											{record.is_full ? m.returns_full() : m.returns_partial()}
 										</span>
+										<!-- La nota de crédito, cuando la venta fue comprobante (RN-89). -->
+										{#if record.document_type}
+											<a
+												href="/devoluciones/{record.id}"
+												class="ml-1 text-xs font-semibold text-[var(--accent)] hover:underline"
+												data-nota={record.reference_code}
+											>
+												{record.reference_code === '01'
+													? m.returns_view_annulment()
+													: m.returns_view_credit_note()}
+											</a>
+										{/if}
 									</td>
 									<td class="num font-semibold tabular-nums">
 										{formatMoney(record.total)}

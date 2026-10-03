@@ -786,6 +786,7 @@ class TestClientes:
             "last_name": "Prueba",
             "second_name": "Códigos",
             "identification": f"4{marca}",
+            "identification_type": "01",
             "telephone": "80000000",
             "email": f"cliente.{marca}@pruebas.ventasys.cr",
             "address": "San José",

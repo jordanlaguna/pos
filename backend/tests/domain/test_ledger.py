@@ -20,6 +20,7 @@ from app.domain.errors import (
 from app.domain.ledger import (
     ADJUSTMENT,
     AUTO,
+    AccountMap,
     BANK,
     CARDS_RECEIVABLE,
     CASH,
@@ -30,34 +31,43 @@ from app.domain.ledger import (
     CLOSED,
     COGS,
     COUNTERPART,
-    INVENTORY,
-    PAYABLES,
-    PURCHASE,
-    RECEIVABLE,
-    RECLASSIFY,
-    RETURN,
-    SALE,
-    SALES_RETURNS,
-    SUPPLIER_PAYMENT,
-    UNCLASSIFIED,
-    VAT_CREDIT,
-    VAT_PAYABLE,
-    AccountMap,
     ClosedSession,
     DrawerMovement,
+    EMPLOYER_CONTRIBUTIONS,
+    INCOME_TAX_PAYABLE,
+    INVENTORY,
     JournalEntry,
     Line,
+    OTHER_DEDUCTIONS_PAYABLE,
+    PAYABLES,
+    PAYROLL,
+    PURCHASE,
+    PaidPayroll,
     Period,
     PurchasedDocument,
     PurchasedLine,
+    RECEIVABLE,
+    RECLASSIFY,
+    RETURN,
     ReturnDocument,
+    SALARIES,
+    SALARIES_PAYABLE,
+    SALE,
+    SALES_RETURNS,
+    SOCIAL_SECURITY_PAYABLE,
+    SOURCE_NOTE,
+    SUPPLIER_PAYMENT,
     SoldDocument,
     SoldLine,
     SupplierPaymentRef,
+    UNCLASSIFIED,
+    VAT_CREDIT,
+    VAT_PAYABLE,
     assert_open,
     check_closeable,
     post_cash_close,
     post_cash_movement,
+    post_payroll,
     post_purchase,
     post_reclassification,
     post_return,
@@ -106,6 +116,12 @@ CUENTAS = {
     (SUPPLIER_PAYMENT, PAYABLES): 211,
     (SUPPLIER_PAYMENT, CASH): 101,
     (SUPPLIER_PAYMENT, BANK): 102,
+    (PAYROLL, SALARIES): 611,
+    (PAYROLL, EMPLOYER_CONTRIBUTIONS): 612,
+    (PAYROLL, INCOME_TAX_PAYABLE): 213,
+    (PAYROLL, SOCIAL_SECURITY_PAYABLE): 214,
+    (PAYROLL, SALARIES_PAYABLE): 215,
+    (PAYROLL, OTHER_DEDUCTIONS_PAYABLE): 216,
 }
 
 MAPEO = AccountMap(accounts=CUENTAS, unclassified=POR_CLASIFICAR)
@@ -440,6 +456,29 @@ class TestLaDevolucion:
         lineas = [SoldLine(Money.zero(), Money.zero(), CERO, quantity=1)]
 
         assert post_return(devolucion, lineas, MAPEO) is None
+
+
+class TestLasNotasPorMonto:
+    """T-726: la ND es la venta y la NC la devolución, con su propio origen."""
+
+    def test_la_nd_es_una_venta_sin_costo_que_dice_de_donde_salio(self):
+        nota = SoldDocument(id=3, date=HOY, payment_method="Efectivo")
+        lineas = [SoldLine(Money(1000), Money(130), TRECE, quantity=1)]
+        asiento = post_sale(nota, lineas, MAPEO, source_type=SOURCE_NOTE)
+
+        assert debitos(asiento) == {101: Money(1130)}
+        assert creditos(asiento) == {411: Money(1000), 212: Money(130)}
+        # «Nota n.º 3», no «Venta n.º 3»: son dos tablas y los ids se repiten.
+        assert (asiento.source_type, asiento.source_id) == ("note", 3)
+
+    def test_la_nc_es_una_devolucion_sin_inventario_que_sale_de_la_gaveta(self):
+        nota = ReturnDocument(id=4, date=HOY)
+        lineas = [SoldLine(Money(1000), Money(130), TRECE, quantity=1)]
+        asiento = post_return(nota, lineas, MAPEO, source_type=SOURCE_NOTE)
+
+        assert debitos(asiento) == {421: Money(1000), 212: Money(130)}
+        assert creditos(asiento) == {101: Money(1130)}
+        assert (asiento.source_type, asiento.source_id) == ("note", 4)
 
 
 # ------------------------------------------------------------- cierre de caja
@@ -783,3 +822,64 @@ class TestCerrarUnPeriodo:
         # justamente lo que la bitácora existe para conservar.
         with pytest.raises(PeriodClosed):
             check_closeable(Period(2026, 8, CLOSED), Period(2026, 7, CLOSED))
+
+
+# ------------------------------------------------------------------ planilla
+
+
+def planilla(**cambios) -> PaidPayroll:
+    datos = dict(
+        id=7,
+        date=HOY,
+        gross=Money(600000),
+        employer_charges=Money(160980),
+        social_security=Money(64980),
+        income_tax=Money(10000),
+        other_deductions=Money(25000),
+        net=Money(500020),
+    )
+    datos.update(cambios)
+    return PaidPayroll(**datos)
+
+
+class TestLaPlanilla:
+    def test_la_corrida_pagada(self):
+        asiento = post_payroll(planilla(), MAPEO)
+
+        assert debitos(asiento) == {611: Money(600000), 612: Money(160980)}
+        assert creditos(asiento) == {
+            214: Money(225960),
+            213: Money(10000),
+            216: Money(25000),
+            215: Money(500020),
+        }
+        assert (asiento.source_type, asiento.source_id, asiento.description) == ("payroll_run", 7, "payroll")
+
+    def test_sin_renta_ni_otras_deducciones_no_hay_lineas_de_cero(self):
+        asiento = post_payroll(
+            planilla(income_tax=Money.zero(), other_deductions=Money.zero(), net=Money(535020)), MAPEO
+        )
+        assert set(creditos(asiento)) == {214, 215}
+
+    def test_la_renta_devuelta_cambia_de_lado(self):
+        # RN-73: la corrida que cierra el mes puede devolver lo retenido de más.
+        asiento = post_payroll(planilla(income_tax=Money(-3000), net=Money(513020)), MAPEO)
+        assert debitos(asiento)[213] == Money(3000)
+        assert 213 not in creditos(asiento)
+        assert asiento.debits == asiento.credits
+
+    def test_una_corrida_en_cero_no_deja_asiento(self):
+        vacia = planilla(
+            gross=Money.zero(),
+            employer_charges=Money.zero(),
+            social_security=Money.zero(),
+            income_tax=Money.zero(),
+            other_deductions=Money.zero(),
+            net=Money.zero(),
+        )
+        assert post_payroll(vacia, MAPEO) is None
+
+    def test_con_el_mapeo_vacio_todo_cae_en_por_clasificar_y_balancea(self):
+        asiento = post_payroll(planilla(), VACIO)
+        assert set(debitos(asiento)) == {POR_CLASIFICAR}
+        assert asiento.debits == Money(760980)

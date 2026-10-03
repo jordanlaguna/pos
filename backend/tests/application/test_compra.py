@@ -36,6 +36,7 @@ from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
 from tests.application.fakes import (
     FakeCashRepository,
+    FakeNoteRepository,
     FakeProduct,
     FakeProductRepository,
     FakeReturnRepository,
@@ -139,6 +140,7 @@ def mundo_pagable() -> MundoPagable:
                     report=BuildSessionReport(
                         sales=FakeSaleRepository(),
                         returns=FakeReturnRepository(),
+                        notes=FakeNoteRepository(),
                         cash=caja,
                         clock=reloj,
                     ),

@@ -3,6 +3,7 @@ import { api } from '$lib/server/api';
 import { requireSoporte, setSessionCookie, setSupportCookie } from '$lib/server/auth';
 import { formError, Validator } from '$lib/application/validation';
 import { COMPANY_STATES, type AuditLine, type Plan, type SupportCompany } from '$lib/domain/types';
+import { ID_TYPES } from '$lib/domain/settings';
 import { F } from '$lib/ui/fields';
 import { apiMessage, validationErrors } from '$lib/ui/messages';
 import { m } from '$lib/paraglide/messages.js';
@@ -70,6 +71,39 @@ export const actions: Actions = {
 		}
 
 		return { success: m.admin_subscription_saved() };
+	},
+
+	/**
+	 * La cédula del emisor (RN-45, T-621). La fija soporte y la corrige soporte:
+	 * el negocio la ve en Configuración sin poder editarla, porque su certificado
+	 * se emite a ella y va dentro de la clave de cada comprobante.
+	 */
+	emisor: async ({ request, locals, params, url }) => {
+		requireSoporte(locals, url.pathname);
+		const id = idDe(params);
+
+		const form = await request.formData();
+		const v = new Validator(form);
+		const identificacion = v.text('identificacion', F.businessIdentification(), { max: 30 });
+		const tipo = v.oneOf(
+			'tipo_identificacion',
+			F.businessIdType(),
+			ID_TYPES.map((t) => t.code),
+			{ required: false }
+		);
+		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		try {
+			await api(`/support/companies/${id}/issuer`, {
+				method: 'PUT',
+				token: locals.token,
+				body: { identificacion, identification_type: tipo || null }
+			});
+		} catch (err) {
+			return fail(400, { errors: formError(apiMessage(err)) });
+		}
+
+		return { success: m.admin_issuer_saved() };
 	},
 
 	/**

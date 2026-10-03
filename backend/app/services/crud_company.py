@@ -67,6 +67,8 @@ class DatosDeAlta:
     email: str
     password: str
     identificacion: str | None = None
+    #: El tipo de Hacienda de la identificación (RN-45). Ya validado.
+    identification_type: str | None = None
     plan_id: int | None = None
     estado: str = "prueba"
     vence_el: date | None = None
@@ -282,6 +284,7 @@ def _compania(db: Session, datos: DatosDeAlta, plan: Plan) -> tuple[Company, boo
         compania=datos.compania,
         nombre=datos.nombre,
         identificacion=datos.identificacion,
+        identification_type=datos.identification_type,
         plan_id=plan.id,
         estado=datos.estado,
         vence_el=datos.vence_el,

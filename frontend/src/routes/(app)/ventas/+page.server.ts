@@ -59,6 +59,7 @@ export const actions: Actions = {
 		const cashReceived = v.decimal('cash_received', F.cashReceived(), { min: 0 });
 		const clientRaw = String(form.get('client_id') ?? '').trim();
 		const clientId = clientRaw ? Number(clientRaw) : null;
+		const documentRaw = String(form.get('document_type') ?? '').trim();
 
 		let lines: { id_product: number; quantity: number }[];
 		try {
@@ -98,7 +99,15 @@ export const actions: Actions = {
 				cashReceived,
 				clientId,
 				saleNumber: String(form.get('sale_number') ?? '').trim(),
-				userId: user.id_user
+				userId: user.id_user,
+				/*
+				 * El comprobante se decide con la configuración que acaba de leer el
+				 * servidor y no con la que tenía la pantalla al abrirse: el dueño pudo
+				 * apagar la facturación, o un tipo, con la caja abierta (RN-85, RN-88).
+				 */
+				documentType: documentRaw || null,
+				einvoicing: settings.eInvoicing.enabled,
+				enabledTypes: settings.eInvoicing.documentTypes
 			},
 			catalog,
 			settings.tax.rate,

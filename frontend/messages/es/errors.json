@@ -96,13 +96,14 @@
 	"api_empty_sale": "La venta tiene que llevar al menos un producto.",
 	"api_invalid_sale_line": "La cantidad de {product} no es válida.",
 	"api_invalid_sale_payment_method": "«{method}» no es un método de pago del sistema.",
+	"api_invalid_sale_document_type": "«{document_type}» no es un comprobante que se emita al cobrar.",
+	"api_invoice_needs_receiver": "La factura electrónica necesita un cliente. Elija uno o emita un tiquete.",
 	"api_product_not_found": "No encontramos el producto {product}.",
 	"api_product_without_price": "El producto {product} no tiene precio definido.",
 	"api_insufficient_stock": "No hay existencias suficientes de {product}: quedan {available} y se piden {requested}.",
 	"api_totals_mismatch": "El {field} no coincide con el que calcula el servidor: la caja dice {declared} y el servidor {computed}. Recargue el catálogo, porque los precios pueden haber cambiado.",
 	"api_insufficient_payment": "El efectivo recibido ({received}) no alcanza para el total de la venta ({total}).",
 	"api_sale_not_found": "No encontramos esa venta.",
-	"api_sale_details_not_found": "Esa venta no tiene líneas de detalle.",
 	"api_sale_failed": "No se pudo registrar la venta. No quedó nada a medias: intente de nuevo.",
 
 	"api_field_subtotal": "subtotal",
@@ -285,5 +286,232 @@
 	"api_exemption_missing_institution_name": "Con «Otros» hay que escribir cuál es la institución.",
 	"api_exemption_bad_date": "Falta la fecha del documento de exoneración, o no se entiende.",
 	"api_exemption_missing_article": "Ese tipo de exoneración exige el artículo de la ley.",
-	"api_exemption_points_out_of_range": "Los puntos exonerados van entre 0 y 99,99. Son puntos de tarifa, no un porcentaje del precio."
+	"api_exemption_points_out_of_range": "Los puntos exonerados van entre 0 y 99,99. Son puntos de tarifa, no un porcentaje del precio.",
+	"api_document_type_not_enabled": "Este negocio no emite {document}. Actívelo en Configuración o elija otro comprobante.",
+	"api_annul_after_return": "Esta venta ya tiene devoluciones y no se puede anular. Devuelva lo que queda.",
+	"api_annul_must_be_full": "Anular es devolver la venta entera.",
+	"api_identification_type_required": "Elija el tipo de identificación: con ese número no se puede saber.",
+	"api_return_after_credit_note": "Esa línea ya tiene una nota de crédito por monto: devolverla reembolsaría dos veces. Emita otra nota de crédito por lo que falte.",
+	"api_annul_after_note": "Esta venta ya tiene notas por monto y no se puede anular. Corríjala con otra nota.",
+	"api_note_not_found": "Esa nota no existe.",
+	"api_note_failed": "No se pudo emitir la nota. No se cobró ni se reembolsó nada.",
+	"api_note_needs_document": "Esta venta no fue un comprobante electrónico: no tiene a qué referirse una nota.",
+	"api_invalid_note_type": "«{document_type}» no es una nota de débito ni de crédito.",
+	"api_invalid_note_reason": "El motivo «{reference_code}» no se puede emitir desde el mostrador.",
+	"api_note_reason_required": "Diga por qué se corrige el monto.",
+	"api_empty_note": "Escriba el monto de al menos una línea.",
+	"api_note_line_not_in_sale": "La venta no llevaba ese producto.",
+	"api_invalid_note_amount": "Cada monto tiene que ser mayor que cero.",
+	"api_credit_exceeds_line": "A esa línea le quedan {available} para acreditar y se pidieron {requested}.",
+	"api_location_required": "Complete «{field}» en la ubicación para Hacienda.",
+	"api_location_unknown": "«{field}» no corresponde a lo seleccionado arriba. Elíjalo de nuevo de la lista.",
+	"api_location_too_short": "«{field}» debe tener al menos {min} caracteres.",
+	"api_location_too_long": "«{field}» es demasiado largo para Hacienda. Acórtelo.",
+	"api_location_field_neighborhood": "Barrio",
+	"api_einvoicing_needs_issuer": "Para activar la facturación electrónica falta: {missing}.",
+	"api_issuer_missing_identification": "la cédula del emisor (la registra soporte)",
+	"api_issuer_missing_email": "el correo del negocio",
+	"api_issuer_missing_location": "la ubicación para Hacienda",
+	"api_issuer_identification_required": "No se puede emitir el comprobante porque la compañía no tiene cédula de emisor registrada. Solicítela a soporte.",
+	"api_issuer_identification_invalid": "La cédula del emisor no es válida para Hacienda: debe tener de 9 a 12 dígitos, sin letras.",
+	"api_invalid_payroll_rate_payer": "El pagador tiene que ser el trabajador, el patrono o una regla.",
+	"api_invalid_payroll_rate_value": "Una carga se escribe como fracción: el 5,5 % es 0,055. Y ningún valor puede ser negativo.",
+	"api_payroll_rate_not_newer": "«{concept}» ya tiene una tasa desde el {latest}. Una tasa no se corrige: agregue otra con una fecha posterior.",
+	"api_payroll_field": [
+		{
+			"declarations": [
+				"input field"
+			],
+			"selectors": [
+				"field"
+			],
+			"match": {
+				"field=identification_type": "Tipo de identificación",
+				"field=identification": "Identificación",
+				"field=first_name": "Nombre",
+				"field=last_name_1": "Primer apellido",
+				"field=last_name_2": "Segundo apellido",
+				"field=birth_date": "Fecha de nacimiento",
+				"field=gender": "Género",
+				"field=marital_status": "Estado civil",
+				"field=nationality": "Nacionalidad",
+				"field=email": "Correo",
+				"field=iban": "Cuenta IBAN",
+				"field=dependent_children": "Hijos a cargo",
+				"field=terminated_on": "Fecha de salida",
+				"field=termination_cause": "Causa de salida",
+				"field=period_salary": "Salario",
+				"field=valid_from": "Fecha de inicio",
+				"field=solidarista_rate": "Aporte solidarista",
+				"field=schedule_id": "Jornada",
+				"field=position_id": "Puesto",
+				"field=employer_number": "Número patronal",
+				"field=name": "Nombre",
+				"field=ccss_code": "Código de la CCSS",
+				"field=ins_code": "Código del INS",
+				"field=number": "Número de póliza",
+				"field=rt_rate": "Prima de riesgos del trabajo",
+				"field=frequency": "Periodicidad",
+				"field=shift": "Clase de jornada",
+				"field=hours_per_day": "Horas por día",
+				"field=workdays_per_week": "Días hábiles por semana",
+				"field=first_cut_day": "Día de corte de la quincena",
+				"field=cut_weekday": "Día de corte de la semana",
+				"field=series_start": "Inicio de la serie bisemanal",
+				"field=is_active": "Estado",
+				"field=kind": "Tipo de acción",
+				"field=starts_on": "Fecha de inicio",
+				"field=ends_on": "Fecha final",
+				"field=hours": "Horas",
+				"field=days": "Días",
+				"field=amount": "Monto",
+				"field=total_amount": "Monto total",
+				"field=new_salary": "Salario nuevo",
+				"field=is_recurring": "Recurrencia",
+				"field=*": "Dato"
+			}
+		}
+	],
+	"api_payroll_reason": [
+		{
+			"declarations": [
+				"input reason"
+			],
+			"selectors": [
+				"reason"
+			],
+			"match": {
+				"reason=unknown": "no está entre los valores admitidos",
+				"reason=required": "es obligatorio",
+				"reason=not_digits": "solo admite dígitos",
+				"reason=bad_format": "no tiene el formato esperado",
+				"reason=too_long": "es demasiado largo",
+				"reason=too_short": "es demasiado corto",
+				"reason=too_young": "da menos de 15 años al ingresar",
+				"reason=in_the_future": "es posterior a la fecha de ingreso",
+				"reason=negative": "no puede ser negativo",
+				"reason=before_hire": "es anterior a la fecha de ingreso",
+				"reason=not_positive": "tiene que ser mayor que cero",
+				"reason=overlaps": "se cruza con el contrato anterior",
+				"reason=out_of_range": "está fuera de rango",
+				"reason=inactive": "está desactivado",
+				"reason=unexpected": "no corresponde a esta periodicidad",
+				"reason=single_day": "una acción de un día no lleva fecha final",
+				"reason=before_start": "es anterior a la fecha de inicio",
+				"reason=too_many": "son más días que los del rango",
+				"reason=not_allowed": "no se admite en esta acción",
+				"reason=*": "no es válido"
+			}
+		}
+	],
+	"api_invalid_payroll_settings": "Revise «{field}» en la configuración de planilla: {reason}.",
+	"api_invalid_schedule": "Revise «{field}» de la jornada: {reason}.",
+	"api_invalid_employee": "Revise «{field}» del empleado: {reason}.",
+	"api_invalid_contract": "Revise «{field}» del contrato: {reason}.",
+	"api_invalid_action": "Revise «{field}» de la acción: {reason}.",
+	"api_invalid_tax_brackets": [
+		{
+			"declarations": [
+				"input reason",
+				"input index"
+			],
+			"selectors": [
+				"reason"
+			],
+			"match": {
+				"reason=empty": "Mande al menos un tramo.",
+				"reason=not_from_zero": "El primer tramo tiene que empezar en cero.",
+				"reason=gap": "El tramo {index} no empieza donde termina el anterior.",
+				"reason=empty_range": "El tramo {index} termina antes de empezar.",
+				"reason=open_end_not_last": "Solo el último tramo puede quedar sin techo (tramo {index}).",
+				"reason=no_open_end": "El último tramo tiene que quedar sin techo.",
+				"reason=rate_out_of_range": "La tasa del tramo {index} tiene que estar entre 0 y 1: el 10 % es 0,10.",
+				"reason=credit_negative": "Los créditos no pueden ser negativos.",
+				"reason=*": "Los tramos no son válidos."
+			}
+		}
+	],
+	"api_payroll_name_taken": [
+		{
+			"declarations": [
+				"input resource",
+				"input name"
+			],
+			"selectors": [
+				"resource"
+			],
+			"match": {
+				"resource=schedules": "Ya hay una jornada llamada «{name}».",
+				"resource=positions": "Ya hay un puesto llamado «{name}».",
+				"resource=policies": "Ya hay una póliza con el número «{name}».",
+				"resource=*": "«{name}» ya existe."
+			}
+		}
+	],
+	"api_schedule_locked": "Esta jornada ya tiene planillas pagadas: su periodicidad y sus cortes no se cambian. Cree otra jornada.",
+	"api_schedule_not_found": "No encontramos esa jornada.",
+	"api_position_not_found": "No encontramos ese puesto.",
+	"api_policy_not_found": "No encontramos esa póliza.",
+	"api_employee_identification_taken": "Ya hay un empleado con la identificación {identification}.",
+	"api_employee_not_found": "No encontramos a ese empleado.",
+	"api_employee_terminated": "Este empleado salió el {terminated_on}: no se le registra nada posterior a esa fecha.",
+	"api_contract_missing": "El empleado no tiene contrato vigente en esa fecha. Registre el contrato primero.",
+	"api_action_not_found": "No encontramos esa acción.",
+	"api_action_not_editable": [
+		{
+			"declarations": [
+				"input reason"
+			],
+			"selectors": [
+				"reason"
+			],
+			"match": {
+				"reason=applied": "Esta acción ya entró en una planilla: anúlela y registre otra.",
+				"reason=cancellation": "Una anulación no se edita ni se anula.",
+				"reason=contract": "Esta acción ya movió el contrato; lo que haya que corregir se corrige en el contrato.",
+				"reason=*": "Esta acción ya no se puede cambiar."
+			}
+		}
+	],
+	"api_action_already_cancelled": "Esta acción ya está anulada.",
+	"api_action_not_recurring": "Solo se suspende una deducción recurrente. Las demás se anulan.",
+	"api_action_already_suspended": "Esta deducción ya está suspendida.",
+	"api_invalid_cut_date": [
+		{
+			"declarations": [
+				"input cut",
+				"input frequency"
+			],
+			"selectors": [
+				"frequency"
+			],
+			"match": {
+				"frequency=monthly": "El {cut} no es fin de mes: una jornada mensual corta el último día del mes.",
+				"frequency=semimonthly": "El {cut} no es un corte de esta jornada quincenal.",
+				"frequency=biweekly": "El {cut} no es un corte de esta jornada bisemanal.",
+				"frequency=weekly": "El {cut} no cae en el día de corte de esta jornada semanal.",
+				"frequency=*": "El {cut} no es una fecha de corte de esta jornada."
+			}
+		}
+	],
+	"api_run_already_exists": "Ya existe una planilla con ese corte para esta jornada.",
+	"api_run_not_found": "No encontramos esa planilla.",
+	"api_run_not_editable": [
+		{
+			"declarations": [
+				"input reason"
+			],
+			"selectors": [
+				"reason"
+			],
+			"match": {
+				"reason=approved": "La planilla ya está aprobada y no se recalcula.",
+				"reason=*": "Esta clase de planilla todavía no se calcula desde aquí."
+			}
+		}
+	],
+	"api_run_not_calculated": "Calcule la planilla antes de aprobarla.",
+	"api_run_not_approved": "La planilla tiene que estar aprobada para pagarla.",
+	"api_run_already_paid": "La planilla ya está pagada y no se cambia. Lo que haya que corregir va en una planilla de ajuste.",
+	"api_rates_missing_for_date": "A la fecha de corte ({on}) faltan tasas: {missing}. Pida a soporte que las cargue."
 }

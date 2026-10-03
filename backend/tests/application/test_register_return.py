@@ -19,13 +19,22 @@ from app.application.use_cases.register_return import (
     ReturnRequest,
     SaleNotFound,
 )
-from app.domain.errors import ExcessiveReturn, InvalidQuantity, NotSoldInThisSale
+from app.domain.errors import (
+    AnnulAfterReturn,
+    AnnulMustBeFull,
+    ExcessiveReturn,
+    InvalidQuantity,
+    NotSoldInThisSale,
+)
+from app.domain.fe_document_type import CREDIT_NOTE, TICKET
+from app.domain.fe_notes import ANNULS, GOODS_RETURN
 from app.domain.money import Money
 from app.domain.sale import SaleLine
 from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
 
 from .fakes import (
+    FakeNoteRepository,
     FakeProduct,
     FakeProductRepository,
     FakeReturnRepository,
@@ -38,8 +47,11 @@ MOMENTO = datetime(2026, 8, 16, 22, 30, 0)
 IVA = TaxRate("0.13")
 
 
-def montar(tasa_configurada=IVA, tasa_de_la_venta=IVA):
-    """Una venta de 3 arroces a 1450, cobrada con la tasa que se indique."""
+def montar(tasa_configurada=IVA, tasa_de_la_venta=IVA, tipo=None):
+    """Una venta de 3 arroces a 1450, cobrada con la tasa que se indique.
+
+    `tipo` es el comprobante con que salió: nulo es una venta sin facturación.
+    """
     catalogo = FakeProductRepository(
         [
             FakeProduct(1, "Arroz 1 kg", Money(1450), stock=17),
@@ -60,12 +72,14 @@ def montar(tasa_configurada=IVA, tasa_de_la_venta=IVA):
         change_given=Money(0),
         created_at=MOMENTO,
         lines=[SaleLine(1, Money(1450), 3)],
+        document_type=tipo,
     )
     devoluciones = FakeReturnRepository()
     uow = FakeUnitOfWork()
     caso = RegisterReturn(
         sales=ventas,
         returns=devoluciones,
+        notes=FakeNoteRepository(),
         products=catalogo,
         settings=FakeSettingsRepository(tasa_configurada),
         uow=uow,
@@ -74,13 +88,74 @@ def montar(tasa_configurada=IVA, tasa_de_la_venta=IVA):
     return caso, catalogo, ventas, devoluciones, uow
 
 
-def peticion(lineas, sale_id=1, motivo="producto dañado"):
+def peticion(lineas, sale_id=1, motivo="producto dañado", anular=False):
     return ReturnRequest(
         sale_id=sale_id,
         user_id=1,
         reason=motivo,
         lines=[RequestedReturnLine(pid, cant) for pid, cant in lineas],
+        annul=anular,
     )
+
+
+class TestLaNotaDeCredito:
+    """RN-89: la decide el comprobante original, y anular es todo o nada."""
+
+    def test_devolver_de_un_tiquete_emite_nc_por_devolucion(self):
+        caso, _, _, devoluciones, _ = montar(tipo=TICKET)
+        hecha = caso(peticion([(1, 1)]))
+
+        assert (hecha.document_type, hecha.reference_code) == (CREDIT_NOTE, GOODS_RETURN)
+        guardada = devoluciones.devoluciones[0]
+        assert (guardada.document_type, guardada.reference_code) == (CREDIT_NOTE, GOODS_RETURN)
+
+    def test_una_venta_sin_comprobante_no_emite_nota(self):
+        caso, _, _, devoluciones, _ = montar()
+        hecha = caso(peticion([(1, 1)]))
+        assert hecha.document_type is None
+        assert devoluciones.devoluciones[0].reference_code is None
+
+    def test_la_nota_no_mira_la_configuracion_de_hoy(self):
+        # La facturación de la compañía está apagada —el Fake nace así— y la
+        # venta salió como tiquete: la nota sale igual.
+        caso, _, _, _, _ = montar(tipo=TICKET)
+        assert caso(peticion([(1, 3)])).document_type == CREDIT_NOTE
+
+    def test_anular_es_devolver_todo_con_otro_motivo(self):
+        caso, catalogo, _, devoluciones, _ = montar(tipo=TICKET)
+        hecha = caso(peticion([(1, 3)], anular=True))
+
+        assert hecha.reference_code == ANNULS
+        assert hecha.is_full
+        # La plata y el inventario, los de una devolución total.
+        assert hecha.total == Money("4915.50")
+        assert catalogo.get(1).stock == 20
+        assert devoluciones.devoluciones[0].reference_code == ANNULS
+
+    def test_la_misma_linea_pedida_en_dos_partes_cuenta_una(self):
+        caso, _, _, _, _ = montar(tipo=TICKET)
+        assert caso(peticion([(1, 1), (1, 2)], anular=True)).reference_code == ANNULS
+
+    def test_anular_a_medias_no(self):
+        caso, catalogo, _, devoluciones, _ = montar(tipo=TICKET)
+        with pytest.raises(AnnulMustBeFull):
+            caso(peticion([(1, 2)], anular=True))
+        assert devoluciones.devoluciones == []
+        assert catalogo.get(1).stock == 17
+
+    def test_una_venta_con_devoluciones_ya_no_se_anula(self):
+        """Y lo dice así, no como «pidió de más», aunque también sea cierto."""
+        caso, _, _, devoluciones, _ = montar(tipo=TICKET)
+        caso(peticion([(1, 1)]))
+        with pytest.raises(AnnulAfterReturn):
+            caso(peticion([(1, 3)], anular=True))
+        assert len(devoluciones.devoluciones) == 1
+
+    def test_anular_una_venta_sin_comprobante_es_una_devolucion_total(self):
+        # No hay nota que emitir, pero anular sigue siendo todo o nada.
+        caso, _, _, _, _ = montar()
+        hecha = caso(peticion([(1, 3)], anular=True))
+        assert hecha.is_full and hecha.document_type is None
 
 
 class TestDevolucionBuena:
@@ -263,6 +338,7 @@ class TestTarifasMezcladas:
         caso = RegisterReturn(
             sales=ventas,
             returns=devoluciones,
+            notes=FakeNoteRepository(),
             products=catalogo,
             settings=FakeSettingsRepository(IVA),
             uow=FakeUnitOfWork(),

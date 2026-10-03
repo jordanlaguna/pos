@@ -222,6 +222,133 @@ class InvalidSalePaymentMethod(DomainError):
         self.method = method
 
 
+class InvalidSaleDocumentType(DomainError):
+    """Se pidió un comprobante que el mostrador no emite (RN-85).
+
+    Lleva el valor por lo mismo que `InvalidSalePaymentMethod`: el caso real no
+    es un tipo inventado sino un cliente roto, y ver qué mandó ahorra el viaje.
+    """
+
+    def __init__(self, document_type: object) -> None:
+        super().__init__(f"tipo de comprobante no admitido: {document_type!r}")
+        self.document_type = document_type
+
+
+class InvoiceNeedsReceiver(DomainError):
+    """Factura sin cliente (RN-85).
+
+    La factura electrónica exige un receptor con nombre e identificación. Sin
+    él, lo que se emite es un tiquete, y emitir una factura sin receptor es un
+    rechazo de Hacienda que llega cuando el cliente ya se fue.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("la factura electrónica necesita un cliente")
+
+
+class DocumentTypeNotEnabled(DomainError):
+    """Se pidió un comprobante que la compañía no emite (RN-88)."""
+
+    def __init__(self, document_type: str) -> None:
+        super().__init__(f"la compañía no emite el comprobante {document_type}")
+        self.document_type = document_type
+
+
+class AnnulAfterReturn(DomainError):
+    """Anular una venta que ya tiene devoluciones (RN-89).
+
+    Anular es el comprobante entero. Uno a medio devolver ya no se puede anular:
+    lo que queda se devuelve.
+    """
+
+    def __init__(self, sale_id: int) -> None:
+        super().__init__(f"la venta {sale_id} ya tiene devoluciones")
+        self.sale_id = sale_id
+
+
+class AnnulMustBeFull(DomainError):
+    """Anular sin devolver todo lo que se vendió (RN-89)."""
+
+    def __init__(self, sale_id: int) -> None:
+        super().__init__(f"anular la venta {sale_id} es devolverla entera")
+        self.sale_id = sale_id
+
+
+class NoteNeedsDocument(DomainError):
+    """Una nota por monto sobre una venta que no fue comprobante (RN-89).
+
+    Una nota siempre referencia un comprobante emitido: sobre una venta sin tipo
+    no hay qué corregir ante Hacienda.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("la venta no es un comprobante electrónico")
+
+
+class InvalidNoteType(DomainError):
+    """Una nota por monto que no es ND ni NC."""
+
+    def __init__(self, document_type: object) -> None:
+        super().__init__(f"{document_type!r} no es una nota")
+        self.document_type = document_type
+
+
+class InvalidNoteReason(DomainError):
+    """Un motivo que esa nota no admite en un mostrador de contado (T-726)."""
+
+    def __init__(self, document_type: object, reference_code: object) -> None:
+        super().__init__(f"la nota {document_type!r} no admite el motivo {reference_code!r}")
+        self.document_type = document_type
+        self.reference_code = reference_code
+
+
+class InvalidNoteAmount(DomainError):
+    """El monto de una línea de la nota en cero o negativo."""
+
+    def __init__(self, product_id: int) -> None:
+        super().__init__(f"el monto del producto {product_id} tiene que ser positivo")
+        self.product_id = product_id
+
+
+class CreditExceedsLine(DomainError):
+    """Una NC por más de lo que queda de la línea (T-726).
+
+    Lo que queda es lo cobrado, más lo que le subieron las ND, menos lo devuelto
+    y menos las NC anteriores. Pasarse sería reembolsar plata que el cliente
+    nunca pagó.
+    """
+
+    def __init__(self, product_id: int, available: object, requested: object) -> None:
+        super().__init__(f"al producto {product_id} le quedan {available}, se pidió {requested}")
+        self.product_id = product_id
+        self.available = available
+        self.requested = requested
+
+
+class ReturnAfterCreditNote(DomainError):
+    """Devolver una línea que ya tiene NC por monto (T-726).
+
+    La devolución reembolsa el precio de la línea; sumado a la NC, reembolsaría
+    dos veces la misma plata.
+    """
+
+    def __init__(self, product_id: int) -> None:
+        super().__init__(f"el producto {product_id} ya tiene una nota de crédito por monto")
+        self.product_id = product_id
+
+
+class AnnulAfterNote(DomainError):
+    """Anular una venta que ya tiene notas por monto (T-726).
+
+    Anular reembolsa lo cobrado en la venta; con una ND encima no devolvería lo
+    que se cobró de más, y con una NC devolvería dos veces.
+    """
+
+    def __init__(self, sale_id: int) -> None:
+        super().__init__(f"la venta {sale_id} ya tiene notas por monto")
+        self.sale_id = sale_id
+
+
 class BarcodeTaken(DomainError):
     """Se quiso crear un producto con un código que ya existe."""
 
@@ -493,6 +620,19 @@ class InvalidClave(DomainError):
         self.code = code
 
 
+class IdentificationTypeRequired(DomainError):
+    """Un cliente sin tipo de identificación y con una cédula que no lo deja ver.
+
+    El tipo va en el receptor del comprobante y se imprime («Cédula física»).
+    Cuando no se eligió, se deduce por la longitud; cuando tampoco así se sabe,
+    hay que preguntar: adivinar sería emitir un receptor que Hacienda rechaza
+    (T-617).
+    """
+
+    def __init__(self) -> None:
+        super().__init__("falta el tipo de identificación")
+
+
 class InvalidIdentificationType(DomainError):
     """Un tipo de identificación que no es ninguno de los cuatro de Hacienda.
 
@@ -539,3 +679,227 @@ class InvalidOfficeCode(DomainError):
         #: Cuántos dígitos pedía. Va en el «no» porque es lo único que le dice a
         #: quien escribió de más cuánto le sobra.
         self.digits = digits
+
+
+class InvalidLocation(DomainError):
+    """Una ubicación del emisor que Hacienda no aceptaría (T-722, RN-83).
+
+    `field` dice cuál de los cinco campos —`province`, `canton`, `district`,
+    `neighborhood` u `other_signs`— y `reason` qué le pasa: `required`,
+    `unknown` (un código que no está en la nota 14, o que no es de la provincia
+    o del cantón elegidos), `too_short` o `too_long`. Lo que hay que hacer es
+    distinto en cada uno, y la frase la arma el POS.
+    """
+
+    def __init__(self, field: str, reason: str, value: object = None) -> None:
+        super().__init__(f"ubicación no válida: {field} ({reason}) {value!r}")
+        self.field = field
+        self.reason = reason
+        self.value = value
+
+
+class EInvoicingNeedsIssuer(DomainError):
+    """Se quiso encender la factura electrónica sin lo que el emisor necesita.
+
+    Sin identificación no hay clave, y sin ubicación ni correo el XML no valida
+    (RN-83): encenderla así sería vender comprobantes que no se pueden emitir.
+    `missing` es la lista de lo que falta, en orden: `identification`, `email`,
+    `location`.
+    """
+
+    def __init__(self, missing: tuple[str, ...]) -> None:
+        super().__init__(f"faltan datos del emisor: {', '.join(missing)}")
+        self.missing = missing
+
+
+class InvalidKeyPart(DomainError):
+    """Una pieza del consecutivo o de la clave que no cabe donde va (T-704, T-705).
+
+    `part` es cuál —`sequence`, `document_type`, `issuer`, `consecutive`,
+    `situation`, `security_code`— y `value` lo que llegó. Todas las pone el
+    sistema, así que esto es un error de programación o un dato de la compañía
+    mal cargado, nunca algo que escribió el cajero.
+    """
+
+    def __init__(self, part: str, value: object) -> None:
+        super().__init__(f"pieza de la clave no válida: {part} = {value!r}")
+        self.part = part
+        self.value = value
+
+
+class IssuerIdentificationRequired(DomainError):
+    """La compañía emite comprobantes y no tiene identificación (RN-45).
+
+    La clave lleva la cédula del emisor en las posiciones 10 a 21, así que sin
+    ella no hay comprobante. La identificación la fija soporte en `companies`,
+    no el negocio en su configuración: es la del certificado.
+
+    Lleva `reason`: `missing` si no hay, `invalid` si la que hay no cabe en la
+    clave —letras, o más de doce dígitos—. En los dos casos lo arregla soporte.
+    """
+
+    def __init__(self, reason: str = "missing") -> None:
+        super().__init__(f"la compañía no tiene una identificación de emisor válida ({reason})")
+        self.reason = reason
+
+
+# ------------------------------------------------------------------ planilla
+
+
+class InvalidSchedule(DomainError):
+    """Una jornada que no se puede correr (RN-94, T-1202).
+
+    `field` dice cuál de sus datos —`frequency`, `shift`, `hours_per_day`,
+    `workdays_per_week`, `first_cut_day`, `cut_weekday` o `series_start`— y
+    `reason` qué le pasa: `unknown` (un valor que no está en la lista),
+    `required` (la periodicidad lo pide y no vino), `unexpected` (lo pide otra
+    periodicidad) o `out_of_range`.
+    """
+
+    def __init__(self, field: str, reason: str, value: object = None) -> None:
+        super().__init__(f"jornada no válida: {field} ({reason}) {value!r}")
+        self.field = field
+        self.reason = reason
+        self.value = value
+
+
+class InvalidCutDate(DomainError):
+    """Una fecha que no es corte de la jornada (RN-94).
+
+    Una quincenal que corta el 15 no tiene corte el 20. El periodo sale del
+    corte, así que un corte inventado inventaría también el periodo.
+    """
+
+    def __init__(self, cut: object, frequency: str) -> None:
+        super().__init__(f"{cut!r} no es fecha de corte de una jornada {frequency}")
+        self.cut = cut
+        self.frequency = frequency
+
+
+class RatesMissing(DomainError):
+    """A la fecha de corte falta una tasa que la planilla necesita (RN-67).
+
+    `missing` son los pares `concepto:pagador` que faltan, ordenados. Calcular
+    sin ellos daría una planilla que parece bien y cobra de menos: sin la fila
+    del IVM, la boleta saldría sin IVM y nadie lo notaría hasta la CCSS.
+    """
+
+    def __init__(self, missing: tuple[str, ...], on: object) -> None:
+        super().__init__(f"faltan tasas al {on}: {', '.join(missing)}")
+        self.missing = missing
+        self.on = on
+
+
+class InvalidAction(DomainError):
+    """Una acción de personal a la que le falta o le sobra algo (RN-90).
+
+    `field` es el dato —`kind`, `ends_on`, `hours`, `days`, `amount`,
+    `total_amount`, `new_salary`, `position_id` o `is_recurring`— y `reason`,
+    `unknown`, `required`, `not_positive`, `before_start`, `single_day`,
+    `too_many` o `not_allowed`. Cada tipo pide lo suyo: unas horas extra sin
+    horas no son nada, y un aumento con fecha final no existe.
+    """
+
+    def __init__(self, field: str, reason: str, value: object = None) -> None:
+        super().__init__(f"acción no válida: {field} ({reason}) {value!r}")
+        self.field = field
+        self.reason = reason
+        self.value = value
+
+
+class InvalidPayrollRate(DomainError):
+    """Una tasa que no se puede sembrar (RN-67).
+
+    `field` es `payer` o `value`, y `reason`, `unknown` o `out_of_range`: una
+    carga de la CCSS es una fracción entre cero y uno —el 5,5 % es 0,055, no
+    5,5—; una regla puede ser un número de días o un monto, pero no negativo.
+    """
+
+    def __init__(self, field: str, reason: str, value: object = None) -> None:
+        super().__init__(f"tasa de planilla no válida: {field} ({reason}) {value!r}")
+        self.field = field
+        self.reason = reason
+        self.value = value
+
+
+class RateNotNewer(DomainError):
+    """Una tasa nueva que no es posterior a la última del mismo concepto.
+
+    Una tasa no se edita: se agrega otra con su vigencia (RN-67). Aceptar una con
+    fecha igual o anterior a la última sería reescribir el pasado de corridas
+    que ya se calcularon con la otra.
+    """
+
+    def __init__(self, concept: str, payer: str, latest: object) -> None:
+        super().__init__(f"{concept}:{payer} ya tiene una tasa desde {latest}")
+        self.concept = concept
+        self.payer = payer
+        self.latest = latest
+
+
+class InvalidEmployee(DomainError):
+    """Un empleado al que le falta o le sobra algo (RN-72, T-1205).
+
+    `field` es el dato —`identification_type`, `identification`, `first_name`,
+    `last_name_1`, `birth_date`, `gender`, `marital_status`, `nationality`,
+    `email`, `iban`, `dependent_children`, `terminated_on` o
+    `termination_cause`— y `reason`, `unknown`, `required`, `not_digits`,
+    `bad_format`, `too_long`, `too_young`, `in_the_future`, `negative` o
+    `before_hire`. Son los datos que piden los archivos de la CCSS y del INS:
+    un dato mal escrito acá es un archivo rechazado dentro de un mes.
+    """
+
+    def __init__(self, field: str, reason: str, value: object = None) -> None:
+        super().__init__(f"empleado no válido: {field} ({reason}) {value!r}")
+        self.field = field
+        self.reason = reason
+        self.value = value
+
+
+class InvalidContract(DomainError):
+    """Un contrato que no se puede abrir (RN-94, T-1205).
+
+    `field` es `period_salary`, `valid_from`, `solidarista_rate`,
+    `schedule_id` o `position_id`, y `reason`, `not_positive`, `before_hire`,
+    `overlaps`, `out_of_range` o `inactive`. Un contrato nuevo empieza después
+    del anterior: dos vigentes a la vez pagarían dos salarios.
+    """
+
+    def __init__(self, field: str, reason: str, value: object = None) -> None:
+        super().__init__(f"contrato no válido: {field} ({reason}) {value!r}")
+        self.field = field
+        self.reason = reason
+        self.value = value
+
+
+class InvalidPayrollSettings(DomainError):
+    """Un dato de la configuración de planilla que no sirve (RF-56, T-1217).
+
+    `field` es `employer_number`, `name`, `ccss_code`, `ins_code`, `number` o
+    `rt_rate`, y `reason`, `required`, `bad_format`, `too_short`, `too_long` u
+    `out_of_range`. El número patronal y los códigos de ocupación van tal cual
+    en los archivos de la CCSS y del INS, así que se revisan al escribirlos y
+    no al exportar.
+    """
+
+    def __init__(self, field: str, reason: str, value: object = None) -> None:
+        super().__init__(f"configuración de planilla no válida: {field} ({reason}) {value!r}")
+        self.field = field
+        self.reason = reason
+        self.value = value
+
+
+class InvalidTaxBrackets(DomainError):
+    """Un juego de tramos de renta que no se puede sembrar (RN-73, T-1221).
+
+    `reason` es `empty`, `not_from_zero`, `gap`, `empty_range`,
+    `open_end_not_last`, `no_open_end`, `rate_out_of_range` o
+    `credit_negative`, e `index` el tramo donde se vio. Un juego con un hueco
+    deja un salario sin tramo, y ese salario no paga renta sin que nadie lo
+    note.
+    """
+
+    def __init__(self, reason: str, index: int | None = None) -> None:
+        super().__init__(f"tramos de renta no válidos: {reason} (tramo {index})")
+        self.reason = reason
+        self.index = index

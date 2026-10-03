@@ -1,3 +1,4 @@
+import { identificationTypeFor, isIdentificationType } from '$lib/domain/identification';
 import { ApiError, type ApiUpload } from '../api';
 import {
 	CHART,
@@ -31,6 +32,7 @@ import {
 	resetDb,
 	type MockBranch,
 	type MockFeCredentials,
+	type MockPayrollRate,
 	type MockPlan,
 	type MockTerminal,
 	type MockSale,
@@ -45,8 +47,23 @@ import {
 	round2
 } from '$lib/domain/money';
 import { COMPANY_STATES, MODULES as MODULOS, PAYMENT_METHODS } from '$lib/domain/types';
+import {
+	CREDIT_NOTE,
+	DEBIT_NOTE,
+	INVOICE,
+	enabledTypes,
+	isCounterDocumentType,
+	suggestedDocumentType
+} from '$lib/domain/documentType';
+import { CORRECTS_AMOUNT } from '$lib/domain/documents';
+import { isBlankLocation, locationProblem, normalizeLocation } from '$lib/domain/location';
+import { mergeSettings } from '$lib/domain/settings';
+import type { MockFeDocument } from './db';
+import { PAYROLL_SEED } from './payrollRates';
 import type { Account, JournalEntry } from '$lib/domain/types';
 import type {
+	AmountNote,
+	AmountNoteItem,
 	CashMovement,
 	CashSession,
 	CashSessionReport,
@@ -756,15 +773,33 @@ function revisarExoneracion(body: Record<string, unknown> | null): Record<string
 
 route('GET', '/clients/clients_list', ({ companyId }) => getDb(companyId).clients);
 
+/**
+ * El tipo de identificación con que se guarda un cliente (T-617). Espejo de
+ * `hacienda.client_identification_type`: el elegido, o el que deja ver la
+ * longitud de la cédula; si tampoco así se sabe, no se guarda.
+ */
+function tipoDeIdentificacion(pedido: unknown, identificacion: string): string {
+	const tipo = String(pedido ?? '').trim();
+	if (tipo) {
+		if (!isIdentificationType(tipo)) fail(400, 'invalid_identification_type', { identification_type: tipo });
+		return tipo;
+	}
+	const deducido = identificationTypeFor(identificacion);
+	if (!deducido) fail(400, 'identification_type_required');
+	return deducido;
+}
+
 route('POST', '/clients/register_client', ({ body, companyId }) => {
 	const db = getDb(companyId);
 	const identification = String(body?.identification ?? '').trim();
 	if (db.clients.some((c) => c.identification === identification))
 		fail(400, 'client_identification_taken');
+	const identificationType = tipoDeIdentificacion(body?.identification_type, identification);
 	const id = nextId('clients');
 	db.clients.push({
 		id_client: id,
 		identification,
+		identification_type: identificationType,
 		name: String(body?.name ?? ''),
 		last_name: String(body?.last_name ?? ''),
 		second_name: String(body?.second_name ?? ''),
@@ -787,8 +822,15 @@ route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
 	// campos se ponen y se quitan juntos, y el nulo en ellos **es** un valor.
 	for (const [key, value] of Object.entries(revisarExoneracion(body)))
 		(client as any)[key] = value;
+	// El tipo se cambia solo si viene con valor (T-617): en blanco es «no lo toqué».
+	const tipo = String(body?.identification_type ?? '').trim();
+	if (tipo) {
+		if (!isIdentificationType(tipo)) fail(400, 'invalid_identification_type', { identification_type: tipo });
+		client.identification_type = tipo;
+	}
 	for (const [key, value] of Object.entries(body ?? {})) {
 		if ((CAMPOS_EXONERACION as readonly string[]).includes(key)) continue;
+		if (key === 'identification_type') continue;
 		if (value == null || value === '') continue;
 		if (key === 'telephone') client.telephone = Number(value);
 		else if (key in client) (client as any)[key] = value;
@@ -1175,6 +1217,95 @@ route('DELETE', '/categories/delete_category/:id', ({ params, companyId }) => {
 	return null;
 });
 
+// ------------------------------------------------ numeración (T-704, T-705)
+//
+// La misma aritmética que `domain/fe_key.py`: consecutivo de 20 —oficina, caja,
+// tipo y secuencia— y clave de 50 —país, fecha, emisor, consecutivo, situación
+// y código de seguridad—. La serie es por tipo y por ambiente, y el número se
+// toma después de que todo lo que podía decir que no, dijo que sí.
+
+/** El día de la emisión en Costa Rica, `ddmmyy`: la hora del simulado es UTC. */
+function fechaDeLaClave(iso: string): string {
+	const partes = new Intl.DateTimeFormat('en-GB', {
+		timeZone: 'America/Costa_Rica',
+		day: '2-digit',
+		month: '2-digit',
+		year: '2-digit'
+	}).formatToParts(new Date(iso));
+	const parte = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? '00';
+	return `${parte('day')}${parte('month')}${parte('year')}`;
+}
+
+interface EmisorSimulado {
+	identification: string;
+	environment: 'sandbox' | 'production';
+	economic_activity: string | null;
+	branch_code: string;
+	terminal_code: string;
+}
+
+/**
+ * El emisor, o el «no» de `NumberDocument.prepare`: sin cédula —o con una que no
+ * cabe en la clave— no hay comprobante (RN-45).
+ */
+function prepararNumeracion(companyId: number): EmisorSimulado {
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	const cedula = (empresa?.identificacion ?? '').replace(/[-\s]/g, '');
+	if (!cedula) fail(409, 'issuer_identification_required', { reason: 'missing' });
+	if (!/^\d{1,12}$/.test(cedula)) fail(409, 'issuer_identification_required', { reason: 'invalid' });
+	const ajustes = mergeSettings(settingsRow(companyId).data);
+	return {
+		identification: cedula,
+		environment: ajustes.eInvoicing.environment,
+		economic_activity: ajustes.eInvoicing.economicActivity || null,
+		branch_code: empresa?.branch_code ?? '001',
+		terminal_code: empresa?.terminal_code ?? '00001'
+	};
+}
+
+function numerar(
+	companyId: number,
+	emisor: EmisorSimulado,
+	origen: { source_type: MockFeDocument['source_type']; source_id: number; document_type: string; issued_at: string }
+): MockFeDocument {
+	const empresa = getEmpresa(companyId);
+	const series = (empresa.fe_sequences ??= {});
+	const serie = `${origen.document_type}|${emisor.environment}`;
+	const ultima = series[serie] ?? 0;
+	const secuencia = ultima >= 9_999_999_999 ? 1 : ultima + 1;
+	series[serie] = secuencia;
+
+	const consecutivo = `${emisor.branch_code}${emisor.terminal_code}${origen.document_type}${String(secuencia).padStart(10, '0')}`;
+	const seguridad = String(Math.floor(Math.random() * 100_000_000)).padStart(8, '0');
+	const clave = `506${fechaDeLaClave(origen.issued_at)}${emisor.identification.padStart(12, '0')}${consecutivo}1${seguridad}`;
+	const documento: MockFeDocument = {
+		...origen,
+		environment: emisor.environment,
+		sequence: secuencia,
+		consecutive: consecutivo,
+		clave,
+		situation: '1',
+		economic_activity: emisor.economic_activity
+	};
+	(empresa.fe_documents ??= []).push(documento);
+	return documento;
+}
+
+/** El comprobante vigente de un origen, con la forma de `EinvoiceOut`. */
+function comprobanteDe(companyId: number, source_type: MockFeDocument['source_type'], source_id: number) {
+	const hallado = [...(getEmpresa(companyId).fe_documents ?? [])]
+		.reverse()
+		.find((d) => d.source_type === source_type && d.source_id === source_id);
+	if (!hallado) return null;
+	return {
+		clave: hallado.clave,
+		consecutive: hallado.consecutive,
+		environment: hallado.environment,
+		economic_activity: hallado.economic_activity,
+		situation: hallado.situation
+	};
+}
+
 // --------------------------------------------------------------------- ventas
 
 function saleResponse(sale: MockSale, companyId: number) {
@@ -1191,6 +1322,8 @@ function saleResponse(sale: MockSale, companyId: number) {
 		cash_received: sale.cash_received,
 		change_given: sale.change_given,
 		created_at: sale.created_at,
+		// Nulo y no ausente, como el backend: las ventas del seed no lo tienen.
+		document_type: sale.document_type ?? null,
 		returned
 	};
 }
@@ -1208,7 +1341,8 @@ route('GET', '/sales/sale/:id', ({ params, companyId }) => {
 		...saleResponse(sale, companyId),
 		items: sale.items,
 		client_name: client ? `${client.name} ${client.last_name}`.trim() : null,
-		user_name: personName(sale.user_id)
+		user_name: personName(sale.user_id),
+		einvoice: comprobanteDe(companyId, 'sale', sale.id)
 	};
 });
 
@@ -1229,6 +1363,36 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 
 	const products = Array.isArray(body?.products) ? body.products : [];
 	if (!products.length) fail(400, 'empty_sale');
+
+	for (const line of products) {
+		if (!Number(line?.id_product) || Math.trunc(Number(line?.stock ?? 0)) <= 0)
+			fail(400, 'invalid_sale_line', { product_id: line?.id_product });
+	}
+
+	// El cliente tiene que ser de esta compañía (RN-85). En el backend la foránea
+	// no sabe de compañías y el caso de uso lo pregunta; acá cada compañía tiene
+	// su porción, así que basta con buscarlo en la suya.
+	const clientId = body?.client_id != null ? Number(body.client_id) : null;
+	if (clientId !== null && !db.clients.some((c) => c.id_client === clientId))
+		fail(404, 'client_not_found', { client_id: clientId });
+
+	// El comprobante, con la misma regla y el mismo orden que
+	// `domain/fe_document_type.py`: un valor desconocido se rechaza siempre, con
+	// la facturación apagada no lleva tipo, sin pedirlo sale la sugerencia, y la
+	// factura sin cliente no entra.
+	const pedido = body?.document_type ?? null;
+	if (pedido !== null && !isCounterDocumentType(pedido))
+		fail(400, 'invalid_sale_document_type', { document_type: pedido });
+	let documentType: string | null = null;
+	if (einvoicingEnabled(companyId)) {
+		// Lo que la compañía emite (RN-88), saneado como en el backend.
+		const encendidos = enabledTypes(seccionElectronica(companyId)?.documentTypes);
+		if (pedido === null) documentType = suggestedDocumentType(clientId !== null, encendidos);
+		else if (!encendidos.includes(pedido))
+			fail(400, 'document_type_not_enabled', { document_type: pedido });
+		else documentType = pedido;
+		if (documentType === INVOICE && clientId === null) fail(400, 'invoice_needs_receiver');
+	}
 
 	// F5: cada línea lleva la tarifa de SU producto; la configurada es solo el
 	// respaldo de los que no tienen la suya (RN-9). Se lee UNA vez y no por
@@ -1268,7 +1432,11 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 			// El costo, congelado igual que la tarifa (RN-63). En cero significa
 			// «nunca se compró», y eso se guarda como nulo: cero diría que fue
 			// gratis y le inflaría el margen al negocio.
-			unit_cost: (product.cost ?? 0) > 0 ? product.cost! : null
+			unit_cost: (product.cost ?? 0) > 0 ? product.cost! : null,
+			// El CABYS y la unidad, congelados igual (T-731, RN-86): el comprobante
+			// los imprime por línea. La unidad nace en 'Unid', como la columna.
+			cabys_code: product.cabys_code ?? null,
+			unit_of_measure: product.unit_of_measure ?? 'Unid'
 		});
 	}
 
@@ -1311,11 +1479,15 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 	if (cashReceived < calculado.total)
 		fail(400, 'insufficient_payment', { received: cashReceived, total: calculado.total });
 
+	// El emisor antes de escribir nada, como `NumberDocument.prepare` (T-705).
+	const emisor = documentType ? prepararNumeracion(companyId) : null;
+
 	const id = nextId('sales');
 	db.sales.push({
 		id,
 		sale_number: saleNumber,
-		client_id: body?.client_id != null ? Number(body.client_id) : null,
+		client_id: clientId,
+		document_type: documentType,
 		user_id: Number(body?.user_id ?? 0),
 		subtotal: calculado.subtotal,
 		tax: calculado.tax,
@@ -1336,6 +1508,16 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 		created_at: nowIso(),
 		items
 	});
+	// El número y la clave con la venta, con su misma hora (T-704, T-705).
+	if (emisor && documentType) {
+		const venta = db.sales.find((v) => v.id === id)!;
+		numerar(companyId, emisor, {
+			source_type: 'sale',
+			source_id: id,
+			document_type: documentType,
+			issued_at: venta.created_at
+		});
+	}
 	for (const item of items) {
 		const product = db.products.find((p) => p.id_product === item.id_product)!;
 		product.stock -= item.quantity;
@@ -1364,14 +1546,45 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 
 // --------------------------------------------------------------- devoluciones
 
+/**
+ * Una devolución como la devuelve el backend: con la nota y lo que la nota dice
+ * del original. Las del seed y las guardadas antes de T-725 no traen esos
+ * campos, y el backend los manda en nulo —o los lee de la venta—, así que acá
+ * también.
+ */
+function returnResponse(r: SaleReturn, companyId: number): SaleReturn {
+	const venta = getDb(companyId).sales.find((s) => s.id === r.sale_id);
+	// Con qué CABYS y qué unidad se vendió cada producto: la nota lo repite (RN-86).
+	const vendida = (id: number) => venta?.items.find((i) => i.id_product === id);
+	return {
+		...r,
+		items: r.items.map((item) => ({
+			...item,
+			cabys_code: vendida(item.id_product)?.cabys_code ?? null,
+			unit_of_measure: vendida(item.id_product)?.unit_of_measure ?? null
+		})),
+		document_type: r.document_type ?? null,
+		reference_code: r.reference_code ?? null,
+		sale_document_type: venta?.document_type ?? null,
+		sale_created_at: venta?.created_at ?? null,
+		sale_client_id: venta?.client_id ?? null,
+		sale_payment_method: venta?.payment_method ?? null,
+		// La NC numerada y la clave del original, que es como se referencia (T-705).
+		einvoice: comprobanteDe(companyId, 'return', r.id),
+		sale_clave: comprobanteDe(companyId, 'sale', r.sale_id)?.clave ?? null
+	};
+}
+
 route('GET', '/returns/returns_list', ({ companyId }) =>
-	[...getDb(companyId).returns].sort((a, b) => b.created_at.localeCompare(a.created_at))
+	[...getDb(companyId).returns]
+		.sort((a, b) => b.created_at.localeCompare(a.created_at))
+		.map((r) => returnResponse(r, companyId))
 );
 
 route('GET', '/returns/return/:id', ({ params, companyId }) => {
 	const found = getDb(companyId).returns.find((r) => r.id === Number(params[0]));
 	if (!found) fail(404, 'return_not_found');
-	return found;
+	return returnResponse(found, companyId);
 });
 
 route('POST', '/returns/add_return', ({ body, companyId }) => {
@@ -1388,6 +1601,28 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 		for (const item of previous.items) {
 			already.set(item.id_product, (already.get(item.id_product) ?? 0) + item.quantity);
 		}
+	}
+
+	// Anular es todo o nada (RN-89), y se mira antes que las cantidades, como en
+	// `RegisterReturn`: anular una venta a medio devolver es «ya tiene
+	// devoluciones», no «pidió de más».
+	const anular = body?.annul === true;
+	// Lo que las notas por monto le cambiaron a cada línea (T-726).
+	const ajustes = ajustesDeNotas(companyId, sale.id);
+	if (anular) {
+		if ([...already.values()].some((cantidad) => cantidad > 0))
+			fail(409, 'annul_after_return', { sale_id: sale.id });
+		const pedido = new Map<number, number>();
+		for (const line of requested) {
+			const producto = Number(line?.id_product);
+			pedido.set(producto, (pedido.get(producto) ?? 0) + Math.trunc(Number(line?.quantity ?? 0)));
+		}
+		const vendido = sale.items.filter((i) => i.quantity > 0);
+		const entera =
+			pedido.size === vendido.length && vendido.every((i) => pedido.get(i.id_product) === i.quantity);
+		if (!entera) fail(400, 'annul_must_be_full', { sale_id: sale.id });
+		// Con una ND encima no devolvería lo cobrado de más; con una NC, dos veces.
+		if (ajustes.size) fail(409, 'annul_after_note', { sale_id: sale.id });
 	}
 
 	// El tipo se escribe acá y no se deja inferir: `requested` viene del cuerpo
@@ -1410,6 +1645,9 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 				product: sold.name,
 				remaining
 			});
+		// Con una NC por monto encima reembolsaría dos veces la misma plata (T-726).
+		if ((ajustes.get(sold.id_product)?.restado ?? 0) > 0)
+			fail(409, 'return_after_credit_note', { product_id: sold.id_product });
 		return {
 			id_product: sold.id_product,
 			name: sold.name,
@@ -1441,6 +1679,23 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 	const netSubtotal = totales.subtotal;
 	const total = totales.total;
 
+	// Cada línea con su tarifa y lo reembolsado de impuesto: lo desglosa la nota
+	// impresa, como el backend lo guarda en `return_details`.
+	for (const item of items) {
+		const tarifa =
+			sale.items.find((v) => v.id_product === item.id_product)?.tax_rate ?? delEncabezado;
+		item.tax_rate = tarifa;
+		item.tax_amount = lineTax(item.subtotal, tarifa);
+	}
+
+	// La nota la decide la venta ORIGINAL, no la configuración de hoy (RN-89):
+	// mismo criterio que `fe_notes.credit_note_for_return`.
+	const nota = sale.document_type
+		? { document_type: '03', reference_code: anular ? '01' : '06' }
+		: { document_type: null, reference_code: null };
+	// El emisor antes de escribir, solo si hay nota (T-705).
+	const emisorDeLaNota = nota.document_type ? prepararNumeracion(companyId) : null;
+
 	// Devolución completa = todas las líneas de la venta quedan en cero.
 	const isFull = sale.items.every((sold) => {
 		const returningNow = items.find((i: any) => i.id_product === sold.id_product)?.quantity ?? 0;
@@ -1462,9 +1717,24 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 		tax: totales.tax,
 		total,
 		is_full: isFull,
-		items
+		items,
+		...nota,
+		// Lo que la nota impresa dice del original.
+		sale_document_type: sale.document_type ?? null,
+		sale_created_at: sale.created_at,
+		sale_client_id: sale.client_id,
+		sale_payment_method: sale.payment_method
 	};
 	db.returns.push(record);
+	// La NC en su serie, la `03`, con la devolución.
+	if (emisorDeLaNota && nota.document_type) {
+		numerar(companyId, emisorDeLaNota, {
+			source_type: 'return',
+			source_id: id,
+			document_type: nota.document_type,
+			issued_at: record.created_at
+		});
+	}
 
 	// El stock vuelve al inventario. Esto es lo que el sistema original nunca hacía.
 	for (const item of items) {
@@ -1495,8 +1765,182 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 	);
 
 	persist();
-	return { message: 'return_registered', id_return: id, total };
+	return { message: 'return_registered', id_return: id, total, document_type: nota.document_type };
 });
+
+// ------------------------------------------------------ notas por monto (T-726)
+//
+// Espejo de `RegisterAmountNote`. La ND se cobra con su medio y la NC sale de la
+// gaveta; las dos ajustan líneas de la venta con la tarifa con que se cobraron.
+
+/** Lo que las notas le sumaron (ND) y restaron (NC) a cada línea, con impuesto. */
+function ajustesDeNotas(
+	companyId: number,
+	saleId: number
+): Map<number, { sumado: number; restado: number }> {
+	const ajustes = new Map<number, { sumado: number; restado: number }>();
+	for (const nota of getDb(companyId).notes ?? []) {
+		if (nota.sale_id !== saleId) continue;
+		for (const item of nota.items) {
+			const previo = ajustes.get(item.id_product) ?? { sumado: 0, restado: 0 };
+			const total = round2(item.subtotal + item.tax_amount);
+			if (nota.document_type === DEBIT_NOTE) previo.sumado = round2(previo.sumado + total);
+			else previo.restado = round2(previo.restado + total);
+			ajustes.set(item.id_product, previo);
+		}
+	}
+	return ajustes;
+}
+
+function noteResponse(nota: AmountNote, companyId: number): AmountNote {
+	const venta = getDb(companyId).sales.find((s) => s.id === nota.sale_id);
+	return {
+		...nota,
+		sale_number: venta?.sale_number ?? '',
+		sale_document_type: venta?.document_type ?? null,
+		sale_created_at: venta?.created_at ?? null,
+		sale_client_id: venta?.client_id ?? null,
+		einvoice: comprobanteDe(companyId, 'note', nota.id),
+		sale_clave: comprobanteDe(companyId, 'sale', nota.sale_id)?.clave ?? null
+	};
+}
+
+route('POST', '/notes/add_note', ({ body, userId, companyId }) => {
+	// Solo el administrador (T-726): mueve plata sin mercadería.
+	const actor = getRoot().users.find((u) => u.id_user === userId);
+	if (!actor || (rolEn(actor.id_user, companyId) ?? actor.role) !== 'admin') fail(403, 'admin_only');
+
+	const db = getDb(companyId);
+	const sale = db.sales.find((s) => s.id === Number(body?.sale_id));
+	if (!sale) fail(404, 'sale_not_found');
+	if (!sale.document_type) fail(400, 'note_needs_document', { sale_id: sale.id });
+
+	const tipo = String(body?.document_type ?? '');
+	if (tipo !== DEBIT_NOTE && tipo !== CREDIT_NOTE) fail(400, 'invalid_note_type', { document_type: tipo });
+	const motivo = String(body?.reference_code ?? '');
+	if (motivo !== CORRECTS_AMOUNT)
+		fail(400, 'invalid_note_reason', { document_type: tipo, reference_code: motivo });
+	if (!enabledTypes(seccionElectronica(companyId)?.documentTypes).includes(tipo))
+		fail(400, 'document_type_not_enabled', { document_type: tipo });
+
+	const reason = String(body?.reason ?? '').trim();
+	if (!reason) fail(400, 'note_reason_required');
+
+	const esDebito = tipo === DEBIT_NOTE;
+	const paymentMethod = esDebito ? String(body?.payment_method ?? '') : null;
+	if (esDebito && !(PAYMENT_METHODS as readonly string[]).includes(paymentMethod!))
+		fail(400, 'invalid_sale_payment_method', { method: paymentMethod });
+
+	// Una línea pedida dos veces es una sola, con los montos sumados.
+	const pedido = new Map<number, number>();
+	for (const linea of Array.isArray(body?.items) ? body.items : []) {
+		const producto = Number(linea?.id_product);
+		pedido.set(producto, round2((pedido.get(producto) ?? 0) + Number(linea?.amount ?? 0)));
+	}
+	if (!pedido.size) fail(400, 'empty_note');
+
+	const devuelto = new Map<number, number>();
+	for (const previa of db.returns.filter((r) => r.sale_id === sale.id))
+		for (const item of previa.items)
+			devuelto.set(item.id_product, (devuelto.get(item.id_product) ?? 0) + item.quantity);
+	const ajustes = ajustesDeNotas(companyId, sale.id);
+	const delEncabezado =
+		sale.subtotal > 0 ? sale.tax / sale.subtotal : configuredTaxRate(companyId);
+
+	const items: AmountNoteItem[] = [];
+	for (const [producto, monto] of pedido) {
+		const vendida = sale.items.find((i) => i.id_product === producto);
+		if (!vendida) fail(400, 'note_line_not_in_sale', { product_id: producto });
+		if (!(monto > 0)) fail(400, 'invalid_note_amount', { product_id: producto });
+		const tarifa = vendida.tax_rate ?? delEncabezado;
+		// Con impuesto adentro: la base es el monto entre uno más la tarifa.
+		const base = round2(monto / (1 + tarifa));
+		const impuesto = lineTax(base, tarifa);
+		if (!esDebito) {
+			const cobrado = round2(vendida.price * vendida.quantity * (1 + tarifa));
+			const yaDevuelto = round2(vendida.price * (devuelto.get(producto) ?? 0) * (1 + tarifa));
+			const { sumado = 0, restado = 0 } = ajustes.get(producto) ?? {};
+			const queda = round2(cobrado + sumado - yaDevuelto - restado);
+			const pedidoTotal = round2(base + impuesto);
+			if (pedidoTotal > queda)
+				fail(400, 'credit_exceeds_line', {
+					product_id: producto,
+					available: queda,
+					requested: pedidoTotal
+				});
+		}
+		items.push({
+			id_product: producto,
+			name: vendida.name,
+			subtotal: base,
+			tax_rate: tarifa,
+			tax_amount: impuesto,
+			tax_code: vendida.tax_code ?? null,
+			cabys_code: vendida.cabys_code ?? null,
+			unit_of_measure: vendida.unit_of_measure ?? null
+		});
+	}
+
+	const subtotal = round2(items.reduce((t, i) => t + i.subtotal, 0));
+	const tax = round2(items.reduce((t, i) => t + i.tax_amount, 0));
+	// La nota siempre es un comprobante: el emisor antes de escribir (T-705).
+	const emisorDeLaNota = prepararNumeracion(companyId);
+	const id = nextId('notes');
+	const nota: AmountNote = {
+		id,
+		sale_id: sale.id,
+		sale_number: sale.sale_number,
+		user_id: Number(userId),
+		user_name: personName(Number(userId)),
+		created_at: nowIso(),
+		document_type: tipo,
+		reference_code: motivo,
+		reason,
+		payment_method: paymentMethod,
+		subtotal,
+		tax,
+		total: round2(subtotal + tax),
+		items
+	};
+	(getEmpresa(companyId).notes ??= []).push(nota);
+	numerar(companyId, emisorDeLaNota, {
+		source_type: 'note',
+		source_id: id,
+		document_type: tipo,
+		issued_at: nota.created_at
+	});
+
+	// El asiento de la venta o el de la devolución, sin costo y con su origen.
+	const vendidas = items.map((i) => ({
+		subtotal: i.subtotal,
+		tax: i.tax_amount,
+		tax_rate: i.tax_rate,
+		quantity: 1,
+		unit_cost: null
+	}));
+	const fecha = nota.created_at.slice(0, 10);
+	asentar(companyId, () =>
+		esDebito
+			? postSale(companyId, { id, date: fecha, payment_method: paymentMethod! }, vendidas, Number(userId), 'note')
+			: postReturn(companyId, { id, date: fecha }, vendidas, Number(userId), 'note')
+	);
+
+	persist();
+	return { message: 'note_registered', id_note: id, document_type: tipo, total: nota.total };
+});
+
+route('GET', '/notes/note/:id', ({ params, companyId }) => {
+	const nota = (getDb(companyId).notes ?? []).find((n) => n.id === Number(params[0]));
+	if (!nota) fail(404, 'note_not_found');
+	return noteResponse(nota, companyId);
+});
+
+route('GET', '/notes/by_sale/:id', ({ params, companyId }) =>
+	(getDb(companyId).notes ?? [])
+		.filter((n) => n.sale_id === Number(params[0]))
+		.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id)
+		.map((n) => noteResponse(n, companyId))
+);
 
 // ----------------------------------------------------------------------- caja
 
@@ -1532,9 +1976,28 @@ function computeExpected(session: CashSession, companyId: number): CashSessionRe
 	);
 	const returnsTotal = round2(returns.reduce((acc, r) => acc + r.total, 0));
 
+	// Las notas por monto del mismo cajero en la misma ventana (T-726).
+	const notas = (db.notes ?? []).filter(
+		(n) => n.user_id === session.user_id && n.created_at >= from && n.created_at <= to
+	);
+	const debitos = notas.filter((n) => n.document_type === DEBIT_NOTE);
+	const debitNotesTotal = round2(debitos.reduce((acc, n) => acc + n.total, 0));
+	const debitNotesCash = round2(
+		debitos.filter((n) => n.payment_method === 'Efectivo').reduce((acc, n) => acc + n.total, 0)
+	);
+	const creditNotesTotal = round2(
+		notas.filter((n) => n.document_type === CREDIT_NOTE).reduce((acc, n) => acc + n.total, 0)
+	);
+
 	// Solo el efectivo afecta la gaveta: tarjeta y transferencia no pasan por caja.
 	const expected = round2(
-		session.opening_amount + cashSales + movementsIn - movementsOut - returnsTotal
+		session.opening_amount +
+			cashSales +
+			debitNotesCash +
+			movementsIn -
+			movementsOut -
+			returnsTotal -
+			creditNotesTotal
 	);
 
 	return {
@@ -1553,7 +2016,10 @@ function computeExpected(session: CashSession, companyId: number): CashSessionRe
 		cash_sales: cashSales,
 		movements_in: movementsIn,
 		movements_out: movementsOut,
-		returns_total: returnsTotal
+		returns_total: returnsTotal,
+		debit_notes_total: debitNotesTotal,
+		debit_notes_cash: debitNotesCash,
+		credit_notes_total: creditNotesTotal
 	};
 }
 
@@ -1717,6 +2183,18 @@ route('GET', '/reports/summary', ({ query, companyId }) => {
 			.reduce((acc, r) => acc + r.total, 0)
 	);
 
+	// Las notas por monto (T-726): la ND suma a lo vendido y la NC resta.
+	const notasDelPeriodo = (db.notes ?? []).filter((n) => {
+		const t = new Date(n.created_at).getTime();
+		return t >= fromTs && t <= toTs;
+	});
+	const debitNotes = round2(
+		notasDelPeriodo.filter((n) => n.document_type === DEBIT_NOTE).reduce((a, n) => a + n.total, 0)
+	);
+	const creditNotes = round2(
+		notasDelPeriodo.filter((n) => n.document_type === CREDIT_NOTE).reduce((a, n) => a + n.total, 0)
+	);
+
 	// Periodo anterior de igual duración, para el porcentaje de variación.
 	const span = toTs - fromTs;
 	const previous = salesBetween(fromTs - span - 1, fromTs - 1, companyId);
@@ -1726,7 +2204,9 @@ route('GET', '/reports/summary', ({ query, companyId }) => {
 		sales_count: sales.length,
 		gross_total: gross,
 		returns_total: returnsTotal,
-		net_total: round2(gross - returnsTotal),
+		debit_notes_total: debitNotes,
+		credit_notes_total: creditNotes,
+		net_total: round2(gross + debitNotes - returnsTotal - creditNotes),
 		tax_total: round2(sales.reduce((acc, s) => acc + s.tax, 0)),
 		average_ticket: sales.length ? round2(gross / sales.length) : 0,
 		items_sold: sales.reduce((acc, s) => acc + s.items.reduce((a, i) => a + i.quantity, 0), 0),
@@ -2423,12 +2903,66 @@ function configuredTaxRate(companyId: number): number {
 	return Number.isFinite(rate) && rate >= 0 && rate <= 1 ? rate : DEFAULT_TAX_RATE;
 }
 
+/**
+ * Si la compañía factura electrónicamente, con la misma regla que
+ * `crud_settings.get_einvoicing_enabled`: la clave nueva manda si **está**, y
+ * solo un booleano de verdad cuenta.
+ */
+function einvoicingEnabled(companyId: number): boolean {
+	const s = seccionElectronica(companyId);
+	if (!s) return false;
+	return ('enabled' in s ? s.enabled : s.activa) === true;
+}
+
+/** La sección de factura electrónica, con la misma regla que `crud_settings`. */
+function seccionElectronica(companyId: number): Record<string, unknown> | null {
+	const data = (settingsRow(companyId).data ?? {}) as Record<string, unknown>;
+	const seccion = 'eInvoicing' in data ? data.eInvoicing : data.electronica;
+	if (!seccion || typeof seccion !== 'object' || Array.isArray(seccion)) return null;
+	return seccion as Record<string, unknown>;
+}
+
 route('GET', '/settings/', ({ userId, companyId }) => {
 	// La lee cualquier sesión: el cajero necesita la moneda y los datos del
 	// tiquete. No hay secretos guardados acá.
 	if (userId == null) fail(401, 'unauthorized');
-	return settingsRow(companyId);
+	return { ...settingsRow(companyId), issuer: emisorParaConfiguracion(companyId) };
 });
+
+/** La cédula del emisor, de la compañía y no de la configuración (RN-45). */
+function emisorParaConfiguracion(companyId: number) {
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	const cedula = (empresa?.identificacion ?? '').trim();
+	return {
+		identification: cedula || null,
+		identification_type: empresa?.identification_type ?? (cedula ? identificationTypeFor(cedula) : null)
+	};
+}
+
+/**
+ * La puerta de `crud_settings._validar_emisor` (T-722): la ubicación a medias no
+ * se guarda, y la facturación no se enciende sin cédula, correo y ubicación.
+ */
+function validarEmisor(companyId: number, data: Record<string, any>) {
+	const negocio = (data.business ?? data.negocio ?? {}) as Record<string, any>;
+	const ubicacion = negocio.location;
+	if (!isBlankLocation(ubicacion)) {
+		const problema = locationProblem(normalizeLocation(ubicacion));
+		if (problema) fail(400, 'invalid_location', { field: problema.field, reason: problema.reason });
+	}
+	const seccion = (data.eInvoicing ?? data.electronica ?? {}) as Record<string, any>;
+	const encendida = ('enabled' in seccion ? seccion.enabled : seccion.activa) === true;
+	if (!encendida) return;
+
+	const faltan: string[] = [];
+	if (!/\d/.test(getRoot().companies.find((c) => c.id === companyId)?.identificacion ?? ''))
+		faltan.push('identification');
+	const correo = String(negocio.email ?? negocio.correo ?? '').trim();
+	if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) faltan.push('email');
+	if (isBlankLocation(ubicacion) || locationProblem(normalizeLocation(ubicacion)))
+		faltan.push('location');
+	if (faltan.length) fail(400, 'einvoicing_needs_issuer', { missing: faltan });
+}
 
 route('PUT', '/settings/', ({ userId, body, companyId }) => {
 	if (userId == null) fail(401, 'unauthorized');
@@ -2458,6 +2992,8 @@ route('PUT', '/settings/', ({ userId, body, companyId }) => {
 			fail(400, 'tax_rate_out_of_range');
 	}
 
+	validarEmisor(companyId, data as Record<string, any>);
+
 	const row = settingsRow(companyId);
 	row.data = data;
 	if (body?.logo) {
@@ -2472,7 +3008,7 @@ route('PUT', '/settings/', ({ userId, body, companyId }) => {
 	row.updated_at = nowIso();
 	row.updated_by = userId;
 	persist();
-	return row;
+	return { ...row, issuer: emisorParaConfiguracion(companyId) };
 });
 
 // Utilidad exclusiva del modo demo: devuelve todo al estado de fábrica.
@@ -2786,6 +3322,7 @@ function companiaParaSoporte(companyId: number) {
 		compania: empresa.compania,
 		nombre: empresa.nombre,
 		identificacion: empresa.identificacion ?? null,
+		identification_type: empresa.identification_type ?? null,
 		creada_el: empresa.creada_el ?? null,
 		locale: empresa.locale,
 		document_locale: empresa.document_locale,
@@ -2902,6 +3439,14 @@ route('POST', '/support/companies', ({ body, token }) => {
 	const existente = raiz.users.find((u) => u.email.toLowerCase() === email);
 	if (existente?.is_support) fail(400, 'support_cannot_be_member', { email });
 
+	// La cédula del emisor, limpia y con tipo: va en la clave (RN-45, T-705).
+	const emisorDeAlta = emisorLimpio(body?.identificacion, body?.identification_type);
+	// Y la ubicación, si viene (RF-73): opcional, pero a medias no.
+	const ubicacionDeAlta = body?.settings?.business?.location;
+	if (!isBlankLocation(ubicacionDeAlta)) {
+		const problema = locationProblem(normalizeLocation(ubicacionDeAlta));
+		if (problema) fail(400, 'invalid_location', { field: problema.field, reason: problema.reason });
+	}
 	const companyId = nextId('companies');
 	raiz.companies.push({
 		id: companyId,
@@ -2915,7 +3460,8 @@ route('POST', '/support/companies', ({ body, token }) => {
 		document_locale: documentLocale,
 		plan_id: plan.id,
 		vence_el: (body?.vence_el as string | null) ?? null,
-		identificacion: (body?.identificacion as string | null) ?? null,
+		identificacion: emisorDeAlta.cedula,
+		identification_type: emisorDeAlta.tipo,
 		creada_el: nowIso()
 	});
 
@@ -3028,6 +3574,163 @@ route('PUT', '/support/companies/:id/subscription', ({ params, body, token }) =>
 	persist();
 
 	return companiaParaSoporte(companyId);
+});
+
+/**
+ * La cédula del emisor limpia y con tipo, como `support_routes._emisor`: sin
+ * guiones, de 9 a 12 dígitos, y el tipo el elegido o el que deja ver la cédula.
+ * Vacía es «todavía no se sabe» y vuelve nula.
+ */
+function emisorLimpio(identificacion: unknown, pedido: unknown): { cedula: string | null; tipo: string | null } {
+	const escrita = String(identificacion ?? '').trim();
+	if (!escrita) return { cedula: null, tipo: null };
+	const cedula = escrita.replace(/[-\s]/g, '');
+	if (!/^\d{9,12}$/.test(cedula)) fail(409, 'issuer_identification_required', { reason: 'invalid' });
+	if (pedido == null || pedido === '') {
+		const tipo = identificationTypeFor(cedula);
+		if (!tipo) fail(400, 'identification_type_required');
+		return { cedula, tipo };
+	}
+	if (!isIdentificationType(pedido)) fail(400, 'invalid_identification_type', { identification_type: String(pedido) });
+	return { cedula, tipo: String(pedido) };
+}
+
+/** La cédula del emisor (RN-45, T-621): la fija y la corrige soporte. */
+route('PUT', '/support/companies/:id/issuer', ({ params, body, token }) => {
+	const soporte = usuarioDelToken(token);
+	const companyId = Number(params[0]);
+	const empresa = getRoot().companies.find((c) => c.id === companyId);
+	if (!empresa) fail(404, 'company_not_found');
+
+	const { cedula, tipo } = emisorLimpio(body?.identificacion, body?.identification_type);
+	if (!cedula || !tipo) fail(400, 'identification_required');
+
+	const antes = `${empresa.identificacion || 'sin cédula'} (${empresa.identification_type ?? '—'})`;
+	empresa.identificacion = cedula;
+	empresa.identification_type = tipo;
+	registrar(soporte.id_user, companyId, 'emisor', `emisor ${antes} → ${cedula} (${tipo})`);
+	persist();
+	return companiaParaSoporte(companyId);
+});
+
+// ------------------------------------------------ tasas de planilla (T-1204)
+
+/*
+ * Las mismas que siembra la API al arrancar (`payrollRates.ts` se genera de su
+ * archivo de datos) más las que soporte agregó. Son del país, no de una
+ * compañía (RN-67): la misma lista para todas.
+ */
+
+/** Más de seis meses sin comprobar: `domain/payroll.STALE_AFTER_DAYS`. */
+const TASA_VIEJA_DIAS = 183;
+
+interface TasaDePlanilla {
+	concept: string;
+	payer: string;
+	value: number;
+	valid_from: string;
+	valid_to: string | null;
+	source: string;
+	verified_at: string;
+}
+
+function tasasDePlanilla(): TasaDePlanilla[] {
+	const sembradas = PAYROLL_SEED.rates.map((r) => ({
+		...r,
+		valid_to: null,
+		verified_at: PAYROLL_SEED.verified_at
+	}));
+	const agregadas = (getRoot().payroll_rates ?? []).map((r) => ({ ...r, valid_to: null }));
+	return [...sembradas, ...agregadas];
+}
+
+function esVieja(verificada: string, hoy: string): boolean {
+	return diasEntre(verificada, hoy) > TASA_VIEJA_DIAS;
+}
+
+function rige(fila: { valid_from: string; valid_to?: string | null }, dia: string): boolean {
+	return fila.valid_from <= dia && (fila.valid_to == null || dia <= fila.valid_to);
+}
+
+/** Lo mismo que `crud_payroll_rates.vigentes`: de cada clave, la más reciente que rige. */
+function vigentesDePlanilla(dia: string, hoy: string) {
+	const elegidas = new Map<string, TasaDePlanilla>();
+	for (const fila of tasasDePlanilla()) {
+		if (!rige(fila, dia)) continue;
+		const clave = `${fila.payer}:${fila.concept}`;
+		const antes = elegidas.get(clave);
+		if (!antes || fila.valid_from > antes.valid_from) elegidas.set(clave, fila);
+	}
+	const tasas = [...elegidas.entries()]
+		.sort(([a], [b]) => (a < b ? -1 : 1))
+		.map(([, t]) => ({ ...t, stale: esVieja(t.verified_at, hoy) }));
+	const presentes = new Set(tasas.map((t) => `${t.concept}:${t.payer}`));
+	const tramos = PAYROLL_SEED.brackets.filter((b) => rige(b, dia));
+	const cesantia = PAYROLL_SEED.severance_valid_from <= dia ? PAYROLL_SEED.severance : [];
+	return {
+		on: dia,
+		country: PAYROLL_SEED.country,
+		rates: tasas,
+		brackets: tramos.map((b) => ({ ...b, verified_at: PAYROLL_SEED.verified_at })),
+		credits: PAYROLL_SEED.credits.filter((c) => rige(c, dia)),
+		severance: cesantia,
+		missing: PAYROLL_SEED.required.filter((r) => !presentes.has(r)),
+		stale:
+			tasas.some((t) => t.stale) ||
+			(tramos.length > 0 && esVieja(PAYROLL_SEED.verified_at, hoy))
+	};
+}
+
+route('GET', '/payroll/rates', ({ query, userId, companyId }) => {
+	if (userId == null) fail(401, 'unauthorized');
+	const user = getRoot().users.find((u) => u.id_user === userId);
+	if (!user) fail(404, 'user_not_found');
+	if ((rolEn(user.id_user, companyId) ?? user.role) !== 'admin') fail(403, 'admin_only');
+	const hoy = nowIso().slice(0, 10);
+	return vigentesDePlanilla(query.get('on') || hoy, hoy);
+});
+
+route('PUT', '/support/payroll/rates', ({ body, token }) => {
+	const soporte = usuarioDelToken(token);
+	const concept = String(body?.concept ?? '');
+	const payer = String(body?.payer ?? '');
+	const valid_from = String(body?.valid_from ?? '');
+	const source = String(body?.source ?? '');
+	const value = Number(body?.value);
+	// Lo que en la API rechaza pydantic con un 422.
+	if (
+		!/^[a-z][a-z0-9_]{1,39}$/.test(concept) ||
+		!/^\d{4}-\d{2}-\d{2}$/.test(valid_from) ||
+		source.length < 5 ||
+		source.length > 255 ||
+		!Number.isFinite(value) ||
+		(body?.country ?? 'CR') !== 'CR'
+	) {
+		fail(422, 'invalid_request');
+	}
+	// Lo que en la API decide el dominio (`check_new_rate`).
+	if (!['employee', 'employer', 'rule'].includes(payer)) {
+		fail(400, 'invalid_payroll_rate', { field: 'payer', reason: 'unknown' });
+	}
+	if (value < 0 || (payer !== 'rule' && value >= 1)) {
+		fail(400, 'invalid_payroll_rate', { field: 'value', reason: 'out_of_range' });
+	}
+	const ultima = tasasDePlanilla()
+		.filter((t) => t.concept === concept && t.payer === payer)
+		.map((t) => t.valid_from)
+		.sort()
+		.at(-1);
+	if (ultima && valid_from <= ultima) {
+		fail(409, 'payroll_rate_not_newer', { concept, payer, latest: ultima });
+	}
+
+	const hoy = nowIso().slice(0, 10);
+	const fila: MockPayrollRate = { concept, payer, value, valid_from, source, verified_at: hoy };
+	const raiz = getRoot();
+	raiz.payroll_rates = [...(raiz.payroll_rates ?? []), fila];
+	registrar(soporte.id_user, null, 'tasa_planilla', `${concept}:${payer} = ${value} desde ${valid_from}`);
+	persist();
+	return { ...fila, valid_to: null, stale: false };
 });
 
 /** *Entrar como* (RF-8, RN-4). Motivo obligatorio y solo lectura. */

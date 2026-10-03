@@ -165,8 +165,10 @@ una compañía no puede terminar en la factura de otra.
 - **Contabilidad** (F11, módulo por plan): partida doble con asientos
   automáticos desde lo que el POS ya registra, periodos, libros y borrador
   del D-104.
-- **Planilla** (F12, módulo por plan): empleados, corridas con las tasas
-  congeladas, aguinaldo, vacaciones, liquidación y el archivo para la CCSS.
+- **Planilla** (F12, módulo por plan): empleados, puestos, jornadas mensuales,
+  quincenales, bisemanales y semanales, acciones de personal, corridas con las
+  tasas congeladas, aguinaldo, vacaciones, liquidación, los archivos para la
+  CCSS y el INS, y la importación desde Excel de quien viene de otro sistema.
 - Lo ya construido: ventas, caja, devoluciones, inventario y entradas,
   clientes, usuarios, reportes, configuración, tres plantillas de documento.
 
@@ -189,6 +191,16 @@ una compañía no puede terminar en la factura de otra.
 - Planilla de servicios profesionales, pago de planilla desde la caja del
   POS, y planilla de otro país: las tasas se modelan por país (RN-67), pero
   solo se siembra Costa Rica.
+- De planilla, lo que el ERP de origen tiene y la primera versión no: los
+  archivos de pago de cada banco, el envío de boletas por correo, las
+  vacaciones por régimen y los bonos de cumpleaños o aniversario, la renta
+  con otros patronos, las constancias salariales, los centros de costo y los
+  departamentos, los contratos en otra moneda, varios contratos a la vez para
+  el mismo empleado, el salario por hora, la pensión voluntaria como rebajo de
+  la renta, el
+  expediente del empleado (amonestaciones y notas) y la planilla del INSS de
+  Nicaragua. Se decidió el 2026-09-27, al comparar F12 con ese ERP; cada una
+  vuelve cuando un cliente la pida.
 
 ### Nunca
 
@@ -630,11 +642,19 @@ tabla de cesantía es un dato con vigencia (RN-67), y la causa queda escrita.
 **RN-72.** Un empleado **no es un usuario**. Existe aparte y puede enlazarse a
 uno: la cajera es las dos cosas, el bodeguero suele ser solo empleado. Un ex
 empleado no se borra: se da de baja con fecha y causa, que es lo que la
-liquidación y la planilla de la CCSS necesitan.
+liquidación y la planilla de la CCSS necesitan. Tiene los datos que piden los
+informes de la CCSS y del INS: el nombre y **los dos apellidos por separado**,
+el tipo y el número de identificación —cédula, DIMEX, NITE, pasaporte o
+permiso de trabajo—, el número de asegurado, la fecha de nacimiento, el género,
+el estado civil, la nacionalidad y si es pensionado.
 
 **RN-73.** El impuesto al salario se retiene **por tramos mensuales** sobre el
-salario del mes —proyectado cuando la corrida es quincenal o semanal— menos los
-créditos fiscales. Los tramos y los créditos son datos con vigencia.
+salario del **mes calendario**, menos los créditos fiscales. Las corridas que
+no cierran el mes retienen sobre la proyección, y la última del mes **liquida
+la diferencia**: lo retenido en el mes es exactamente el impuesto de lo
+devengado en el mes, que es lo que se declara. Proyectar y partir sin liquidar
+descuadra el mes en cuanto las horas extra de una quincena no son las de la
+otra. Los tramos y los créditos son datos con vigencia.
 
 **RN-74.** La planilla **no mueve la caja del POS**. Se paga por transferencia
 o se marca pagada; lo que salga de la gaveta para pagarla se anota como retiro
@@ -644,6 +664,86 @@ que ninguno de los dos cuadre.
 **RN-75.** Con contabilidad activa, pagar una corrida **genera su asiento**:
 gasto de salarios, gasto de cargas patronales, retenciones por pagar a la CCSS
 y a Hacienda, y salarios por pagar. Sin contabilidad, no pasa nada más.
+
+Lo que sigue se agregó el 2026-09-27, después de comparar F12 con el ERP del
+que viene VentaSys: es lo que separa una calculadora de salarios de una
+planilla que se puede presentar a la CCSS y al INS.
+
+**RN-90.** Todo lo que cambia el pago o la situación de un empleado es una
+**acción de personal**: tiene tipo, fechas, cantidad o monto, quién la
+registró y cuándo. **Vive en el empleado, no en la corrida**: cada corrida toma
+las que caen en su periodo, y una que cruza dos periodos —una incapacidad del
+10 al 20 en quincenas— se parte por el calendario, no a mano. Es el historial
+del empleado y la fuente de los informes: la CCSS pide las fechas de cada
+incapacidad, de cada permiso y de cada cambio de puesto. Los tipos son estos, y
+la lista es cerrada —cada tipo tiene su efecto en el cálculo y en los
+informes, y uno inventado por la compañía no sabría qué decirle a la CCSS—:
+
+| Grupo | Tipos |
+|---|---|
+| Devengos | horas extra, horas dobles (feriado o descanso trabajado), bonificación |
+| Ausencias | incapacidad de la CCSS, incapacidad del INS, licencia de maternidad, permiso con goce, permiso sin goce, ausencia injustificada, vacaciones |
+| Deducciones | deducción, pensión alimentaria, embargo |
+| Del contrato | aumento de salario, cambio de puesto, baja |
+
+**RN-91.** Una acción que ya entró en una corrida pagada **no se edita ni se
+borra: se anula**, y la anulación entra en la corrida siguiente con el efecto
+contrario. Una acción que cae en un periodo ya pagado —la incapacidad que llegó
+tarde— se aplica en la corrida siguiente, con sus fechas. La corrida pagada no
+cambia nunca (RN-68).
+
+**RN-92.** Una deducción puede ser **recurrente**: se aplica en cada corrida
+mientras esté vigente, hasta su fecha final o hasta agotar su saldo si tiene
+monto total —un préstamo de ₡300 000 a ₡25 000 por quincena—. Se puede
+**suspender**, con motivo, y queda quién y cuándo; lo ya aplicado no se toca.
+El saldo es lo pactado menos lo aplicado en corridas pagadas, nunca una columna
+que alguien edita.
+
+**RN-93.** El **embargo** respeta el art. 172 del Código de Trabajo: es
+inembargable el menor salario mensual del decreto de salarios mínimos —un dato
+con vigencia, RN-67— y del resto se embarga un octavo hasta tres veces ese
+monto y un cuarto de lo que lo supere, sobre el salario del mes menos cargas y
+renta, y nunca más que el saldo. Ese monto es **del salario y no de cada
+embargo**: dos embargos se lo reparten, el más viejo primero. La **pensión
+alimentaria** puede tomar hasta la mitad del salario. **El neto nunca es
+negativo**: si las deducciones no caben se aplican en orden —cargas, renta,
+pensión alimentaria, embargo y las demás— y lo que no cupo queda en su saldo
+para la corrida siguiente; no se inventa como deuda del empleado.
+
+**RN-94.** El pago es **mensual, quincenal, bisemanal o semanal**, y cada
+compañía define sus **jornadas**: la periodicidad, la clase —diurna, mixta o
+nocturna, con sus horas por día—, si el día de descanso se paga
+(establecimientos comerciales, art. 152) y las **fechas de corte**: el día en
+que corta la primera quincena, el día de la semana o el inicio de la serie
+bisemanal. Una corrida es de una jornada y de una fecha de corte válida para
+ella, y el periodo sale del corte: no se escribe. El salario del contrato es el
+del periodo de su jornada, y el mensual se deriva: por dos, por veintiséis
+doceavos, por cincuenta y dos doceavos. En mensual y quincenal el día vale el
+mensual entre treinta, tenga el mes los días que tenga, y una ausencia nunca
+rebaja más que el salario del periodo.
+
+**RN-95.** Cada compañía tiene su catálogo de **puestos**, y cada puesto lleva
+su **código de ocupación de la CCSS** y su **código del INS**: los dos
+informes lo piden por empleado. El contrato dice el puesto; cambiarlo es una
+acción de personal con fecha (RN-90), y la CCSS la recibe como cambio de
+ocupación.
+
+**RN-96.** Cada mes salen **dos archivos**: la planilla para la CCSS (SICERE) y
+la del INS por póliza de riesgos del trabajo (RT-Virtual). Los dos se arman de
+las corridas pagadas del mes y de las acciones con sus fechas, y **el formato
+se toma de la especificación oficial** de cada institución, guardada en el
+repositorio como los XSD de Hacienda. Un archivo que no coincide con lo pagado
+es peor que ninguno: la diferencia la cobra la institución con recargos.
+
+**RN-97.** Una compañía que viene de otro sistema **no empieza de cero**:
+importa desde Excel sus puestos, sus empleados con su contrato y sus **saldos
+de apertura** —los días de vacaciones a una fecha, lo devengado desde el 1 de
+diciembre para el aguinaldo, los salarios de los últimos seis meses para una
+liquidación y las deducciones recurrentes con lo que les queda—. Se importa con
+**vista previa**: nada se escribe hasta confirmar, una fila con error no entra
+y se dice por qué, y lo confirmado entra entero o no entra. Los saldos de
+apertura quedan marcados como importados, con su fecha, y el aguinaldo y la
+liquidación los suman como si fueran corridas pagadas.
 
 ### Lo que Hacienda exige del contenido del comprobante
 
@@ -718,6 +818,111 @@ opcional por lo mismo: el XSD lo exige.
 venta van en pares —`08` con `09`, `10` con `11`—: la factura difiere el IVA y
 el recibo de pago lo reconoce al cobrar. Cualquier nota de crédito o de débito
 va **contra la factura original**, nunca contra el recibo.
+
+**RN-85.** **El tipo de comprobante se decide al vender, y lo decide el
+receptor.** Sin cliente identificado solo cabe un **tiquete** (TE): la
+**factura** (FE) exige un receptor con nombre e identificación, y el cliente de
+contado de un supermercado no los tiene. Con cliente, la venta sale como factura
+salvo que el cajero la deje en tiquete —un cliente frecuente que compra para su
+casa no necesita la factura a su nombre—. El cajero **ve el tipo antes de
+cobrar**: emitir sin saber qué se emite es enterarse cuando el cliente ya se fue
+con el papel equivocado.
+
+El tipo **queda en la venta y no cambia después**. Es parte del consecutivo, que
+va por tipo (RN-37), y de la clave, así que el documento reimpreso dentro de un
+año dice lo que se emitió aunque la compañía haya activado o apagado la
+facturación electrónica entre medio. Con la facturación electrónica apagada, la
+venta no lleva tipo y el documento es el de siempre.
+
+**RN-86.** **Todas las representaciones impresas dicen lo mismo de Hacienda.**
+El tipo de comprobante, el consecutivo y la clave van **juntos** —la Nota 1 del
+anexo lo exige— en las tres plantillas, y cada una dice en qué punto está el
+documento: todavía sin clave, emitido en pruebas y sin efecto fiscal (RN-17), o
+autorizado. El dueño elige la plantilla por cómo se ve, no por lo que lleva, así
+que lo fiscal no puede depender de cuál eligió.
+
+Y **hay un solo molde**. El PDF que el backend dibujaba por su cuenta era un
+cuarto documento que no llevaba nada de esto; se quitó (T-922), y el PDF sale de
+imprimir la plantilla. Dos moldes para el mismo comprobante terminan diciendo dos
+cosas distintas, y el que se entrega es justo el que nadie revisó.
+
+**Lo que lleva un comprobante impreso** es lo de la factura de referencia del
+usuario (`docs/invoice/50624092600310170293400100001010001819201163700346.pdf`,
+un comprobante real aceptado), en las tres plantillas:
+
+- **Cabecera**: el tipo, el número —el consecutivo cuando lo hay— y la fecha y
+  hora de emisión.
+- **Emisor**: nombre, razón social, identificación **con su tipo** («Cédula
+  jurídica»), actividad económica, dirección, teléfono y correo.
+- **Receptor**: nombre, identificación con su tipo, dirección, teléfono y correo.
+- **Condición de venta, medio de pago y moneda**, con el tipo de cambio cuando se
+  sabe.
+- **Por línea**: número, CABYS, detalle, cantidad, unidad, precio unitario,
+  subtotal, impuesto y total. El CABYS y la unidad son **los de la venta**, no
+  los que tenga hoy el producto (RN-12).
+- **Resumen**: total venta, descuentos, venta neta, impuesto por tarifa, total
+  del impuesto y total del comprobante; y el **monto en letras**.
+- **Al pie**, autorizado: la resolución que lo autoriza y dónde se verifica.
+
+Lo que no es de Hacienda —el logo, los colores, las notas del dueño— es de la
+plantilla. Un documento sin tipo no lleva nada de esto: es el de siempre, y sirve
+en cualquier país.
+
+**RN-87.** **Cada comprobante nace de su flujo, no de un desplegable.** Son
+siete y solo tres son una venta: el tiquete, la factura y la factura de
+exportación. Los otros cuatro nacen de algo que ya pasó o de otro lado del
+negocio:
+
+| Tipo | Nace de | Lo que necesita y una venta nueva no tiene |
+|---|---|---|
+| TE, FE | Cobrar | — (RN-85) |
+| FEE | Cobrar a un cliente del extranjero | La partida arancelaria de cada producto y la dirección extranjera del cliente |
+| NC | Devolver o corregir un comprobante emitido | El comprobante original, al que tiene que referirse |
+| ND | Aumentar un comprobante emitido | Lo mismo |
+| FEC | Comprarle a quien no es contribuyente | Es una compra: la emite el negocio como comprador |
+| REP | Cobrar una venta a crédito con el IVA diferido | Una venta a crédito, que el POS todavía no hace |
+
+Ofrecerlos todos al cobrar sería ofrecer siete opciones de las cuales cuatro
+Hacienda rechaza siempre: una nota sin el documento que modifica, o un recibo de
+pago sin la venta a crédito que cobra, no tienen con qué armarse.
+
+**RN-88.** **Cada compañía elige qué comprobantes emite.** El sistema es para
+cualquier negocio y no para uno: un supermercado no exporta, una distribuidora
+no emite tiquetes, una ferretería le compra a quien no factura. Los siete se ven
+en Configuración y cada flujo muestra solo los que la compañía encendió. Nacen
+encendidos los cuatro que Hacienda pide para certificarse y para operar —TE,
+FE, NC y ND—, y apagados la FEE y la FEC.
+
+Tres límites, y los tres son para que la configuración no pueda dejar al negocio
+sin salida:
+
+- **Al menos uno de TE y FE.** Con los dos apagados no se podría vender.
+- **La NC no se apaga.** Devolver una venta emitida tiene que pasar por una nota
+  de crédito; sin ella, la devolución no tendría respaldo fiscal.
+- **Lo que todavía no tiene flujo se ve pero no se mueve**, con el motivo: la ND
+  hasta que se pueda emitir desde la factura, la FEE hasta que existan la
+  partida arancelaria y la dirección extranjera, la FEC hasta que el proveedor
+  pueda ser «no contribuyente», el REP hasta que exista la venta a crédito.
+  Moverlos antes sería una casilla que promete algo que no pasa. La ND, que nace
+  encendida, queda encendida para cuando llegue su flujo.
+
+**RN-89.** **Una nota siempre referencia un comprobante emitido**, y lo que
+decide si hay nota es **el comprobante original, no la configuración de hoy**.
+Devolver algo de una venta que salió como tiquete o factura emite una NC aunque
+después se haya apagado la facturación; devolver algo de una venta que no fue
+comprobante no emite nada, porque no hay qué referenciar.
+
+El motivo es el del catálogo de Hacienda y lo pone el flujo, no el cajero:
+
+- **Devolver mercadería** es el `06` —devolución de mercancía—, entera o parcial.
+- **Anular** es el `01`, y solo existe entero: se anula el comprobante completo,
+  y solo si todavía no tiene devoluciones. Un comprobante a medio devolver ya no
+  se puede anular; lo que quede se devuelve.
+
+Anular y devolver todo reponen lo mismo y reembolsan lo mismo; lo que cambia es
+lo que se le dice a Hacienda. Anular es «este comprobante no debió existir»
+—el cliente equivocado, el tipo equivocado—; devolver es «la venta existió y la
+mercadería volvió».
 
 ## 6. Requisitos funcionales
 
@@ -846,6 +1051,42 @@ Son los campos sin los cuales hay negocios enteros que no se pueden facturar.
   —provincia, cantón y distrito numerados, otras señas obligatorias y barrio
   opcional—, en Configuración y en el alta de una compañía. Y el **correo del
   emisor es obligatorio**. RN-83.
+- **RF-74** La pantalla de cobro **muestra y deja elegir el tipo de
+  comprobante** —tiquete o factura electrónica— antes de cobrar. La factura no se
+  ofrece sin cliente, y el servidor la rechaza si llega sin él. El historial de
+  facturas muestra el tipo de cada venta. RN-85.
+- **RF-75** Las tres plantillas imprimen el **bloque fiscal**: el tipo, el
+  consecutivo y la clave juntos, la actividad económica del emisor y la leyenda
+  que corresponda —pendiente de emisión, pruebas sin efecto fiscal, o la
+  resolución que autoriza y dónde se verifica—, y el resto de lo que RN-86 lista:
+  la condición de venta, la moneda, el CABYS y la unidad de cada línea, la
+  identificación con su tipo, el resumen de Hacienda y el monto en letras. No hay
+  otro documento impreso fuera de las plantillas. RN-86, RN-17.
+- **RF-76** Devolver mercadería de una venta que se emitió como comprobante
+  **emite una nota de crédito** con motivo «devolución de mercancía» que la
+  referencia, y **anular** desde la factura abierta emite una con motivo
+  «anula». Las dos se imprimen con la referencia al original. Una venta sin
+  comprobante no emite nota. RN-87, RN-89.
+- **RF-77** Desde la factura abierta se puede emitir una **nota de débito** —y una
+  nota de crédito por un monto, sin mercadería de por medio— sobre ese
+  comprobante, con su motivo del catálogo de Hacienda y su monto. **La plata se
+  mueve en el momento**: la nota de débito se cobra al emitirla, con su medio de
+  pago, y la de crédito se reembolsa de la gaveta, como una devolución. Las dos
+  aparecen en el arqueo del turno, en las ventas netas y en el asiento. Decidido
+  por el usuario el 2026-09-26: sin venta a crédito no hay saldo del cliente
+  donde dejarlas. RN-87, RN-89.
+- **RF-78** Al cobrar a un **cliente del extranjero** se ofrece la **factura de
+  exportación**, y no se emite mientras algún producto de la venta no tenga su
+  partida arancelaria o el cliente su dirección extranjera: se dice cuál falta.
+  RN-87.
+- **RF-79** Registrar una compra a un proveedor **no contribuyente** emite la
+  **factura electrónica de compra**, con el negocio como comprador. RN-87.
+- **RF-80** Cobrar una venta a crédito con el IVA diferido emite el **recibo
+  electrónico de pago**. Depende de que exista la venta a crédito, que hoy no
+  está en el alcance. RN-81, RN-87.
+- **RF-81** En Configuración, **«Comprobantes que emite este negocio»**: los siete,
+  con los límites de RN-88. El cobro, la factura abierta y las compras muestran
+  solo los encendidos. RN-88.
 
 ### Módulos por plan
 
@@ -896,17 +1137,17 @@ Son los campos sin los cuales hay negocios enteros que no se pueden facturar.
 
 ### Planilla
 
-- **RF-55** Empleados: alta con datos de la CCSS y cuenta bancaria, contrato
-  (salario, jornada, periodicidad), enlace opcional a un usuario, y baja con
-  fecha y causa. RN-72.
+- **RF-55** Empleados: alta con los datos que piden la CCSS y el INS (RN-72) y
+  cuenta bancaria, contrato (salario del periodo, jornada, puesto y póliza),
+  enlace opcional a un usuario, y baja con fecha y causa. RN-72.
 - **RF-56** Tablas de tasas, tramos y créditos con vigencia, visibles para la
   compañía con su fecha y fuente. Las actualiza soporte para todos; la compañía
-  solo edita lo que es suyo: la póliza de riesgos del trabajo y el aporte a la
-  asociación solidarista. RN-67.
-- **RF-57** Corrida: crear por periodo, cargar novedades —horas extra,
-  incapacidades, vacaciones disfrutadas, deducciones—, calcular, ver por
-  empleado el bruto, cada rubro obrero, la renta, el neto y el costo patronal,
-  aprobar y pagar. RN-66, RN-68.
+  solo edita lo que es suyo: su número patronal de la CCSS, la póliza y la prima
+  de riesgos del trabajo del INS y el aporte a la asociación solidarista. RN-67.
+- **RF-57** Corrida: crear para una jornada y una fecha de corte, tomar las
+  acciones de personal del periodo, calcular, ver por empleado el bruto, cada
+  rubro obrero, la renta, cada deducción, el neto y el costo patronal, aprobar
+  y pagar. RN-66, RN-68, RN-90.
 - **RF-58** Boleta de pago imprimible por empleado, con la plantilla de
   documento de la compañía.
 - **RF-59** Aguinaldo: corrida especial con el cálculo por empleado y lo
@@ -915,11 +1156,25 @@ Son los campos sin los cuales hay negocios enteros que no se pueden facturar.
   pagados. RN-70.
 - **RF-61** Liquidación al dar de baja: desglose por rubro según la causa, e
   impresión. RN-71.
-- **RF-62** Archivo de la planilla del mes para la CCSS y resumen de renta
-  retenida, insumo de la declaración mensual.
+- **RF-62** Archivo de la planilla del mes para la CCSS —ingresos, salarios,
+  incapacidades, permisos, cambios de ocupación y exclusiones— y resumen de
+  renta retenida, insumo de la declaración mensual. RN-96.
 - **RF-63** Corrida de ajuste sobre una pagada. RN-68.
 - **RF-64** Asiento de la corrida pagada cuando contabilidad está activa.
   RN-75.
+- **RF-82** Acciones de personal: registrarlas por empleado con sus fechas,
+  verlas en su historial con lo que cada corrida aplicó, anular una aplicada y
+  suspender una recurrente con motivo. El saldo de cada deducción, a la vista.
+  RN-90 a RN-93.
+- **RF-83** Jornadas de la compañía: periodicidad, clase, horas por día, día
+  de descanso pagado y fechas de corte. Una jornada con corridas pagadas no
+  cambia de periodicidad ni de cortes: se crea otra. RN-94.
+- **RF-84** Puestos con su código de ocupación de la CCSS y su código del INS.
+  RN-95.
+- **RF-85** Archivo mensual de la planilla para el INS, uno por póliza. RN-96.
+- **RF-86** Importar desde Excel, con vista previa y una plantilla
+  descargable: puestos, empleados con su contrato y saldos de apertura.
+  RN-97.
 
 ---
 
@@ -1000,9 +1255,14 @@ Y tres que se adoptaron el 2026-08-16, con el mismo rango:
 | **Por clasificar** | La cuenta a la que va lo que no tiene cuenta en el mapeo. Su saldo es una alerta. |
 | **Periodo** | Un mes contable. Abierto se escribe; cerrado, no. |
 | **Corrida** | Un cálculo de planilla para un periodo, con las tasas que usó congeladas. |
-| **Novedad** | Lo que cambia una corrida respecto del contrato: horas extra, incapacidad, deducción. |
+| **Acción de personal** | Lo que cambia el pago o la situación de un empleado, con fechas: horas extra, incapacidad, deducción, aumento. Vive en el empleado y la corrida la toma (RN-90). Reemplaza a la «novedad» del primer diseño de F12. |
+| **Jornada** | Cómo y cuándo se le paga a un grupo de empleados: periodicidad, clase, horas y fechas de corte (RN-94). |
+| **Corte** | La fecha en que cierra un periodo de pago. El periodo de una corrida sale de su corte. |
+| **Puesto** | El cargo, con su código de ocupación de la CCSS y su código del INS (RN-95). |
+| **Saldo de apertura** | Lo que una compañía trae de su sistema anterior: días de vacaciones, devengado para el aguinaldo, salarios para una liquidación, deducciones pendientes (RN-97). |
 | **Boleta** | El comprobante de pago que recibe el empleado. |
 | **SICERE** | El sistema de la CCSS donde se presenta la planilla. |
+| **RT-Virtual** | El sistema del INS donde se presenta la planilla de la póliza de riesgos del trabajo. |
 | **D-104** | La declaración mensual del IVA. |
 
 ---
@@ -1015,7 +1275,8 @@ XML de Hacienda, clientes, usuarios, reportes, configuración con moneda,
 impuesto, marca y tres plantillas de documento.
 
 **Por construir**: lo marcado **RF-22 a RF-26 y RF-29 a RF-38** (F6 y F7), y
-los tres módulos por plan, **RF-39 a RF-64** (F10 a F12). De RF-1 a RF-21 y
+los tres módulos por plan, **RF-39 a RF-64** (F10 a F12) y la ampliación de
+planilla, **RF-82 a RF-86**. De RF-1 a RF-21 y
 RF-27 y RF-28 ya están construidos —F2 a F5 y F8—; el detalle de qué cerró
 cada fase está en `progress.json`.
 

@@ -331,7 +331,9 @@ export function postSale(
 	companyId: number,
 	venta: { id: number; date: string; payment_method: string },
 	lineas: LineaVendida[],
-	userId: number
+	userId: number,
+	/** `'note'` para una ND (T-726): el asiento de la venta, con su propio origen. */
+	sourceType: 'sale' | 'note' = 'sale'
 ): JournalEntry | null {
 	const db = getDb(companyId);
 	const cuenta = mapeoVigente(db);
@@ -372,7 +374,7 @@ export function postSale(
 			entry_date: venta.date,
 			description: 'sale',
 			lines: asiento,
-			source_type: 'sale',
+			source_type: sourceType,
 			source_id: venta.id
 		},
 		userId
@@ -384,7 +386,9 @@ export function postReturn(
 	companyId: number,
 	devolucion: { id: number; date: string },
 	lineas: LineaVendida[],
-	userId: number
+	userId: number,
+	/** `'note'` para una NC por monto (T-726). */
+	sourceType: 'return' | 'note' = 'return'
 ): JournalEntry | null {
 	const db = getDb(companyId);
 	const cuenta = mapeoVigente(db);
@@ -426,7 +430,7 @@ export function postReturn(
 			entry_date: devolucion.date,
 			description: 'return',
 			lines: asiento,
-			source_type: 'return',
+			source_type: sourceType,
 			source_id: devolucion.id
 		},
 		userId

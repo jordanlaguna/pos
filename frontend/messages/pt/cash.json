@@ -95,5 +95,7 @@
 	"cash_close_notes": "Observações do fechamento (opcional)",
 	"cash_close_notes_placeholder": "Ex.: falta por troco dado errado",
 	"cash_closing_now": "Fechando…",
-	"cash_closed_done": "Caixa fechado."
+	"cash_closed_done": "Caixa fechado.",
+	"cash_debit_notes_in_cash": "Notas de débito em dinheiro",
+	"cash_credit_notes": "Notas de crédito por valor"
 }

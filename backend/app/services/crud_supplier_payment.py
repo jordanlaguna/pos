@@ -24,6 +24,7 @@ from app.domain.money import Money
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_repositories import (
     SqlAlchemyCashRepository,
+    SqlAlchemyNoteRepository,
     SqlAlchemyReturnRepository,
     SqlAlchemySaleRepository,
     SqlAlchemyStockEntryRepository,
@@ -48,6 +49,7 @@ def movimientos_de_caja(db: Session, ledger=None) -> AddCashMovement:
         report=BuildSessionReport(
             sales=SqlAlchemySaleRepository(db),
             returns=SqlAlchemyReturnRepository(db),
+            notes=SqlAlchemyNoteRepository(db),
             cash=cash,
             clock=SystemClock(),
         ),

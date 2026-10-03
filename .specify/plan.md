@@ -1286,6 +1286,302 @@ consecutivo de 20 sin huecos, envío asíncrono con consulta de estado, entrega 
 receptor por correo con XML y PDF, y modo contingencia para poder cobrar con
 Hacienda caída.
 
+#### El tipo de comprobante se guarda en la venta (RN-85, T-723)
+
+`sales.document_type CHAR(2) NULL` —`'01'` factura, `'04'` tiquete, nulo sin
+facturación electrónica—, migración 014. Va en la venta y no en la tabla del
+comprobante que traerán T-704 y T-705 porque **existe antes que él**: se decide
+al cobrar, y el contador por tipo lo va a leer de ahí.
+
+Lo decide el dominio, `domain/fe_document_type.py`, con tres entradas —lo que
+pidió la caja, si la compañía factura electrónicamente y si hay receptor— y en
+este orden:
+
+1. Un valor que no es `'01'` ni `'04'` se rechaza con
+   `invalid_sale_document_type`, esté o no activa la facturación: es un cliente
+   roto, no una preferencia.
+2. Con la facturación apagada, nulo. **Se ignora, no se rechaza**: el dueño puede
+   apagarla con una caja abierta, y rechazar esa venta sería cobrarle el cambio de
+   configuración al cliente que está en el mostrador.
+3. Sin tipo pedido, la sugerencia: factura con cliente, tiquete sin él. Es lo que
+   recibe una pantalla abierta antes de activar la facturación.
+4. Factura sin cliente, `invoice_needs_receiver`.
+
+**«Hay receptor» es «hay un cliente de esta compañía».** `clients.identification`
+es obligatoria, así que todo cliente registrado tiene la suya. El caso de uso
+comprueba que el cliente **exista y sea de la compañía** con un puerto nuevo,
+`ClientRepository.exists`: hasta ahora `client_id` pasaba derecho a la foránea,
+que no sabe de compañías, y una venta podía colgar del cliente de otro negocio.
+El **tipo** de identificación, que el XML también exige, no se mira acá: es la
+mitad pendiente de T-617, y la venta no puede rechazarse por un dato que la
+pantalla de clientes todavía no pide.
+
+En el POS la misma regla vive en `$lib/domain/documentType.ts`, para que el
+selector de la pantalla de cobro proponga lo mismo que el servidor va a aplicar.
+Lo que el cajero eligió se guarda en la venta en espera; cambiar de cliente lo
+descarta y vuelve a la sugerencia.
+
+#### Un solo molde para lo que se imprime (RN-86, T-724)
+
+El título del documento sale **de la venta**, no de la configuración:
+`documentKind(sale)` reemplaza a `documentKind(settings)`. Antes, activar la
+facturación convertía en «Factura electrónica» hasta las ventas de antes de
+activarla.
+
+Lo fiscal lo arma una función pura, `fiscalBlock(sale)`, y lo imprime **un solo
+componente**, `FiscalBlock.svelte`, que usan las tres plantillas. Una prueba lee
+las tres y falla si alguna no lo incluye: el día que se agregue una cuarta, se
+entera la prueba y no el cliente.
+
+El bloque tiene tres estados:
+
+| La venta | Lo que imprime |
+|---|---|
+| Sin tipo | Nada. Es el documento de siempre, y su leyenda es la del dueño (T-304). |
+| Con tipo, sin clave | «Pendiente de emisión». Es todo lo que hay hasta T-705. |
+| Con clave | Tipo, consecutivo y clave juntos (Nota 1), actividad económica, y la leyenda de pruebas o la de la resolución. |
+
+El tercero lee `einvoice` en el detalle de la venta, con `clave`, `consecutive`,
+`environment`, `economic_activity` y `situation`. Viaja desde T-705 (2026-09-27)
+en los tres detalles —venta, devolución y nota—; una venta con tipo de antes de
+esa fecha no lo tiene y el bloque cae al segundo estado, que es la verdad.
+
+**Lo que imprime además (T-731).** El resto de RN-86 sale de funciones puras de
+`$lib/domain/documents.ts`, y las tres plantillas solo lo acomodan:
+
+| Pieza | De dónde sale |
+|---|---|
+| Número de la cabecera | `documentNumber`: el consecutivo si lo hay, si no `sale_number`. Uno solo: el bloque ya no repite el consecutivo. |
+| Identificación con su tipo | `issuerLines(settings, { activity })` para el emisor; `clients.identification_type` para el receptor (T-617). El nombre legal es el de `ID_TYPES`. |
+| Actividad económica | `issuerActivity`: la del emitido, si no la configurada. |
+| Condición de venta | `SALE_CONDITION_CASH`, `'01'`. Constante mientras no haya venta a crédito (T-729). |
+| Moneda y tipo de cambio | la configurada; el tipo de cambio solo en colones (1), porque el del BCCR no existe todavía en el sistema. |
+| Líneas | `documentLines`: número, CABYS, unidad, tarifa, impuesto y total de la línea. |
+| Resumen | `documentSummary`: los renglones de `ResumenFactura`. Los descuentos son cero porque el POS no descuenta. |
+| Monto en letras | `$lib/ui/amountInWords.ts`, en el idioma del documento. Son reglas, no frases: no caben en el catálogo. |
+
+**El CABYS y la unidad se congelan en la línea** (`sale_details.cabys_code` y
+`unit_of_measure`, migración 016), por la misma razón que la tarifa: la factura
+reimpresa dice con qué se vendió, y el dueño puede reclasificar el producto
+mañana. La nota de crédito los toma de la línea de la venta.
+
+El bloque fiscal va **en dos partes**: arriba la clave, la referencia de una nota
+y el aviso de pendiente o de pruebas —que no puede quedar escondido al pie—;
+abajo, el **QR de la clave** en cuanto la hay y, solo si está autorizado, la
+resolución y el portal donde se verifica. La prueba de las plantillas exige las
+dos.
+
+**El QR codifica la clave sola** —50 dígitos, nivel Q—, que es lo que lleva el de
+la factura aceptada por Hacienda. Lo dibuja `$lib/ui/qr.ts` con
+`qrcode-generator` como un solo `path` de SVG: nítido en el rollo y en la hoja,
+igual en el servidor que en el navegador, y negro sobre blanco aunque la pantalla
+esté en tema oscuro.
+
+**El PDF del backend se quitó.** `GET /sales/pdf/{id}` dibujaba con reportlab un
+cuarto documento sin emisor, sin desglose, sin idioma y con sus rótulos en
+español (T-922). Para que dijera lo mismo que las plantillas habría que haberlas
+escrito dos veces. El PDF sale de imprimir la plantilla, que es además lo que
+RN-82 pide: se genera cada vez y no se guarda.
+
+#### El comprobante numerado (T-704, T-705, migración 018)
+
+```sql
+CREATE TABLE fe_documents (
+    id                INT AUTO_INCREMENT PRIMARY KEY,
+    company_id        INT         NOT NULL,
+    source_type       VARCHAR(10) NOT NULL,     -- 'sale', 'return', 'note'
+    source_id         INT         NOT NULL,
+    document_type     CHAR(2)     NOT NULL,
+    environment       VARCHAR(12) NOT NULL,
+    branch_id         INT         NOT NULL,
+    terminal_id       INT         NOT NULL,
+    sequence_number   BIGINT      NOT NULL,
+    consecutive       CHAR(20)    NOT NULL,
+    clave             CHAR(50)    NOT NULL,
+    situation         CHAR(1)     NOT NULL,
+    economic_activity VARCHAR(10) NULL,
+    issued_at         DATETIME    NOT NULL,
+    UNIQUE (company_id, clave),
+    UNIQUE (company_id, environment, consecutive),
+    INDEX (source_type, source_id)
+);
+```
+
+**Aparte de la venta, y colgando de su origen**, porque nacen comprobantes de
+tres flujos —la venta, la devolución con NC y la nota por monto— y un mismo
+origen puede tener más de uno: un rechazo se corrige con otra clave, no
+reescribiendo esta. El vigente es el último. Acá se van a colgar el estado del
+recorrido (T-707) y el XML firmado.
+
+**El contador es `fe_sequences`**, que la 011 dejó creada. La fila se crea con
+`INSERT … ON DUPLICATE KEY UPDATE` y se lee con `FOR UPDATE`, dentro de la
+transacción de la venta.
+
+**Las piezas y quién las pone:**
+
+| Pieza | De dónde |
+|---|---|
+| País, fecha | `506` y el día del sello del documento, que es hora de Costa Rica (`TZ` del contenedor) |
+| Emisor | `companies.identificacion`, completada a doce (nota 4.1) |
+| Consecutivo | los códigos de oficina de la sesión, el tipo y `fe_sequences` |
+| Situación | `1`, normal. La contingencia espera a que haya transmisiones que observar (RN-43) |
+| Código de seguridad | ocho dígitos de `secrets`, detrás del puerto `SecurityCodes` |
+
+`NumberDocument` (aplicación) se usa en dos tiempos: `prepare()` **antes** de la
+transacción —sin cédula dice que no sin tocar existencias— y `number()` adentro.
+Los tres casos de uso lo reciben como el libro: opcional, y sin él la venta con
+tipo queda «pendiente de emisión», que es lo que pasaba antes.
+
+#### La ubicación del emisor (T-722, RN-83)
+
+Vive en la configuración, `business.location` —`province`, `canton`,
+`district`, `neighborhood`, `otherSigns`—, y no en `companies`: el negocio se
+muda y la corrige él, a diferencia de la cédula, que es la del certificado. No
+reemplaza a `business.address`, que es la del tiquete.
+
+El catálogo es el Excel oficial de Hacienda, y `generar_ubicaciones.py` genera
+de él los dos lados —`domain/locations_data.py` y `$lib/domain/locationsData.ts`—
+porque son dos aplicaciones que no se ven. La regla está escrita dos veces, una
+por lado (`locations.py`, `location.ts`), como la del tipo de comprobante.
+
+**La puerta es encender la facturación, no vender.** `save_settings` rechaza
+encenderla sin cédula, correo y ubicación (`einvoicing_needs_issuer`, con la
+lista entera) y rechaza siempre una ubicación a medias (`invalid_location`). La
+vacía se guarda.
+
+**La cédula que se imprime es la de `companies`.** `GET /settings/` la publica
+en `issuer` y el POS la pone en el emisor (`withIssuer`). La corrige soporte,
+por `PUT /support/companies/{id}/issuer`, con bitácora (RN-45).
+
+#### De dónde nace cada comprobante (RN-87, T-725 a T-729)
+
+El armador del XML ya sabe los siete (T-714, T-720). Lo que falta es **quién
+los pide**, y cada uno tiene su sitio:
+
+| Tipo | Se decide en | Se guarda en | Le falta al modelo |
+|---|---|---|---|
+| TE, FE | el cobro | `sales.document_type` | — (T-723) |
+| FEE `09` | el cobro, con cliente extranjero | `sales.document_type` | partida arancelaria por producto; dirección extranjera y tipo `05` del cliente |
+| NC `03` | la devolución | la devolución, con la referencia a la venta | — |
+| ND `02` | la factura abierta | una nota nueva, con la referencia | la nota misma: motivo, monto, líneas |
+| FEC `08` | la compra | la entrada de mercadería | el tipo `06` «no contribuyente» en proveedores |
+| REP `10` | el cobro de una venta a crédito | el abono | **la venta a crédito entera** |
+
+**La FEE entra por la misma regla que TE y FE.** `COUNTER_TYPES` pasa a ser tres,
+y la sugerencia gana un caso: cliente con identificación de extranjero no
+domiciliado (`05`) → FEE. La FE a ese cliente no se ofrece —no tiene cédula
+costarricense— y el tiquete sí, por lo mismo que con cualquier cliente.
+
+**Las notas referencian con la clave del original**, así que no se pueden emitir
+antes de T-705: sin clave no hay a qué referirse. Lo que sí se puede antes es que
+la devolución decida y guarde su tipo, igual que la venta.
+
+**Los identificadores de Hacienda son seis, no cuatro.** `check_identification_type`
+acepta `01` a `04`; la FEE necesita el `05` en el cliente y la FEC el `06` en el
+proveedor. Es el mismo par de columnas en `clients` y `suppliers`, y se amplía
+una vez para los dos.
+
+**El REP no tiene sobre qué montarse.** Nace de cobrar una venta con condición
+`08` o `10` (RN-81), y el POS exige hoy el total en el mostrador (`check_payment`).
+Vender a crédito es una fase propia —condición de venta, saldo del cliente,
+abonos, qué pasa con la caja— y no está en el spec: hay que decidirla antes de
+T-729, no dentro de ella.
+
+#### Los comprobantes de cada compañía (RN-88, T-730)
+
+`eInvoicing.documentTypes` en el JSON de `settings`: la lista de códigos
+encendidos. Ausente es la de fábrica —TE, FE, NC, ND—. **No se valida al
+guardar: se sanea al leer**, en los dos lados y con la misma regla
+(`domain/fe_document_type.enabled_types` y `$lib/domain/documentType.ts`): se
+tiran los códigos desconocidos y los que todavía no tienen flujo, se agrega la
+NC si falta, y si no quedó ni TE ni FE se vuelve a la de fábrica. Es como el
+resto de la configuración —`mergeSettings` nunca lanza— y hace imposible que una
+fila escrita a mano deje al negocio sin poder vender.
+
+Qué tiene flujo es **una lista del dominio** (`AVAILABLE`), no una casilla: cuando
+T-726 traiga la ND, se agrega ahí y la casilla empieza a moverse sola.
+
+La regla de la venta gana una entrada, lo encendido: sin cliente sale TE si está
+encendido y, si no, la venta necesita cliente (`invoice_needs_receiver`); con
+cliente, FE si está encendida y si no TE; y pedir un tipo apagado es
+`document_type_not_enabled`.
+
+#### La nota de crédito cuelga de la devolución (RN-89, T-725)
+
+`returns.document_type` y `returns.reference_code` (migración 015): `03` y el
+motivo cuando la venta original fue comprobante, nulos cuando no. Lo decide el
+dominio (`domain/fe_notes.py`) con el tipo **de la venta** —nunca con la
+configuración de hoy— y con si es anulación.
+
+**Anular es una devolución entera con otro motivo.** No hay un flujo aparte: el
+mismo `RegisterReturn`, con `annul=True`, exige que la venta no tenga
+devoluciones previas y que se devuelvan todas sus líneas, y guarda `01` en vez
+de `06`. Así la caja, el inventario y el libro de la anulación son exactamente
+los de una devolución total, que ya están probados, y no una segunda copia de
+esa plata.
+
+La nota se imprime con las mismas tres plantillas: `DocumentSheet` recibe la
+devolución vuelta forma de venta, el título dice «Nota de crédito electrónica»,
+el bloque fiscal agrega **la referencia** —tipo, número y fecha del original y
+el motivo— y los renglones del efectivo recibido y el vuelto no salen, porque
+una nota no cobra.
+
+#### La ND y la NC por monto (RF-77, T-726)
+
+**La plata, decidida por el usuario el 2026-09-26**: sin venta a crédito no hay
+saldo del cliente donde dejar una nota, así que se mueve en el momento. La ND se
+**cobra** al emitirla, con su medio de pago, y entra al turno como una venta; la
+NC por monto se **reembolsa de la gaveta**, como una devolución —que ya sale
+toda de la gaveta, sea cual sea el medio de la venta—.
+
+**Una tabla nueva**, `sale_notes`, con sus líneas en `sale_note_lines`
+(migración 017). No cuelga de la devolución porque no hay mercadería: es la otra
+mitad de RN-87.
+
+| Columna | Qué guarda |
+|---|---|
+| `sale_id` | el comprobante que corrige; tiene que tener tipo |
+| `document_type`, `reference_code` | `02` o `03`, y el motivo de Hacienda |
+| `reason` | por qué, en palabras de quien la emite |
+| `payment_method` | cómo se cobró la ND; nulo en la NC, que sale de la gaveta |
+| `subtotal`, `tax`, `total` | el desglose, como la venta |
+| las líneas | producto, base, tarifa, impuesto, código de tarifa, CABYS y unidad **de la línea de la venta** |
+
+**La nota ajusta líneas de la venta, no un monto suelto.** Cada línea hereda la
+tarifa con que se cobró, y así una venta con tarifas mezcladas no obliga a
+adivinar a cuál corresponde la corrección. El monto se escribe **con impuesto**
+—es lo que se cobra o se devuelve en la mano— y el servidor lo parte: la base es
+el monto entre uno más la tarifa, y el impuesto es la tarifa sobre la base.
+
+**Solo el motivo `02`, corrige monto**, en las dos. Los otros tres de RF-77 no
+tienen de dónde salir en un mostrador de contado: la ND y la NC **financieras**
+(`10` y `09`) son intereses y descuentos por pronto pago, que solo existen con
+venta a crédito (T-729); la NC por **exoneración posterior** (`12`) necesita la
+exoneración en la línea de la nota y devolver solo el impuesto perdonado, y es su
+propia tarea (T-732).
+
+**Tres reglas de plata:**
+
+1. **Una NC no pasa de lo que queda de la línea**: lo cobrado, más lo que le
+   subieron las ND, menos lo devuelto, menos las NC anteriores. Sin eso se podría
+   reembolsar más de lo que el cliente pagó.
+2. **Una línea con NC por monto ya no se devuelve**, y **una venta con notas por
+   monto no se anula**: la devolución reembolsa el precio de la línea, y sumado a
+   la NC reembolsaría dos veces la misma plata. Se rechaza con su código; la
+   salida es otra NC por lo que falte.
+3. **Solo el administrador las emite.** Mueven plata sin mercadería, que es
+   justo lo que un arqueo no puede cruzar contra el inventario.
+
+**El arqueo** suma las ND cobradas en efectivo y resta todas las NC por monto;
+el corte Z las muestra en su propio renglón. **Las ventas netas** suman las ND y
+restan las NC con las devoluciones. **El asiento** es el de la venta y el de la
+devolución —la ND por el medio de pago, la NC contra la caja—, sin el par costo
+/ inventario porque no hay mercadería, y con su propio origen (`note`) para que
+el libro diga «Nota n.º 3» y no la confunda con una venta.
+
+La nota se imprime con las tres plantillas en `/notas/{id}`, con la referencia al
+original, igual que la NC de una devolución. Hasta T-704 su número es su id.
+
 ---
 
 
@@ -1516,7 +1812,7 @@ la cadena adentro; convertirlas después, no.
 | **F8** Multi-idioma | Español, inglés y portugués; el backend deja de escribir texto | Los tres catálogos tienen las mismas claves y la build se cae si alguien escribe una cadena dentro de un componente |
 | **F10** Compras y cuentas por pagar — **terminada el 2026-09-12** | Módulos por plan; proveedores; la compra como entrada con documento, condición de pago y crédito fiscal por línea; costo promedio; abonos y antigüedad | Una factura XML de un proveedor entra como compra a crédito, su IVA aparece en el reporte por tarifa, un abono en efectivo sale de la caja y el arqueo cuadra |
 | **F11** Contabilidad — **terminada el 2026-09-13** | Catálogo por compañía desde plantilla, asientos automáticos en la misma transacción, periodos con cierre, libros y borrador del D-104 | La venta 3×1450 deja un asiento que balancea, el mes se cierra, y una escritura con fecha adentro responde con código |
-| **F12** Planilla | Empleados, tasas con vigencia, corridas congeladas, aguinaldo, vacaciones, liquidación, archivo para la CCSS y asiento de la corrida | Una corrida de dos empleados se paga, se cambia una tasa con vigencia futura y la boleta reimpresa da lo mismo |
+| **F12** Planilla | Empleados, puestos, jornadas con cortes, acciones de personal, tasas con vigencia, corridas congeladas, aguinaldo, vacaciones, liquidación, archivos para la CCSS y el INS, importación desde Excel y asiento de la corrida | Una corrida de dos empleados se paga, una incapacidad que cruza la quincena se parte sola, se cambia una tasa con vigencia futura y la boleta reimpresa da lo mismo |
 
 **F1 fue primero y no era opcional.** Todo lo que sigue toca dinero, existencias o
 aislamiento entre compañías, y sin pruebas que fijen el comportamiento actual no
@@ -1562,6 +1858,13 @@ de las compras, así que F10 va antes que F11.
 productos, ni ventas, ni caja—, su soporte es estacional (todos necesitan el
 aguinaldo la misma semana de diciembre) y es lo único que ata el producto a un
 país. Adelantar contabilidad y adelantar planilla no son la misma apuesta.
+
+**El 2026-09-27 F12 pasó delante de lo que falta de F7**, por decisión del
+dueño del producto después de comparar los tres módulos con el ERP del que
+viene VentaSys: compras y contabilidad ya estaban y planilla era el único
+hueco entero. De F7 quedan la transmisión, su consulta y la contingencia
+(T-707 a T-712); la numeración y la clave ya están, y nada de F12 depende de
+ellas.
 
 **Lo que decide cuánto cuesta postergar F6 y F7 es T-701**, no su número: vía
 proveedor autorizado, F7 es un adaptador detrás de `EmisorFE`; directo, son
@@ -2245,6 +2548,15 @@ Mapeo por omisión: `sale` → `cash` 1.1.01, `cards_receivable` 1.1.03,
 
 ## 14. Planilla (F12)
 
+El diseño se amplió el 2026-09-27 después de leer el módulo de planilla del ERP
+del que viene VentaSys (una base de GeneXus exportada, que no se versiona):
+acciones de personal, jornadas con cortes, puestos con sus códigos, el archivo
+del INS y la importación desde Excel (RN-90 a RN-97). El ERP es **una
+referencia, no la fuente**: sus fórmulas se leyeron para saber qué casos
+existen, y cada cifra y cada formato se siguen tomando de la norma o de la
+especificación oficial (§14.8). Hay una razón concreta para no copiarlo: su
+tabla de horas trae la jornada mixta mensual en 110 horas, y son 210 (30 × 7).
+
 ### 14.1 Lo que se congela y lo que se parametriza
 
 La corrida guarda **cada rubro con su base, su tasa y su monto**
@@ -2256,10 +2568,10 @@ que vengan la toman por fecha de corte.
 Las tasas son **globales por país**, no por compañía: son las mismas para
 todos los patronos, las siembra la plataforma y las actualiza soporte desde
 el panel para todas las compañías a la vez. Lo único que varía por compañía
-—la prima de riesgos del trabajo del INS, que depende de la actividad, y el
-aporte a la asociación solidarista— vive en el contrato o en la compañía, no
-en la tabla global. No llevan `company_id`, como `cabys_cache`, y hay que
-declararlas como excepción en `test_tenancy.py`.
+—la prima de riesgos del trabajo, que el INS fija por póliza según la
+actividad, y el aporte a la asociación solidarista— vive en la póliza o en el
+contrato, no en la tabla global. Las globales no llevan `company_id`, como
+`cabys_cache`, y hay que declararlas como excepción en `test_tenancy.py`.
 
 Las fórmulas del dominio **no conocen ningún porcentaje**: reciben un
 `RateSet` resuelto a una fecha y lo aplican. Las pruebas usan un juego de tasas
@@ -2268,43 +2580,83 @@ inventado; así prueban la aritmética y no una cifra que vence.
 Decisiones que definen el alcance:
 
 - **Empleado ≠ usuario** (RN-72). `employees.user_id` es opcional.
-- **Renta con proyección mensual**: en una corrida quincenal el salario se
-  proyecta al mes, se calcula la retención mensual por tramos y se aplica la
-  mitad. Es la práctica del país y lo que la boleta tiene que mostrar.
+- **La acción de personal es la fuente, la corrida la consume** (RN-90). Una
+  acción tiene fechas y vive en el empleado; `CalculateRun` toma las que se
+  cruzan con el periodo, las **parte por el calendario** y escribe un rubro por
+  cada tramo aplicado, con `action_id` y sus fechas. Lo que una acción ya
+  aplicó es la suma de sus rubros en corridas pagadas: de ahí salen el saldo
+  de una deducción (RN-92) y las líneas de incapacidad y permiso del archivo de
+  la CCSS, que piden desde y hasta. Reemplaza a `payroll_novelties`, que ataba
+  la novedad a una corrida y obligaba a partir a mano una incapacidad que
+  cruzaba la quincena.
+- **Lo que cae en un periodo pagado entra en la corrida siguiente** (RN-91),
+  con sus fechas originales en el rubro. Anular es una acción nueva con
+  `cancels_action_id`, que entra igual. La corrida pagada no se toca.
+- **La jornada es de la compañía y la corrida es de una jornada** (RN-94).
+  Una compañía con cajeros quincenales y bodegueros semanales tiene dos
+  jornadas y corre cada una en su corte. La periodicidad, la clase y los
+  cortes viven en `work_schedules`, no en cada contrato: son del grupo, y el
+  archivo de la CCSS los pide por empleado desde ahí.
+- **El salario del contrato es el del periodo**, y el mensual se deriva
+  (× 1, × 2, × 26/12, × 52/12). Es como lo escribe la persona que contrata
+  —«₡150 000 por semana»— y como lo hace el ERP.
+- **Renta del mes calendario, liquidada en la última corrida del mes**
+  (RN-73). Las corridas intermedias retienen sobre la proyección
+  (`monthly_equivalent`) y la que cierra el mes calcula el impuesto de lo
+  devengado en el mes menos lo ya retenido. El resumen de renta del mes
+  (RF-62) suma rubros, y por eso cuadra con la declaración. Una corrida
+  semanal pertenece al mes de su corte.
 - **La quincena es la mitad del salario mensual**, sin importar si el mes tiene
-  28 o 31 días. Es lo que hacen los patronos y lo que el empleado espera; el
-  cálculo por día queda para las liquidaciones y las incapacidades.
+  28 o 31 días. Es lo que hacen los patronos y lo que el empleado espera. En
+  mensual y quincenal el día vale el mensual entre treinta y una ausencia no
+  rebaja más que el salario del periodo (RN-94).
 - **Incapacidades**: quién paga qué y desde qué día son **parámetros**
   (`payroll_rates` con conceptos `sick_leave_employer_days`,
-  `sick_leave_employer_rate`…), porque cambian y difieren entre CCSS e INS.
+  `sick_leave_employer_rate`…), porque cambian y difieren entre CCSS e INS. Lo
+  que paga el patrono durante una incapacidad es un subsidio y no un salario:
+  el dominio sabe qué rubros llevan cargas y renta, y lo prueba.
+- **El orden de las deducciones es del dominio** (RN-93): cargas, renta,
+  pensión alimentaria, embargo y las demás, en ese orden, hasta dejar el neto
+  en cero. Lo que no cupo no se aplica y el saldo lo arrastra.
 - **El aguinaldo es una corrida** de tipo `aguinaldo`: suma lo devengado de las
-  corridas pagadas del periodo y lo divide entre doce (RN-69); no lleva rubros
-  de CCSS ni renta, y la prueba lo comprueba explícitamente.
+  corridas pagadas del periodo **más los saldos de apertura** del mismo
+  periodo, y lo divide entre doce (RN-69, RN-97); no lleva rubros de CCSS ni
+  renta, y la prueba lo comprueba explícitamente.
 - **La liquidación es una corrida** de tipo `settlement`, que nace al dar de
   baja: sus rubros son preaviso, cesantía, vacaciones y aguinaldo
-  proporcionales, según la causa (RN-71).
-- **Archivo bancario de pago**: fuera. La corrida pagada muestra la lista de
-  IBAN y montos para copiar; el formato de cada banco es una tarea aparte
-  cuando haya un cliente que lo pida.
+  proporcionales, según la causa (RN-71), sobre el promedio de los últimos seis
+  meses —pagados o de apertura—.
+- **Importar es una sola ruta con ensayo** (RN-97). El BFF lee el Excel con el
+  lector de las entradas de mercadería (`$lib/server/import/spreadsheet.ts`)
+  y manda las filas; el backend las valida y responde fila por fila con
+  `dry_run`, y sin él las escribe en una transacción. La vista previa es la
+  respuesta del ensayo: la validación vive en un solo lugar.
+- **Fuera de la primera versión** (spec §4): archivos de pago de los bancos,
+  boletas por correo, régimen y bonos de vacaciones, renta con otros patronos,
+  constancias, centros de costo y departamentos, otras monedas, varios
+  contratos a la vez, pensión voluntaria, expediente, INSS y **salario por
+  hora** —que necesitaría un tipo de acción «horas ordinarias» cada periodo—.
+  La corrida pagada muestra la lista de IBAN y montos para copiar.
 
 ### 14.2 Modelo de datos
 
 ```sql
--- 011-planilla.sql
+-- 019-planilla.sql
 -- Globales, por país: sin company_id (como cabys_cache). Excepción en test_tenancy.
 CREATE TABLE payroll_rates (
     id          INT AUTO_INCREMENT PRIMARY KEY,
-    country     CHAR(2)      NOT NULL,      -- 'CR'
+    country     CHAR(2)       NOT NULL,      -- 'CR'
     -- 'sem', 'ivm', 'banco_popular', 'asignaciones_familiares', 'imas', 'ina',
-    -- 'fcl', 'rop', 'sick_leave_employer_rate', …
-    concept     VARCHAR(40)  NOT NULL,
-    payer       VARCHAR(8)   NOT NULL,      -- 'employee' | 'employer' | 'rule'
-    -- 0.0550 = 5,50 %; o el número de días, según el concepto.
-    rate        DECIMAL(9,4) NOT NULL,
-    valid_from  DATE         NOT NULL,
-    valid_to    DATE         NULL,
-    source      VARCHAR(255) NOT NULL,      -- la norma o la URL
-    verified_at DATE         NOT NULL,      -- cuándo alguien lo comprobó
+    -- 'fcl', 'rop', 'sick_leave_employer_rate', 'minimum_wage_unseizable', …
+    concept     VARCHAR(40)   NOT NULL,
+    payer       VARCHAR(8)    NOT NULL,      -- 'employee' | 'employer' | 'rule'
+    -- Según el concepto: 0.0550 = 5,50 %, un número de días o un monto
+    -- (el salario mínimo inembargable de RN-93). Por eso no cabe en (9,4).
+    value       DECIMAL(14,4) NOT NULL,
+    valid_from  DATE          NOT NULL,
+    valid_to    DATE          NULL,
+    source      VARCHAR(255)  NOT NULL,      -- la norma o la URL
+    verified_at DATE          NOT NULL,      -- cuándo alguien lo comprobó
     UNIQUE KEY uq_payroll_rates (country, concept, payer, valid_from)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
@@ -2345,22 +2697,74 @@ CREATE TABLE severance_table (              -- art. 29: días por año de antig�
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 -- De acá en adelante, todo es de la compañía.
+CREATE TABLE work_schedules (                  -- las jornadas (RN-94)
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    company_id     INT          NOT NULL,
+    name           VARCHAR(80)  NOT NULL,
+    -- 'monthly' | 'semimonthly' (quincenal) | 'biweekly' (bisemanal) | 'weekly'
+    frequency      VARCHAR(12)  NOT NULL,
+    shift          VARCHAR(8)   NOT NULL,      -- 'day' | 'mixed' | 'night'
+    hours_per_day  DECIMAL(4,2) NOT NULL,      -- 8 · 7 · 6 por omisión (art. 136)
+    workdays_per_week SMALLINT  NOT NULL DEFAULT 6,  -- las vacaciones (art. 153)
+    rest_day_paid  TINYINT(1)   NOT NULL DEFAULT 1,  -- comercial (art. 152)
+    first_cut_day  SMALLINT     NULL,          -- quincenal: corta el 8..15
+    cut_weekday    SMALLINT     NULL,          -- semanal: 0 = lunes … 6 = domingo
+    series_start   DATE         NULL,          -- bisemanal: primer día de la serie
+    is_active      TINYINT(1)   NOT NULL DEFAULT 1,
+    UNIQUE KEY uq_work_schedules_name (company_id, name),
+    CONSTRAINT fk_ws_company FOREIGN KEY (company_id) REFERENCES companies (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE positions (                       -- RN-95
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT          NOT NULL,
+    name       VARCHAR(80)  NOT NULL,
+    ccss_code  VARCHAR(4)   NOT NULL,          -- ocupación, cuatro dígitos
+    ins_code   VARCHAR(5)   NOT NULL,
+    is_active  TINYINT(1)   NOT NULL DEFAULT 1,
+    UNIQUE KEY uq_positions_name (company_id, name),
+    CONSTRAINT fk_positions_company FOREIGN KEY (company_id) REFERENCES companies (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE ins_policies (                    -- pólizas de riesgos del trabajo
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT          NOT NULL,
+    number     VARCHAR(20)  NOT NULL,
+    rt_rate    DECIMAL(6,4) NOT NULL,          -- la prima que fija el INS
+    is_default TINYINT(1)   NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_ins_policies_number (company_id, number),
+    CONSTRAINT fk_insp_company FOREIGN KEY (company_id) REFERENCES companies (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
 CREATE TABLE employees (
     id                  INT AUTO_INCREMENT PRIMARY KEY,
     company_id          INT          NOT NULL,
     user_id             INT          NULL,               -- RN-72: opcional
-    identification_type CHAR(2)      NOT NULL,
+    -- 'national' | 'dimex' | 'nite' | 'passport' | 'work_permit'. Palabras y
+    -- no códigos: Hacienda, la CCSS y el INS numeran distinto, y cada
+    -- adaptador de archivo traduce a los suyos.
+    identification_type VARCHAR(12)  NOT NULL,
     identification      VARCHAR(30)  NOT NULL,
-    name                VARCHAR(160) NOT NULL,
-    insured_number      VARCHAR(20)  NULL,               -- número de asegurado CCSS
+    first_name          VARCHAR(60)  NOT NULL,
+    last_name_1         VARCHAR(40)  NOT NULL,
+    last_name_2         VARCHAR(40)  NULL,               -- hay quien tiene uno solo
+    insured_number      VARCHAR(25)  NULL,   -- CCSS; en nacionales, la cédula
+    birth_date          DATE         NOT NULL,
+    gender              CHAR(1)      NOT NULL,           -- 'F' | 'M'
+    -- 'single' | 'married' | 'divorced' | 'widowed' | 'separated' |
+    -- 'free_union' | 'unknown'
+    marital_status      VARCHAR(10)  NOT NULL,
+    nationality         CHAR(2)      NOT NULL,           -- ISO 3166, 'CR'
+    phone               VARCHAR(20)  NULL,
+    email               VARCHAR(120) NULL,
+    is_pensioner        TINYINT(1)   NOT NULL DEFAULT 0, -- la CCSS cotiza distinto
     iban                VARCHAR(34)  NULL,
-    position            VARCHAR(80)  NULL,
     hired_on            DATE         NOT NULL,
     terminated_on       DATE         NULL,
     -- 'resignation' | 'dismissal_with_cause' | 'dismissal_without_cause' |
     -- 'mutual' | 'end_of_contract'
     termination_cause   VARCHAR(30)  NULL,
-    dependent_children  TINYINT      NOT NULL DEFAULT 0, -- crédito fiscal
+    dependent_children  SMALLINT     NOT NULL DEFAULT 0, -- crédito fiscal
     spouse_credit       TINYINT(1)   NOT NULL DEFAULT 0,
     is_active           TINYINT(1)   NOT NULL DEFAULT 1,
     UNIQUE KEY uq_employees_identification (company_id, identification),
@@ -2372,17 +2776,19 @@ CREATE TABLE employment_contracts (
     id               INT AUTO_INCREMENT PRIMARY KEY,
     company_id       INT           NOT NULL,
     employee_id      INT           NOT NULL,
+    schedule_id      INT           NOT NULL,   -- la jornada: periodicidad y cortes
+    position_id      INT           NOT NULL,
+    ins_policy_id    INT           NULL,       -- NULL: la póliza por omisión
     valid_from       DATE          NOT NULL,
-    valid_to         DATE          NULL,      -- un aumento lo cierra y abre otro
-    base_salary      DECIMAL(12,2) NOT NULL,
-    pay_frequency    VARCHAR(10)   NOT NULL,   -- 'weekly'|'biweekly'|'monthly'
-    schedule         VARCHAR(10)   NOT NULL,   -- 'day' | 'mixed' | 'night'
-    salary_kind      VARCHAR(10)   NOT NULL,   -- 'monthly' | 'hourly'
+    valid_to         DATE          NULL,       -- un aumento lo cierra y abre otro
+    period_salary    DECIMAL(12,2) NOT NULL,   -- el del periodo de su jornada
     solidarista_rate DECIMAL(5,4)  NULL,       -- aporte obrero, si hay
-    rt_rate          DECIMAL(5,4)  NULL,       -- prima de RT de la compañía
     INDEX idx_employment_contracts_employee (employee_id, valid_from),
-    CONSTRAINT fk_ec_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
-    CONSTRAINT fk_ec_employee FOREIGN KEY (employee_id) REFERENCES employees (id)
+    CONSTRAINT fk_ec_company  FOREIGN KEY (company_id)    REFERENCES companies (id),
+    CONSTRAINT fk_ec_employee FOREIGN KEY (employee_id)   REFERENCES employees (id),
+    CONSTRAINT fk_ec_schedule FOREIGN KEY (schedule_id)   REFERENCES work_schedules (id),
+    CONSTRAINT fk_ec_position FOREIGN KEY (position_id)   REFERENCES positions (id),
+    CONSTRAINT fk_ec_policy   FOREIGN KEY (ins_policy_id) REFERENCES ins_policies (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE payroll_runs (
@@ -2390,8 +2796,9 @@ CREATE TABLE payroll_runs (
     company_id       INT         NOT NULL,
     -- 'regular' | 'aguinaldo' | 'settlement' | 'adjustment'
     kind             VARCHAR(12) NOT NULL,
-    period_from      DATE        NOT NULL,
-    period_to        DATE        NOT NULL,
+    schedule_id      INT         NULL,      -- las regulares y sus ajustes
+    period_from      DATE        NOT NULL,  -- sale del corte (RN-94); se guarda
+    period_to        DATE        NOT NULL,  -- porque la corrida se congela
     pay_date         DATE        NOT NULL,
     -- 'draft' | 'approved' | 'paid' (RN-68)
     status           VARCHAR(10) NOT NULL DEFAULT 'draft',
@@ -2404,8 +2811,9 @@ CREATE TABLE payroll_runs (
     paid_by          INT         NULL,
     paid_at          DATETIME    NULL,
     INDEX idx_payroll_runs_period (company_id, period_from, kind),
-    CONSTRAINT fk_pr_company FOREIGN KEY (company_id)     REFERENCES companies (id),
-    CONSTRAINT fk_pr_adjusts FOREIGN KEY (adjusts_run_id) REFERENCES payroll_runs (id)
+    CONSTRAINT fk_pr_company  FOREIGN KEY (company_id)     REFERENCES companies (id),
+    CONSTRAINT fk_pr_schedule FOREIGN KEY (schedule_id)    REFERENCES work_schedules (id),
+    CONSTRAINT fk_pr_adjusts  FOREIGN KEY (adjusts_run_id) REFERENCES payroll_runs (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE payroll_run_lines (               -- un empleado en una corrida
@@ -2417,6 +2825,7 @@ CREATE TABLE payroll_run_lines (               -- un empleado en una corrida
     gross               DECIMAL(12,2) NOT NULL,
     employee_deductions DECIMAL(12,2) NOT NULL,
     income_tax          DECIMAL(12,2) NOT NULL,
+    other_deductions    DECIMAL(12,2) NOT NULL,  -- pensión, embargo, préstamos
     net                 DECIMAL(12,2) NOT NULL,
     employer_charges    DECIMAL(12,2) NOT NULL,
     UNIQUE KEY uq_payroll_run_lines (run_id, employee_id),
@@ -2426,142 +2835,254 @@ CREATE TABLE payroll_run_lines (               -- un empleado en una corrida
     CONSTRAINT fk_prl_contract FOREIGN KEY (contract_id) REFERENCES employment_contracts (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
--- Los rubros SON las tasas congeladas (RN-66). La boleta se reimprime de acá.
-CREATE TABLE payroll_run_items (
-    id         INT AUTO_INCREMENT PRIMARY KEY,
-    company_id INT           NOT NULL,
-    line_id    INT           NOT NULL,
-    -- 'base', 'overtime', 'holiday', 'sem', 'ivm', 'income_tax',
-    -- 'solidarista', 'garnishment', …
-    concept    VARCHAR(40)   NOT NULL,
-    payer      VARCHAR(8)    NOT NULL,    -- 'earning' | 'employee' | 'employer'
-    base       DECIMAL(12,2) NOT NULL,
-    -- NULL en los montos fijos (una deducción de ₡20 000).
-    rate       DECIMAL(9,4)  NULL,
-    amount     DECIMAL(12,2) NOT NULL,
-    INDEX idx_payroll_run_items_line (line_id),
-    CONSTRAINT fk_pri_company FOREIGN KEY (company_id) REFERENCES companies (id),
-    CONSTRAINT fk_pri_line    FOREIGN KEY (line_id)    REFERENCES payroll_run_lines (id)
+CREATE TABLE personnel_actions (               -- RN-90: vive en el empleado
+    id                INT AUTO_INCREMENT PRIMARY KEY,
+    company_id        INT           NOT NULL,
+    employee_id       INT           NOT NULL,
+    -- 'overtime' | 'double_time' | 'bonus' | 'sick_leave_ccss' |
+    -- 'sick_leave_ins' | 'maternity' | 'paid_leave' | 'unpaid_leave' |
+    -- 'absence' | 'vacation' | 'deduction' | 'child_support' | 'garnishment' |
+    -- 'raise' | 'position_change' | 'termination'
+    kind              VARCHAR(20)   NOT NULL,
+    starts_on         DATE          NOT NULL,
+    ends_on           DATE          NULL,      -- NULL: recurrente sin fecha final
+    hours             DECIMAL(8,2)  NULL,      -- horas extra y dobles
+    days              DECIMAL(6,2)  NULL,      -- ausencias y vacaciones
+    amount            DECIMAL(12,2) NULL,      -- bonificación, o cuota por corrida
+    total_amount      DECIMAL(12,2) NULL,      -- lo pactado (RN-92); NULL: sin tope
+    new_salary        DECIMAL(12,2) NULL,      -- aumento
+    position_id       INT           NULL,      -- cambio de puesto
+    is_recurring      TINYINT(1)    NOT NULL DEFAULT 0,
+    memo              VARCHAR(160)  NULL,
+    cancels_action_id INT           NULL,      -- la anulación (RN-91)
+    suspended_at      DATETIME      NULL,
+    suspended_by      INT           NULL,
+    suspension_reason VARCHAR(160)  NULL,
+    source            VARCHAR(8)    NOT NULL DEFAULT 'manual',  -- 'manual' | 'import' | 'system'
+    created_by        INT           NOT NULL,
+    created_at        DATETIME      NOT NULL,
+    INDEX idx_personnel_actions_employee (employee_id, starts_on),
+    CONSTRAINT fk_pa_company  FOREIGN KEY (company_id)        REFERENCES companies (id),
+    CONSTRAINT fk_pa_employee FOREIGN KEY (employee_id)       REFERENCES employees (id),
+    CONSTRAINT fk_pa_position FOREIGN KEY (position_id)       REFERENCES positions (id),
+    CONSTRAINT fk_pa_cancels  FOREIGN KEY (cancels_action_id) REFERENCES personnel_actions (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
-CREATE TABLE payroll_novelties (               -- lo que cambia respecto del contrato
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    company_id  INT           NOT NULL,
-    run_id      INT           NOT NULL,
-    employee_id INT           NOT NULL,
-    -- 'overtime' | 'holiday' | 'sick_leave' | 'vacation' | 'deduction' | 'bonus'
-    kind        VARCHAR(20)   NOT NULL,
-    quantity    DECIMAL(8,2)  NOT NULL DEFAULT 0,   -- horas o días
-    amount      DECIMAL(12,2) NULL,                 -- deducciones y bonos fijos
-    memo        VARCHAR(160)  NULL,
-    INDEX idx_payroll_novelties_run (run_id, employee_id),
-    CONSTRAINT fk_pn_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
-    CONSTRAINT fk_pn_run      FOREIGN KEY (run_id)      REFERENCES payroll_runs (id),
-    CONSTRAINT fk_pn_employee FOREIGN KEY (employee_id) REFERENCES employees (id)
+-- Los rubros SON las tasas congeladas (RN-66). La boleta se reimprime de acá.
+CREATE TABLE payroll_run_items (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    company_id   INT           NOT NULL,
+    line_id      INT           NOT NULL,
+    -- 'base', 'overtime', 'double_time', 'sick_leave_subsidy', 'sem', 'ivm',
+    -- 'income_tax', 'solidarista', 'garnishment', 'child_support', …
+    concept      VARCHAR(40)   NOT NULL,
+    payer        VARCHAR(8)    NOT NULL,    -- 'earning' | 'employee' | 'employer'
+    base         DECIMAL(12,2) NOT NULL,
+    -- NULL en los montos fijos (una deducción de ₡20 000).
+    rate         DECIMAL(9,4)  NULL,
+    amount       DECIMAL(12,2) NOT NULL,
+    -- De qué acción sale y qué tramo de ella aplicó (RN-90). Las fechas son
+    -- las de la acción, no las de la corrida: una retroactiva (RN-91) las trae
+    -- de un periodo ya pagado, y el archivo de la CCSS las pide así.
+    action_id    INT           NULL,
+    quantity     DECIMAL(8,2)  NULL,        -- horas o días de ese tramo
+    applied_from DATE          NULL,
+    applied_to   DATE          NULL,
+    INDEX idx_payroll_run_items_line (line_id),
+    INDEX idx_payroll_run_items_action (action_id),
+    CONSTRAINT fk_pri_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_pri_line    FOREIGN KEY (line_id)    REFERENCES payroll_run_lines (id),
+    CONSTRAINT fk_pri_action  FOREIGN KEY (action_id)  REFERENCES personnel_actions (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE vacation_movements (              -- el saldo es una suma (RN-70)
     id          INT AUTO_INCREMENT PRIMARY KEY,
     company_id  INT          NOT NULL,
     employee_id INT          NOT NULL,
-    kind        VARCHAR(10)  NOT NULL,     -- 'accrual' | 'taken' | 'paid'
+    kind        VARCHAR(10)  NOT NULL,     -- 'accrual' | 'taken' | 'paid' | 'opening'
     days        DECIMAL(6,2) NOT NULL,
     on_date     DATE         NOT NULL,
     run_id      INT          NULL,
+    action_id   INT          NULL,         -- el disfrute sale de una acción
     INDEX idx_vacation_movements_employee (employee_id, on_date),
     CONSTRAINT fk_vm_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
     CONSTRAINT fk_vm_employee FOREIGN KEY (employee_id) REFERENCES employees (id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- Lo devengado antes de VentaSys, mes a mes (RN-97). El aguinaldo suma los
+-- meses de su periodo y la liquidación promedia los últimos seis: una sola
+-- tabla sirve a los dos.
+CREATE TABLE payroll_opening_earnings (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    company_id   INT           NOT NULL,
+    employee_id  INT           NOT NULL,
+    period_month DATE          NOT NULL,    -- el primer día del mes
+    gross        DECIMAL(12,2) NOT NULL,
+    imported_by  INT           NOT NULL,
+    imported_at  DATETIME      NOT NULL,
+    UNIQUE KEY uq_payroll_opening_earnings (employee_id, period_month),
+    CONSTRAINT fk_poe_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
+    CONSTRAINT fk_poe_employee FOREIGN KEY (employee_id) REFERENCES employees (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 ```
+
+Los datos patronales —número patronal de la CCSS— van en el JSON de
+`settings`, validados por el backend como la ubicación del emisor (T-722): no
+son una tabla porque son uno por compañía. Las pólizas sí, porque una compañía
+con tienda y cuadrilla de construcción tiene dos, con primas distintas.
 
 ### 14.3 Dominio y aplicación
 
-`domain/payroll.py`, puro. Todo recibe el `RateSet` resuelto a la fecha de
-corte; `rates_at(rates, date)` es la única función que mira fechas, y lanza
-`RatesMissing` si a esa fecha falta un concepto.
+Cuatro módulos puros (T-1202, T-1216, T-1203), todos al 100 %:
+
+- `payroll_calendar.py`: jornadas, cortes, periodos y lo que vale un día.
+- `payroll.py`: tasas con vigencia, cargas y renta.
+- `payroll_actions.py`: los dieciséis tipos de acción, sus tramos y sus
+  rubros, y las deducciones.
+- `payroll_benefits.py`: aguinaldo, vacaciones y liquidación.
+
+Todo recibe el `RateSet` resuelto a la fecha de corte; `rates_at(rates,
+date)` es la única función que mira la vigencia, exige **al resolver** todas
+las cargas que Costa Rica cobra (`REQUIRED_CONTRIBUTIONS`) y lanza
+`RatesMissing` si falta una. Las reglas —días de incapacidad, salario mínimo
+inembargable— se piden **cuando hacen falta** (`RateSet.rule`): una corrida sin
+incapacidades no necesita la de incapacidades.
+
+**Lo que vale un día lo dice el decreto de salarios mínimos**, art. 7 (el
+43633-MTSS; la regla se repite cada año): la semana paga seis días, o siete en
+los establecimientos comerciales (art. 152); la quincena, quince; el mes,
+treinta, «indistintamente de la actividad». El ERP de origen lo tiene al revés
+en su tabla de horas, y por eso se leyó el decreto.
 
 | Función | Regla | Casos (con tasas inventadas) |
 |---|---|---|
-| `gross_pay(contract, period, novelties)` | base según periodicidad; horas extra a tiempo y medio; feriado de pago obligatorio doble | mensual 600 000 quincenal → 300 000; 4 h extra sobre 240 h/mes; un feriado trabajado |
-| `employee_deductions(gross, rates)` | cada rubro obrero: base × tasa, redondeo por rubro | tres rubros; la suma no se redondea dos veces |
-| `employer_charges(gross, rates, contract)` | cada rubro patronal + RT del contrato | idem, con prima 1 % |
-| `income_tax(monthly_gross, brackets, credits)` | tramos marginales, menos créditos, nunca negativo | bajo el piso → 0; en dos tramos; con dos hijos |
-| `projected_monthly(gross, frequency)` | quincenal × 2, semanal × 52 ÷ 12 | los tres |
-| `aguinaldo(earned)` | suma ÷ 12; sin cargas ni renta (RN-69) | doce meses iguales; siete meses; con horas extra |
-| `vacation_accrual(days_worked)` | dos semanas por cincuenta (art. 153) | 350 días → 14; 25 días → 1 |
-| `notice_days(seniority)` | art. 28 | 4 meses → 7 días; 8 meses → 15; 2 años → 30 |
-| `severance_days(seniority, table)` | art. 29, topada | 1 año; 8 años; 12 años → tope de 8 |
-| `settlement(cause, ...)` | RN-71 | renuncia: sin preaviso ni cesantía; despido sin causa: todo; con causa: proporcionales |
-| `sick_leave_split(days, daily, rules)` | quién paga qué día | 2 días; 10 días |
+| `check_schedule` | RN-94: cada periodicidad pide su dato de corte y solo ese | una mensual con día de quincena → `unexpected`; una semanal sin día → `required`; siete días hábiles → fuera de rango |
+| `period_for(schedule, cut)` | el periodo sale del corte; un corte que no es de la jornada lanza `InvalidCutDate` | mensual al 30 de abril → 1–30; quincenal que corta el 15 → 1–15 y 16–fin; que corta el 14 → 30–14 y 15–29, y en febrero el 28, y cruzando el año; bisemanal desde su serie; semanal del domingo; el 20 en una quincenal → error |
+| `next_cut`, `cut_on_or_after`, `closes_month` | el corte que sigue, el del periodo que contiene un día, y si la corrida es la última del mes (RN-73) | después del 29, el 14 del mes siguiente; la semana del 25 de enero cierra enero |
+| `monthly_equivalent(amount, frequency)` | × 1, × 2, × 26/12, × 52/12; sirve para el contrato y para proyectar la renta | los cuatro |
+| `paid_days`, `day_value`, `hour_value` | el decreto: 30, 15, 7 o 6 por semana; el día sin redondear —se redondea el rubro—; la hora, el día entre las horas de la jornada | diurna mensual 600 000 → hora 2 500; mixta ÷ 210; nocturna ÷ 180; semana comercial de 140 000 y no comercial de 120 000 → día de 20 000 |
+| `rates_at`, `RateSet.rule` | gana la fila de `valid_from` más reciente, sin importar el orden; lo vencido y lo futuro no rigen | una tasa nueva desde el 1 de marzo; sin IVM → `RatesMissing` con los dos pagadores |
+| `employee_deductions`, `employer_charges` | cada rubro base × tasa, redondeado por rubro; la prima de RT de la póliza | la suma de la boleta es la de sus renglones |
+| `income_tax(monthly, brackets, credits)` | tramos marginales, menos créditos, nunca negativo | bajo el piso → 0; en los cuatro tramos; con dos hijos y cónyuge |
+| `income_tax_withholding(…)` | RN-73: la intermedia retiene su parte de la proyección; la que cierra el mes, el impuesto del mes menos lo retenido, y puede devolver | dos quincenas iguales → mitad y mitad; extras solo en la segunda → el mes cuadra al céntimo; la primera retuvo de más → la segunda devuelve |
+| `check_action` | RN-90: cada tipo pide lo suyo; las de un día no tienen rango; solo la deducción y la pensión son recurrentes por elección | dieciséis tipos; los faltantes y los sobrantes, por campo |
+| `counted_days(schedule, from, to)` | RN-94, mes comercial: cada fin de mes que el tramo cruza suma o resta hasta treinta; nunca más de lo que paga el periodo | la segunda quincena entera son quince en enero y en febrero; el 31 solo, cero; la semana no comercial rebaja seis |
+| `portions(action, schedule, first_unapplied, period)` | RN-90 y RN-91: desde el primer día que nadie aplicó hasta el fin del periodo, un tramo por cada periodo que cruza | del 10 al 20 en quincenas → 6 y 5; la que llegó tarde → los dos tramos en la segunda corrida, con sus fechas |
+| `action_items(…)` | extras × 1,5 (art. 139), dobles × 2 (arts. 148–149), bonificación; ausencias en negativo; incapacidad con los primeros días del patrono como subsidio, salvo si prolonga otra; maternidad con la parte del patrono; todo tramo deja al menos un rubro, aunque sea de cero | uno por tipo |
+| `contribution_base`, `taxable_base` | lo que cotiza y lo que paga renta; el subsidio no; nunca negativas | con incapacidad y subsidio |
+| `deduction_due`, `remaining_balance`, `is_active` | RN-92: vigente, no suspendida y con saldo; una no recurrente, una vez | préstamo a mitad, al final y agotado; suspendido antes y después del periodo |
+| `garnishment_amount`, `garnishment_capacity`, `child_support_capacity` | RN-93, art. 172: ⅛ del exceso hasta 3 × el inembargable, ¼ de lo que lo supere; **un tope por salario**, que dos embargos se reparten con `apply_deductions`; la pensión alimentaria, hasta la mitad del neto | bajo el mínimo → 0; entre 1 y 3 veces; sobre 3 veces; una quincena → la mitad; dos embargos contra un mismo tope |
+| `apply_deductions`, `deduction_order` | RN-93: pensión, embargo y las demás, la más vieja primero, hasta dejar el neto en cero | todas caben; una en parte y la siguiente en nada; con neto negativo, ninguna |
+| `aguinaldo`, `aguinaldo_period` | suma ÷ 12, del 1 de diciembre al 30 de noviembre; un solo rubro, sin cargas ni renta (RN-69); los meses de apertura suman igual (RN-97) | doce iguales; siete; con extras; cinco de apertura y siete pagados |
+| `vacation_accrual`, `proportional_vacation` | art. 153: dos semanas por cincuenta —doce días hábiles en semana de seis, diez en semana de cinco— y, al salir antes, al menos un día por mes | 350 días → 12 o 10; cuatro meses en semana de cinco → 4 |
+| `months_between`, `years_between` | la antigüedad por meses completos, no por días entre 365 | del 10 de enero al 9 de abril, tres; dos años y medio |
+| `notice_days(months)` | art. 28 | 2 meses → 0; 4 → 7; 8 → 15; 24 → 30 |
+| `severance_years`, `severance_days(months, table)` | art. 29: totales bajo el año; desde el año, días por año de la fila de los años contados —**la fracción de más de seis meses cuenta como año**—, topado a ocho | 2 años y 7 meses → 3; 5 años → 106,2; 12 → 164 |
+| `average_salary(last_months)` | art. 30: los últimos seis, pagados o de apertura, o los que haya | seis; dos; ninguno |
+| `settlement(data, table)` | RN-71: preaviso y cesantía solo en el despido sin causa; vacaciones y aguinaldo proporcionales siempre; el día, el promedio entre treinta | las cinco causas |
 
-Puertos: `RateTable`, `EmployeeRepository`, `PayrollRepository`,
-`PayslipRenderer`, `CcssFileWriter`, y el `Ledger` de F11. Casos de uso:
-`CreateRun`, `CalculateRun` (escribe líneas y rubros: el congelamiento),
-`ApproveRun`, `PayRun` (fecha del servidor, bitácora, `Ledger.post` si hay
-contabilidad), `AdjustRun`, `TerminateEmployee` (cierra el contrato y crea la
-corrida de liquidación en borrador), `ExportCcssFile`, `IncomeTaxSummary`.
+La jornada lleva además `workdays_per_week` —seis o cinco—, que no estaba en el
+primer DDL: sin ella no se sabe si dos semanas de vacaciones son doce días o
+diez.
+
+Puertos: `RateTable`, `EmployeeRepository`, `PayrollRepository` (corridas,
+líneas y rubros), `ActionRepository`, `PayslipRenderer`, `CcssFileWriter`,
+`InsFileWriter`, y el `Ledger` de F11. Casos de uso: `RegisterAction`,
+`CancelAction`, `SuspendAction`, `CreateRun`, `CalculateRun` (toma las
+acciones del periodo y las pendientes de periodos pagados, y escribe líneas y
+rubros: el congelamiento), `ApproveRun`, `PayRun` (fecha del servidor,
+bitácora, `Ledger.post` si hay contabilidad), `AdjustRun`,
+`TerminateEmployee` (registra la acción `termination`, cierra el contrato y
+crea la corrida de liquidación en borrador), `ImportPayroll` (con `dry_run`),
+`ExportCcssFile`, `ExportInsFile`, `IncomeTaxSummary`.
 
 ### 14.4 API y pantallas
 
 ```
-GET  /payroll/employees · POST · PUT /{id} · POST /{id}/terminate      admin
-GET  /payroll/contracts?employee= · POST                              admin
+GET  /payroll/settings · PUT                número patronal                    admin
+GET  /payroll/schedules · POST · PUT /{id}  jornadas (schedule_locked)          admin
+GET  /payroll/positions · POST · PUT /{id}  puestos                            admin
+GET  /payroll/policies · POST · PUT /{id}   pólizas del INS                    admin
+GET  /payroll/employees · POST · PUT /{id} · POST /{id}/terminate              admin
+GET  /payroll/contracts?employee= · POST                                       admin
+GET  /payroll/employees/{id}/actions        historial, con lo que aplicó cada corrida y el saldo
+POST /payroll/actions · /{id}/cancel · /{id}/suspend                           admin
+POST /payroll/import?dry_run=               las filas ya leídas por el BFF     admin
 GET  /payroll/rates?on=                     lo vigente a una fecha, con su
                                             fuente y su verified_at
 PUT  /support/payroll/rates                 soporte · inserta una fila con
                                             vigencia; nunca edita la vigente
-GET  /payroll/runs · POST                   admin
-POST /payroll/runs/{id}/novelties · /calculate · /approve · /pay · /adjust
+GET  /payroll/runs · POST                   admin; POST con jornada y corte
+POST /payroll/runs/{id}/calculate · /approve · /pay · /adjust
 GET  /payroll/runs/{id}                     líneas y rubros
 GET  /payroll/runs/{id}/payslips/{employee} la boleta
 GET  /payroll/vacations/{employee}          saldo y movimientos
 GET  /payroll/exports/ccss?year=&month=     el archivo (RF-62)
+GET  /payroll/exports/ins?year=&month=&policy=
 GET  /payroll/exports/income-tax?year=&month=
 ```
 
-Pantallas: `/planilla` (la corrida en curso y lo que vence: aguinaldo,
-tasas viejas), `/planilla/empleados` con contrato y baja, `/planilla/corridas`
-y `/planilla/corridas/{id}` con novedades, cálculo, aprobación, pago y
-boletas, `/planilla/vacaciones`, `/planilla/tasas` (solo lectura, con fecha y
-fuente). La boleta es la **cuarta plantilla de documento** —T-922 ya avisa que
-el PDF del backend no se cuenta—, con el idioma del documento (RN-29).
+Pantallas: `/planilla` (las corridas en curso y lo que vence: aguinaldo,
+tasas viejas, empleados a los que les falta un dato para los archivos),
+`/planilla/empleados` con contrato, historial de acciones y baja,
+`/planilla/acciones` (registrar una, para uno o varios empleados),
+`/planilla/corridas` y `/planilla/corridas/{id}` con cálculo, aprobación,
+pago y boletas, `/planilla/vacaciones`, `/planilla/configuracion` (datos
+patronales, jornadas, puestos y pólizas), `/planilla/importar` (plantilla,
+vista previa fila por fila y confirmar) y `/planilla/tasas` (solo lectura,
+con fecha y fuente). La boleta es la **cuarta plantilla de documento** —T-922
+ya avisa que el PDF del backend no se cuenta—, con el idioma del documento
+(RN-29).
 
 ### 14.5 Códigos de error
 
 `rates_missing_for_date`, `contract_missing`, `employee_terminated`,
 `run_not_editable`, `run_not_approved`, `run_already_paid`,
-`settlement_requires_termination`, `novelty_outside_period`,
-`vacation_balance_exceeded`.
+`settlement_requires_termination`, `vacation_balance_exceeded`,
+`invalid_cut_date`, `schedule_locked`, `action_not_editable`,
+`invalid_payroll_rate`, `payroll_rate_not_newer` (T-1204),
+`action_already_cancelled`, `action_not_recurring`, `import_has_errors`,
+`export_data_incomplete` (con la lista de empleados y los datos que les
+faltan). `novelty_outside_period` sale: una acción fuera del periodo no es un
+error, es una que entra en otra corrida.
 
 ### 14.6 Decisiones
 
 | Tema | Qué se decidió | Por qué | Estado |
 |---|---|---|---|
-| Tasas | Globales por país, con vigencia; RT y solidarista en el contrato | Son las mismas para todos; lo que varía es poco y es de la compañía | tomada |
+| Tasas | Globales por país, con vigencia; la prima de RT en la póliza y el solidarista en el contrato | Son las mismas para todos; lo que varía es poco y es de la compañía | tomada |
 | Congelamiento | Los rubros de la corrida, con base y tasa | La boleta se reimprime de datos, no de código | tomada |
-| Renta | Proyección mensual | Es la práctica y lo que la boleta muestra | tomada |
+| Acciones de personal | En el empleado, con fechas; la corrida las parte y deja el tramo en el rubro | Una incapacidad que cruza la quincena no se parte a mano, y los archivos piden fechas | tomada 2026-09-27 |
+| Tipos de acción | Lista cerrada de dieciséis | Cada tipo tiene su efecto en el cálculo y en los archivos | tomada 2026-09-27 |
+| Jornadas | De la compañía; la corrida es de una jornada y un corte | Grupos que cobran en calendarios distintos | tomada 2026-09-27 |
+| Renta | Del mes calendario: proyección en las intermedias, liquidación en la que cierra el mes | Proyectar y partir descuadra el mes con horas extra desiguales | tomada 2026-09-27 (antes: solo proyección) |
 | Quincena | Mitad del mensual | Lo que hacen los patronos y espera el empleado | tomada |
-| Aguinaldo y liquidación | Son corridas | Un solo modelo de estados, bitácora y asiento | tomada |
+| Aguinaldo y liquidación | Son corridas, con los saldos de apertura sumados | Un solo modelo de estados, bitácora y asiento; y quien migra no pierde lo devengado | tomada |
+| Importación | Una ruta con `dry_run`; la vista previa es el ensayo | La validación vive en un solo lugar | tomada 2026-09-27 |
+| Identificación del empleado | Palabras, no códigos | Hacienda, la CCSS y el INS numeran distinto | tomada 2026-09-27 |
 | Archivo bancario | Fuera | Un formato por banco; sin cliente que lo pida | tomada |
+| Salario por hora | Fuera | Pide un tipo «horas ordinarias» cada periodo | tomada 2026-09-27 |
 | Caja | La planilla no mueve la caja (RN-74) | Nómina y arqueo se descuadran juntos | tomada |
 | ¿Quién edita las tasas? | Soporte, para todos; la compañía las ve | Una tasa mal escrita por un cliente es un reclamo laboral; una fila con vigencia de soporte es un dato con fuente | tomada |
 
 ### 14.7 Costes medidos antes de empezar
 
-- `test_esquema.py`: once tablas.
+- `test_esquema.py`: quince tablas (`019`).
 - `test_tenancy.py`: cuatro tablas globales sin `TenantMixin`, declaradas como
   excepción explícita, como `cabys_cache`.
-- `test_aislamiento.py`: unas quince rutas, y una bajo `/support`.
-- `test_error_codes.py`: nueve códigos.
-- `test_ports.py`: cinco puertos.
-- `company_dump.py`: siete tablas **viajan**; las cuatro globales, **no**.
-- Cobertura: `domain/payroll.py` supera a `ledger.py`; la tabla de casos es
+- `test_aislamiento.py`: unas treinta rutas, y una bajo `/support`.
+- `test_error_codes.py`: diecisiete códigos, con los dos de las tasas.
+- `test_ports.py`: siete puertos.
+- `company_dump.py`: once tablas **viajan**; las cuatro globales, **no**.
+- Cobertura: el dominio de planilla supera a `ledger.py`; la tabla de casos es
   larga a propósito.
-- El simulado: quince endpoints; dos empleados y un juego de tasas en el seed.
+- El simulado: unos treinta endpoints; dos empleados, dos jornadas, dos
+  puestos, una póliza y un juego de tasas en el seed.
 - Catálogo `payroll.json`, declarado. La boleta como cuarta plantilla, en los
   tres idiomas del documento.
 - El asiento de planilla necesita el mapeo `payroll` de §13.8 sembrado desde
-  F11, aunque no se use hasta acá.
+  F11, aunque no se use hasta acá. Las deducciones que no son de la CCSS ni de
+  Hacienda —pensión, embargo, préstamos— van a 2.1.06.
 
 ### 14.8 Datos de referencia
 
@@ -2577,13 +3098,32 @@ siembra, y esa fecha va en `verified_at`.
 |---|---|---|---|
 | SEM, IVM, Banco Popular | obrero y patrono | `payroll_rates` | CCSS. El IVM trae aumentos programados: varias filas con `valid_from` |
 | Asignaciones Familiares, IMAS, INA, FCL, ROP, aporte patronal Banco Popular | patrono | `payroll_rates` | CCSS / Ley de Protección al Trabajador |
-| Riesgos del trabajo | patrono, por actividad | `employment_contracts.rt_rate` | INS, la póliza de cada compañía |
+| Riesgos del trabajo | patrono, por póliza | `ins_policies.rt_rate` | INS, la póliza de cada compañía. El subsidio de una incapacidad del INS lo paga el INS desde la fecha del riesgo (art. 236): `ins_employer_days` = 0 |
+| Uno por ciento al INS de la LPT | patrono | `payroll_rates` (`ins_lpt`) | Ley 7983, recaudado por la CCSS. Sin él la suma patronal da 25,83 y no el 26,83 publicado |
+| INA | patrono, salvo exento | `payroll_rates` y la configuración de la compañía | El patrono no agrícola con menos de cinco trabajadores permanentes no lo paga (`INA_CONCEPT`) |
+| Base mínima contributiva | — | `payroll_rates` (`rule`) | CCSS: SEM ₡346 789 e IVM ₡324 590 en 2026. Sembrada; su efecto en la boleta está por decidir (T-1204) |
 | Total obrero ≈ 10,67 %, total patronal ≈ 26,67 % | — | — | **Aproximados, de referencia**: la prueba de la siembra suma los rubros y compara contra lo publicado ese día |
 | Tramos del impuesto al salario y créditos por hijo y cónyuge | obrero | `income_tax_brackets`, `income_tax_credits` | Hacienda, decreto del periodo fiscal; se renuevan cada año |
+| Salario mínimo inembargable | — | `payroll_rates` (`rule`, monto) | Código de Trabajo art. 172 y el decreto de salarios mínimos vigente |
 | Preaviso | — | dominio (`notice_days`) | Código de Trabajo art. 28: 3–6 meses → 1 semana; 6–12 → 15 días; > 1 año → 1 mes |
 | Cesantía | — | `severance_table` | art. 29: 3–6 meses → 7 días; 6–12 → 14; 1 año → 19,5; 2 → 20; 3 → 20,5; 4 → 21; 5 → 21,24; 6 → 21,5; 7 a 9 → 22; 10 → 21,5; 11 → 21; 12 → 20,5; 13 o más → 20; **tope de 8 años**. Verificar el texto vigente antes de sembrar |
 | Aguinaldo | — | dominio | Ley 2412: 1 dic – 30 nov, ÷ 12, antes del 20 de diciembre, exento |
 | Vacaciones | — | dominio | art. 153: dos semanas por cincuenta trabajadas |
 | Horas extra y feriados | — | dominio | art. 139 (tiempo y medio) y arts. 148–149 (feriados de pago obligatorio, doble) |
-| Incapacidad por enfermedad | patrono los primeros días, CCSS después | `payroll_rates` (`rule`) | CCSS: el porcentaje y desde qué día se toman del reglamento vigente el día de sembrar |
-| Archivo de planilla para la CCSS | — | adaptador `CcssFileWriter` | La especificación del SICERE se lee **antes** de T-1211; el formato no se supone |
+| Jornadas | — | `work_schedules` | art. 136: diurna 8 h y 48 semanales, mixta 7 y 42, nocturna 6 y 36; art. 152: descanso pagado en comercio |
+| Incapacidad por enfermedad | patrono los primeros días, CCSS después | `payroll_rates` (`rule`) | Reglamento del Seguro de Salud, art. 35 (la CCSS desde el cuarto día) y jurisprudencia sobre el art. 79: el patrono, al menos medio salario los tres primeros. **Es subsidio y no salario**: sin cargas, sin renta, sin embargos (MTSS, DAJ-AE-201-12) |
+| Licencia de maternidad | patrono y CCSS, por mitades | `payroll_rates` (`rule`) | art. 95: y se cotiza sobre la totalidad del salario durante la licencia |
+| Salario mínimo inembargable | — | `payroll_rates` (`rule`) | art. 172: el menor salario **mensual** del decreto; en el 45303-MTSS de 2026, el del servicio doméstico, ₡268 731,31 |
+| Licencia de maternidad | patrono y CCSS | `payroll_rates` (`rule`) | art. 95 y el reglamento de la CCSS |
+| Archivo de planilla para la CCSS | — | adaptador `CcssFileWriter` | La especificación del SICERE se lee **antes** de T-1211 y se guarda en `docs/ccss/`; el formato no se supone |
+| Archivo de planilla para el INS | — | adaptador `InsFileWriter` | La especificación de RT-Virtual se lee **antes** de T-1219 y se guarda en `docs/ins/` |
+
+Lo que el ERP muestra de los dos archivos sirve para saber **qué** piden, no
+**cómo** se escriben: el de la CCSS lleva un encabezado con el número
+patronal y el mes, una línea por movimiento del empleado —ingreso, salario,
+cambio de ocupación, incapacidad (SEM, INS, maternidad), permiso con o sin
+goce, exclusión— con sus fechas, y un cierre con los conteos; el del INS, un
+encabezado con la póliza y el mes, y por empleado su identificación, nombre,
+nacimiento, género, estado civil, nacionalidad, salario, días, horas, si
+ingresó o salió en el mes y el código de ocupación del INS. Por eso el
+empleado lleva esos datos (RN-72) y el puesto sus dos códigos (RN-95).

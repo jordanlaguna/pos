@@ -8,5 +8,8 @@
 	"checkout_insufficient_stock": "Stock insuficiente para {product}: quedan {available}.",
 	"checkout_cash_short": "El monto recibido no cubre el total de la venta.",
 	"checkout_unreadable_lines": "No se pudo leer el detalle de la venta.",
-	"checkout_amount_insufficient": "Monto insuficiente."
+	"checkout_amount_insufficient": "Monto insuficiente.",
+	"checkout_invoice_needs_client": "La factura electrónica necesita un cliente. Elija uno o emita un tiquete.",
+	"checkout_document_type_not_enabled": "Este negocio no emite ese comprobante. Elija otro.",
+	"checkout_bad_document_type": "Ese comprobante no se emite al cobrar."
 }

@@ -4,8 +4,11 @@
 	import PageHeader from '$lib/ui/components/PageHeader.svelte';
 	import Field from '$lib/ui/components/Field.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
+	import IssuerLocationFields from '$lib/ui/components/IssuerLocationFields.svelte';
 	import { submit } from '$lib/ui/forms';
 	import { companyStateLabel } from '$lib/ui/messages';
+	import { ID_TYPES } from '$lib/domain/settings';
+	import { EMPTY_LOCATION } from '$lib/domain/location';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
 
@@ -22,6 +25,13 @@
 	 */
 	const previo = $derived(form?.valores ?? {});
 	const errores = $derived(form?.errors ?? {});
+
+	/*
+	 * La ubicación del emisor (RF-73, T-722). Opcional al dar de alta —la compañía
+	 * que no emite no la necesita, y el dueño la completa en Configuración—, pero
+	 * si soporte la tiene a mano, que quede desde el primer día.
+	 */
+	let ubicacion = $state({ ...EMPTY_LOCATION });
 
 	const IDIOMAS = $derived(
 		data.locales.map((codigo) => ({
@@ -71,7 +81,30 @@
 				name="identificacion"
 				value={previo.identificacion ?? ''}
 				error={errores.identificacion}
+				hint={m.admin_issuer_hint()}
 			/>
+			<div>
+				<label class="label" for="alta-tipo-identificacion">{m.settings_id_type()}</label>
+				<select
+					id="alta-tipo-identificacion"
+					name="tipo_identificacion"
+					class="input"
+					value={previo.tipo_identificacion ?? ''}
+				>
+					<option value="">{m.admin_issuer_type_auto()}</option>
+					{#each ID_TYPES as tipo (tipo.code)}
+						<option value={tipo.code}>{tipo.label}</option>
+					{/each}
+				</select>
+			</div>
+
+			<fieldset data-ubicacion-alta>
+				<legend class="mb-1 text-xs font-bold text-[var(--text)] uppercase">
+					{m.settings_location_title()}
+				</legend>
+				<p class="mb-3 text-xs text-[var(--text-subtle)]">{m.settings_location_hint()}</p>
+				<IssuerLocationFields bind:location={ubicacion} errors={errores} />
+			</fieldset>
 
 			<div class="grid grid-cols-2 gap-3">
 				<Field

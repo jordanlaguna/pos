@@ -18,6 +18,8 @@
 		exemptionVerifiedByHacienda
 	} from '$lib/domain/exemptions';
 	import { exemptionInstitutionLabel, exemptionTypeLabel } from '$lib/ui/exemptions';
+	import { ID_TYPES } from '$lib/domain/settings';
+	import { identificationTypeFor, identificationTypeName } from '$lib/domain/identification';
 	import type { Client } from '$lib/domain/types';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
@@ -43,6 +45,9 @@
 
 	let f = $state({
 		identification: '',
+		// El tipo de Hacienda (T-617). En blanco es «según la cédula»: el servidor
+		// lo deduce de la longitud, y solo pide elegirlo cuando no se puede.
+		identification_type: '',
 		name: '',
 		last_name: '',
 		second_name: '',
@@ -62,6 +67,9 @@
 		exo_points: ''
 	});
 
+	/** Lo que dice la cédula que se está escribiendo, para la opción en blanco. */
+	const tipoDeducido = $derived(identificationTypeName(identificationTypeFor(f.identification)));
+
 	const filtered = $derived.by(() => {
 		const term = search.trim().toLowerCase();
 		if (!term) return data.clients;
@@ -78,6 +86,7 @@
 		editing = null;
 		f = {
 			identification: '',
+			identification_type: '',
 			name: '',
 			last_name: '',
 			second_name: '',
@@ -94,6 +103,7 @@
 		editing = client;
 		f = {
 			identification: client.identification,
+			identification_type: client.identification_type ?? '',
 			name: client.name,
 			last_name: client.last_name,
 			second_name: client.second_name,
@@ -228,6 +238,28 @@
 			required
 			error={form?.errors?.identification}
 		/>
+		<div>
+			<label class="label" for="id-type">{m.clients_label_id_type()}</label>
+			<select
+				id="id-type"
+				name="identification_type"
+				class="input"
+				bind:value={f.identification_type}
+				aria-describedby="id-type-hint"
+			>
+				<option value="">
+					{tipoDeducido
+						? m.clients_id_type_auto({ type: tipoDeducido })
+						: m.clients_id_type_auto_unknown()}
+				</option>
+				{#each ID_TYPES as tipo (tipo.code)}
+					<option value={tipo.code}>{tipo.label}</option>
+				{/each}
+			</select>
+			<p id="id-type-hint" class="mt-1 text-xs text-[var(--text-subtle)]">
+				{m.clients_id_type_hint()}
+			</p>
+		</div>
 		<Field
 			label={m.people_label_name()}
 			name="name"

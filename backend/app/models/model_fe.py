@@ -21,10 +21,12 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     PrimaryKeyConstraint,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 
@@ -116,3 +118,46 @@ class FeSequence(TenantMixin, Base):
     )
     updated_at = Column(DateTime, nullable=True)
     updated_by = Column(Integer, nullable=True)
+
+
+class FeDocument(TenantMixin, Base):
+    """Un comprobante con su consecutivo y su clave (T-704, T-705, migración 018).
+
+    Cuelga de su origen —la venta, la devolución o la nota— y no es una columna
+    de ellas porque un origen puede tener más de uno: un rechazo se corrige con
+    otra clave, no reescribiendo esta.
+
+    La clave no se repite en la compañía y el consecutivo tampoco dentro del
+    ambiente. Uno de pruebas y uno de producción sí pueden coincidir: se numeran
+    aparte (RN-34).
+    """
+
+    __tablename__ = "fe_documents"
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "clave", name="uq_fe_documents_clave"),
+        UniqueConstraint(
+            "company_id", "environment", "consecutive", name="uq_fe_documents_consecutive"
+        ),
+        # La pregunta de todas las pantallas: «¿qué comprobante tiene esta venta?».
+        Index("idx_fe_documents_source", "source_type", "source_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    #: 'sale', 'return' o 'note' (`number_document.SOURCE_*`).
+    source_type = Column(String(10), nullable=False)
+    source_id = Column(Integer, nullable=False)
+    document_type = Column(CHAR(2), nullable=False)
+    environment = Column(String(12), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    terminal_id = Column(Integer, ForeignKey("terminals.id"), nullable=False)
+    #: `sequence_number` y no `sequence`, que en MariaDB es palabra reservada.
+    sequence_number = Column(BigInteger, nullable=False)
+    consecutive = Column(CHAR(20), nullable=False)
+    clave = Column(CHAR(50), nullable=False)
+    #: 1 normal, 2 contingencia, 3 sin internet (nota 3, inciso g).
+    situation = Column(CHAR(1), nullable=False)
+    #: La actividad con que se declaró, que puede no ser la configurada mañana.
+    economic_activity = Column(String(10), nullable=True)
+    #: La misma marca que su origen: la fecha de la clave sale de acá.
+    issued_at = Column(DateTime, nullable=False)

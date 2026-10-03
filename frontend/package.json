@@ -36,6 +36,7 @@
 	},
 	"dependencies": {
 		"fast-xml-parser": "^5.10.1",
+		"qrcode-generator": "^2.0.4",
 		"read-excel-file": "^9.3.10"
 	}
 }

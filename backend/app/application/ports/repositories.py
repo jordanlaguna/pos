@@ -46,6 +46,11 @@ class ProductSnapshot(Protocol):
     #: de esos no se sabe cuánto costaron, y la primera compra lo establece.
     cost: Money
 
+    #: El CABYS y la unidad de medida del comprobante (RN-86). Se congelan en la
+    #: línea como la tarifa: la factura reimpresa dice con qué se vendió.
+    cabys_code: str | None
+    unit_of_measure: str | None
+
 
 class ProductRepository(Protocol):
     def get(self, product_id: int) -> ProductSnapshot | None: ...
@@ -182,6 +187,18 @@ class StockEntryRepository(Protocol):
     def mark_cancelled(self, entry_id: int) -> None: ...
 
 
+class ClientRepository(Protocol):
+    def exists(self, client_id: int) -> bool:
+        """Si hay un cliente con ese id **en esta compañía**.
+
+        La foránea de `sales.client_id` no sabe de compañías: sin esta pregunta,
+        una venta podía colgar del cliente de otro negocio, y una factura
+        electrónica habría salido a nombre de un receptor que no es de quien la
+        emite (RN-85).
+        """
+        ...
+
+
 class SaleRepository(Protocol):
     def add(
         self,
@@ -197,6 +214,9 @@ class SaleRepository(Protocol):
         change_given: Money,
         created_at: datetime,
         lines: list,
+        #: `'01'` factura, `'04'` tiquete, nulo sin facturación electrónica
+        #: (RN-85). Lo decide el dominio antes de llegar acá.
+        document_type: str | None = None,
     ) -> int:
         """Guarda la venta con sus líneas y devuelve su identificador."""
         ...
@@ -272,10 +292,53 @@ class ReturnRepository(Protocol):
         total: Money,
         created_at: datetime,
         lines: list,
+        #: La nota de crédito (RN-89): `'03'` y el motivo de Hacienda, o los dos
+        #: nulos cuando la venta no fue comprobante. Lo decide `fe_notes`.
+        document_type: str | None = None,
+        reference_code: str | None = None,
     ) -> int: ...
 
     def total_in_window(self, user_id: int, start: datetime, end: datetime) -> Money:
         """Lo devuelto en la ventana de un turno: sale de la gaveta."""
+        ...
+
+
+class NoteRepository(Protocol):
+    """Las notas por monto (RF-77, T-726): las que no mueven mercadería."""
+
+    def adjustments(self, sale_id: int) -> dict[int, tuple[Money, Money]]:
+        """Lo que las notas le **sumaron** (ND) y le **restaron** (NC) a cada
+        línea de la venta, con impuesto: `{producto: (sumado, restado)}`.
+
+        Sin notas, vacío. Lo usan la NC —para no reembolsar más de lo que queda—
+        y la devolución —que no puede devolver una línea que ya tiene NC—.
+        """
+        ...
+
+    def add(
+        self,
+        *,
+        sale_id: int,
+        user_id: int,
+        document_type: str,
+        reference_code: str,
+        reason: str,
+        #: Cómo se cobró la ND; nulo en la NC, que sale de la gaveta.
+        payment_method: str | None,
+        subtotal: Money,
+        tax: Money,
+        total: Money,
+        created_at: datetime,
+        lines: list,
+    ) -> int:
+        """Guarda la nota con sus líneas. El CABYS, la unidad y el código de
+        tarifa de cada una son los de la línea de la venta (RN-86)."""
+        ...
+
+    def in_window(self, user_id: int, start: datetime, end: datetime) -> list:
+        """Las notas de un cajero entre dos marcas, cada una con su
+        `document_type`, su `payment_method` y su `total`. Es cómo entran al
+        arqueo del turno."""
         ...
 
 
@@ -287,6 +350,23 @@ class SettingsRepository(Protocol):
         Es un puerto y no una lectura directa de la tabla porque el caso de uso
         de la venta la necesita para recalcular los totales, y ese cálculo tiene
         que poder probarse sin base de datos.
+        """
+        ...
+
+    def einvoicing_enabled(self) -> bool:
+        """Si la compañía factura electrónicamente.
+
+        Decide si la venta lleva tipo de comprobante (RN-85). Se lee al cobrar y
+        no se congela en ningún lado más que en la venta misma: lo que cambia
+        cuando alguien la apaga son las ventas siguientes, no las anteriores.
+        """
+        ...
+
+    def document_types(self) -> frozenset[str]:
+        """Los comprobantes que la compañía emite, ya saneados (RN-88).
+
+        Nunca vacío ni sin algo con qué vender: lo garantiza
+        `fe_document_type.enabled_types`, que es por donde tiene que pasar.
         """
         ...
 

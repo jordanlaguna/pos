@@ -3,7 +3,9 @@ from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.orm import Session
 
+from app.domain.errors import IdentificationTypeRequired, InvalidIdentificationType
 from app.domain.fe_exemptions import Exemption, InvalidExemption
+from app.domain.hacienda import check_identification_type, client_identification_type
 from app.models.model_client import Client
 from app.schemas.schemas_clients import ClientRegister
 from app.utils.api_errors import api_error
@@ -99,9 +101,22 @@ def revisar_exoneracion(datos: dict) -> dict:
     }
 
 
+def _tipo(requested: object, identification: str) -> str:
+    """El tipo de identificación con que se guarda (T-617), o el «no» con su código."""
+    try:
+        return client_identification_type(requested, identification)
+    except InvalidIdentificationType:
+        raise api_error(
+            400, "invalid_identification_type", identification_type=str(requested)
+        ) from None
+    except IdentificationTypeRequired:
+        raise api_error(400, "identification_type_required") from None
+
+
 def create_client(db: Session, client: ClientRegister):
     db_client = Client(
         identification=client.identification,
+        identification_type=_tipo(client.identification_type, client.identification),
         name=client.name,
         last_name=client.last_name,
         second_name=client.second_name,
@@ -136,6 +151,17 @@ def update_client_information(db: Session, id_client: int, client_data: dict):
     exoneracion = revisar_exoneracion(client_data)
     for key, value in exoneracion.items():
         setattr(db_client, key, value)
+
+    # El tipo se cambia solo si viene con valor (T-617): en blanco es «no lo
+    # toqué», como el resto de los campos de esta ficha.
+    tipo = client_data.pop("identification_type", None)
+    if tipo not in (None, ""):
+        try:
+            db_client.identification_type = check_identification_type(tipo)
+        except InvalidIdentificationType:
+            raise api_error(
+                400, "invalid_identification_type", identification_type=str(tipo)
+            ) from None
 
     for key, value in client_data.items():
         if key in CAMPOS_EXONERACION:

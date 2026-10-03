@@ -8,6 +8,7 @@
 	import { formatAmount } from '$lib/domain/money';
 	import { formatDate, formatDateTime } from '$lib/ui/format';
 	import { auditActionLabel, companyStateLabel, subscriptionNotice } from '$lib/ui/messages';
+	import { ID_TYPES } from '$lib/domain/settings';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
 
@@ -15,6 +16,7 @@
 
 	let guardando = $state(false);
 	let entrando = $state(false);
+	let guardandoEmisor = $state(false);
 
 	const c = $derived(data.company);
 	const s = $derived(data.company.suscripcion);
@@ -94,6 +96,47 @@
 				</dd>
 			</div>
 		</dl>
+
+		<!--
+			La cédula del emisor (RN-45, T-621). Va en la clave de cada comprobante:
+			sin ella la compañía no puede facturar electrónicamente, y la única
+			puerta para fijarla o corregirla es esta.
+		-->
+		<form
+			method="POST"
+			action="?/emisor"
+			class="mt-4 space-y-2 border-t border-[var(--border)] pt-3"
+			data-emisor-form
+			use:enhance={submit({ setBusy: (ocupado) => (guardandoEmisor = ocupado) })}
+		>
+			<h3 class="text-xs font-bold text-[var(--text)] uppercase">{m.admin_issuer_title()}</h3>
+			<p class="text-xs text-[var(--text-subtle)]">{m.admin_issuer_hint()}</p>
+			<Field
+				label={m.admin_label_identification()}
+				name="identificacion"
+				value={c.identificacion ?? ''}
+				required
+				error={errores.identificacion}
+			/>
+			<div>
+				<label class="label" for="tipo-emisor">{m.settings_id_type()}</label>
+				<select
+					id="tipo-emisor"
+					name="tipo_identificacion"
+					class="input"
+					value={c.identification_type ?? ''}
+				>
+					<option value="">{m.admin_issuer_type_auto()}</option>
+					{#each ID_TYPES as tipo (tipo.code)}
+						<option value={tipo.code}>{tipo.label}</option>
+					{/each}
+				</select>
+			</div>
+			<button class="btn btn-secondary w-full" disabled={guardandoEmisor}>
+				{#if guardandoEmisor}<Spinner size={14} />{/if}
+				{m.admin_issuer_save()}
+			</button>
+		</form>
 
 		<h3 class="mt-4 mb-2 text-xs font-bold text-[var(--text)] uppercase">{m.admin_admins()}</h3>
 		{#if c.administradores.length === 0}

@@ -224,5 +224,12 @@
 	"impersonation_banner": "Está vendo {compania} como suporte.",
 	"impersonation_read_only": "Somente leitura",
 	"impersonation_reason": "Motivo: {motivo}",
-	"impersonation_leave": "Voltar ao painel"
+	"impersonation_leave": "Voltar ao painel",
+	"admin_issuer_title": "Identificação do emissor",
+	"admin_issuer_hint": "Deve ser a mesma do certificado de assinatura: vai dentro da chave de cada comprovante. A empresa a vê, mas não pode alterá-la.",
+	"admin_issuer_type_auto": "Deduzir pelo número",
+	"admin_issuer_save": "Salvar identificação",
+	"admin_issuer_saved": "Identificação do emissor salva.",
+	"admin_action_emisor": "Alterou a identificação do emissor",
+	"admin_action_tasa_planilla": "Adicionou uma taxa de folha de pagamento"
 }

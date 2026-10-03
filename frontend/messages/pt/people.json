@@ -89,5 +89,9 @@
 	"clients_exo_inst_10": "INCAE",
 	"clients_exo_inst_11": "Junta de Protección Social",
 	"clients_exo_inst_12": "Aresep",
-	"clients_exo_inst_99": "Outra"
+	"clients_exo_inst_99": "Outra",
+	"clients_label_id_type": "Tipo de identificação",
+	"clients_id_type_auto": "Pelo número: {type}",
+	"clients_id_type_auto_unknown": "Pelo número",
+	"clients_id_type_hint": "É impresso na fatura do cliente. O número basta para saber, exceto um NITE, que tem dez dígitos como uma pessoa jurídica."
 }

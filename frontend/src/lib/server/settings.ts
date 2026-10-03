@@ -2,6 +2,8 @@ import { api } from './api';
 import {
 	DEFAULT_SETTINGS,
 	mergeSettings,
+	withIssuer,
+	type Issuer,
 	type LogoSettings,
 	type Settings,
 	type StoredSettings
@@ -55,13 +57,15 @@ const FALLBACK: StoredSettings = {
 	settings: DEFAULT_SETTINGS,
 	logo: null,
 	updated_at: null,
-	logo_version: '0'
+	logo_version: '0',
+	issuer: null
 };
 
 interface SettingsPayload {
 	data?: unknown;
 	logo?: LogoSettings | null;
 	updated_at?: string | null;
+	issuer?: Issuer | null;
 }
 
 /**
@@ -77,6 +81,21 @@ function logoVersion(payload: SettingsPayload): string {
 	return `${stamp.replace(/\D/g, '').slice(0, 14) || '0'}-${payload.logo.data.length}`;
 }
 
+/**
+ * Lo que respondió el backend, saneado y con la cédula de la compañía en el
+ * emisor (RN-45): la que se imprime tiene que ser la que va en la clave.
+ */
+function stored(payload: SettingsPayload): StoredSettings {
+	const issuer = payload.issuer ?? null;
+	return {
+		settings: withIssuer(mergeSettings(payload.data), issuer),
+		logo: payload.logo ?? null,
+		updated_at: payload.updated_at ?? null,
+		logo_version: logoVersion(payload),
+		issuer
+	};
+}
+
 export async function loadSettings(
 	token: string | null | undefined,
 	companyId: number | null | undefined = SIN_COMPANIA
@@ -87,12 +106,7 @@ export async function loadSettings(
 
 	try {
 		const payload = await api<SettingsPayload>('/settings/', { token });
-		const value: StoredSettings = {
-			settings: mergeSettings(payload.data),
-			logo: payload.logo ?? null,
-			updated_at: payload.updated_at ?? null,
-			logo_version: logoVersion(payload)
-		};
+		const value = stored(payload);
 		cache.set(clave, { value, at: Date.now() });
 		return value;
 	} catch {
@@ -138,12 +152,7 @@ export async function saveSettings(
 		}
 	});
 
-	const value: StoredSettings = {
-		settings: mergeSettings(payload.data),
-		logo: payload.logo ?? null,
-		updated_at: payload.updated_at ?? null,
-		logo_version: logoVersion(payload)
-	};
+	const value = stored(payload);
 	cache.set(companyId ?? SIN_COMPANIA, { value, at: Date.now() });
 	return value;
 }

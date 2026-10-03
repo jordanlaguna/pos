@@ -225,7 +225,24 @@ describe('apiMessage', () => {
 		entry_line_without_product: { line: 4 },
 		entry_cannot_cancel: { product: 'Arroz 1 kg', available: 1, added: 3 },
 		category_name_taken: { name: 'Congelados' },
-		invalid_role: { role: 'jefe' }
+		invalid_role: { role: 'jefe' },
+		invalid_tax_brackets: { reason: 'gap', index: 1 },
+		invalid_payroll_settings: { field: 'employer_number', reason: 'bad_format' },
+		invalid_schedule: { field: 'first_cut_day', reason: 'unexpected' },
+		payroll_name_taken: { resource: 'schedules', name: 'Quincenal' },
+		schedule_locked: { schedule_id: 1 },
+		invalid_employee: { field: 'birth_date', reason: 'too_young' },
+		employee_identification_taken: { identification: '102340567' },
+		employee_terminated: { employee_id: 1, terminated_on: '2026-02-10' },
+		invalid_contract: { field: 'valid_from', reason: 'overlaps' },
+		contract_missing: { employee_id: 1 },
+		invalid_action: { field: 'hours', reason: 'required' },
+		action_not_editable: { reason: 'applied' },
+		invalid_cut_date: { cut: '2026-01-20', frequency: 'semimonthly' },
+		run_already_exists: { run_id: 3 },
+		run_not_editable: { reason: 'approved' },
+		run_not_approved: { status: 'draft' },
+		rates_missing_for_date: { missing: ['ivm:employee'], on: '2025-12-31' }
 	};
 
 	it.each(API_CODES.map((code) => [code] as const))('%s tiene frase', (code) => {

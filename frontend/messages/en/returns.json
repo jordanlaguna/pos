@@ -47,5 +47,13 @@
 	"returns_to_refund": "To refund",
 	"returns_stock_note": "The returned units go back into inventory and come off the register's cash count.",
 	"returns_register": "Record return",
-	"returns_at_least_one": "Enter at least one product with a quantity greater than zero."
+	"returns_at_least_one": "Enter at least one product with a quantity greater than zero.",
+	"returns_view_credit_note": "View credit note",
+	"returns_view_annulment": "View voiding",
+	"credit_note_not_found": "That return has no credit note.",
+	"credit_note_tab_title": "Credit note {number}",
+	"credit_note_registered": "Return recorded with its credit note.",
+	"credit_note_annulled": "Document voided with its credit note.",
+	"credit_note_back": "Back to returns",
+	"credit_note_original": "View the original document"
 }

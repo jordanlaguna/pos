@@ -160,8 +160,9 @@ siguen ahí. El WinForms perdía la venta entera al cerrar el formulario.
 ### El ticket se imprime desde el navegador
 
 Reemplaza el PDF de iTextSharp: `@media print` deja la hoja sola en la página y
-el navegador ofrece «Guardar como PDF». El PDF que genera el backend con
-ReportLab sigue disponible en el botón «PDF del backend».
+el navegador ofrece «Guardar como PDF». Es el único PDF que hay: el que armaba el
+backend con ReportLab se quitó (T-922), porque era un cuarto documento sin el
+bloque fiscal que llevan las tres plantillas (RN-86).
 
 ### Los gráficos son de serie única
 

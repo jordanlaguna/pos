@@ -40,3 +40,9 @@ htmlcov/
 # cédula jurídica, llevan correos corporativos y el nombre de un tercero, y este
 # es el repositorio personal. Viven en la máquina de quien los necesite.
 docs/hacienda/costa-rica/XML-Ejemplos/
+
+# Exportaciones de GeneXus (.xpz): la base de conocimiento de un ERP que sirve de
+# referencia para compras, planilla y contabilidad. No se versionan nunca —lo
+# decidió el usuario el 2026-09-27—: son el código de otro producto y pueden
+# traer cadenas de conexión y datos de sus clientes.
+*.xpz

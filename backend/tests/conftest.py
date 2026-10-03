@@ -502,6 +502,63 @@ def cajero(api: Api) -> Api:
     return suyo
 
 
+#: La cédula del emisor de la compañía A (RN-45). Jurídica, como la mayoría.
+CEDULA_DE_A = "3101234567"
+
+#: Lo que el emisor necesita para encender la factura electrónica (T-722): la
+#: ubicación del XML y el correo. Es la de la factura de referencia del usuario.
+EMISOR_COMPLETO = {
+    "email": "facturas@pruebas.cr",
+    "location": {
+        "province": "1",
+        "canton": "01",
+        "district": "05",
+        "otherSigns": "600 m oeste de Plaza Cristal, frente al Archivo Nacional",
+    },
+}
+
+
+def fijar_cedula(soporte: "Api", company_id: int, cedula: str = CEDULA_DE_A) -> None:
+    """La cédula del emisor, por la única puerta que tiene: soporte (RN-45)."""
+    soporte.ok("PUT", f"/support/companies/{company_id}/issuer", {"identificacion": cedula})
+
+
+@pytest.fixture
+def facturacion(api: Api, soporte: Api):
+    """Enciende o apaga la facturación de A —y elige qué comprobantes emite—, y
+    la deja como estaba al terminar.
+
+    `tipos` es `eInvoicing.documentTypes` (RN-88); sin él, la lista no se toca.
+    `forma="vieja"` guarda la de antes de T-113, `electronica.activa`: una fila
+    así tiene que seguir queriendo decir lo mismo.
+
+    Encender exige un emisor completo desde T-722 —cédula, correo y ubicación—,
+    así que la fixture lo deja completo antes: soporte fija la cédula y la
+    configuración lleva el correo y la ubicación.
+    """
+    fijar_cedula(soporte, api.company_id)  # type: ignore[attr-defined]
+    original = api.ok("GET", "/settings/")["data"] or {}
+
+    def poner(activa: bool, *, forma: str = "nueva", tipos: list[str] | None = None) -> None:
+        datos = dict(original)
+        if activa:
+            datos["business"] = {**(original.get("business") or {}), **EMISOR_COMPLETO}
+        if forma == "nueva":
+            seccion = {**(original.get("eInvoicing") or {}), "enabled": activa}
+            if tipos is not None:
+                seccion["documentTypes"] = tipos
+            else:
+                seccion.pop("documentTypes", None)
+            datos["eInvoicing"] = seccion
+        else:
+            datos.pop("eInvoicing", None)
+            datos["electronica"] = {"activa": activa}
+        api.ok("PUT", "/settings/", {"data": datos, "keep_logo": True})
+
+    yield poner
+    api.ok("PUT", "/settings/", {"data": original, "keep_logo": True})
+
+
 def cerrar_caja_abierta(api: Api) -> None:
     """Deja el turno cerrado, pase lo que pase antes."""
     estado, actual = api.call("GET", "/cash/current")

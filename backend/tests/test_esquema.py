@@ -62,6 +62,14 @@ MIGRACIONES = [
     "migrations/009-compras.sql",
     "migrations/010-contabilidad.sql",
     "migrations/011-factura-electronica.sql",
+    "migrations/012-codigo-de-tarifa.sql",
+    "migrations/013-exoneracion-del-cliente.sql",
+    "migrations/014-tipo-de-comprobante.sql",
+    "migrations/015-nota-de-credito.sql",
+    "migrations/016-cabys-en-la-linea.sql",
+    "migrations/017-notas-por-monto.sql",
+    "migrations/018-comprobantes-numerados.sql",
+    "migrations/019-planilla.sql",
 ]
 
 #: `persons` es la única tabla que nace solo de `create_all`, en los dos caminos:

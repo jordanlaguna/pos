@@ -60,5 +60,6 @@
 	"reports_col_rate": "Alíquota",
 	"reports_col_base": "Base",
 	"reports_col_tax": "Imposto",
-	"reports_rate_percent": "{rate} %"
+	"reports_rate_percent": "{rate} %",
+	"reports_net_includes_notes": "Inclui notas: +{debit} / −{credit}"
 }

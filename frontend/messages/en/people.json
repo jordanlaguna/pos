@@ -89,5 +89,9 @@
 	"clients_exo_inst_10": "INCAE",
 	"clients_exo_inst_11": "Junta de Protección Social",
 	"clients_exo_inst_12": "Aresep",
-	"clients_exo_inst_99": "Other"
+	"clients_exo_inst_99": "Other",
+	"clients_label_id_type": "ID type",
+	"clients_id_type_auto": "From the ID number: {type}",
+	"clients_id_type_auto_unknown": "From the ID number",
+	"clients_id_type_hint": "It is printed on the customer's invoice. The ID number is enough to tell, except for a NITE, which has ten digits like a company ID."
 }

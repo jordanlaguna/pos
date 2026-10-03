@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.application.ports.numbering import Issuer, NumberedDocument, Office
+from app.domain.fe_document_type import DEFAULT_ENABLED
 from app.domain.money import Money
 from app.domain.tax import TaxRate
 
@@ -34,6 +36,10 @@ class FakeProduct:
     #: que tienen los productos de las pruebas anteriores a F10 y lo que hace
     #: que la primera compra establezca el costo.
     cost: Money = field(default_factory=Money.zero)
+    #: El CABYS y la unidad (RN-86, T-731). Vacíos por omisión, como un
+    #: producto que nadie clasificó.
+    cabys_code: str | None = None
+    unit_of_measure: str | None = None
 
 
 class FakeProductRepository:
@@ -89,6 +95,17 @@ class FilaDeVenta:
     change_given: Money
     created_at: datetime
     lines: list
+    document_type: str | None = None
+
+
+class FakeClientRepository:
+    """Los clientes de **esta** compañía, por id. Los demás no existen."""
+
+    def __init__(self, ids: set[int] | None = None) -> None:
+        self.ids = set(ids or ())
+
+    def exists(self, client_id: int) -> bool:
+        return client_id in self.ids
 
 
 class FakeSaleRepository:
@@ -163,6 +180,9 @@ class FilaDeDevolucion:
     total: Money
     created_at: datetime
     lines: list
+    #: La nota de crédito (RN-89). Nulos cuando la venta no fue comprobante.
+    document_type: str | None = None
+    reference_code: str | None = None
 
 
 class FakeReturnRepository:
@@ -191,6 +211,55 @@ class FakeReturnRepository:
             for d in self.devoluciones
             if d.user_id == user_id and start <= d.created_at <= end
         )
+
+
+@dataclass
+class FilaDeNota:
+    """Una nota por monto (T-726): la ND o la NC que no mueve mercadería."""
+
+    id_note: int
+    sale_id: int
+    user_id: int
+    document_type: str
+    reference_code: str
+    reason: str
+    payment_method: str | None
+    subtotal: Money
+    tax: Money
+    total: Money
+    created_at: datetime
+    lines: list
+
+
+class FakeNoteRepository:
+    def __init__(self) -> None:
+        self.notas: list[FilaDeNota] = []
+        self._siguiente = 1
+
+    def adjustments(self, sale_id: int) -> dict[int, tuple[Money, Money]]:
+        ajustes: dict[int, tuple[Money, Money]] = {}
+        for n in self.notas:
+            if n.sale_id != sale_id:
+                continue
+            for l in n.lines:
+                sumado, restado = ajustes.get(l.product_id, (Money.zero(), Money.zero()))
+                if n.document_type == "02":
+                    sumado = sumado + l.total
+                else:
+                    restado = restado + l.total
+                ajustes[l.product_id] = (sumado, restado)
+        return ajustes
+
+    def add(self, **datos) -> int:
+        id_note = self._siguiente
+        self._siguiente += 1
+        self.notas.append(FilaDeNota(id_note=id_note, **datos))
+        return id_note
+
+    def in_window(self, user_id: int, start: datetime, end: datetime) -> list:
+        return [
+            n for n in self.notas if n.user_id == user_id and start <= n.created_at <= end
+        ]
 
 
 @dataclass
@@ -355,13 +424,26 @@ class FakeSupplierPaymentRepository:
 
 
 class FakeSettingsRepository:
-    """La tasa configurada, sin tabla `settings` de por medio."""
+    """La configuración que lee la venta, sin tabla `settings` de por medio."""
 
-    def __init__(self, rate) -> None:
+    def __init__(
+        self, rate, *, einvoicing: bool = False, document_types: frozenset[str] | None = None
+    ) -> None:
         self._rate = rate
+        # Apagada por omisión: es lo que tiene toda compañía hasta que el dueño
+        # la activa, y lo que describen las pruebas anteriores a RN-85.
+        self._einvoicing = einvoicing
+        # Los de fábrica por omisión (RN-88), que es con lo que nace toda compañía.
+        self._document_types = document_types if document_types is not None else DEFAULT_ENABLED
 
     def tax_rate(self):
         return self._rate
+
+    def einvoicing_enabled(self) -> bool:
+        return self._einvoicing
+
+    def document_types(self) -> frozenset[str]:
+        return self._document_types
 
 
 class FakeUnitOfWork:
@@ -639,3 +721,82 @@ class FakeCertificateReader:
             subject=sujeto,
             expires_at=datetime.fromisoformat(vence),
         )
+
+
+class FakeIssuerRepository:
+    """El emisor de la numeración (T-705). Por omisión, el de la factura de
+    referencia del usuario: jurídica, en pruebas."""
+
+    def __init__(
+        self,
+        identification: str | None = "3101702934",
+        *,
+        environment: str = "sandbox",
+        economic_activity: str | None = "474100",
+    ) -> None:
+        self.emisor = Issuer(
+            identification=identification,
+            environment=environment,
+            economic_activity=economic_activity,
+        )
+
+    def issuer(self) -> Issuer:
+        return self.emisor
+
+
+class FakeDocumentNumbering:
+    """El contador y los comprobantes numerados, en memoria (T-704).
+
+    Lleva la cuenta de qué series se bloquearon, para poder decir que una venta
+    que no llegó a numerarse no tocó el contador.
+    """
+
+    def __init__(self, office: Office | None = None, series: dict | None = None) -> None:
+        self._office = office or Office(branch_code="001", terminal_code="00001")
+        #: (tipo, ambiente) → última secuencia.
+        self.series: dict[tuple[str, str], int] = dict(series or {})
+        self.bloqueadas: list[tuple[str, str]] = []
+        self.comprobantes: list[NumberedDocument] = []
+
+    def office(self) -> Office:
+        return self._office
+
+    def last_sequence(self, *, document_type: str, environment: str) -> int:
+        self.bloqueadas.append((document_type, environment))
+        return self.series.get((document_type, environment), 0)
+
+    def save_sequence(self, *, document_type: str, environment: str, value: int) -> None:
+        self.series[(document_type, environment)] = value
+
+    def record(self, document: NumberedDocument) -> None:
+        self.comprobantes.append(document)
+
+
+class FakeSecurityCodes:
+    """Códigos de seguridad predecibles: 00000001, 00000002…"""
+
+    def __init__(self) -> None:
+        self.entregados = 0
+
+    def new(self) -> str:
+        self.entregados += 1
+        return f"{self.entregados:08d}"
+
+
+def numerador(
+    issuer: FakeIssuerRepository | None = None,
+    numbering: FakeDocumentNumbering | None = None,
+):
+    """La numeración armada con sus dobles. Devuelve también el contador, que es
+    lo que las pruebas miran."""
+    from app.application.use_cases.number_document import NumberDocument
+
+    contador = numbering or FakeDocumentNumbering()
+    return (
+        NumberDocument(
+            issuer=issuer or FakeIssuerRepository(),
+            numbering=contador,
+            security_codes=FakeSecurityCodes(),
+        ),
+        contador,
+    )

@@ -8,5 +8,8 @@
 	"checkout_insufficient_stock": "Not enough stock for {product}: {available} left.",
 	"checkout_cash_short": "The amount received does not cover the sale total.",
 	"checkout_unreadable_lines": "The sale detail could not be read.",
-	"checkout_amount_insufficient": "Amount not enough."
+	"checkout_amount_insufficient": "Amount not enough.",
+	"checkout_invoice_needs_client": "An electronic invoice needs a customer. Choose one or issue a receipt.",
+	"checkout_document_type_not_enabled": "This business does not issue that document. Choose another.",
+	"checkout_bad_document_type": "That document is not issued at checkout."
 }

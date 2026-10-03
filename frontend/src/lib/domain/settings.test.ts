@@ -6,7 +6,8 @@ import {
 	ID_TYPES,
 	businessName,
 	isHexColor,
-	mergeSettings
+	mergeSettings,
+	withIssuer
 } from './settings';
 
 /**
@@ -124,6 +125,22 @@ describe('mergeSettings: reglas de cada tipo de campo', () => {
 		expect(mergeSettings({ document: { receiptWidth: 80 } }).document.receiptWidth).toBe(80);
 		expect(mergeSettings({ document: { receiptWidth: 72 } }).document.receiptWidth).toBe(80);
 		expect(mergeSettings({ document: { receiptWidth: 300 } }).document.receiptWidth).toBe(80);
+	});
+});
+
+describe('los comprobantes que emite el negocio (RN-88)', () => {
+	it('una compañía que nunca tocó la lista nace con los cuatro de fábrica', () => {
+		expect(mergeSettings({}).eInvoicing.documentTypes).toEqual(['04', '01', '03', '02']);
+	});
+
+	it('se lee lo guardado, saneado como en el servidor', () => {
+		const s = mergeSettings({ eInvoicing: { documentTypes: ['01', 'FE'] } });
+		expect(s.eInvoicing.documentTypes).toEqual(['01', '03']);
+	});
+
+	it('una lista sin con qué vender vuelve a la de fábrica', () => {
+		const s = mergeSettings({ eInvoicing: { documentTypes: ['03'] } });
+		expect(s.eInvoicing.documentTypes).toEqual(DEFAULT_SETTINGS.eInvoicing.documentTypes);
 	});
 });
 
@@ -318,5 +335,34 @@ describe('compatibilidad con las claves en español (T-113)', () => {
 		expect(s.business.name).toBe('Mixta');
 		expect(s.currency.code).toBe('EUR');
 		expect(s.tax.rate).toBe(0.13);
+	});
+});
+
+describe('withIssuer — la cédula que se imprime es la de la compañía (RN-45, T-621)', () => {
+	const escrita = mergeSettings({ business: { taxId: '999999999', taxIdType: '01' } });
+
+	it('reemplaza la escrita en Configuración por la de companies', () => {
+		const s = withIssuer(escrita, { identification: '3101234567', identification_type: '02' });
+		expect([s.business.taxId, s.business.taxIdType]).toEqual(['3101234567', '02']);
+	});
+
+	it('sin tipo conocido conserva el que había', () => {
+		const s = withIssuer(escrita, { identification: '3101234567', identification_type: null });
+		expect(s.business.taxIdType).toBe('01');
+	});
+
+	it('sin cédula de la compañía queda la escrita', () => {
+		expect(withIssuer(escrita, null)).toBe(escrita);
+		expect(withIssuer(escrita, { identification: null, identification_type: null })).toBe(escrita);
+	});
+});
+
+describe('la ubicación del emisor en la configuración (T-722)', () => {
+	it('nace vacía y se lee saneada', () => {
+		expect(mergeSettings({}).business.location.province).toBe('');
+		expect(
+			mergeSettings({ business: { location: { province: 1, canton: '01', district: '05', otherSigns: ' x ' } } })
+				.business.location
+		).toEqual({ province: '1', canton: '01', district: '05', neighborhood: '', otherSigns: 'x' });
 	});
 });

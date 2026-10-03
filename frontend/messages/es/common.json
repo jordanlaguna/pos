@@ -29,6 +29,13 @@
 	"payment_cash": "Efectivo",
 	"payment_credit_card": "Tarjeta de crédito",
 	"payment_bank_transfer": "Transferencia bancaria",
-	"payment_mobile": "Pago móvil"
+	"payment_mobile": "Pago móvil",
 
+	"document_type_invoice": "Factura electrónica",
+	"document_type_ticket": "Tiquete electrónico",
+	"document_type_export_invoice": "Factura electrónica de exportación",
+	"document_type_credit_note": "Nota de crédito electrónica",
+	"document_type_debit_note": "Nota de débito electrónica",
+	"document_type_purchase_invoice": "Factura electrónica de compra",
+	"document_type_payment_receipt": "Recibo electrónico de pago"
 }

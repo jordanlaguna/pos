@@ -30,5 +30,13 @@
 	"payment_cash": "Dinheiro",
 	"payment_credit_card": "Cartão de crédito",
 	"payment_bank_transfer": "Transferência bancária",
-	"payment_mobile": "Pagamento por celular"
+	"payment_mobile": "Pagamento por celular",
+
+	"document_type_invoice": "Fatura eletrônica",
+	"document_type_ticket": "Cupom eletrônico",
+	"document_type_export_invoice": "Fatura eletrônica de exportação",
+	"document_type_credit_note": "Nota de crédito eletrônica",
+	"document_type_debit_note": "Nota de débito eletrônica",
+	"document_type_purchase_invoice": "Fatura eletrônica de compra",
+	"document_type_payment_receipt": "Recibo eletrônico de pagamento"
 }

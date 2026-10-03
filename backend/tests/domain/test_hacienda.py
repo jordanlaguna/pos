@@ -3,6 +3,7 @@
 import pytest
 
 from app.domain.errors import (
+    IdentificationTypeRequired,
     InvalidEnvironment,
     InvalidIdentificationType,
     InvalidSigningKey,
@@ -16,6 +17,7 @@ from app.domain.hacienda import (
     SANDBOX,
     check_environment,
     check_identification_type,
+    client_identification_type,
     endpoints,
     identification_type_for,
     needs_confirmation,
@@ -204,3 +206,23 @@ class TestElTipoDeIdentificacion:
     def test_lo_que_no_se_sabe_se_dice_que_no_se_sabe(self, raro):
         # `None` es «preguntá», y es distinto de un tipo equivocado.
         assert identification_type_for(raro) is None
+
+
+class TestElTipoDelCliente:
+    """T-617: el que se eligió, o el que deja ver la cédula; si no, se pregunta."""
+
+    def test_manda_el_que_se_eligio(self):
+        # Diez dígitos dirían jurídica; quien tiene un NITE lo elige y se respeta.
+        assert client_identification_type("04", "3101234567") == "04"
+
+    def test_sin_elegir_se_deduce_de_la_cedula(self):
+        assert client_identification_type(None, "108840287") == PHYSICAL
+        assert client_identification_type("", "3101702934") == LEGAL
+
+    def test_uno_inventado_no_entra(self):
+        with pytest.raises(InvalidIdentificationType):
+            client_identification_type("07", "108840287")
+
+    def test_si_no_se_puede_saber_se_pregunta(self):
+        with pytest.raises(IdentificationTypeRequired):
+            client_identification_type(None, "A-12")

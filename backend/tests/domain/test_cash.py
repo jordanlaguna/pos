@@ -38,6 +38,24 @@ class TestEsperado:
     def test_una_caja_vacia(self):
         assert expected_amount(conteo()) == Money.zero()
 
+    def test_la_nd_en_efectivo_suma_y_la_nc_por_monto_resta(self):
+        # T-726: la ND se cobró en la gaveta y la NC salió de ella.
+        conteo_con_notas = CashCount(
+            opening=Money(1000),
+            cash_sales=Money(0),
+            movements_in=Money(0),
+            movements_out=Money(0),
+            returns=Money(0),
+            cash_debit_notes=Money(300),
+            credit_notes=Money(120),
+        )
+        assert expected_amount(conteo_con_notas) == Money(1180)
+
+    def test_sin_notas_es_lo_de_siempre(self):
+        # Los dos campos nacen en cero: un turno sin notas no cambia.
+        assert conteo().cash_debit_notes == Money.zero()
+        assert conteo().credit_notes == Money.zero()
+
     def test_las_devoluciones_salen_de_la_gaveta(self):
         assert expected_amount(conteo(apertura=1000, devoluciones=1638.5)) == Money("-638.50")
 

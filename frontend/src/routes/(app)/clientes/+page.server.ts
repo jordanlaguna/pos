@@ -44,6 +44,10 @@ function readExemption(form: FormData) {
 function readClient(v: Validator, form: FormData) {
 	return {
 		identification: v.digits('identification', F.identification(), { min: 9, max: 12 }),
+		// En blanco es «según la cédula»: lo deduce el servidor (T-617). No se
+		// valida contra la lista acá; el desplegable solo ofrece los cuatro y el
+		// servidor lo comprueba igual.
+		identification_type: String(form.get('identification_type') ?? '').trim(),
 		name: v.text('name', F.name(), { max: 100 }),
 		last_name: v.text('last_name', F.firstLastName(), { max: 100 }),
 		second_name: v.text('second_name', F.secondLastName(), { max: 100 }),

@@ -92,6 +92,9 @@ class CompanyOut(BaseModel):
     compania: int
     nombre: str
     identificacion: str | None = None
+    #: El tipo de Hacienda de esa identificación (RN-45). Nulo en las de antes
+    #: de la migración 011 a las que nadie se lo puso.
+    identification_type: str | None = None
     creada_el: datetime | None = None
     locale: str = "es"
     document_locale: str = "es"
@@ -145,6 +148,8 @@ class NewCompany(BaseModel):
     afiliado: int | None = None
     compania: int | None = None
     identificacion: str | None = None
+    #: El tipo, si se sabe. Si no, el que deja ver la cédula (T-621).
+    identification_type: str | None = None
     estado: str = "prueba"
     vence_el: date | None = None
     locale: str = "es"
@@ -187,6 +192,17 @@ class SubscriptionUpdate(BaseModel):
     estado: str
     vence_el: date | None = None
     plan_id: int | None = None
+
+
+class IssuerUpdate(BaseModel):
+    """La identificación del emisor, corregida por soporte (RN-45, T-621).
+
+    Es la única puerta: el negocio la ve en Configuración y no la edita, porque
+    su certificado y su usuario de ATV se emiten a ella.
+    """
+
+    identificacion: str = Field(max_length=30)
+    identification_type: str | None = None
 
 
 class ImpersonateRequest(BaseModel):

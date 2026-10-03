@@ -8,13 +8,26 @@
 	import Modal from '$lib/ui/components/Modal.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import DocumentSheet from '$lib/ui/components/documents/DocumentSheet.svelte';
+	import IssuerLocationFields from '$lib/ui/components/IssuerLocationFields.svelte';
+	import { identificationTypeName } from '$lib/domain/identification';
 	import { computeTotals, configureMoney, formatMoney, round2 } from '$lib/domain/money';
 	import { accentTheme } from '$lib/domain/color';
+	import {
+		ALL_TYPES,
+		ALWAYS_ON,
+		AVAILABLE,
+		DEBIT_NOTE,
+		EXPORT_INVOICE,
+		INVOICE,
+		PURCHASE_INVOICE,
+		TICKET,
+		canToggle
+	} from '$lib/domain/documentType';
+	import { documentTypeLabel } from '$lib/ui/messages';
 	import { formatDateTime } from '$lib/ui/format';
 	import {
 		CURRENCIES,
 		TEMPLATE_IDS,
-		ID_TYPES,
 		type TemplateId,
 		type Settings
 	} from '$lib/domain/settings';
@@ -190,6 +203,13 @@
 			client_id: 1,
 			user_id: 2,
 			user_name: 'María Rojas',
+			/*
+			 * Con la casilla marcada, la muestra sale como la vería el cliente: la
+			 * venta tiene cliente, así que es factura (RN-85), y todavía no tiene
+			 * clave, así que dice «pendiente de emisión» (RN-86). No se le inventa una
+			 * clave de ejemplo: la vista previa prometería algo que hoy no pasa.
+			 */
+			document_type: borrador.eInvoicing.enabled ? INVOICE : null,
 			items
 		};
 	});
@@ -198,6 +218,39 @@
 
 	function seleccionarPlantilla(id: TemplateId) {
 		document = { ...document, template: id };
+	}
+
+	// ---------------------------------- comprobantes que emite (RN-88)
+
+	/** Enciende o apaga uno. La casilla solo se mueve si `canToggle` la deja. */
+	function alternarComprobante(codigo: string, encendido: boolean) {
+		const resto = eInvoicing.documentTypes.filter((c) => c !== codigo);
+		eInvoicing = {
+			...eInvoicing,
+			documentTypes: ALL_TYPES.filter((c) => (c === codigo ? encendido : resto.includes(c)))
+		};
+	}
+
+	/**
+	 * Qué es cada uno o, si la casilla no se mueve, por qué. Una casilla apagada
+	 * sin decir por qué es un misterio; con el motivo, es una respuesta.
+	 */
+	function detalleComprobante(codigo: string): string {
+		if (ALWAYS_ON.includes(codigo)) return m.settings_doctype_always_on();
+		if (!AVAILABLE.includes(codigo)) {
+			switch (codigo) {
+				case DEBIT_NOTE:
+					return m.settings_doctype_pending_debit();
+				case EXPORT_INVOICE:
+					return m.settings_doctype_pending_export();
+				case PURCHASE_INVOICE:
+					return m.settings_doctype_pending_purchase();
+				default:
+					return m.settings_doctype_pending_receipt();
+			}
+		}
+		if (!canToggle(codigo, eInvoicing.documentTypes)) return m.settings_doctype_last_counter();
+		return codigo === TICKET ? m.settings_doctype_ticket() : m.settings_doctype_invoice();
 	}
 
 	// ------------------------------------------ factura electrónica (F6)
@@ -369,27 +422,23 @@
 						hint={m.settings_legal_name_hint()}
 					/>
 
-					<div>
-						<label class="label" for="tipo-id">{m.settings_id_type()}</label>
-						<select
-							id="tipo-id"
-							name="negocio_tipo_identificacion"
-							class="input"
-							bind:value={business.taxIdType}
-						>
-							{#each ID_TYPES as tipo (tipo.code)}
-								<option value={tipo.code}>{tipo.label}</option>
-							{/each}
-						</select>
+					<!--
+						La identificación del emisor **se ve y no se edita** (RN-45, RF-37,
+						T-621). Es la de `companies`: el certificado se emite a ella y va
+						dentro de la clave de cada comprobante. La fija soporte.
+					-->
+					<div data-cedula-emisor>
+						<span class="label">{m.settings_tax_id()}</span>
+						{#if data.issuer?.identification}
+							<p class="font-mono text-sm text-[var(--text)]">
+								{identificationTypeName(data.issuer.identification_type) ?? ''}
+								{data.issuer.identification}
+							</p>
+							<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.settings_issuer_id_hint()}</p>
+						{:else}
+							<p class="text-sm text-[var(--warning)]">{m.settings_issuer_id_missing()}</p>
+						{/if}
 					</div>
-
-					<Field
-						label={m.settings_tax_id()}
-						name="negocio_identificacion"
-						bind:value={business.taxId}
-						icon="idcard"
-						error={form?.errors?.negocio_identificacion}
-					/>
 					<Field
 						label={m.settings_phone()}
 						name="negocio_telefono"
@@ -416,8 +465,27 @@
 						name="negocio_direccion"
 						bind:value={business.address}
 						error={form?.errors?.negocio_direccion}
+						hint={m.settings_address_hint()}
 						class="sm:col-span-2"
 					/>
+
+					<!--
+						La ubicación del XML (T-722, RN-83): códigos de Hacienda y otras
+						señas. No reemplaza a la dirección de arriba, que es la del tiquete.
+					-->
+					<fieldset class="sm:col-span-2" data-ubicacion-emisor>
+						<legend class="mb-1 text-sm font-bold text-[var(--text)]">
+							{m.settings_location_title()}
+						</legend>
+						<p class="mb-3 text-xs text-[var(--text-subtle)]">
+							{eInvoicing.enabled ? m.settings_location_required() : m.settings_location_hint()}
+						</p>
+						<IssuerLocationFields
+							bind:location={business.location}
+							errors={form?.errors ?? {}}
+							required={eInvoicing.enabled}
+						/>
+					</fieldset>
 
 					<!--
 						El idioma de la compañía (T-810, RN-28). Es el que recibe quien no
@@ -903,6 +971,51 @@
 						</span>
 					</span>
 				</label>
+
+				<!--
+					Los comprobantes que emite este negocio (RN-88). Los siete se ven; el
+					que no se puede mover dice por qué. Una casilla apagada no se envía,
+					así que la que está encendida y bloqueada viaja además en un campo
+					oculto: si no, guardar la pantalla apagaría la NC o la ND sin que
+					nadie lo pidiera.
+				-->
+				<fieldset class="mb-5" data-comprobantes>
+					<legend class="label">{m.settings_document_types()}</legend>
+					<p class="mb-2 text-xs text-[var(--text-subtle)]">{m.settings_document_types_hint()}</p>
+					<div class="grid gap-2 sm:grid-cols-2">
+						{#each ALL_TYPES as codigo (codigo)}
+							{@const encendido = eInvoicing.documentTypes.includes(codigo)}
+							{@const movible = canToggle(codigo, eInvoicing.documentTypes)}
+							<label
+								class="flex items-start gap-2 rounded-lg border p-2.5 text-sm {encendido
+									? 'border-[var(--accent)]'
+									: 'border-[var(--border)]'} {movible ? 'cursor-pointer' : 'cursor-not-allowed'}"
+								data-comprobante={codigo}
+							>
+								<input
+									type="checkbox"
+									name="electronica_comprobantes"
+									value={codigo}
+									checked={encendido}
+									disabled={!movible}
+									onchange={(e) => alternarComprobante(codigo, e.currentTarget.checked)}
+									class="mt-1"
+								/>
+								{#if encendido && !movible}
+									<input type="hidden" name="electronica_comprobantes" value={codigo} />
+								{/if}
+								<span class="min-w-0">
+									<span class="font-semibold {movible || encendido ? 'text-[var(--text)]' : 'text-[var(--text-muted)]'}">
+										{documentTypeLabel(codigo)}
+									</span>
+									<span class="block text-xs text-[var(--text-subtle)]">
+										{detalleComprobante(codigo)}
+									</span>
+								</span>
+							</label>
+						{/each}
+					</div>
+				</fieldset>
 
 				<!--
 					El ambiente **ya no se elige acá** (T-611). Vivía en este formulario

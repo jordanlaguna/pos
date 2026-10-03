@@ -19,6 +19,7 @@
  */
 
 import { toLocalIso } from '$lib/domain/datetime';
+import { documentTypeFor } from '$lib/domain/documentType';
 import { changeDue, computeTotals, round2, type Totals } from '$lib/domain/money';
 import type { Product } from '$lib/domain/types';
 
@@ -37,11 +38,24 @@ export interface CheckoutRequest {
 	clientId: number | null;
 	saleNumber: string;
 	userId: number;
+	/**
+	 * El comprobante que eligió el cajero (RN-85), tal como vino del formulario.
+	 * Nulo es «el que sugiera la regla».
+	 */
+	documentType: string | null;
+	/**
+	 * Lo que dice la configuración que el servidor acaba de leer —si la compañía
+	 * factura electrónicamente y qué comprobantes emite (RN-88)—, no la que tenía
+	 * la pantalla al abrirse: el dueño pudo cambiarla con la caja abierta.
+	 */
+	einvoicing: boolean;
+	enabledTypes: readonly string[];
 }
 
 export interface SalePayload {
 	sale_number: string;
 	client_id: number | null;
+	document_type: string | null;
 	user_id: number;
 	subtotal: number;
 	tax: number;
@@ -64,7 +78,10 @@ export type CheckoutRejection =
 	| { code: 'checkout_product_gone' }
 	| { code: 'checkout_bad_quantity'; product: string }
 	| { code: 'checkout_insufficient_stock'; product: string; available: number }
-	| { code: 'checkout_cash_short' };
+	| { code: 'checkout_cash_short' }
+	| { code: 'checkout_invoice_needs_client' }
+	| { code: 'checkout_document_type_not_enabled' }
+	| { code: 'checkout_bad_document_type' };
 
 export type CheckoutResult =
 	| { ok: false; reason: CheckoutRejection; field?: string }
@@ -87,6 +104,25 @@ export function prepareSale(
 	// se manipuló por el camino.
 	if (!/^\d{14}$/.test(request.saleNumber)) {
 		return no({ code: 'checkout_bad_sale_number' });
+	}
+	// El comprobante, con la misma regla que el servidor (RN-85, RN-88). La
+	// pantalla no ofrece lo imposible, así que llegar acá es una pantalla vieja o
+	// un cliente que se quitó a mitad del cobro: se dice antes de ir al servidor,
+	// que diría lo mismo con un código.
+	const comprobante = documentTypeFor(request.documentType, {
+		einvoicing: request.einvoicing,
+		enabled: request.enabledTypes,
+		hasReceiver: request.clientId !== null
+	});
+	if (!comprobante.ok) {
+		switch (comprobante.code) {
+			case 'invoice_needs_receiver':
+				return no({ code: 'checkout_invoice_needs_client' });
+			case 'document_type_not_enabled':
+				return no({ code: 'checkout_document_type_not_enabled' });
+			default:
+				return no({ code: 'checkout_bad_document_type' });
+		}
 	}
 
 	// `taxRate` en nulo es «la configurada del negocio» (RN-9); `computeTotals`
@@ -138,6 +174,9 @@ export function prepareSale(
 		payload: {
 			sale_number: request.saleNumber,
 			client_id: request.clientId,
+			// El que decidió la regla, no el que vino del formulario: sin elección,
+			// viaja la sugerencia, que es lo mismo que el servidor aplicaría.
+			document_type: comprobante.type,
 			user_id: request.userId,
 			subtotal: totals.subtotal,
 			tax: totals.tax,

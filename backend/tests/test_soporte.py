@@ -271,6 +271,41 @@ class TestElAlta:
         # portugués sin que nadie la configure.
         assert cuerpo_del_token(sesion["access_token"])["loc"] == "pt"
 
+    def test_la_cedula_del_emisor_se_guarda_limpia_y_con_tipo(self, soporte: Api, plan_id: int):
+        """RN-45, T-621: va dentro de la clave de cada comprobante."""
+        alta = nueva_compania(soporte, plan_id, identificacion="3-101-555555")
+        compania = soporte.ok("GET", f"/support/companies/{alta['company_id']}")
+        assert (compania["identificacion"], compania["identification_type"]) == ("3101555555", "02")
+
+    def test_una_cedula_que_no_cabe_en_la_clave_no_da_de_alta(self, soporte: Api, plan_id: int):
+        estado, cuerpo = soporte.call(
+            "POST",
+            "/support/companies",
+            {
+                "nombre": "Cédula larga",
+                "plan_id": plan_id,
+                "identificacion": "31015555551234",
+                "admin": {"email": f"larga{marca_unica()}@pruebas.ventasys.cr", "password": "prueba123"},
+            },
+        )
+        assert estado == 409, cuerpo
+        assert cuerpo["detail"] == {"code": "issuer_identification_required", "reason": "invalid"}
+
+    def test_una_ubicacion_a_medias_no_da_de_alta(self, soporte: Api, plan_id: int):
+        """RF-73: la ubicación es opcional al dar de alta, pero a medias no."""
+        estado, cuerpo = soporte.call(
+            "POST",
+            "/support/companies",
+            {
+                "nombre": "Ubicación a medias",
+                "plan_id": plan_id,
+                "settings": {"business": {"location": {"province": "1", "canton": "01"}}},
+                "admin": {"email": f"medias{marca_unica()}@pruebas.ventasys.cr", "password": "prueba123"},
+            },
+        )
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"] == {"code": "invalid_location", "field": "district", "reason": "required"}
+
     def test_un_correo_que_ya_existe_no_crea_otra_cuenta(self, soporte: Api, plan_id: int):
         """El caso del contador: una identidad, varias membresías (RN-3).
 

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type {
+	AmountNote,
 	Account,
 	AccountingPeriod,
 	CashMovement,
@@ -83,6 +84,12 @@ export interface MockSale {
 	change_given: number;
 	created_at: string;
 	items: SaleItem[];
+	/**
+	 * `'01'` factura, `'04'` tiquete, nulo sin facturación electrónica (RN-85).
+	 * Ausente en las ventas del seed y en las guardadas antes de T-723, y ausente
+	 * vale lo mismo que nulo: por eso no hace falta subir `SEED_VERSION`.
+	 */
+	document_type?: string | null;
 }
 
 /** Fila única de configuración, igual que la tabla `settings` del backend. */
@@ -111,7 +118,26 @@ export interface MockCompany {
 	/** `YYYY-MM-DD`, o nulo si no vence. */
 	vence_el?: string | null;
 	identificacion?: string | null;
+	/** El tipo de Hacienda de la cédula del emisor (RN-45). */
+	identification_type?: string | null;
 	creada_el?: string;
+}
+
+/**
+ * Un comprobante numerado (T-704, T-705), como `fe_documents`: cuelga de su
+ * origen —la venta, la devolución o la nota— con su consecutivo y su clave.
+ */
+export interface MockFeDocument {
+	source_type: 'sale' | 'return' | 'note';
+	source_id: number;
+	document_type: string;
+	environment: 'sandbox' | 'production';
+	sequence: number;
+	consecutive: string;
+	clave: string;
+	situation: string;
+	economic_activity: string | null;
+	issued_at: string;
 }
 
 /** Quién entra a qué compañía y con qué rol. */
@@ -130,6 +156,8 @@ export interface MockCompanyData {
 	products: Product[];
 	sales: MockSale[];
 	returns: SaleReturn[];
+	/** Las notas por monto (T-726): la ND y la NC que no mueven mercadería. */
+	notes?: AmountNote[];
 	cash_sessions: CashSession[];
 	cash_movements: CashMovement[];
 	stock_entries: StockEntry[];
@@ -160,6 +188,12 @@ export interface MockCompanyData {
 	 */
 	branches?: MockBranch[];
 	terminals?: MockTerminal[];
+	/**
+	 * La numeración (T-704, T-705): la última secuencia de cada serie —tipo y
+	 * ambiente; la oficina es una sola en el simulado— y los comprobantes.
+	 */
+	fe_sequences?: Record<string, number>;
+	fe_documents?: MockFeDocument[];
 }
 
 /** Una sucursal. El código son tres dígitos y va en el consecutivo (RN-15). */
@@ -257,8 +291,25 @@ export interface MockRoot {
 	/** El catálogo de planes y la bitácora: de la plataforma, no de una compañía. */
 	plans: MockPlan[];
 	audit: MockAudit[];
+	/**
+	 * Las tasas de planilla que se agregaron **después** de la siembra (T-1204).
+	 * Son del país, como las de la API: una lista para todas las compañías. Lo
+	 * sembrado sale de `payrollRates.ts` y no se guarda, así que un archivo de un
+	 * seed viejo no necesita `SEED_VERSION` nuevo: le falta esta lista y ya.
+	 */
+	payroll_rates?: MockPayrollRate[];
 	empresas: Record<number, MockCompanyData>;
 	counters: Record<string, number>;
+}
+
+/** Una fila de `payroll_rates` agregada desde el panel (`PUT /support/payroll/rates`). */
+export interface MockPayrollRate {
+	concept: string;
+	payer: string;
+	value: number;
+	valid_from: string;
+	source: string;
+	verified_at: string;
 }
 
 /**
@@ -271,7 +322,21 @@ export interface MockRoot {
  */
 export type MockDb = MockRoot & MockCompanyData;
 
-const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
+/*
+ * Las pruebas de punta a punta escriben **en su propio archivo** (T-920).
+ *
+ * `POS_MOCK_FRESH` hace que no se lea lo guardado, pero `persist()` escribe en
+ * cada cambio: con un solo archivo, la primera venta de la batería reemplazaba
+ * la demostración de quien estuviera usando el POS a mano, que es justo lo que
+ * T-920 prometía no tocar. No se notaba porque la bandera nunca llegaba —la
+ * configuración de Playwright tenía dos `env` y el segundo pisaba al primero—.
+ * Se lee directo de `process.env` porque `SEMBRAR_DE_CERO` se define más abajo.
+ */
+const DB_PATH = resolve(
+	process.cwd(),
+	'.data',
+	process.env.POS_MOCK_FRESH === '1' ? 'mock-db.e2e.json' : 'mock-db.json'
+);
 
 /**
  * Versión de los datos de demostración. **Se sube al cambiar el seed.**
@@ -319,7 +384,10 @@ const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
 // 14 (F7, T-715): los productos llevan `tax_code`, el código de tarifa de
 // Hacienda. Los tres sin clasificar siguen sin él, que es lo cierto: su tarifa
 // es la del negocio y del porcentaje no se vuelve al código (RN-76).
-const SEED_VERSION = 14;
+// 15 (F7, T-731): las líneas de venta congelan el CABYS y la unidad, y los
+// clientes llevan su tipo de identificación (T-617). Sin eso el comprobante del
+// demo imprimiría la línea sin CABYS y al receptor sin su tipo.
+const SEED_VERSION = 16;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -414,6 +482,7 @@ export function empresaVacia(): MockCompanyData {
 		products: [],
 		sales: [],
 		returns: [],
+		notes: [],
 		cash_sessions: [],
 		cash_movements: [],
 		stock_entries: [],
@@ -693,7 +762,12 @@ function seed(): MockRoot {
 		cost: round2(p.price / 1.3)
 	}));
 
-	const clients: Client[] = CLIENT_SEED.map((c, i) => ({ ...c, id_client: i + 1 }));
+	// Las cuatro cédulas son de nueve dígitos: física, como las clasificaría la 011.
+	const clients: Client[] = CLIENT_SEED.map((c, i) => ({
+		...c,
+		id_client: i + 1,
+		identification_type: '01'
+	}));
 
 	/*
 	 * Dos compañías (T-228). La segunda nace **vacía**, que es exactamente lo que
@@ -728,6 +802,7 @@ function seed(): MockRoot {
 				// que sería lo primero que se ve al entrar.
 				vence_el: enDias(30),
 				identificacion: '3101234567',
+				identification_type: '02',
 				creada_el: created
 			},
 			{
@@ -785,7 +860,28 @@ function seed(): MockRoot {
 				accounting_periods: [],
 				journal_entries: [],
 				journal_lines: [],
-				settings: { data: {}, logo: null, updated_at: null, updated_by: null },
+				/*
+				 * Con correo y ubicación de emisor (T-722): la facturación sigue
+				 * apagada, pero se puede encender sin llenar nada, que es lo que las
+				 * pruebas de punta a punta de comprobantes necesitan.
+				 */
+				settings: {
+					data: {
+						business: {
+							email: 'facturas@laesquina.cr',
+							location: {
+								province: '1',
+								canton: '18',
+								district: '01',
+								neighborhood: '',
+								otherSigns: '200 m sur del parque de Curridabat'
+							}
+						}
+					},
+					logo: null,
+					updated_at: null,
+					updated_by: null
+				},
 				// Sin certificado, igual que el libro. La factura electrónica se
 				// configura (F6) y sembrar un certificado sería sembrar uno que no
 				// existe: la pantalla nace teniendo que decir qué falta.
@@ -854,7 +950,9 @@ function seed(): MockRoot {
 					name: product.name,
 					quantity,
 					price: product.price,
-					subtotal: round2(product.price * quantity)
+					subtotal: round2(product.price * quantity),
+					cabys_code: product.cabys_code ?? null,
+					unit_of_measure: 'Unid'
 				};
 			});
 

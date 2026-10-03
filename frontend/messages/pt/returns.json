@@ -47,5 +47,13 @@
 	"returns_to_refund": "A reembolsar",
 	"returns_stock_note": "As unidades devolvidas voltam ao estoque e são descontadas do fechamento de caixa.",
 	"returns_register": "Registrar devolução",
-	"returns_at_least_one": "Informe pelo menos um produto com quantidade maior que zero."
+	"returns_at_least_one": "Informe pelo menos um produto com quantidade maior que zero.",
+	"returns_view_credit_note": "Ver nota de crédito",
+	"returns_view_annulment": "Ver anulação",
+	"credit_note_not_found": "Essa devolução não tem nota de crédito.",
+	"credit_note_tab_title": "Nota de crédito {number}",
+	"credit_note_registered": "Devolução registrada com sua nota de crédito.",
+	"credit_note_annulled": "Documento anulado com sua nota de crédito.",
+	"credit_note_back": "Voltar para devoluções",
+	"credit_note_original": "Ver o documento original"
 }

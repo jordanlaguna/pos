@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import CHAR, Column, DateTime, ForeignKey, Index, Integer, Numeric, String
 
 from app.database.database import Base
 from app.utils.tenancy import TenantMixin
@@ -37,6 +37,13 @@ class Return(TenantMixin, Base):
     tax = Column(Numeric(10, 2), nullable=True)
 
     total = Column(Numeric(10, 2), nullable=False)
+
+    # La nota de crédito (RN-89): '03' y el motivo de Hacienda —'06' devolución
+    # de mercancía, '01' anula— cuando la venta fue comprobante. Nulos cuando no
+    # lo fue, que es lo que tienen todas las anteriores a la migración 015: una
+    # devolución de algo que no se emitió no tiene a qué referirse.
+    document_type = Column(CHAR(2), nullable=True)
+    reference_code = Column(CHAR(2), nullable=True)
 
 
 class ReturnDetail(TenantMixin, Base):

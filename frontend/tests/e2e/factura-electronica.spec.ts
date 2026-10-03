@@ -277,7 +277,14 @@ test.describe('pasar a producción (RN-35, RN-46)', () => {
 		await expect(page.getByText(/Ambiente en uso: producción/i)).toBeVisible();
 
 		// Se guarda la pantalla entera, como quien cambia el teléfono del negocio.
+		// Esperando la respuesta y no solo `networkidle`, que se cumple antes de que
+		// salga el POST: el `goto` de abajo cortaba el guardado a medias (ERR_ABORTED),
+		// como ya documenta `guardarConfiguracion` en tipo-de-comprobante.spec.ts.
+		const guardado = page.waitForResponse(
+			(r) => r.url().includes('/configuracion') && r.request().method() === 'POST'
+		);
 		await page.getByRole('button', { name: /Guardar cambios/i }).click();
+		expect((await guardado).ok(), 'no se pudo guardar la configuración').toBe(true);
 		await page.waitForLoadState('networkidle');
 
 		await page.goto('/configuracion');

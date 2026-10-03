@@ -143,5 +143,6 @@
 	"accounting_vat_empty": "There were no sales or purchases in this period.",
 	"accounting_vat_net_hint": "Output tax is net of returns.",
 	"accounting_filter": "Filter",
-	"accounting_status": "Status"
+	"accounting_status": "Status",
+	"accounting_auto_note": "Note no. {id}"
 }

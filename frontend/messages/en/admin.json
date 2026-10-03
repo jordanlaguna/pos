@@ -224,5 +224,12 @@
 	"impersonation_banner": "You are viewing {compania} as support.",
 	"impersonation_read_only": "Read only",
 	"impersonation_reason": "Reason: {motivo}",
-	"impersonation_leave": "Back to the panel"
+	"impersonation_leave": "Back to the panel",
+	"admin_issuer_title": "Issuer tax ID",
+	"admin_issuer_hint": "It must match the signing certificate: it goes into the key of every document. The business can see it but cannot change it.",
+	"admin_issuer_type_auto": "Detect from the number",
+	"admin_issuer_save": "Save tax ID",
+	"admin_issuer_saved": "Issuer tax ID saved.",
+	"admin_action_emisor": "Changed the issuer tax ID",
+	"admin_action_tasa_planilla": "Added a payroll rate"
 }

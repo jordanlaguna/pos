@@ -128,6 +128,15 @@ def _compania(db, args) -> list[str]:
     )
     ya_estaba = crud_company.por_par(db, args.afiliado, args.compania) is not None
 
+    # La cédula del emisor (RN-45), limpia y con tipo: va en la clave de cada
+    # comprobante. Solo al crear; corregirla después es de soporte.
+    identificacion = tipo = None
+    if args.identificacion:
+        from app.domain.fe_issuer import check_issuer_identity
+
+        emisor = check_issuer_identity(args.identificacion, args.tipo_identificacion)
+        identificacion, tipo = emisor.identification, emisor.identification_type
+
     alta = crud_company.dar_de_alta(
         db,
         crud_company.DatosDeAlta(
@@ -136,6 +145,8 @@ def _compania(db, args) -> list[str]:
             nombre=args.nombre,
             email=args.email,
             password=args.password,
+            identificacion=identificacion,
+            identification_type=tipo,
             plan_id=plan.id,
             estado=args.estado,
             locale=args.idioma,
@@ -186,6 +197,16 @@ def main() -> None:
     ap.add_argument("--afiliado", type=int, default=1)
     ap.add_argument("--compania", type=int, default=1)
     ap.add_argument("--nombre", default="Compañía inicial", help="nombre comercial")
+    ap.add_argument(
+        "--identificacion",
+        default=None,
+        help="cédula del emisor, la del certificado (RN-45); con guiones o sin ellos",
+    )
+    ap.add_argument(
+        "--tipo-identificacion",
+        default=None,
+        help="01 física, 02 jurídica, 03 DIMEX, 04 NITE; si no, la que deja ver la cédula",
+    )
     ap.add_argument("--plan", default="Comercio")
     # Los límites solo se usan si el plan hay que crearlo; uno que ya existe no
     # se toca. −1 es «sin techo» (ver `app/domain/limits.py`).

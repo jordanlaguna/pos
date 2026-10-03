@@ -6,14 +6,14 @@ import { invalidateSettings, loadSettings, saveSettings } from '$lib/server/sett
 import { formError, Validator } from '$lib/application/validation';
 import { F } from '$lib/ui/fields';
 import { m } from '$lib/paraglide/messages.js';
-import { apiMessage, validationErrors } from '$lib/ui/messages';
+import { apiMessage, issuerMissingMessage, locationMessage, validationErrors } from '$lib/ui/messages';
 import {
 	isHexColor,
 	mergeSettings,
-	ID_TYPES,
 	type LogoSettings,
 	type Settings
 } from '$lib/domain/settings';
+import { isBlankLocation, locationProblem, type LocationField } from '$lib/domain/location';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Los idiomas con catálogo. La misma lista que `app/domain/locale.py`. */
@@ -118,9 +118,20 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		 */
 		branchCode: admin.branch_code,
 		terminalCode: admin.terminal_code,
+		// La cédula del emisor, de `companies` (RN-45): se muestra sin editarse.
+		issuer: stored.issuer,
 		fe,
 		oficinas
 	};
+};
+
+/** El campo del formulario que corresponde a cada campo de la ubicación. */
+const CAMPO_DE_UBICACION: Record<LocationField, string> = {
+	province: 'negocio_provincia',
+	canton: 'negocio_canton',
+	district: 'negocio_distrito',
+	neighborhood: 'negocio_barrio',
+	other_signs: 'negocio_otras_senas'
 };
 
 /** Casilla marcada. El navegador no envía nada cuando está desmarcada. */
@@ -169,7 +180,7 @@ async function readLogo(form: FormData, v: Validator): Promise<LogoSettings | un
 export const actions: Actions = {
 	guardar: async ({ request, cookies, locals, url }) => {
 		const admin = requireAdmin(locals, url.pathname);
-		const { settings: stored } = await loadSettings(locals.token, admin.company_id);
+		const { settings: stored, issuer } = await loadSettings(locals.token, admin.company_id);
 
 		const form = await request.formData();
 		const v = new Validator(form);
@@ -179,16 +190,9 @@ export const actions: Actions = {
 			required: false,
 			max: 160
 		});
-		const identificacion = v.text('negocio_identificacion', F.businessIdentification(), {
-			required: false,
-			max: 30
-		});
-		const tipoIdentificacion = v.oneOf(
-			'negocio_tipo_identificacion',
-			F.businessIdType(),
-			ID_TYPES.map((t) => t.code),
-			{ required: false }
-		);
+		// La identificación ya no sale del formulario (RN-45, T-621): es la de la
+		// compañía y la fija soporte. La que queda en la configuración es la que
+		// había, y el backend ni la mira.
 		const telefono = v.text('negocio_telefono', F.businessTelephone(), { required: false, max: 30 });
 		const correo = v.email('negocio_correo', F.businessEmail(), { required: false });
 		const direccion = v.text('negocio_direccion', F.businessAddress(), { required: false, max: 300 });
@@ -235,7 +239,32 @@ export const actions: Actions = {
 		const logo = await readLogo(form, v);
 		const quitarLogo = checked(form, 'quitar_logo');
 
+		/*
+		 * La ubicación del emisor (T-722, RN-83), con la misma regla que el
+		 * servidor: vacía se guarda —quien no emite no tiene por qué dar su
+		 * distrito—, a medias no. Y con la factura electrónica encendida es
+		 * obligatoria, como el correo.
+		 */
+		const encendida = checked(form, 'electronica_activa');
+		const ubicacion = {
+			province: String(form.get('negocio_provincia') ?? ''),
+			canton: String(form.get('negocio_canton') ?? ''),
+			district: String(form.get('negocio_distrito') ?? ''),
+			neighborhood: String(form.get('negocio_barrio') ?? ''),
+			otherSigns: String(form.get('negocio_otras_senas') ?? '')
+		};
+		if (encendida || !isBlankLocation(ubicacion)) {
+			const problema = locationProblem(ubicacion);
+			if (problema) v.add(CAMPO_DE_UBICACION[problema.field], locationMessage(problema));
+		}
+		if (encendida && !correo) v.add('negocio_correo', issuerMissingMessage(['email']));
+
 		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		// Sin cédula de emisor no hay clave, y esa no se arregla en esta pantalla.
+		if (encendida && !issuer?.identification) {
+			return fail(400, { errors: formError(issuerMissingMessage(['identification'])) });
+		}
 
 		/*
 		 * Se arma el objeto y se vuelve a pasar por `mergeSettings`. Parece
@@ -248,12 +277,14 @@ export const actions: Actions = {
 			business: {
 				nombre,
 				legalName: razonSocial,
-				identificacion,
-				taxIdType: tipoIdentificacion || '01',
+				// Las de antes, sin tocar: la del emisor es la de la compañía.
+				identificacion: stored.business.taxId,
+				taxIdType: stored.business.taxIdType,
 				telefono,
 				correo,
 				direccion,
-				website: sitioWeb
+				website: sitioWeb,
+				location: ubicacion
 			},
 			currency: {
 				codigo,
@@ -293,7 +324,15 @@ export const actions: Actions = {
 				 * ignoren.
 				 */
 				environment: stored.eInvoicing.environment,
-				economicActivity: actividad
+				economicActivity: actividad,
+				/*
+				 * Los comprobantes que emite (RN-88). Las casillas que no se pueden
+				 * mover viajan en un campo oculto cuando están encendidas —una casilla
+				 * apagada no se envía—, así que acá llega la lista entera. Y la sanea
+				 * `mergeSettings`, con la misma regla que el servidor: sin tiquete ni
+				 * factura, o sin la NC, no se guarda así.
+				 */
+				documentTypes: form.getAll('electronica_comprobantes').map(String)
 			}
 		});
 

@@ -22,6 +22,8 @@ import pytest
 from app.application.ports import (
     clock,
     documents,
+    numbering,
+    payroll,
     repositories,
     secrets,
     security,
@@ -68,7 +70,15 @@ PUERTOS = [
         },
     ),
     (repositories.ReturnRepository, {"returned_quantities", "add", "total_in_window"}),
-    (repositories.SettingsRepository, {"tax_rate"}),
+    # T-726: las notas por monto. Lo que cambiaron en cada línea —lo piden la NC
+    # y la devolución—, guardarlas, y las del turno para el arqueo.
+    (repositories.NoteRepository, {"adjustments", "add", "in_window"}),
+    # Desde F7: si la compañía factura electrónicamente, que es lo que decide si
+    # la venta lleva tipo de comprobante (RN-85).
+    (repositories.SettingsRepository, {"tax_rate", "einvoicing_enabled", "document_types"}),
+    # F7: el receptor de la venta tiene que ser de la compañía. Una sola
+    # pregunta, porque es lo único que la venta necesita saber de un cliente.
+    (repositories.ClientRepository, {"exists"}),
     (
         repositories.CashRepository,
         {"open_session", "create_session", "close_session", "add_movement", "movements"},
@@ -93,8 +103,55 @@ PUERTOS = [
     # aunque T-612 lo tire: F7 lo necesita para transmitir, y un puerto que
     # devolviera `bool` habría que cambiarlo entonces.
     (transmission.HaciendaIdp, {"token"}),
+    # F7: la numeración (T-704, T-705). Tres puertos porque son tres razones de
+    # cambio: quién emite, el contador con su bloqueo, y el azar de la clave.
+    (numbering.IssuerRepository, {"issuer"}),
+    (
+        numbering.DocumentNumbering,
+        {"office", "last_sequence", "save_sequence", "record"},
+    ),
+    (numbering.SecurityCodes, {"new"}),
+    # F12: la planilla (T-1205, T-1206, T-1218). Siete puertos por siete
+    # razones de cambio; el libro es el de F11.
+    (payroll.ScheduleRepository, {"get"}),
+    (
+        payroll.EmployeeRepository,
+        {
+            "get",
+            "contracts_of",
+            "contracts_in",
+            "add_contract",
+            "close_contract",
+            "terminate",
+            "position_active",
+            "rt_rate",
+        },
+    ),
+    (payroll.ActionRepository, {"get", "for_employee", "add", "update", "suspend", "applied"}),
+    (
+        payroll.PayrollRepository,
+        {
+            "get_run",
+            "find_run",
+            "add_run",
+            "line_count",
+            "replace_lines",
+            "totals",
+            "month_withholding",
+            "approve",
+            "pay",
+        },
+    ),
+    (payroll.RateTable, {"rates", "brackets_at", "credits_at"}),
+    (payroll.PayrollSettings, {"payroll"}),
     (repositories.ProductSnapshot, set()),
     (repositories.SupplierSnapshot, set()),
+    (payroll.ScheduleSnapshot, set()),
+    (payroll.EmployeeSnapshot, set()),
+    (payroll.ContractSnapshot, set()),
+    (payroll.ActionSnapshot, set()),
+    (payroll.AppliedItem, set()),
+    (payroll.RunSnapshot, set()),
 ]
 
 
@@ -135,6 +192,10 @@ def test_ProductSnapshot_dice_que_necesita_la_venta_de_un_producto():
         # Desde F10: lo que cuesta, que no es lo que vale. Cero es «no se sabe»
         # —los productos que nunca se compraron— y la primera compra lo fija.
         "cost",
+        # Desde F7 (T-731): el CABYS y la unidad, que se congelan en la línea
+        # porque el comprobante los imprime y el producto puede cambiarlos.
+        "cabys_code",
+        "unit_of_measure",
     }
 
 
@@ -163,6 +224,7 @@ def test_los_puertos_no_conocen_la_persistencia_ni_HTTP():
     for modulo in (
         clock,
         documents,
+        payroll,
         repositories,
         secrets,
         security,

@@ -7,20 +7,32 @@
 	 * contacto al pie. Está pensada para el negocio que manda la factura por
 	 * correo y quiere que se le reconozca.
 	 *
+	 * Lleva lo mismo que las otras dos (RN-86, T-731): cuando la venta es un
+	 * comprobante, la condición de venta, la moneda, el CABYS y la unidad por
+	 * línea, la identificación con su tipo, la actividad económica y el resumen
+	 * con los renglones de Hacienda. Lo decide la venta, no la plantilla.
+	 *
 	 * Las diagonales son `clip-path` sobre bloques de color, no imágenes: la
 	 * factura se arma con el color que el dueño eligió y ninguna imagen puede
 	 * seguirlo. También significa que no hay nada que descargar al imprimir.
 	 */
 	import { formatMoney, ratePercentText } from '$lib/domain/money';
-	import { formatDate, formatDateTime, fullName } from '$lib/ui/format';
+	import { formatDateTime, fullName } from '$lib/ui/format';
 	import {
+		SALE_CONDITION_CASH,
 		brandTones,
+		documentKind,
+		documentLines,
+		documentNumber,
+		documentSummary,
+		exchangeRate,
+		issuerActivity,
 		issuerLines,
 		returnedTotal,
-		taxBreakdown,
 		type DocumentProps
 	} from '$lib/domain/documents';
 	import { documentLabels, issuerText } from '$lib/ui/documents';
+	import FiscalBlock from './FiscalBlock.svelte';
 
 	let {
 		sale,
@@ -41,15 +53,29 @@
 
 	const doc = $derived(settings.document);
 	const marca = $derived(brandTones(doc.color));
-	const emisor = $derived(issuerText(issuerLines(settings), t));
+	/** Tiquete o factura: lo dice la venta, no la configuración de hoy (RN-85). */
+	const kind = $derived(documentKind(sale));
+	/** Un comprobante electrónico lleva lo que pide Hacienda (RN-86). */
+	const fiscal = $derived(kind !== 'invoice');
+	const emisor = $derived(
+		issuerText(
+			issuerLines(settings, fiscal ? { activity: issuerActivity(sale, settings) } : null),
+			t
+		)
+	);
 	const devuelto = $derived(returnedTotal(returns));
-
+	const lineas = $derived(documentLines(sale));
 	/**
-	 * El desglose por tarifa (RF-21). Con una sola tarifa da una fila —igual que
-	 * antes de F5— y con varias, una por cada una. Sale de lo que se GUARDÓ en
+	 * El resumen, con el desglose por tarifa (RF-21). Sale de lo que se GUARDÓ en
 	 * cada línea, no de recalcular con la configuración de hoy.
 	 */
-	const impuestos = $derived(taxBreakdown(sale));
+	const resumen = $derived(documentSummary(sale));
+	const moneda = $derived(
+		t.currencyWithRate(settings.currency.code, exchangeRate(settings.currency.code))
+	);
+	const enLetras = $derived(
+		t.amountInWords(sale.total, settings.currency.code, settings.currency.decimals)
+	);
 
 	const contacto = $derived(
 		[settings.business.phone, settings.business.email, settings.business.website].filter(Boolean)
@@ -74,20 +100,16 @@
 		<div class="flex items-start justify-between gap-4 px-8 py-7">
 			<div class="min-w-0" style="color:{marca.ink}">
 				<h1 class="text-2xl font-bold tracking-[0.2em] uppercase">
-					{t.title(settings)}
+					{t.title(kind)}
 				</h1>
-				<dl class="mt-3 space-y-1 text-xs">
+				<dl class="mt-3 space-y-1 text-xs" data-cabecera>
 					<div class="flex gap-2">
-						<dt class="w-24 shrink-0 font-semibold">N.º</dt>
-						<dd class="font-mono">{sale.sale_number}</dd>
+						<dt class="w-32 shrink-0 font-semibold">N.º</dt>
+						<dd class="font-mono">{documentNumber(sale)}</dd>
 					</div>
 					<div class="flex gap-2">
-						<dt class="w-24 shrink-0 font-semibold">{t.date}</dt>
-						<dd>{formatDate(sale.created_at, docLocale)}</dd>
-					</div>
-					<div class="flex gap-2">
-						<dt class="w-24 shrink-0 font-semibold">{t.payment}</dt>
-						<dd>{sale.payment_method}</dd>
+						<dt class="w-32 shrink-0 font-semibold">{t.issueDate}</dt>
+						<dd>{formatDateTime(sale.created_at, docLocale)}</dd>
 					</div>
 				</dl>
 			</div>
@@ -117,16 +139,22 @@
 	</header>
 
 	<div class="px-8 py-6">
+		<FiscalBlock {sale} {t} locale={docLocale} />
+
 		<!-- Emisor y receptor -->
 		<div class="mb-6 grid gap-6 sm:grid-cols-2">
-			<section>
+			<section data-receptor>
 				<h2 class="mb-1 text-[11px] font-bold tracking-widest uppercase" style="color:{marca.base}">
 					{t.billTo}
 				</h2>
 				{#if client}
 					<p class="text-sm font-bold">{fullName(client)}</p>
 					{#if client.identification}
-						<p class="text-xs text-slate-600">{t.taxId(client.identification)}</p>
+						<p class="text-xs text-slate-600">
+							{fiscal
+								? t.idTyped(client.identification_type, client.identification)
+								: t.taxId(client.identification)}
+						</p>
 					{/if}
 					{#if client.address}<p class="text-xs text-slate-600">{client.address}</p>{/if}
 					{#if client.telephone}<p class="text-xs text-slate-600">{t.phone(client.telephone)}</p>{/if}
@@ -137,7 +165,7 @@
 				{/if}
 			</section>
 
-			<section class="sm:text-right">
+			<section class="sm:text-right" data-emisor>
 				<h2 class="mb-1 text-[11px] font-bold tracking-widest uppercase" style="color:{marca.base}">
 					{t.issuer}
 				</h2>
@@ -149,39 +177,94 @@
 			</section>
 		</div>
 
+		<!-- Condición, pago y moneda: la franja de la factura de referencia -->
+		<dl class="mb-5 grid gap-3 border-y border-slate-200 py-2 text-xs sm:grid-cols-3">
+			{#if fiscal}
+				<div>
+					<dt class="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+						{t.saleCondition}
+					</dt>
+					<dd data-condicion>{t.saleConditionName(SALE_CONDITION_CASH)}</dd>
+				</div>
+			{/if}
+			<div>
+				<dt class="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+					{t.payment}
+				</dt>
+				<!-- Traducido como en las otras dos: el valor guardado es español. -->
+				<dd>{t.paymentName(sale.payment_method)}</dd>
+			</div>
+			{#if fiscal}
+				<div>
+					<dt class="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+						{t.currency}
+					</dt>
+					<dd data-moneda>{moneda}</dd>
+				</div>
+			{/if}
+		</dl>
+
 		<!-- Detalle -->
-		{#if sale.items.length}
-			<table class="w-full overflow-hidden rounded text-sm">
+		{#if lineas.length}
+			<table class="w-full overflow-hidden rounded text-xs" data-lineas>
 				<thead>
 					<tr class="ink-exact" style="background:{marca.base}; color:{marca.ink}">
-						<th scope="col" class="px-3 py-2.5 text-left text-xs font-bold tracking-wider uppercase">
+						<th scope="col" class="px-2 py-2.5 text-left font-bold">#</th>
+						{#if fiscal}
+							<th scope="col" class="px-2 py-2.5 text-left font-bold tracking-wider uppercase">
+								{t.colCabys}
+							</th>
+						{/if}
+						<th scope="col" class="px-2 py-2.5 text-left font-bold tracking-wider uppercase">
 							{t.colDescription}
 						</th>
-						<th scope="col" class="px-3 py-2.5 text-right text-xs font-bold tracking-wider uppercase">
-							{t.colUnitPriceLong}
-						</th>
-						<th scope="col" class="px-3 py-2.5 text-right text-xs font-bold tracking-wider uppercase">
+						<th scope="col" class="px-2 py-2.5 text-right font-bold tracking-wider uppercase">
 							{t.colQuantity}
 						</th>
-						<th scope="col" class="px-3 py-2.5 text-right text-xs font-bold tracking-wider uppercase">
+						{#if fiscal}
+							<th scope="col" class="px-2 py-2.5 text-left font-bold tracking-wider uppercase">
+								{t.colUnit}
+							</th>
+						{/if}
+						<th scope="col" class="px-2 py-2.5 text-right font-bold tracking-wider uppercase">
+							{t.colUnitPriceLong}
+						</th>
+						<th scope="col" class="px-2 py-2.5 text-right font-bold tracking-wider uppercase">
+							{t.colSubtotal}
+						</th>
+						<th scope="col" class="px-2 py-2.5 text-right font-bold tracking-wider uppercase">
+							{t.colTax}
+						</th>
+						<th scope="col" class="px-2 py-2.5 text-right font-bold tracking-wider uppercase">
 							{t.colTotal}
 						</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each sale.items as item, index (item.id_product)}
-						<tr class="ink-exact" style={index % 2 ? `background:${marca.tint}` : ''}>
-							<td class="px-3 py-2.5 font-medium">
-								{item.name}
-								{#if doc.showBarcode && barcodes[item.id_product]}
+					{#each lineas as linea, index (linea.id_product)}
+						<tr class="ink-exact align-top" style={index % 2 ? `background:${marca.tint}` : ''}>
+							<td class="px-2 py-2.5 text-slate-500">{linea.number}</td>
+							{#if fiscal}
+								<td class="px-2 py-2.5 font-mono text-[11px] text-slate-600" data-cabys>
+									{linea.cabys ?? '—'}
+								</td>
+							{/if}
+							<td class="px-2 py-2.5 font-medium">
+								{linea.name}
+								{#if doc.showBarcode && barcodes[linea.id_product]}
 									<span class="block font-mono text-[11px] font-normal text-slate-500">
-										{barcodes[item.id_product]}
+										{barcodes[linea.id_product]}
 									</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2.5 text-right text-slate-600">{formatMoney(item.price)}</td>
-							<td class="px-3 py-2.5 text-right text-slate-600">{item.quantity}</td>
-							<td class="px-3 py-2.5 text-right font-semibold">{formatMoney(item.subtotal)}</td>
+							<td class="px-2 py-2.5 text-right text-slate-600">{linea.quantity}</td>
+							{#if fiscal}
+								<td class="px-2 py-2.5 text-slate-600" data-unidad>{linea.unit ?? '—'}</td>
+							{/if}
+							<td class="px-2 py-2.5 text-right text-slate-600">{formatMoney(linea.unitPrice)}</td>
+							<td class="px-2 py-2.5 text-right text-slate-600">{formatMoney(linea.subtotal)}</td>
+							<td class="px-2 py-2.5 text-right text-slate-600">{formatMoney(linea.tax)}</td>
+							<td class="px-2 py-2.5 text-right font-semibold">{formatMoney(linea.total)}</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -192,9 +275,15 @@
 			</p>
 		{/if}
 
-		<!-- Notas a la izquierda, totales a la derecha -->
+		<!-- El monto en letras y las notas a la izquierda, los totales a la derecha -->
 		<div class="mt-6 grid gap-8 sm:grid-cols-2">
 			<section>
+				{#if enLetras}
+					<div class="mb-4 text-xs" data-en-letras>
+						<h2 class="mb-0.5 text-slate-500">{t.amountInWordsLabel}</h2>
+						<p class="font-bold">{enLetras}</p>
+					</div>
+				{/if}
 				<h2 class="mb-2 text-sm font-bold" style="color:{marca.base}">{t.notes}</h2>
 				{#if doc.notes}
 					<p class="text-xs leading-relaxed whitespace-pre-line text-slate-600">{doc.notes}</p>
@@ -209,12 +298,27 @@
 			</section>
 
 			<div>
-				<dl class="space-y-1.5 text-sm">
-					<div class="flex justify-between border-b border-slate-200 pb-1">
-						<dt class="font-semibold">{t.subtotal}</dt>
-						<dd>{formatMoney(sale.subtotal)}</dd>
-					</div>
-					{#each impuestos as fila (fila.rate)}
+				<dl class="space-y-1.5 text-sm" data-resumen>
+					{#if fiscal}
+						<div class="flex justify-between border-b border-slate-200 pb-1">
+							<dt class="font-semibold">{t.totalSale}</dt>
+							<dd>{formatMoney(resumen.gross)}</dd>
+						</div>
+						<div class="flex justify-between border-b border-slate-200 pb-1">
+							<dt class="font-semibold">{t.totalDiscounts}</dt>
+							<dd>{formatMoney(resumen.discounts)}</dd>
+						</div>
+						<div class="flex justify-between border-b border-slate-200 pb-1">
+							<dt class="font-semibold">{t.totalNet}</dt>
+							<dd>{formatMoney(resumen.net)}</dd>
+						</div>
+					{:else}
+						<div class="flex justify-between border-b border-slate-200 pb-1">
+							<dt class="font-semibold">{t.subtotal}</dt>
+							<dd>{formatMoney(resumen.gross)}</dd>
+						</div>
+					{/if}
+					{#each resumen.taxes as fila (fila.rate)}
 						<div class="flex justify-between border-b border-slate-200 pb-1">
 							<dt class="font-semibold">
 								{t.taxAtRate(settings.tax.name, ratePercentText(fila.rate))}
@@ -222,6 +326,12 @@
 							<dd>{formatMoney(fila.tax)}</dd>
 						</div>
 					{/each}
+					{#if fiscal && resumen.taxes.length > 1}
+						<div class="flex justify-between border-b border-slate-200 pb-1">
+							<dt class="font-semibold">{t.totalTax}</dt>
+							<dd>{formatMoney(resumen.tax)}</dd>
+						</div>
+					{/if}
 					{#if sale.payment_method === 'Efectivo' && sale.cash_received > 0}
 						<div class="flex justify-between text-slate-600">
 							<dt>{t.cashReceived}</dt>
@@ -238,9 +348,11 @@
 					class="ink-exact mt-2 flex items-baseline justify-between px-4 py-3"
 					style="background:{marca.tint}; border-left: 4px solid {marca.base}"
 				>
-					<span class="text-sm font-bold tracking-wider uppercase">{t.total}</span>
+					<span class="text-sm font-bold tracking-wider uppercase">
+						{fiscal ? t.totalDocument : t.total}
+					</span>
 					<span class="text-xl font-bold" style="color:{marca.deep}">
-						{formatMoney(sale.total)}
+						{formatMoney(resumen.total)}
 					</span>
 				</div>
 
@@ -283,6 +395,8 @@
 				{#if doc.legalNotice}<p class="mt-0.5 text-[11px] text-slate-500">{doc.legalNotice}</p>{/if}
 			</div>
 		{/if}
+
+		<FiscalBlock {sale} {t} locale={docLocale} part="foot" />
 	</div>
 
 	<!-- Barra de contacto -->

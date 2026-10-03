@@ -40,6 +40,9 @@ function peticion(cambios: Partial<CheckoutRequest> = {}): CheckoutRequest {
 		clientId: null,
 		saleNumber: '20260816214305',
 		userId: 7,
+		documentType: null,
+		einvoicing: false,
+		enabledTypes: ['04', '01', '03', '02'],
 		...cambios
 	};
 }
@@ -104,6 +107,56 @@ describe('venta que se puede cobrar', () => {
 		const r = prepareSale(peticion({ clientId: 4 }), CATALOGO, IVA, AHORA);
 		if (!r.ok) throw new Error('debía poderse cobrar');
 		expect(r.payload.client_id).toBe(4);
+	});
+
+	describe('el comprobante (RN-85, RN-88)', () => {
+		const activa = { einvoicing: true };
+
+		it('lleva el que eligió el cajero', () => {
+			const factura = prepareSale(
+				peticion({ ...activa, clientId: 4, documentType: '01' }),
+				CATALOGO,
+				IVA,
+				AHORA
+			);
+			const tiquete = prepareSale(peticion({ ...activa, documentType: '04' }), CATALOGO, IVA, AHORA);
+			if (!factura.ok || !tiquete.ok) throw new Error('debían poderse cobrar');
+			expect(factura.payload.document_type).toBe('01');
+			expect(tiquete.payload.document_type).toBe('04');
+		});
+
+		it('sin elección viaja la sugerencia', () => {
+			const r = prepareSale(peticion({ ...activa, clientId: 4 }), CATALOGO, IVA, AHORA);
+			if (!r.ok) throw new Error('debía poderse cobrar');
+			expect(r.payload.document_type).toBe('01');
+		});
+
+		it('sin facturación electrónica no lleva ninguno, aunque lo pidan', () => {
+			const r = prepareSale(peticion({ documentType: '01', clientId: 4 }), CATALOGO, IVA, AHORA);
+			if (!r.ok) throw new Error('debía poderse cobrar');
+			expect(r.payload.document_type).toBeNull();
+		});
+
+		it('una factura sin cliente no sale de acá', () => {
+			// El servidor diría lo mismo, pero después de un viaje y con un código.
+			const r = prepareSale(peticion({ ...activa, documentType: '01' }), CATALOGO, IVA, AHORA);
+			expect(r).toEqual({ ok: false, reason: { code: 'checkout_invoice_needs_client' } });
+		});
+
+		it('un tipo apagado tampoco', () => {
+			const r = prepareSale(
+				peticion({ ...activa, documentType: '04', enabledTypes: ['01', '03'], clientId: 4 }),
+				CATALOGO,
+				IVA,
+				AHORA
+			);
+			expect(r).toEqual({ ok: false, reason: { code: 'checkout_document_type_not_enabled' } });
+		});
+
+		it('ni uno que el mostrador no emite', () => {
+			const r = prepareSale(peticion({ ...activa, documentType: '03' }), CATALOGO, IVA, AHORA);
+			expect(r).toEqual({ ok: false, reason: { code: 'checkout_bad_document_type' } });
+		});
 	});
 
 	it('usa la tasa que se le pasa y no una constante', () => {

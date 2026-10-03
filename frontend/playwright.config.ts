@@ -65,8 +65,18 @@ export default defineConfig({
 		 * cuatro pruebas de tres archivos empezaban a fallar señalando pantallas
 		 * que no eran el problema. Se ignora lo guardado; no se borra, para no
 		 * llevarse por delante la demostración de quien esté usando el POS.
+		 *
+		 * **Un solo `env`.** Había dos claves `env` en este objeto, y en un literal
+		 * la segunda pisa a la primera sin aviso: `POS_MOCK_FRESH` no llegaba nunca
+		 * y T-920 estaba escrito pero no funcionaba. Se vio el 2026-09-26, con 109
+		 * compañías acumuladas y la del aviso de vencimiento ya vencida.
 		 */
-		env: { ...process.env, POS_MOCK_FRESH: '1' },
+		env: {
+			...process.env,
+			// Sin backend: datos de ejemplo en memoria.
+			POS_MOCK: '1',
+			POS_MOCK_FRESH: '1'
+		},
 		url: `http://127.0.0.1:${PORT}/login`,
 		/*
 		 * **Nunca se reutiliza un servidor que ya esté escuchando.**
@@ -82,10 +92,6 @@ export default defineConfig({
 		 * unos segundos por corrida y quita una forma silenciosa de mentir.
 		 */
 		reuseExistingServer: false,
-		timeout: 120_000,
-		env: {
-			// Sin backend: datos de ejemplo en memoria.
-			POS_MOCK: '1'
-		}
+		timeout: 120_000
 	}
 });

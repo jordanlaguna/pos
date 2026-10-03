@@ -224,5 +224,12 @@
 	"impersonation_banner": "Está viendo {compania} como soporte.",
 	"impersonation_read_only": "Solo lectura",
 	"impersonation_reason": "Motivo: {motivo}",
-	"impersonation_leave": "Volver al panel"
+	"impersonation_leave": "Volver al panel",
+	"admin_issuer_title": "Cédula del emisor",
+	"admin_issuer_hint": "Debe ser la misma del certificado de firma: va dentro de la clave de cada comprobante. El negocio la ve, pero no puede cambiarla.",
+	"admin_issuer_type_auto": "Deducir de la cédula",
+	"admin_issuer_save": "Guardar cédula",
+	"admin_issuer_saved": "Cédula del emisor guardada.",
+	"admin_action_emisor": "Cambió la cédula del emisor",
+	"admin_action_tasa_planilla": "Agregó una tasa de planilla"
 }

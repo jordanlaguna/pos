@@ -24,6 +24,7 @@ from app.domain.money import Money
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_repositories import (
     SqlAlchemyCashRepository,
+    SqlAlchemyNoteRepository,
     SqlAlchemyReturnRepository,
     SqlAlchemySaleRepository,
     SqlAlchemyUnitOfWork,
@@ -62,6 +63,7 @@ def _reporte(db: Session) -> BuildSessionReport:
     return BuildSessionReport(
         sales=SqlAlchemySaleRepository(db),
         returns=SqlAlchemyReturnRepository(db),
+        notes=SqlAlchemyNoteRepository(db),
         cash=SqlAlchemyCashRepository(db),
         clock=SystemClock(),
     )
@@ -116,6 +118,11 @@ def build_report(db: Session, session: CashSession) -> dict:
         "movements_in": cifras.movements_in.as_float(),
         "movements_out": cifras.movements_out.as_float(),
         "returns_total": cifras.returns_total.as_float(),
+        # Las notas por monto del turno (T-726): la ND cobrada —toda y en
+        # efectivo— y la NC reembolsada de la gaveta.
+        "debit_notes_total": cifras.debit_notes_total.as_float(),
+        "debit_notes_cash": cifras.debit_notes_cash.as_float(),
+        "credit_notes_total": cifras.credit_notes_total.as_float(),
     }
 
 

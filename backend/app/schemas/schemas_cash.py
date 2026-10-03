@@ -65,3 +65,7 @@ class CashSessionReport(BaseModel):
     movements_in: float = 0
     movements_out: float = 0
     returns_total: float = 0
+    # Las notas por monto del turno (T-726).
+    debit_notes_total: float = 0
+    debit_notes_cash: float = 0
+    credit_notes_total: float = 0

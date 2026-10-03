@@ -19,6 +19,7 @@ from dataclasses import dataclass, replace
 from typing import Final, Mapping
 
 from .errors import (
+    IdentificationTypeRequired,
     InvalidEnvironment,
     InvalidIdentificationType,
     InvalidSigningKey,
@@ -232,3 +233,23 @@ def identification_type_for(identification: str) -> str | None:
     if len(digitos) in (11, 12):
         return DIMEX
     return None
+
+
+def client_identification_type(requested: object, identification: str) -> str:
+    """El tipo con que se guarda un cliente (T-617).
+
+    El que se eligió, si se eligió; si no, el que deja ver la longitud de la
+    cédula. Es lo que permite que un cliente dado de alta por el API sin el
+    campo —`seed.py`, una importación— quede igual que los que ya estaban, que
+    la migración 011 clasificó así.
+
+    Y si tampoco así se sabe, **no se guarda**: el tipo va en el receptor del
+    comprobante, y un receptor sin tipo es un rechazo de Hacienda que llega
+    cuando el cliente ya se fue.
+    """
+    if requested not in (None, ""):
+        return check_identification_type(requested)
+    deducido = identification_type_for(identification)
+    if deducido is None:
+        raise IdentificationTypeRequired()
+    return deducido

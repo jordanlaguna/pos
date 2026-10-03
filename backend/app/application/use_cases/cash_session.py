@@ -16,6 +16,7 @@ from datetime import datetime
 from app.application.ports.clock import Clock
 from app.application.ports.repositories import (
     CashRepository,
+    NoteRepository,
     ReturnRepository,
     SaleRepository,
     UnitOfWork,
@@ -23,6 +24,7 @@ from app.application.ports.repositories import (
 from app.application.ports.ledger import Ledger, NullLedger
 from app.domain.cash import CashCount, check_movement, check_opening, difference, expected_amount
 from app.domain.errors import DomainError
+from app.domain.fe_document_type import CREDIT_NOTE, DEBIT_NOTE
 from app.domain.ledger import ClosedSession, DrawerMovement
 from app.domain.money import Money
 
@@ -62,6 +64,11 @@ class SessionTotals:
     expected: Money
     difference: Money | None
     by_payment_method: list[tuple[str, int, Money]]
+    #: Las notas por monto del turno (T-726): lo cobrado con ND —todo y en
+    #: efectivo, que es lo que entra a la gaveta— y lo reembolsado con NC.
+    debit_notes_total: Money = Money.zero()
+    debit_notes_cash: Money = Money.zero()
+    credit_notes_total: Money = Money.zero()
 
 
 class BuildSessionReport:
@@ -79,11 +86,13 @@ class BuildSessionReport:
         *,
         sales: SaleRepository,
         returns: ReturnRepository,
+        notes: NoteRepository,
         cash: CashRepository,
         clock: Clock,
     ) -> None:
         self._sales = sales
         self._returns = returns
+        self._notes = notes
         self._cash = cash
         self._clock = clock
 
@@ -102,6 +111,16 @@ class BuildSessionReport:
         ventas = self._sales.in_window(user_id, opened_at, fin)
         movimientos = self._cash.movements(session_id)
         devuelto = self._returns.total_in_window(user_id, opened_at, fin)
+        # Las notas por monto del mismo cajero en la misma ventana (T-726): la ND
+        # se cobró acá y la NC salió de esta gaveta.
+        notas = self._notes.in_window(user_id, opened_at, fin)
+        debitos = [n for n in notas if n.document_type == DEBIT_NOTE]
+        creditos = [n for n in notas if n.document_type == CREDIT_NOTE]
+        debitado = Money.sum(Money(n.total) for n in debitos)
+        debitado_en_efectivo = Money.sum(
+            Money(n.total) for n in debitos if n.payment_method == CASH_METHOD
+        )
+        acreditado = Money.sum(Money(n.total) for n in creditos)
 
         por_metodo: dict[str, list] = {}
         for venta in ventas:
@@ -122,6 +141,8 @@ class BuildSessionReport:
                 movements_in=entradas,
                 movements_out=salidas,
                 returns=devuelto,
+                cash_debit_notes=debitado_en_efectivo,
+                credit_notes=acreditado,
             )
         )
 
@@ -139,6 +160,9 @@ class BuildSessionReport:
                 key=lambda x: x[2],
                 reverse=True,
             ),
+            debit_notes_total=debitado,
+            debit_notes_cash=debitado_en_efectivo,
+            credit_notes_total=acreditado,
         )
 
 

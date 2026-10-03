@@ -22,17 +22,14 @@ import subprocess
 
 import pytest
 
-from .conftest import API, BACKEND, Api, bootstrap, entrar, marca_unica
+from .conftest import API, BACKEND, Api, afiliado_unico, bootstrap, entrar, marca_unica
 
 pytestmark = pytest.mark.characterization
 
 #: Dentro del contenedor. `/tmp` es escribible por el usuario sin privilegios.
 ARCHIVO = "/tmp/respaldo-compania-c.json"
 
-ADMIN_C = {
-    "email": "admin.c@pruebas.ventasys.cr",
-    "password": "prueba123",
-}
+CLAVE_C = "prueba123"
 
 
 def herramienta(*argumentos: str) -> str:
@@ -83,28 +80,72 @@ def retrato(cliente: Api) -> dict:
             (d["id"], float(d["total"])) for d in cliente.ok("GET", "/returns/returns_list")
         ),
         "configuracion": cliente.ok("GET", "/settings/")["data"],
+        "planilla": retrato_de_planilla(cliente),
+    }
+
+
+def retrato_de_planilla(cliente: Api) -> dict:
+    """Las once tablas de la compañía de F12, vistas por la API (T-1201).
+
+    La corrida pagada va con sus rubros: si uno solo no volviera, la boleta
+    reimpresa después de restaurar diría otra cosa que la de antes (RN-66).
+    """
+    empleados = cliente.ok("GET", "/payroll/employees")
+    corridas = cliente.ok("GET", "/payroll/runs")
+    return {
+        "jornadas": sorted((j["id"], j["name"], j["frequency"]) for j in cliente.ok("GET", "/payroll/schedules")),
+        "puestos": sorted((p["id"], p["name"], p["ccss_code"]) for p in cliente.ok("GET", "/payroll/positions")),
+        "polizas": sorted((p["id"], p["number"], p["rt_rate"]) for p in cliente.ok("GET", "/payroll/policies")),
+        "empleados": sorted(
+            (e["id"], e["identification"], e["contract"]["id"] if e["contract"] else None) for e in empleados
+        ),
+        "acciones": sorted(
+            (a["id"], a["kind"], a["applied_total"])
+            for e in empleados
+            for a in cliente.ok("GET", f"/payroll/employees/{e['id']}/actions")
+        ),
+        "corridas": sorted((c["id"], c["status"], c["gross"], c["net"], c["employees"]) for c in corridas),
+        "rubros": sorted(
+            (c["id"], l["employee_id"], i["concept"], i["payer"], i["amount"], i["action_id"])
+            for c in corridas
+            for l in cliente.ok("GET", f"/payroll/runs/{c['id']}")["lines"]
+            for i in l["items"]
+        ),
     }
 
 
 @pytest.fixture(scope="module")
 def compania_c(api: Api) -> Api:
-    """Una compañía propia de esta prueba, con datos suficientes para notar la pérdida."""
+    """Una compañía propia de esta prueba, con datos suficientes para notar la pérdida.
+
+    Con un afiliado distinto en cada corrida: la base de pruebas sobrevive entre
+    corridas, y una compañía fija (la «3») nacía con el plan de su primera
+    corrida —sin planilla— y no había forma de darle el módulo después.
+    """
+    marca = marca_unica()
+    afiliado = afiliado_unico()
+    correo = f"admin.c.{marca}@pruebas.ventasys.cr"
     bootstrap(
-        afiliado=3,
+        afiliado=afiliado,
         compania=1,
         nombre="Compañía C, la que se restaura",
-        email=ADMIN_C["email"],
-        password=ADMIN_C["password"],
+        email=correo,
+        password=CLAVE_C,
         rol="admin",
         nombre_persona="Carla",
         apellido="Tercera",
-        cedula="400000001",
+        cedula=marca[-9:],
+        plan=f"Plan C {marca}",
+        plan_max_usuarios="-1",
+        plan_modulos="payroll",
     )
 
     cliente = Api(API)
-    sesion = entrar(cliente, ADMIN_C["email"], ADMIN_C["password"])
+    sesion = entrar(cliente, correo, CLAVE_C)
     cliente.user_id = cliente.ok("GET", "/users/me")["id_user"]  # type: ignore[attr-defined]
     cliente.company_id = sesion["company_id"]  # type: ignore[attr-defined]
+    cliente.afiliado = afiliado  # type: ignore[attr-defined]
+    cliente.email = correo  # type: ignore[attr-defined]
 
     marca = marca_unica()
     cliente.ok("POST", "/categories/register_category", {"name": f"Cat C {marca}"})
@@ -131,6 +172,7 @@ def compania_c(api: Api) -> Api:
         "/clients/register_client",
         {
             "identification": f"RC{marca}",
+            "identification_type": "01",
             "name": "Cliente",
             "last_name": "De C",
             "second_name": "Prueba",
@@ -180,6 +222,49 @@ def compania_c(api: Api) -> Api:
         {"data": {**original, "marca_de_c": f"C{marca}"}, "keep_logo": True},
     )
 
+    # Planilla (T-1201): una corrida pagada con sus rubros y una acción
+    # aplicada, que son las filas que más se enredan entre sí al restaurar.
+    jornada = cliente.ok(
+        "POST", "/payroll/schedules", {"name": "Quincenal", "frequency": "semimonthly", "first_cut_day": 15}
+    )
+    puesto = cliente.ok("POST", "/payroll/positions", {"name": "Cajera", "ccss_code": "4211", "ins_code": "52"})
+    cliente.ok("POST", "/payroll/policies", {"number": "RT-C", "rt_rate": "0.0146"})
+    empleada = cliente.ok(
+        "POST",
+        "/payroll/employees",
+        {
+            "identification_type": "national",
+            "identification": marca[-9:],
+            "first_name": "Carla",
+            "last_name_1": "Tercera",
+            "birth_date": "1990-05-20",
+            "gender": "F",
+            "marital_status": "single",
+            "nationality": "CR",
+            "hired_on": "2025-06-01",
+        },
+    )
+    cliente.ok(
+        "POST",
+        "/payroll/contracts",
+        {
+            "employee_id": empleada["id"],
+            "schedule_id": jornada["id"],
+            "position_id": puesto["id"],
+            "valid_from": "2025-06-01",
+            "period_salary": "300000",
+        },
+    )
+    cliente.ok(
+        "POST",
+        "/payroll/actions",
+        {"employee_id": empleada["id"], "kind": "bonus", "starts_on": "2026-01-10", "amount": "5000"},
+    )
+    corrida = cliente.ok("POST", "/payroll/runs", {"schedule_id": jornada["id"], "cut_date": "2026-01-15"})
+    cliente.ok("POST", f"/payroll/runs/{corrida['id']}/calculate")
+    cliente.ok("POST", f"/payroll/runs/{corrida['id']}/approve")
+    cliente.ok("POST", f"/payroll/runs/{corrida['id']}/pay")
+
     return cliente
 
 
@@ -197,26 +282,27 @@ class TestRespaldoYRestauracion:
         assert antes_de_c["ventas"], "la compañía C tenía que tener ventas"
 
         # 1. Exportar.
-        salida = herramienta("exportar", "--afiliado", "3", "--compania", "1", "--salida", ARCHIVO)
-        assert "sales" in salida and "products" in salida
+        afiliado = str(compania_c.afiliado)  # type: ignore[attr-defined]
+        salida = herramienta("exportar", "--afiliado", afiliado, "--compania", "1", "--salida", ARCHIVO)
+        assert "sales" in salida and "products" in salida and "payroll_run_items" in salida
 
         # 2. Borrar. Sin la confirmación exacta no borra nada.
         fallo = subprocess.run(
             [
                 "docker", "compose", "-f", "docker-compose.test.yml", "exec", "-T", "fastapi",
                 "python", "company_dump.py", "borrar",
-                "--afiliado", "3", "--compania", "1", "--confirmar", "3-2",
+                "--afiliado", afiliado, "--compania", "1", "--confirmar", f"{afiliado}-2",
             ],
             cwd=BACKEND, capture_output=True, text=True, encoding="utf-8", timeout=120,
         )
         assert fallo.returncode != 0, "borró con una confirmación equivocada"
 
-        herramienta("borrar", "--afiliado", "3", "--compania", "1", "--confirmar", "3-1")
+        herramienta("borrar", "--afiliado", afiliado, "--compania", "1", "--confirmar", f"{afiliado}-1")
 
         # 3. Con la compañía borrada, su administrador ya no tiene a dónde entrar.
         huerfano = Api(API)
         cuerpo = huerfano.ok(
-            "POST", "/auth/login", {"email": ADMIN_C["email"], "password": ADMIN_C["password"]}
+            "POST", "/auth/login", {"email": compania_c.email, "password": CLAVE_C}  # type: ignore[attr-defined]
         )
         assert cuerpo["companies"] == [], (
             "la compañía se borró pero su administrador todavía la ve"
@@ -236,7 +322,7 @@ class TestRespaldoYRestauracion:
 
         # 6. C volvió idéntica, con los mismos identificadores.
         de_nuevo = Api(API)
-        entrar(de_nuevo, ADMIN_C["email"], ADMIN_C["password"])
+        entrar(de_nuevo, compania_c.email, CLAVE_C)  # type: ignore[attr-defined]
         assert retrato(de_nuevo) == antes_de_c, (
             "la compañía restaurada no quedó igual que antes de borrarla"
         )
@@ -254,7 +340,8 @@ class TestRespaldoYRestauracion:
         dejaría una compañía con dos versiones de su historia y ninguna forma de
         saber cuál es cuál.
         """
-        herramienta("exportar", "--afiliado", "3", "--compania", "1", "--salida", ARCHIVO)
+        afiliado = str(compania_c.afiliado)  # type: ignore[attr-defined]
+        herramienta("exportar", "--afiliado", afiliado, "--compania", "1", "--salida", ARCHIVO)
 
         resultado = subprocess.run(
             [
@@ -268,13 +355,14 @@ class TestRespaldoYRestauracion:
 
 
 class TestCoberturaDelRespaldo:
-    def test_ninguna_tabla_queda_fuera_del_respaldo_sin_decidirlo(self):
+    def test_ninguna_tabla_queda_fuera_del_respaldo_sin_decidirlo(self, compania_c: Api):
         """Si aparece una tabla nueva, la herramienta lo dice en vez de ignorarla.
 
         Una exportación incompleta es peor que ninguna: se descubre el día que
         hace falta restaurar, que es el peor día para descubrirlo.
         """
-        salida = herramienta("exportar", "--afiliado", "3", "--compania", "1", "--salida", ARCHIVO)
+        afiliado = str(compania_c.afiliado)  # type: ignore[attr-defined]
+        salida = herramienta("exportar", "--afiliado", afiliado, "--compania", "1", "--salida", ARCHIVO)
         assert "Compañía" in salida
 
 

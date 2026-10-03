@@ -100,6 +100,9 @@ export function entryTitle(entry: Pick<JournalEntry, 'kind' | 'description' | 's
 			return m.accounting_auto_sale({ id });
 		case 'return':
 			return m.accounting_auto_return({ id });
+		case 'note':
+			// Una nota por monto (T-726): la ND o la NC que no mueve mercadería.
+			return m.accounting_auto_note({ id });
 		case 'cash_session':
 			return m.accounting_auto_cash_close({ id });
 		case 'cash_movement':

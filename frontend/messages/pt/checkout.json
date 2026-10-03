@@ -8,5 +8,8 @@
 	"checkout_insufficient_stock": "Estoque insuficiente de {product}: restam {available}.",
 	"checkout_cash_short": "O valor recebido não cobre o total da venda.",
 	"checkout_unreadable_lines": "Não foi possível ler o detalhe da venda.",
-	"checkout_amount_insufficient": "Valor insuficiente."
+	"checkout_amount_insufficient": "Valor insuficiente.",
+	"checkout_invoice_needs_client": "A fatura eletrônica precisa de um cliente. Escolha um ou emita um cupom.",
+	"checkout_document_type_not_enabled": "Este negócio não emite esse documento. Escolha outro.",
+	"checkout_bad_document_type": "Esse documento não é emitido no caixa."
 }

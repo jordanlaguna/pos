@@ -234,6 +234,19 @@ def cambiar_suscripcion(
     return ", ".join(partes) if partes else "sin cambios"
 
 
+def cambiar_emisor(company: Company, *, identificacion: str, tipo: str) -> str:
+    """Corrige la identificación del emisor y devuelve el detalle (RN-45, T-621).
+
+    Con el antes y el después, como la suscripción: cambiar la cédula de un
+    emisor es cambiar a quién se le emiten los comprobantes que vienen, y la
+    pregunta de dentro de seis meses es «desde cuándo».
+    """
+    antes = f"{company.identificacion or 'sin cédula'} ({company.identification_type or '—'})"
+    company.identificacion = identificacion
+    company.identification_type = tipo
+    return f"emisor {antes} → {identificacion} ({tipo})"
+
+
 # --------------------------------------------------------------------------
 # Los módulos de un plan (T-1003, RF-39)
 # --------------------------------------------------------------------------

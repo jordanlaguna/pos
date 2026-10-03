@@ -6,6 +6,7 @@
 
 - [esquemas/](esquemas/) — 9 XSDs oficiales de Hacienda v4.4 (FE, TE, NC, ND, FEC, FEE, REP, MR, MensajeHacienda) + `xmldsig-core-schema.xsd` del W3C. Listos para validación estructural.
 - [normativa/](normativa/) — documentos regulatorios oficiales de Hacienda. Actualmente incluye `ANEXOS_Y_ESTRUCTURAS_V4.4.pdf` (Dirección General de Tributación, noviembre 2024) — bitácora oficial de los 146 cambios 4.3→4.4, estructura del XML, Anexo 2 (firma XAdES-EPES) y Anexo 3 (API REST).
+- [normativa/Codificacionubicacion_V4.4.xlsx](normativa/Codificacionubicacion_V4.4.xlsx) — la división territorial de la **nota 14** del anexo (provincia, cantón, distrito y barrio), del 2024-11-20. El anexo la nombra y no la trae: Hacienda la publica aparte en la página de anexos y estructuras de ATV, como `docs/esquemas/2024/v4.4/Codificacionubicacion_V4.4.rar`. De ella salen los catálogos del backend y del POS con [`generar_ubicaciones.py`](generar_ubicaciones.py) (T-722).
 
 ---
 

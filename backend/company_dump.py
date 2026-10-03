@@ -61,6 +61,8 @@ import app.models.model_categories  # noqa: F401
 import app.models.model_client  # noqa: F401
 import app.models.model_company  # noqa: F401
 import app.models.model_fe  # noqa: F401
+import app.models.model_note  # noqa: F401
+import app.models.model_payroll  # noqa: F401
 import app.models.model_person  # noqa: F401
 import app.models.model_product  # noqa: F401
 import app.models.model_return  # noqa: F401
@@ -89,6 +91,10 @@ TABLAS_DE_COMPANIA = [
     "sale_details",
     "returns",
     "return_details",
+    # Las notas por monto (T-726) referencian la venta y sus productos, que ya
+    # están; las líneas, a su nota.
+    "sale_notes",
+    "sale_note_lines",
     "cash_sessions",
     "cash_movements",
     # Los proveedores van **antes** que las entradas: desde F10 una entrada
@@ -113,6 +119,27 @@ TABLAS_DE_COMPANIA = [
     # no toda: ver SECRETOS_QUE_NO_VIAJAN.
     "fe_credentials",
     "fe_sequences",
+    # Los comprobantes numerados (T-705). Sin foránea a su origen —la venta, la
+    # devolución o la nota—, así que les basta con ir después de las oficinas.
+    # Y tienen que viajar: sin ellos, una compañía restaurada reimprime sus
+    # facturas sin clave y el contador volvería a entregar números ya usados.
+    "fe_documents",
+    # Planilla (F12). Las jornadas, los puestos y las pólizas antes del contrato
+    # que los nombra; el empleado antes de todo lo suyo; la acción antes del
+    # rubro que la aplicó. Las dos que se referencian a sí mismas —el ajuste a
+    # su corrida, la anulación a su acción— entran bien porque se inserta en
+    # orden de `id`, y lo referenciado siempre es más viejo.
+    "work_schedules",
+    "positions",
+    "ins_policies",
+    "employees",
+    "employment_contracts",
+    "payroll_runs",
+    "payroll_run_lines",
+    "personnel_actions",
+    "payroll_run_items",
+    "vacation_movements",
+    "payroll_opening_earnings",
     "settings",
     "audit_log",
 ]
@@ -146,7 +173,19 @@ TABLAS_DE_IDENTIDAD = ["persons", "users"]
 #: suscripciones y `cabys_cache` el del impuesto: los dos son comunes a todas
 #: las compañías y no llevan dato de ninguna. `cabys_cache` además se rellena
 #: sola con lo que se vaya usando, así que no restaurarla no pierde nada.
-TABLAS_AJENAS = {"plans", "cabys_cache"}
+#:
+#: Las cuatro de planilla son del país (RN-67): tasas, tramos, créditos y
+#: cesantía. Las siembra la plataforma con su fuente y las mantiene soporte, y
+#: una corrida restaurada no las necesita porque lleva sus tasas congeladas en
+#: los rubros (RN-66).
+TABLAS_AJENAS = {
+    "plans",
+    "cabys_cache",
+    "payroll_rates",
+    "income_tax_brackets",
+    "income_tax_credits",
+    "severance_table",
+}
 
 
 def _serializar(valor: Any) -> Any:

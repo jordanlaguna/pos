@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import CHAR, Column, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 
 from app.database.database import Base
 from app.utils.tenancy import TenantMixin
@@ -26,6 +26,11 @@ class Sale(TenantMixin, Base):
     # DateTime, no Date: sin la hora no se puede saber a qué turno de caja
     # pertenece una venta, y el arqueo deja de tener sentido.
     created_at = Column(DateTime, nullable=False)
+    # El comprobante que se emitió (RN-85): '01' factura, '04' tiquete. Nulo
+    # cuando la compañía no factura electrónicamente, que es lo que tienen
+    # todas las ventas anteriores a la migración 014. Se decide al vender y no
+    # cambia: va en el consecutivo, que es por tipo (RN-37), y en la clave.
+    document_type = Column(CHAR(2), nullable=True)
 
     # El consecutivo es de cada compañía. Con el único global, la segunda
     # compañía no habría podido empezar su numeración en 0001.

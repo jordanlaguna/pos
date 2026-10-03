@@ -8,7 +8,7 @@
 > importe para quien retome va a `progress.json`; este archivo es la lista de
 > trabajo, no el registro histórico.
 >
-> Actualizado: 2026-09-19
+> Actualizado: 2026-10-02
 
 ---
 
@@ -1446,7 +1446,7 @@ columnas en español, así que la columna nueva deja `identificacion` e
 migración, o esa mezcla queda escrita — y es la única decisión que sigue
 abierta.
 
-- [~] **T-621** `companies.identification_type` con la lista de Hacienda
+- [x] **T-621** `companies.identification_type` con la lista de Hacienda
       (01/02/03/04), y la identificación **de solo lectura** en Configuración,
       diciendo quién la cambia. RN-45, RF-37.
 
@@ -1464,6 +1464,19 @@ abierta.
       **Verificación:** un `POST` a `/settings` que traiga `business.taxId`
       **no** cambia la identificación de la compañía. Esconder el campo no es
       control de acceso.
+
+      **La pantalla, hecha el 2026-09-27**, porque T-705 la volvió necesaria: la
+      clave lleva la cédula de `companies` y las facturas imprimían la de
+      Configuración, así que un mismo papel podía decir dos. Ahora `GET
+      /settings/` publica `issuer`, Configuración la muestra sin campo para
+      editarla, y `withIssuer` hace que las plantillas impriman esa.
+
+      **Y la puerta de soporte**, que RN-45 nombraba y no existía: `PUT
+      /support/companies/{id}/issuer`, con bitácora (`emisor`, con el antes y el
+      después), y el formulario en la ficha de la compañía del panel. El alta
+      acepta además el tipo, y `bootstrap.py` gana `--identificacion` y
+      `--tipo-identificacion`. Se guarda **sin guiones**, que es como va en la
+      clave. La verificación de arriba está en `test_numeracion.py`.
 
 ### Primero: los campos que ya existen
 
@@ -2210,7 +2223,7 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       de un certificado tiene hora, y redondearlo a medianoche diría que sirve
       durante catorce horas en que no sirve.
 
-- [~] **T-617** `clients.identification_type` con la lista de Hacienda
+- [x] **T-617** `clients.identification_type` con la lista de Hacienda
       (01/02/03/04). Hoy `clients` tiene `identification` y `email` pero **no el
       tipo**, y el XML lo exige para el receptor. Está en spec §5.4 desde el
       principio y nunca tuvo tarea.
@@ -2220,9 +2233,18 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       quedan en el que diga su cédula por longitud.
 
       **La columna y el relleno, hechos el 2026-09-13** en la migración 011
-      (`identification_type_for`, por longitud de la cédula). **Falta la otra
-      mitad**: exigir el tipo al dar de alta un cliente, que es pantalla y
-      validación.
+      (`identification_type_for`, por longitud de la cédula). **La otra mitad,
+      hecha el 2026-09-26** con T-731, que la necesitaba para imprimir «Cédula
+      física» en el receptor: la ficha del cliente tiene el desplegable, el API
+      lo recibe y lo devuelve, y `client_identification_type` guarda el elegido
+      o, si viene en blanco, el que deja ver la cédula. Si tampoco así se sabe
+      no se guarda: `identification_type_required`. Probado sin base
+      (`test_hacienda.py`) y contra MySQL (`test_documento_impreso.py`).
+
+      **En blanco no es «sin tipo», es «según la cédula»**, y el desplegable lo
+      dice con el tipo que deduce mientras se escribe. Así `seed.py` y una
+      importación sin el campo siguen funcionando, y el NITE —diez dígitos como
+      una jurídica— es el único que hay que elegir a mano.
 
 - [x] **T-618** `FE_CRYPTO_KEY` en el compose, en `.env.example` y en el README
       de despliegue. RNF-5.
@@ -2476,7 +2498,7 @@ modelo de F5/F6 no tiene, y ninguna depende de la ruta de T-701.
       Regenerarlo garantiza que lo que se imprime es lo que se emitió. El molde
       ya existe: las tres plantillas de documento de F4.
 
-- [ ] **T-722** **La ubicación del emisor con los códigos de Hacienda** en
+- [x] **T-722** **La ubicación del emisor con los códigos de Hacienda** en
       Configuración y en el alta de compañía, y el **correo obligatorio**.
       RF-73, RN-83.
 
@@ -2488,6 +2510,41 @@ modelo de F5/F6 no tiene, y ninguna depende de la ruta de T-701.
       códigos de la nota 14 del anexo (`Codificacionubicacion_V4.4`), y **no
       reemplazan a la dirección de texto libre**: esa se sigue imprimiendo en el
       tiquete. Son dos datos distintos para dos lectores distintos.
+
+      **Hecha el 2026-09-27.** Son cinco campos y no cuatro: en la 4.4 el
+      **barrio dejó de ser código** —es texto de 5 a 50— y las **otras señas**,
+      obligatorias, faltaban en la lista.
+
+      * **El catálogo es el oficial**: `Codificacionubicacion_V4.4.xlsx`, que el
+        anexo nombra y no trae adentro; Hacienda lo publica aparte en la página
+        de anexos de ATV (`…/v4.4/Codificacionubicacion_V4.4.rar`, del
+        2024-11-20). Quedó en `docs/hacienda/costa-rica/normativa/`, y
+        `docs/hacienda/costa-rica/generar_ubicaciones.py` genera de él
+        `app/domain/locations_data.py` y `$lib/domain/locationsData.ts`: 7
+        provincias, 84 cantones, 492 distritos, con Río Cuarto, Monteverde y
+        Puerto Jiménez.
+      * **La regla**, en `domain/locations.py` y `$lib/domain/location.ts`: un
+        código solo vale dentro de su padre —el cantón «02» existe en las siete
+        provincias—, otras señas de 5 a 250, barrio opcional. Vacía se guarda;
+        a medias no (`invalid_location`, con `field` y `reason`).
+      * **La factura electrónica no se enciende sin emisor**: cédula de
+        `companies`, correo y ubicación (`domain/fe_issuer.py`,
+        `einvoicing_needs_issuer` con la lista entera de lo que falta). Se
+        revisa al guardar Configuración y **no al vender**: rechazar la venta le
+        cobra el problema al cliente del mostrador.
+      * **La pantalla**: `IssuerLocationFields.svelte`, tres desplegables
+        encadenados —elegir un padre vacía a los hijos— y dos textos, en la
+        pestaña Negocio y en el alta del panel (opcional ahí).
+      * **Lo que se imprime**: en un comprobante, «Provincia: San José / Cantón:
+        San José / Distrito: Zapote» y debajo el barrio y las otras señas, como
+        la factura de referencia. Sin ubicación completa, la dirección de texto
+        libre, que es la del tiquete de siempre.
+
+      **Lo que la verificación todavía no puede decir**: que el `Emisor` valide
+      contra el XSD con los datos de una compañía real. El armador (`fe_xml.py`)
+      ya valida con una `Ubicacion` construida a mano; lo que falta es el
+      adaptador que la arma desde la configuración, y ese llega con la emisión
+      (T-712 en adelante).
 
 - [~] **T-720** **FEE, FEC y REP.** RF-71, RN-81. Cada uno con su tipo en el
       consecutivo —09, 08 y 10—, su esquema y sus diferencias: la FEE lleva
@@ -2503,11 +2560,273 @@ modelo de F5/F6 no tiene, y ninguna depende de la ruta de T-701.
       **Falta la otra mitad**: el consecutivo y la clave de cada tipo (T-704 y
       T-705), y desde dónde se emiten. Una FEC nace de una compra a un no
       contribuyente y un REP de cobrar una factura a crédito: son flujos, no
-      botones.
+      botones. **Desde el 2026-09-26 cada flujo tiene su tarea: T-725 a T-729.**
+
+- [x] **T-723** **El tipo de comprobante se elige al cobrar y queda en la
+      venta.** RF-74, RN-85. `sales.document_type` (migración 014), la regla en
+      `domain/fe_document_type.py` y en `$lib/domain/documentType.ts`, el
+      selector en el cobro, el tipo en el historial, y dos códigos nuevos:
+      `invalid_sale_document_type` e `invoice_needs_receiver`.
+
+      **Verificación:** sin cliente sale tiquete y la factura no se puede elegir;
+      con cliente sale factura y se puede bajar a tiquete; una factura sin cliente
+      mandada a mano la rechaza el servidor; con la facturación apagada la venta
+      no lleva tipo aunque se lo pidan. Y una venta con el cliente **de otra
+      compañía** responde `client_not_found` —hoy pasa—.
+
+      Salió de mirar la pantalla: con la facturación activa, **toda** venta se
+      imprimía «Factura electrónica», incluida la del cliente de contado del
+      supermercado, que por definición no puede ser una factura.
+
+      **Hecha el 2026-09-26.** Las cinco condiciones de la verificación están
+      probadas contra MySQL en `tests/test_tipo_de_comprobante.py` y en el
+      navegador en `tipo-de-comprobante.spec.ts`. El tipo se ve junto al botón de
+      cobrar —antes de abrir nada— y en el cobro, y la factura sin cliente se ve
+      apagada, no escondida.
+
+      **Destapó un defecto que no estaba anotado: el cliente elegido al cobrar
+      nunca llegaba a la venta.** Las opciones del `select` llevaban el id como
+      número y el carrito lo guarda como texto; Svelte 5 elige la opción con
+      `===`, no encontraba ninguna y dejaba el `select` vacío, así que el
+      formulario no mandaba `client_id`. La pestaña decía «Ana» —ahí se compara
+      con `String(…)`— y la venta se guardaba de contado. Con el tiquete no se
+      notaba nunca; con la factura, que exige cliente, fue lo primero que falló.
+
+      **«Hay receptor» es «hay un cliente de esta compañía»**, con un puerto
+      nuevo, `ClientRepository.exists`. El **tipo** de identificación no se
+      exige al vender: es la mitad pendiente de T-617, y rechazar la venta por un
+      dato que la ficha todavía no pide sería cobrarle a la caja lo que falta en
+      clientes.
+
+- [x] **T-724** **Las tres plantillas imprimen el bloque fiscal**, desde un solo
+      componente. RF-75, RN-86, RN-17. Y el PDF del backend se quita (T-922).
+
+      **Verificación:** una prueba lee las tres plantillas y falla si alguna no
+      incluye `FiscalBlock`; una venta con tipo y sin clave dice «pendiente de
+      emisión» en las tres; el título sigue a la venta y no a la configuración de
+      hoy. El estado con clave —tipo, consecutivo y clave juntos, más la leyenda
+      de pruebas o de la resolución— se prueba en `fiscalBlock` y se verá de
+      verdad cuando T-705 mande `einvoice`.
+
+      **Queda por confirmar** el texto exacto de la leyenda de la resolución. El
+      README §10 la cita como «Autorizada mediante resolución MH-DGT-RES-0027-2024
+      del [fecha]» sin la fecha; se imprime sin ella y hay que cotejarla con la
+      resolución antes de T-713.
+
+      **Hecha el 2026-09-26**, con lo que se puede ver hoy: el estado pendiente,
+      en el navegador y en las tres plantillas una tras otra
+      (`tipo-de-comprobante.spec.ts`). La prueba que lee las plantillas **no
+      tiene la lista escrita**: la saca de los `import` de `DocumentSheet.svelte`,
+      así que una cuarta plantilla entra sola y falla si no trae el bloque.
+
+      **Lo que queda para T-705**: mandar `einvoice` en el detalle de la venta
+      —`clave`, `consecutive`, `environment`, `economic_activity`, con esa forma,
+      que es la que ya leen las plantillas— y agregarle la **condición de venta**,
+      que el README §10 pide impresa y que hoy es siempre «contado» por
+      construcción, porque el POS no vende a crédito. Ninguna de las dos tiene
+      sentido antes de que exista el comprobante.
+
+      De paso: la factura moderna imprimía el medio de pago **sin traducir**
+      —`sale.payment_method` a secas—, mientras las otras dos usaban
+      `paymentName`. Una factura en inglés decía «Efectivo».
+
+      **La leyenda, cotejada contra un comprobante real** (2026-09-26): la
+      factura de referencia de `docs/invoice/` imprime «Autorizada mediante
+      resolución MH-DGT-RES-0027-2024», sin fecha, que es lo que ya se imprime.
+      Sigue valiendo cotejarla con la resolución antes de T-713, pero ya no es
+      una suposición.
+
+- [x] **T-731** **Las tres plantillas llevan lo que lleva un comprobante
+      real.** RF-75, RN-86. Planteado por el usuario el 2026-09-26 con una
+      factura de referencia (`docs/invoice/50624…346.pdf`): a las plantillas les
+      faltaban la condición de venta, la moneda, el CABYS y la unidad por
+      línea, el impuesto y el total de cada línea, la identificación con su
+      tipo, el resumen de Hacienda, el monto en letras, la fecha con hora y el
+      portal donde se verifica. Migración 016.
+
+      **Verificación:** una factura electrónica con cliente imprime, en las
+      tres plantillas, «Contado», «CRC (TC 1.00)», el CABYS de la línea, la
+      cédula del receptor con su tipo, el resumen con la venta neta, «Total
+      comprobante» y el monto en letras; cambiar el CABYS del producto después
+      no cambia la venta; la nota de crédito repite el CABYS de la venta.
+
+      **Hecha el 2026-09-26.** Contra MySQL en `tests/test_documento_impreso.py`
+      —incluido el producto reclasificado después de vender—, y en el navegador
+      en `tipo-de-comprobante.spec.ts`, plantilla por plantilla. La prueba que
+      lee las plantillas exige ahora cada pieza en las tres y el bloque fiscal
+      también **al pie**.
+
+      **El tiquete no tiene columnas**: en 58 mm no caben nueve. Cada producto
+      va en su renglón con el total, y debajo, en chico, la cantidad con su
+      unidad y su precio, el impuesto y el CABYS. Es la misma información.
+
+      **Lo que no se imprime y por qué:**
+
+      * **El código QR.** Codifica la clave, y no hay clave hasta T-705. Queda
+        anotado ahí. Generarlo pide una dependencia nueva (un codificador de
+        QR) que se consulta antes de agregarla. *Hecho el 2026-09-27 (T-705): la
+        clave sola, nivel Q, como el de la factura aceptada.*
+      * **La provincia, el cantón y el distrito.** Son los códigos de T-722, que
+        la compañía y el cliente todavía no tienen. Se imprime la dirección de
+        texto libre. *Los del emisor se imprimen desde el 2026-09-27 (T-722).
+        Los del receptor no: su `Ubicacion` es opcional en el XML y la ficha
+        del cliente no los pide.*
+      * **El tipo de cambio de otra moneda que no sea el colón**: el del BCCR no
+        existe en el sistema, e inventarlo sería peor que callarlo.
+      * **«Página 1 de 1».** Lo pone el navegador al imprimir, si se le pide.
+
+### Desde dónde se emite cada uno (RN-87)
+
+Son la otra mitad de T-720. El cobro ofrece lo que sale de una venta; los demás
+nacen de su propio flujo. Planteado por el usuario el 2026-09-26, al ver que el
+cobro ofrecía solo dos de siete: la respuesta fue que cada uno va donde nace, y
+no los siete en el desplegable.
+
+**Todos emiten de verdad recién con T-704 y T-705** —el contador por tipo y la
+clave—. Lo que cada tarea puede dejar hecho antes es lo que no depende de eso:
+capturar los datos que faltan y decidir y guardar el tipo en su flujo, como
+T-723 hizo con la venta.
+
+- [ ] **T-727** **FEE al cobrar a un cliente del extranjero.** RF-78, RN-87.
+      `COUNTER_TYPES` pasa a tres; el cliente con identificación `05`
+      —extranjero no domiciliado— sugiere FEE y no admite FE. Hace falta la
+      **partida arancelaria** en la ficha del producto, la **dirección
+      extranjera** en la del cliente, y ampliar `IDENTIFICATION_TYPES` al `05`.
+
+      **Verificación:** cliente `05` → el cobro sugiere FEE y la FE sale
+      apagada; un producto de la venta sin partida arancelaria **no deja
+      cobrar la FEE** y dice cuál es; un producto con tarifa `01` tampoco,
+      porque la FEE no la admite (T-720); y el tiquete a ese cliente sigue
+      pudiéndose.
+
+- [x] **T-730** **Los comprobantes que emite cada compañía.** RF-81, RN-88.
+      `eInvoicing.documentTypes` con los siete en Configuración, saneado al leer
+      en los dos lados, y la regla de la venta con lo encendido. Código nuevo:
+      `document_type_not_enabled`.
+
+      **Verificación:** una compañía nueva nace con TE, FE, NC y ND; apagar el TE
+      obliga a elegir cliente para cobrar; apagar los dos de venta no se puede
+      —la pantalla no lo deja y una fila escrita a mano vuelve a la de fábrica—;
+      la NC no se apaga; la FEE, la FEC y el REP se ven con su motivo y no se
+      mueven; pedir por el API un tipo apagado responde
+      `document_type_not_enabled`.
+
+      **Hecha el 2026-09-26.** Las seis condiciones están probadas: el saneo en
+      los dos dominios, la venta con lo encendido contra MySQL
+      (`test_tipo_de_comprobante.py`, incluida una fila con solo notas que vuelve
+      a la de fábrica), y la pantalla en el navegador —apagar el tiquete, ver que
+      la factura queda bloqueada por ser la última de venta, y que guardar **no
+      apaga la NC ni la ND**, que estaban bloqueadas—.
+
+      Ese último punto fue el diseño y no un detalle: una casilla deshabilitada
+      no se envía con el formulario, así que sin más la primera vez que alguien
+      guardara la pantalla se perdían la NC y la ND. Las bloqueadas y encendidas
+      viajan además en un campo oculto.
+
+- [x] **T-725** **NC al devolver o anular.** RF-76, RN-87, RN-89. Devolver
+      mercadería de una venta con comprobante emite una NC `03` con motivo `06`;
+      **anular** desde la factura abierta es una devolución entera con motivo
+      `01`, y solo si la venta no tiene devoluciones. La nota se imprime con las
+      tres plantillas, con la referencia al original. Migración 015. Códigos
+      nuevos: `annul_after_return` y `annul_must_be_full`.
+
+      **Verificación:** devolver parte de una venta con tiquete guarda una NC
+      `06` que la referencia; anularla entera, una `01`; anular una venta ya
+      devuelta en parte se rechaza; devolver una venta de antes de activar la
+      facturación no guarda nota; una venta con comprobante sigue emitiendo NC
+      aunque hoy la facturación esté apagada; y la nota impresa dice «Nota de
+      crédito electrónica», el original y el motivo, en las tres plantillas.
+      La referencia a la **clave** del original se comprueba en T-705.
+
+      **Hecha el 2026-09-26.** Las seis, contra MySQL en
+      `tests/test_nota_de_credito.py` y en el navegador en
+      `tipo-de-comprobante.spec.ts`. La nota se imprime en `/devoluciones/{id}`
+      con `creditNoteDocument`, que convierte la devolución en la forma que ya
+      imprimen las plantillas; el bloque fiscal agrega la referencia y las
+      plantillas dejan de imprimir el efectivo recibido cuando es cero, que es el
+      caso de una nota.
+
+      **El orden de los rechazos importó**: anular una venta a medio devolver
+      primero saltaba como «devolución excesiva», que también es cierto pero no
+      es el motivo. El chequeo de la anulación va antes que el de cantidades.
+
+      **Hasta T-704 el número de la nota es el de la devolución**, igual que el
+      de la venta es su `sale_number`: el consecutivo por tipo lo traerá el
+      contador.
+
+- [x] **T-726** **ND y NC por monto desde la factura abierta.** RF-77, RN-87,
+      RN-89. Las notas que no mueven mercadería, con el motivo `02` (corrige
+      monto). Entidad nueva, `sale_notes` (migración 017). El diseño está en el
+      plan, §7.2, «La ND y la NC por monto».
+
+      **La plata, decidida por el usuario el 2026-09-26**: la ND se cobra al
+      emitirla con su medio de pago y la NC se reembolsa de la gaveta; las dos
+      van al arqueo, a las ventas netas y al asiento.
+
+      **Verificación:** la nota queda con su motivo, su monto y la referencia a
+      la venta; sobre una venta sin comprobante el botón no aparece y el
+      servidor la rechaza; una NC que pasa de lo que queda de la línea se
+      rechaza; la línea con NC ya no se devuelve y la venta con notas no se
+      anula; la ND en efectivo sube el esperado del turno y la NC lo baja; las
+      ventas netas las cuentan; el asiento dice «Nota» y no lleva costo; y la
+      nota impresa dice «Nota de débito electrónica», el original y el motivo.
+
+      **Hecha el 2026-09-26.** Las reglas de plata sin base
+      (`test_fe_notes.py`, `test_register_note.py`: el tope de la NC con
+      devoluciones, ND y NC anteriores; la devolución y la anulación que se
+      niegan; el arqueo con la ND en efectivo, con tarjeta y la NC), contra MySQL
+      en `test_notas_por_monto.py` —incluidos el cajero que recibe `admin_only`
+      y la otra compañía que no ve la nota ni la emite sobre la venta ajena—, y
+      en el navegador en `tipo-de-comprobante.spec.ts`: la ND se emite desde la
+      factura, sale impresa con la referencia y aparece en el arqueo; la NC por
+      más de lo cobrado dice cuánto queda. Doce códigos nuevos.
+
+      **El monto se escribe con impuesto y la base sale de dividir**, así que el
+      total puede quedar un céntimo arriba o abajo de lo escrito (₡100 al 13 %
+      da 88,50 + 11,51 = 100,01). Vale el que cuadra con su base y su tarifa,
+      que es lo que Hacienda comprueba.
+
+      **Lo que no hace, anotado:** la nota no exige caja abierta, igual que la
+      devolución hoy —la plata cae en el turno de quien la emite si lo tiene—;
+      y no emite todavía, como todas, hasta T-704 y T-705: su número es su id.
+
+      **Destapó que `test_esquema.py` comparaba solo hasta la migración 011.**
+      Las cinco siguientes no se contrastaban contra el modelo; ahora entran las
+      seis, y las doce pruebas siguen en verde.
+
+- [ ] **T-732** **NC por exoneración posterior** (motivo `12`). RF-77, RN-78.
+      El cliente presenta la exoneración después de comprar y se le devuelve el
+      impuesto perdonado. Necesita la exoneración en la línea de la nota —como
+      en la factura (T-717)— y que la nota devuelva **solo impuesto**, sin base.
+      Salió de acotar T-726: no cabe en «un monto por línea».
+
+      **Verificación:** una venta al 13 % a un cliente que después presenta una
+      exoneración de 9 puntos emite una NC `12` por el 9 % de la base, con la
+      exoneración en la línea, y la gaveta devuelve eso y nada más.
+
+- [ ] **T-728** **FEC al comprarle a un no contribuyente.** RF-79, RN-87. El
+      proveedor gana el tipo `06` —no contribuyente— en `IDENTIFICATION_TYPES`,
+      y registrar una compra a uno de ellos le pone tipo `08` a la entrada, con
+      el negocio como comprador.
+
+      **Verificación:** una compra a un proveedor `06` guarda la FEC en la serie
+      `08`; a un proveedor inscrito, no; y una entrada que no es compra
+      (RN-52: sin proveedor) nunca.
+
+- [ ] **T-729** **REP al cobrar una venta a crédito.** RF-80, RN-81, RN-87.
+      **Bloqueada**: el POS no vende a crédito —`check_payment` exige el total
+      en el mostrador— y vender a crédito no está en el spec. Es una fase
+      propia: condición de venta, saldo por cliente, abonos, y qué pasa con la
+      caja y con el libro. Hay que decidirla antes de empezar esta tarea, no
+      adentro.
+
+      **Verificación, cuando se pueda:** cobrar una venta con condición `08` o
+      `10` emite un REP en la serie `10` que referencia la factura; una venta de
+      contado, nunca.
 
 ### El recorrido, que no depende de la ruta
 
-- [ ] **T-704** Contador de consecutivo con las **cinco** dimensiones
+- [x] **T-704** Contador de consecutivo con las **cinco** dimensiones
       `(compañía, sucursal, terminal, tipo, ambiente)` y bloqueo de fila. RN-34.
 
       Con menos, la serie nace con huecos: un tiquete, una factura y otro
@@ -2518,13 +2837,69 @@ modelo de F5/F6 no tiene, y ninguna depende de la ruta de T-701.
       **Verificación:** una venta que falla por stock no consume número; dos
       cajas de la misma terminal no repiten.
 
-- [ ] **T-705** La clave de 50 dígitos, con la **situación** decidida al vender
+      **Hecha el 2026-09-27**, sobre `fe_sequences`, que la 011 dejó creada con
+      las cinco dimensiones y nadie usaba. `last_sequence` crea la fila con
+      `INSERT … ON DUPLICATE KEY UPDATE` —no `INSERT IGNORE`, que convierte en
+      advertencia también una foránea rota— y la lee con `FOR UPDATE`: la fila
+      queda bloqueada hasta el `commit` de la venta. La aritmética es dominio
+      (`fe_key.next_sequence`: de uno en uno, y al tope de diez dígitos vuelve a
+      1, como permite la nota 3).
+
+      **Las dos verificaciones**: la de stock contra MySQL
+      (`test_numeracion.py`) y sin base (`test_number_document.py`, que además
+      comprueba que la serie no se bloquea si la venta no llega a numerarse). La
+      de dos cajas es el bloqueo de fila; **no hay prueba de concurrencia real**
+      —dos peticiones a la vez contra la pila—, y el `UNIQUE (company_id,
+      environment, consecutive)` de `fe_documents` es la red si el bloqueo
+      fallara.
+
+- [~] **T-705** La clave de 50 dígitos, con la **situación** decidida al vender
       (RN-43). La clave se imprime y se entrega, así que no se puede diferir.
+
+      **Y el QR** que la codifica, en las tres plantillas (T-731): la factura de
+      referencia lo lleva al pie. Pide un codificador de QR, que es una
+      dependencia nueva y se consulta antes.
 
       La contingencia es un **modo del negocio**, no una corazonada por venta: se
       entra por el estado de las transmisiones recientes y se sale cuando
       Hacienda responde. Emitir en contingencia con Hacienda arriba es causa de
       rechazo.
+
+      **La clave, hecha el 2026-09-27** (`domain/fe_key.py`,
+      `application/use_cases/number_document.py`, migración 018). Reproduce
+      dígito por dígito la de la factura de referencia del usuario. La numeran
+      los tres flujos que emiten hoy —la venta, la devolución con NC y la nota
+      por monto—, en su transacción y con la hora de su documento, y queda en
+      `fe_documents` colgando de su origen. El detalle de los tres publica
+      `einvoice` (el contrato de T-724) y las notas, `sale_clave`: referencian
+      el original **por su clave**. Las plantillas la imprimen en tramos, como
+      la factura de referencia.
+
+      * **La cédula es la de `companies`** (RN-45), completada a doce con ceros
+        (nota 4.1). Sin ella, `issuer_identification_required` antes de abrir
+        la transacción.
+      * **El código de seguridad** son ocho dígitos de `secrets`, detrás de un
+        puerto para que las pruebas los fijen.
+      * **La fecha** es la del sello de la venta, que es hora de Costa Rica
+        porque el contenedor corre con `TZ=America/Costa_Rica`: tiene que
+        coincidir con la `FechaEmision` del XML.
+
+      **El QR, hecho el 2026-09-27**, con la dependencia aprobada por el usuario
+      (`qrcode-generator` 2.0.4, MIT, sin dependencias propias). Lo que codifica
+      salió de decodificar el de la factura aceptada: **la clave sola**, los 50
+      dígitos, nivel de corrección Q — ni una dirección ni otros datos. Va en modo
+      numérico (versión 3, 29 × 29) con cuatro módulos de margen, negro sobre
+      blanco, al pie de las tres plantillas en cuanto hay clave: a la derecha en
+      la hoja, centrado en el tiquete. `$lib/ui/qr.ts` es el único que importa
+      el codificador. Comprobado leyéndolo: las capturas de las tres plantillas
+      decodifican con zxing a la clave de su cabecera.
+
+      **Falta, y por eso queda a medias:**
+
+      * **La situación es siempre 1, normal.** La contingencia se decide por el
+        estado de las transmisiones recientes (RN-43), y todavía no se transmite
+        nada: marcar un 2 sin haber observado una falla es causa de rechazo. Se
+        cierra con T-708 y T-709.
 
 - [ ] **T-706** `sale_number` deja de venir del navegador. Hoy lo fabrica
       `cart.ts` con `yyyyMMddHHmmss` y el **reloj del cliente**: dos cajas
@@ -4029,6 +4404,11 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
       **Verificación:** `npm test`; `npm run check` en 0/0.
 
+      Avance del 2026-10-02: los 28 códigos nuevos ya están en `api_errors.py`,
+      en `API_CODES` y en los tres `errors.json` —el campo y el motivo se
+      traducen con variantes, no con una frase por combinación—. Falta el
+      simulado: los endpoints, el seed y `payroll.json`.
+
       **Hecho.** El simulado tiene su propio libro (`mock/ledger.ts`).
       Al escribirlo aparecieron dos defectos suyos: ponía en la venta la
       hora del **cliente** —que es local, mientras el turno se sella en
@@ -4055,127 +4435,347 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
 
 ## F12 · Planilla
 
-> **Qué deja.** Nómina costarricense: empleados y contratos, tasas con
-> vigencia y país, corridas que **congelan** lo que usaron, horas extra,
-> incapacidades, vacaciones, aguinaldo, liquidación, boleta, archivo para la
-> CCSS, resumen de renta retenida y el asiento de la corrida (RN-66 a RN-75,
-> RF-55 a RF-64). Plan §14.
+> **Qué deja.** Nómina costarricense: empleados con los datos que piden la
+> CCSS y el INS, puestos con sus dos códigos, jornadas mensuales, quincenales,
+> bisemanales y semanales con sus cortes, **acciones de personal** que la
+> corrida parte por el calendario, tasas con vigencia y país, corridas que
+> **congelan** lo que usaron, renta del mes que cuadra, embargos y deducciones
+> recurrentes con saldo, vacaciones, aguinaldo, liquidación, boleta, los
+> archivos para la CCSS y el INS, el resumen de renta retenida, la importación
+> desde Excel de quien viene de otro sistema y el asiento de la corrida
+> (RN-66 a RN-75, RN-90 a RN-97, RF-55 a RF-64, RF-82 a RF-86). Plan §14.
 >
 > **De qué depende.** De F11 **solo para el asiento** (T-1206 con el `Ledger`);
 > todo lo demás no. De **T-922**, en Transversal: la boleta es la cuarta
 > plantilla de documento y hoy el PDF del backend no se cuenta.
 >
-> **Lo que no se supone.** Las cifras de la CCSS, los tramos de renta y el
-> formato del archivo del SICERE **se leen de la fuente el día que se
-> siembran** (plan §14.8), no de este documento ni del recuerdo de nadie.
+> **Lo que no se supone.** Las cifras de la CCSS, los tramos de renta, el
+> salario mínimo y los formatos del SICERE y de RT-Virtual **se leen de la
+> fuente el día que se usan** (plan §14.8), no de este documento, ni del ERP de
+> origen, ni del recuerdo de nadie.
+>
+> **Ampliada el 2026-09-27** con lo que el ERP de origen tiene y el primer
+> diseño no: acciones de personal en lugar de novedades por corrida, jornadas
+> con cortes, puestos, el archivo del INS, embargos, renta liquidada al cierre
+> del mes y la importación. Lo que se dejó para después está en spec §4.
 
 **Costes medidos antes de empezar** —plan §14.7—:
 
-- `test_esquema.py`: once tablas (`011`).
+- `test_esquema.py`: quince tablas (`019`).
 - `test_tenancy.py`: cuatro tablas globales **sin** `TenantMixin`, declaradas
   como excepción explícita como `cabys_cache`, o el guardián tumba `pytest`.
-- `test_aislamiento.py`: unas quince rutas y una bajo `/support`.
-  `test_error_codes.py`: nueve códigos. `company_dump.py`: siete viajan,
+- `test_aislamiento.py`: unas treinta rutas y una bajo `/support`.
+  `test_error_codes.py`: diecisiete códigos. `company_dump.py`: once viajan,
   cuatro no.
-- `domain/payroll.py` supera a `ledger.py`; las pruebas usan un juego de tasas
-  **inventado**, para probar la aritmética y no una cifra que vence.
+- El dominio de planilla supera a `ledger.py`; las pruebas usan un juego de
+  tasas **inventado**, para probar la aritmética y no una cifra que vence.
 - La boleta como cuarta plantilla, en los tres idiomas del documento.
 
 ### Base de datos
 
-- [ ] **T-1201** Migración `011-planilla.sql` (plan §14.2) y sus modelos: las
-      cuatro tablas globales por país y las siete de la compañía;
+- [x] **T-1201** Migración `019-planilla.sql` (plan §14.2) y sus modelos: las
+      cuatro tablas globales por país y las once de la compañía;
       `test_tenancy.py` con las excepciones; `company_dump.py` con la
-      clasificación. RN-67, RN-72.
+      clasificación. RN-67, RN-72, RN-90, RN-94, RN-95, RN-97.
 
       **Verificación:** `test_esquema.py`; una consulta a `payroll_rates` sin
       compañía en la sesión funciona y una a `employees` falla cerrado;
-      exportar y restaurar una compañía con corridas cuenta lo mismo.
+      exportar y restaurar una compañía con corridas y acciones cuenta lo
+      mismo; la migración corre contra el MySQL de pruebas.
+
+      Avance del 2026-09-27: la migración y `model_payroll.py` dicen lo mismo
+      (`test_esquema.py`), la 019 corrió dos veces contra el MySQL de pruebas
+      sin error, `test_tenancy.py` lee `payroll_rates` sin compañía y falla
+      cerrado en `employees`, y `company_dump.py` clasifica las quince. **Falta
+      la ida y vuelta con datos**: no hay todavía ruta que cree un empleado ni
+      una corrida, así que se cierra con T-1205 y T-1206.
+
+      **Cerrada el 2026-10-02.** `test_respaldo_compania.py` exporta, borra y
+      restaura una compañía con jornada, puesto, póliza, empleado, contrato,
+      una acción y una corrida pagada con sus rubros, y el retrato por la API
+      —las once tablas— es idéntico antes y después. La compañía de esa prueba
+      pasó a ser **propia de cada corrida**: la «3» fija nacía con el plan de
+      su primera corrida, sin planilla, y no había forma de darle el módulo
+      después.
 
 ### Dominio
 
-- [ ] **T-1202** `domain/payroll.py`, primera mitad: `rates_at`, `gross_pay`
-      (horas extra, feriados), `employee_deductions`, `employer_charges`,
-      `projected_monthly`, `income_tax`. RN-66, RN-67, RN-73.
+- [x] **T-1202** Sueldos y calendario: `rates_at`, `period_for` (cortes de las
+      cuatro periodicidades, `InvalidCutDate`), `monthly_equivalent`,
+      `day_value`, `hour_value`, `employee_deductions`, `employer_charges`,
+      `income_tax` e `income_tax_withholding` (la última del mes liquida).
+      RN-66, RN-67, RN-73, RN-94.
 
       **Verificación:** la tabla de casos de plan §14.3 con tasas inventadas;
       `rates_at` a una fecha sin `ivm` lanza `RatesMissing`; la quincena de
-      600 000 es 300 000; cobertura 100 %.
+      600 000 es 300 000; una quincenal que corta el 14 da 15–29 y, en
+      febrero, 15–28; dos quincenas con extras solo en la segunda retienen en
+      el mes exactamente el impuesto del mes; cobertura 100 %.
 
-- [ ] **T-1203** Segunda mitad: `aguinaldo`, `vacation_accrual`, `notice_days`,
-      `severance_days`, `settlement`, `sick_leave_split`. RN-69, RN-70, RN-71.
+      Hecha el 2026-09-27: `payroll_calendar.py` y `payroll.py`. Lo que vale un
+      día salió del decreto de salarios mínimos (art. 7), no del ERP de
+      origen, que lo tiene al revés. `projected_monthly` es la misma cuenta que
+      `monthly_equivalent` y no existe aparte. El bruto no es una función: es
+      la suma de los rubros, y la arma la corrida (T-1206).
+
+- [x] **T-1216** Acciones: `portions`, `action_items` (los dieciséis
+      tipos), `remaining_balance`, `garnishment_amount` y `apply_deductions`.
+      RN-90, RN-92, RN-93, RN-94.
+
+      **Verificación:** una incapacidad del 10 al 20 en quincenas → 6 días en
+      la primera y 5 en la segunda, con sus fechas; una ausencia de 20 días en
+      una quincena no rebaja más que la quincena; el subsidio de incapacidad
+      no lleva cargas ni renta; un embargo entre una y tres veces el mínimo
+      toma un octavo del exceso y nunca más que el saldo; con deducciones que
+      no caben, el neto queda en cero y la última queda sin aplicar;
+      cobertura 100 %.
+
+      Hecha el 2026-09-27: `payroll_actions.py`. El tramo se llama `portions` y
+      no `split_action` porque devuelve uno por cada periodo que la acción
+      cruza, también los ya pagados (RN-91). La incapacidad que prolonga otra
+      no le vuelve a cobrar al patrono sus primeros días. Qué rubros cotizan y
+      cuáles pagan renta (`CONTRIBUTORY`, `TAXABLE`) se contrasta con el
+      reglamento de la CCSS en T-1204, igual que las cifras.
+
+- [x] **T-1203** Aguinaldo, vacaciones y liquidación: `aguinaldo` (con los
+      saldos de apertura), `vacation_accrual`, `proportional_vacation`,
+      `notice_days`, `severance_days`, `average_salary`, `settlement`. RN-69,
+      RN-70, RN-71, RN-97.
 
       **Verificación:** doce meses de 500 000 → aguinaldo 500 000 sin rubros
-      de CCSS ni renta; 12 años de antigüedad → los días de 8; renuncia → sin
-      preaviso ni cesantía y con proporcionales; 350 días trabajados → 14 de
-      vacaciones.
+      de CCSS ni renta; cinco meses de apertura y siete pagados suman igual
+      que doce pagados; 12 años de antigüedad → los días de 8; renuncia → sin
+      preaviso ni cesantía y con proporcionales; 350 días trabajados → 12 días
+      hábiles de vacaciones en semana de seis, 10 en semana de cinco.
+
+      Hecha el 2026-09-27: `payroll_benefits.py`. Las vacaciones son **días
+      hábiles** —dos semanas son doce o diez, art. 153— y no los catorce que
+      decía el primer plan; por eso la jornada ganó `workdays_per_week`. Al
+      salir antes de las cincuenta semanas, al menos un día por mes. La
+      antigüedad se cuenta por meses completos: con días entre 365, dos años
+      que cruzan un bisiesto cobraban un pedazo de día de más. El reparto de
+      la incapacidad (`sick_leave_split`) quedó dentro de `action_items`.
 
 ### Backend
 
-- [ ] **T-1204** Siembra de tasas por país: `seed_payroll_rates.py` con fuente,
+- [x] **T-1204** Siembra de tasas por país: `seed_payroll_rates.py` con fuente,
       `valid_from` y `verified_at`, **leyendo las cifras de la fuente el día
-      de correrlo**; `GET /payroll/rates?on=`; `PUT /support/payroll/rates`,
-      que inserta una fila con vigencia y nunca edita la vigente. RF-56,
-      RN-67.
+      de correrlo** —cargas, tramos, créditos, cesantía, incapacidades,
+      maternidad y salario mínimo inembargable—; `GET /payroll/rates?on=`;
+      `PUT /support/payroll/rates`, que inserta una fila con vigencia y nunca
+      edita la vigente. RF-56, RN-67, RN-93.
 
       **Verificación:** la prueba de la siembra suma los rubros obreros y
       patronales y los compara con los totales publicados ese día, que guarda
       con su fecha; intentar cambiar una fila vigente → rechazado; con
       `verified_at` de más de seis meses, `GET` lo marca y la pantalla avisa.
 
-- [ ] **T-1205** Empleados y contratos: rutas, enlace opcional a `users`, baja
-      con fecha y causa (`employee_terminated`), y un aumento que cierra el
-      contrato y abre otro. RF-55, RN-72.
+      Hecha el 2026-09-27. Los datos viven en
+      `app/infrastructure/payroll_rates_cr.py`, cada fila con su norma, y la API
+      los siembra al arrancar —solo lo que falta—; el guion queda para verlo a
+      mano. Suman 10,83 % y 26,83 %, lo publicado para 2026
+      (`test_siembra_planilla.py`). Lo que salió de leer las fuentes y cambió el
+      dominio:
+
+      - Hay **diez** cargas patronales y no ocho: el Banco Popular cobra dos
+        veces y la LPT suma un 1 % al INS.
+      - El **INA** no lo paga el patrono no agrícola con menos de cinco
+        trabajadores: `employer_charges(…, exempt=…)`; la casilla va en
+        T-1217.
+      - Lo que se paga durante una **incapacidad es subsidio**: sin cargas ni
+        renta, también los tres días del patrono (MTSS, DAJ-AE-201-12). La
+        **maternidad** cotiza sobre el salario entero (art. 95).
+      - El INS paga su incapacidad desde el día del riesgo: el patrono, nada.
+      - La **cesantía** cuenta como año la fracción de más de seis meses.
+      - El **embargo** es un tope por salario que se reparten todos, y la
+        pensión alimentaria llega a la mitad (art. 172).
+      - El simulado lee `payrollRates.ts`, generado de los mismos datos por
+        `generar_tasas_simulado.py`; la prueba falla si quedó viejo.
+
+      **Pendiente de decidir con el usuario:** la base mínima contributiva
+      (SEM ₡346 789, IVM ₡324 590) está sembrada pero no se aplica. Con un
+      salario menor —tiempo parcial— la CCSS cobra sobre la base mínima y la
+      boleta, sobre el salario real, así que no coinciden.
+
+- [x] **T-1221** Tramos y créditos de renta del año siguiente por el panel.
+      Hoy entran con la siembra, y el decreto sale cada diciembre: soporte
+      tendría que poder cargar el juego nuevo con su `valid_from` sin esperar
+      un despliegue. RF-56, RN-67.
+
+      **Verificación:** un juego de tramos con `valid_from` del 1 de enero
+      siguiente; `GET /payroll/rates?on=` antes y después de esa fecha devuelve
+      cada uno; un juego con huecos o que no empieza en cero se rechaza.
+
+      **Hecha el 2026-10-02.** `PUT /support/payroll/brackets` recibe el juego
+      **entero** —tramos, crédito por hijo y por cónyuge— con una sola
+      vigencia: el decreto lo publica así y `GET /payroll/rates?on=` devuelve
+      el juego más reciente que rige, así que medio juego nuevo taparía la
+      mitad del viejo. `check_tax_brackets` exige que empiece en cero, sin
+      huecos ni solapes y con el último tramo sin techo (`invalid_tax_brackets`,
+      con el tramo señalado); un juego no se edita (`payroll_rate_not_newer`
+      con el concepto `income_tax_brackets`). Queda en bitácora como
+      `tramos_renta`. La prueba calcula el 1 de enero siguiente al juego más
+      nuevo que haya, porque la base sobrevive entre corridas.
+
+- [x] **T-1217** Configuración de planilla: datos patronales en `settings`
+      con validación del backend, jornadas (`schedule_locked` si tiene
+      corridas pagadas), puestos con sus dos códigos y pólizas del INS con su
+      prima. RF-56, RF-83, RF-84, RN-94, RN-95.
+
+      **Verificación:** `test_aislamiento.py`; cambiar la periodicidad de una
+      jornada con una corrida pagada → código; un puesto sin código de la
+      CCSS → rechazado; la póliza por omisión es una sola.
+
+      **Hecha el 2026-10-02.** Los datos patronales viven en la sección
+      `payroll` de `settings.data` con su propia puerta (`PUT
+      /payroll/settings`): el número patronal se valida en
+      `domain/payroll_staff.py` (dígitos y guiones, de 9 a 25) y el INA exento
+      es una casilla. Jornadas, puestos y pólizas son el ABM de `crud_payroll`
+      con las reglas del dominio; el nombre repetido responde
+      `payroll_name_taken` con el recurso; una jornada con corridas pagadas no
+      cambia de periodicidad ni de cortes (`schedule_locked`), pero sí de
+      nombre; la primera póliza queda por omisión y marcar otra la reemplaza.
+
+      **Apareció un defecto de F11 de camino**: la pantalla de Configuración
+      manda solo sus seis secciones y `save_settings` reemplazaba el JSON
+      entero, así que guardar la moneda **desactivaba la contabilidad** sin un
+      solo error. `OWNED_SECTIONS` conserva ahora las secciones que escribe el
+      backend (`accounting`, `payroll`) y las ignora si vienen en la petición;
+      la regresión está en `test_contabilidad.py` y en `test_planilla.py`.
+
+- [x] **T-1205** Empleados y contratos: rutas con los datos de RN-72, enlace
+      opcional a `users`, contrato con jornada, puesto y póliza, baja con
+      fecha y causa (`employee_terminated`) que registra la acción
+      `termination`, y un aumento que cierra el contrato y abre otro. RF-55,
+      RN-72.
 
       **Verificación:** `test_aislamiento.py`; dar de baja crea la corrida de
-      liquidación en borrador; una novedad para un empleado dado de baja
-      responde el código.
+      liquidación en borrador y la acción en el historial; una acción para un
+      empleado dado de baja después de su fecha responde el código.
 
-- [ ] **T-1206** Corridas: `CreateRun`, novedades (`novelty_outside_period`),
-      `CalculateRun` que escribe líneas y rubros —el congelamiento—,
-      `ApproveRun`, `PayRun` con fecha del servidor, bitácora y `Ledger.post`
-      si contabilidad está activa. RF-57, RN-66, RN-68, RN-75.
+      **Hecha el 2026-10-02.** `check_employee` revisa la forma de lo que
+      piden los archivos —tipo y número de identificación, apellidos, fecha de
+      nacimiento (quince años al ingresar), género, estado civil,
+      nacionalidad, IBAN— y los códigos dicen el campo y el motivo. El contrato
+      nuevo cierra el anterior el día antes y tiene que empezar después de él
+      (`invalid_contract` / `overlaps`); la baja es `TerminateEmployee`: cierra
+      el contrato, registra la acción `termination` con origen `system` y deja
+      la liquidación **vacía y en borrador**, que T-1210 calcula.
+
+- [x] **T-1218** Acciones de personal: `RegisterAction`, `CancelAction`,
+      `SuspendAction`, el historial por empleado con lo que aplicó cada
+      corrida y el saldo. `action_not_editable`, `action_already_cancelled`,
+      `action_not_recurring`. RF-82, RN-90 a RN-92.
+
+      **Verificación:** editar una acción aplicada en una pagada → código;
+      anularla deja una acción con `cancels_action_id` que la corrida
+      siguiente aplica al revés; suspender una recurrente deja quién, cuándo
+      y motivo, y la corrida siguiente ya no la toma; el saldo es la suma de
+      rubros, no una columna.
+
+      **Hecha el 2026-10-02.** Cuatro casos de uso —`RegisterAction`,
+      `UpdateAction`, `CancelAction`, `SuspendAction`— y el historial con lo que
+      aplicó cada corrida y el saldo. El aumento y el cambio de puesto se
+      aplican **al registrarse**: cierran el contrato vigente y abren otro, y
+      por eso no se editan ni se anulan (`action_not_editable` / `contract`).
+      Anular es siempre otra acción con `cancels_action_id`, también si la
+      original no entró en ninguna corrida: así el historial dice que existió.
+      «Aplicado» cuenta corridas **aprobadas y pagadas**, y no solo pagadas
+      como dice RN-92 del saldo: una aprobada no se recalcula, y contarla evita
+      que la siguiente vuelva a aplicar lo mismo mientras la anterior espera el
+      pago.
+
+- [x] **T-1206** Corridas: `CreateRun` para una jornada y un corte
+      (`invalid_cut_date`), `CalculateRun` que toma las acciones del periodo
+      y las pendientes de periodos pagados y escribe líneas y rubros —el
+      congelamiento—, `ApproveRun`, `PayRun` con fecha del servidor, bitácora
+      y `Ledger.post` si contabilidad está activa. RF-57, RN-66, RN-68, RN-73,
+      RN-75, RN-91, RN-93.
 
       **Verificación:** pagar; insertar una tasa nueva con `valid_from` de
       ayer; `GET` de la corrida pagada → los rubros **no** cambian; una corrida
-      nueva → sí; editar la pagada → `run_already_paid`; con contabilidad
-      activa, `journal_entry_id` apunta a un asiento que balancea entre
-      6.1.01, 6.1.02, 2.1.03, 2.1.04, 2.1.05 y 2.1.06.
+      nueva → sí; editar la pagada → `run_already_paid`; una incapacidad
+      registrada después de pagar su quincena entra en la siguiente con sus
+      fechas; con contabilidad activa, `journal_entry_id` apunta a un asiento
+      que balancea entre 6.1.01, 6.1.02, 2.1.03, 2.1.04, 2.1.05 y 2.1.06.
+
+      **Hecha el 2026-10-02.** `CreateRun`, `CalculateRun`, `ApproveRun` y
+      `PayRun`, con `Ledger.record_payroll` —el único `record_*` que devuelve
+      algo: el id del asiento, que la corrida guarda— y `post_payroll` en el
+      dominio del libro (la renta devuelta cambia de lado en vez de romper el
+      asiento). Lo que decidió el cálculo y no estaba escrito:
+
+      - El salario base se prorratea por los días que cuenta el tramo —en mes
+        comercial— cuando el contrato o el empleo no cubren el periodo entero
+        (`base_item`); entero, sale tal cual, sin pasar por el valor del día.
+      - Una anulación revierte en la corrida siguiente los rubros que la
+        original dejó en corridas aprobadas o pagadas, copiados al revés y con
+        sus fechas; si no dejó ninguno, un rubro de cero dice que se recogió.
+      - El solidarista del contrato es una deducción «otra», como la pensión y
+        el embargo; la prima de riesgos es cero si la compañía no tiene póliza.
+      - Solo las corridas regulares se calculan acá; el aguinaldo, la
+        liquidación y el ajuste responden `run_not_editable` hasta T-1208,
+        T-1210 y T-1212. Y la corrida pagada **todavía no acumula vacaciones**:
+        es T-1209.
+
+      Verificado contra el stack: la corrida pagada no cambia con una tasa
+      nueva de ayer y la siguiente sí la trae; la incapacidad registrada
+      después de pagar entra en la siguiente con sus dos tramos; el asiento
+      balancea entre las seis cuentas; `planilla_pagada` en la bitácora; y las
+      diecisiete rutas por id responden 404 con el token de otra compañía.
 
 - [ ] **T-1207** Boleta: la cuarta plantilla de documento, en el idioma del
-      documento (RN-29), armada **desde los rubros congelados**. RF-58, RN-66.
+      documento (RN-29), armada **desde los rubros congelados**, con cada
+      acción aplicada y sus fechas. RF-58, RN-66.
 
       **Verificación:** la boleta de una corrida pagada antes de un cambio de
       tasa muestra la tasa vieja; T-922 cuenta cuatro documentos.
 
 - [ ] **T-1208** Aguinaldo como corrida `aguinaldo`: suma lo devengado de las
-      pagadas del 1 de diciembre al 30 de noviembre y divide entre doce, sin
-      rubros de CCSS ni renta. RF-59, RN-69.
+      pagadas del 1 de diciembre al 30 de noviembre y los saldos de apertura
+      del mismo periodo, y divide entre doce, sin rubros de CCSS ni renta.
+      RF-59, RN-69, RN-97.
 
       **Verificación:** doce corridas de 500 000 → 500 000 exacto; los rubros
       de la línea son todos `earning`.
 
 - [ ] **T-1209** Vacaciones: acumulación al pagar cada corrida, disfrute como
-      novedad, saldo por empleado (`vacation_balance_exceeded`). RF-60, RN-70.
+      acción `vacation`, saldo de apertura, saldo por empleado
+      (`vacation_balance_exceeded`). RF-60, RN-70.
 
-      **Verificación:** 350 días trabajados → 14; disfrutar 20 → código; el
+      **Verificación:** 350 días trabajados → 12; disfrutar 20 → código; el
       saldo es la suma de `vacation_movements`, no una columna.
 
 - [ ] **T-1210** Liquidación: `TerminateEmployee` deja una corrida `settlement`
       con preaviso, cesantía, vacaciones y aguinaldo proporcionales según la
-      causa; `settlement_requires_termination`. RF-61, RN-71.
+      causa, sobre el promedio de los últimos seis meses;
+      `settlement_requires_termination`. RF-61, RN-71.
 
       **Verificación:** los tres casos de `settlement` (renuncia, despido sin
-      causa, con causa) dan los rubros que dice la tabla; sin baja → código.
+      causa, con causa) dan los rubros que dice la tabla; con dos meses de
+      apertura el promedio los cuenta; sin baja → código.
 
 - [ ] **T-1211** Archivo para la CCSS y resumen de renta retenida. **Empieza
       por leer la especificación oficial del SICERE** y guardarla en
       `docs/ccss/`, como los XSD en `docs/hacienda/`; el archivo sale de un
-      adaptador `CcssFileWriter` con prueba contra un ejemplo real. RF-62.
+      adaptador `CcssFileWriter` con prueba contra un ejemplo real, con los
+      movimientos que salen de las acciones —ingreso, incapacidades,
+      permisos, cambio de ocupación, exclusión—. `export_data_incomplete`
+      lista a quién le falta qué. RF-62, RN-96.
 
       **Verificación:** el archivo del mes valida contra el ejemplo del
-      material; la renta retenida del mes es la suma de los rubros
-      `income_tax` de las corridas pagadas del mes.
+      material; una incapacidad que cruzó dos quincenas sale con sus fechas;
+      la renta retenida del mes es la suma de los rubros `income_tax` de las
+      corridas pagadas del mes.
+
+- [ ] **T-1219** Archivo para el INS, uno por póliza. **Empieza por leer la
+      especificación oficial de RT-Virtual** y guardarla en `docs/ins/`;
+      adaptador `InsFileWriter` con prueba contra un ejemplo real. RF-85,
+      RN-96.
+
+      **Verificación:** el archivo valida contra el ejemplo; un empleado que
+      ingresó y salió en el mes lleva esa condición; dos pólizas → dos
+      archivos que suman la planilla del mes.
 
 - [ ] **T-1212** Corrida de ajuste sobre una pagada, que la referencia y no la
       toca. RF-63, RN-68.
@@ -4183,27 +4783,44 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       **Verificación:** el ajuste tiene `adjusts_run_id`; la boleta de la
       original no cambia; el asiento del ajuste es solo la diferencia.
 
+- [ ] **T-1220** Importación: `ImportPayroll` con `dry_run` —puestos,
+      empleados con contrato, vacaciones y devengado de apertura, deducciones
+      recurrentes con su saldo— en una transacción, y la plantilla
+      descargable. `import_has_errors`. RF-86, RN-97.
+
+      **Verificación:** un archivo con una fila mala → el ensayo la señala
+      con su código y no escribe nada; corregido → entra entero; una cédula
+      repetida o un puesto que no existe no entra; los saldos quedan con
+      `source = 'import'` y su fecha.
+
 ### Frontend
 
-- [ ] **T-1213** Pantallas de `/planilla` (plan §14.4), con el aviso de tasas
-      viejas en el resumen. RF-55 a RF-63.
+- [ ] **T-1213** Pantallas de `/planilla` (plan §14.4): resumen con lo que
+      vence y los datos que faltan para los archivos, empleados, acciones,
+      corridas, vacaciones, configuración (datos patronales, jornadas, puestos
+      y pólizas), importar con vista previa y tasas. RF-55 a RF-63, RF-82 a
+      RF-86.
 
-      **Verificación:** punta a punta: alta de empleado, contrato, corrida,
-      novedad de 4 horas extra, calcular, aprobar, pagar, imprimir la boleta.
+      **Verificación:** punta a punta: configurar una jornada y un puesto,
+      alta de empleado, contrato, una acción de 4 horas extra, calcular,
+      aprobar, pagar, imprimir la boleta; importar un Excel con una fila
+      mala, corregirla y confirmar.
 
-- [ ] **T-1214** Simulado y catálogos: quince endpoints con contrato idéntico,
-      dos empleados y un juego de tasas en el seed, `messages/es/payroll.json`
-      declarado, y los nueve códigos en los cuatro lugares.
+- [ ] **T-1214** Simulado y catálogos: unos treinta endpoints con contrato
+      idéntico, dos empleados, dos jornadas, dos puestos, una póliza y un
+      juego de tasas en el seed, `messages/es/payroll.json` declarado, y los
+      quince códigos en los cuatro lugares (los dos de las tasas ya están, T-1204).
 
       **Verificación:** `npm test`; `npm run check` en 0/0.
 
 ### Verificación — sin esto la fase no está terminada
 
 - [ ] **T-1215** Punta a punta en una compañía que la prueba da de alta: dos
-      empleados (mensual y quincenal), una corrida pagada; una tasa nueva con
-      vigencia futura; reimprimir → igual; la corrida siguiente → distinta;
-      aguinaldo; baja con liquidación; archivo de la CCSS; y con contabilidad
-      activa, el asiento.
+      empleados (mensual y quincenal), una incapacidad que cruza la quincena,
+      un préstamo recurrente, una corrida pagada; una tasa nueva con vigencia
+      futura; reimprimir → igual; la corrida siguiente → distinta y con el
+      saldo del préstamo bajando; aguinaldo; baja con liquidación; archivos de
+      la CCSS y del INS; y con contabilidad activa, el asiento.
 
       **Verificación:** Playwright contra el simulado y, a mano, contra el
       stack real; `pytest`, `npm test` y `npm run check` en verde.
@@ -4235,9 +4852,8 @@ decisión tomada, lo que quedaba sin requisito ya lo tiene.
       `CodigoComercial`, `Codigo` y `CodigoCABYS` de forma distinta. En
       `docs/hacienda/costa-rica/normativa/protocolos/` hay 9 comprobantes reales
       para empezar.
-- [ ] **T-909** Probar el PDF que genera el backend con reportlab.
-      `GET /sales/pdf/{id}` está proxeado desde el POS pero nunca se abrió el
-      archivo resultante.
+- [x] **T-909** ~~Probar el PDF que genera el backend con reportlab.~~ Ya no hay
+      qué probar: el endpoint se quitó el 2026-09-26 (T-922).
 - [ ] **T-910** Confirmar si existe el `postsys.sql` original de la VM. El
       compose original lo montaba como script de inicio y nunca apareció. Si
       tiene datos reales, hay que cargarlos en `backend/initdb/`.
@@ -4431,7 +5047,13 @@ y el guardián que los vigila.
       que un `toasts.error('Producto agotado')` dentro de un `<script>` pasa sin
       que nadie chille. Hoy no hay ninguno, y por eso no bloquea; el arreglo es
       extraer el contenido del `<script>` y pasarlo por `revisarTs`.
-- [ ] **T-922** **El PDF del backend es un cuarto documento y nadie lo cuenta.**
+- [x] **T-922** **El PDF del backend es un cuarto documento y nadie lo cuenta.**
+      **Cerrada el 2026-09-26 quitándolo**, con el visto bueno del usuario: se
+      fueron `GET /sales/pdf/{id}`, su proxy en el POS, el botón «PDF del
+      backend», el código `sale_details_not_found` —que solo levantaba ese
+      endpoint— y `reportlab` de `requirements.txt`. Rehacerlo con el bloque
+      fiscal era escribir las tres plantillas dos veces (RN-86). El PDF sale de
+      «Imprimir», y el botón ahora lo dice.
       `sale_routes.py` dibuja la factura con reportlab y le faltan las dos cosas
       que F5 le dio a las otras tres: el desglose por tarifa (RF-21) y el idioma
       del documento. Además tiene **ocho rótulos escritos a mano en español**
@@ -4460,6 +5082,19 @@ y el guardián que los vigila.
       con el que se vaciaba.
 
       Verificado: 42 de 42 dos corridas seguidas.
+
+      **Y no estaba funcionando** (visto el 2026-09-26). `playwright.config.ts`
+      tenía **dos** claves `env` en `webServer`; en un literal la segunda pisa a
+      la primera, así que `POS_MOCK_FRESH` no llegaba nunca. El archivo tenía 109
+      compañías, y la del aviso de vencimiento ya estaba vencida: la prueba de
+      soporte fallaba por la fecha. Arreglado en un solo `env`.
+
+      Arreglarlo destapó la segunda mitad: `persist()` escribía en el mismo
+      archivo aunque se sembrara de cero, así que con la bandera activa la
+      primera venta de la batería **reemplazaba** la demostración. Ahora la
+      batería escribe en `.data/mock-db.e2e.json`, y `mock-db.json` no se toca —ni
+      se limpia: las 109 compañías siguen ahí hasta que alguien pulse «Reiniciar
+      demo»—.
 - [ ] **T-921** Una prueba de punta a punta navegaba **sin esperar** a que se
       enviara el formulario de mover una categoría, y el `goto` ganaba la carrera
       con la máquina cargada: pasaba sola y fallaba en la suite completa,
@@ -4553,6 +5188,13 @@ y el guardián que los vigila.
       Hoy no se puede escribir sin lista de excepciones —por eso esta tarea—, y
       una prueba con lista de excepciones es la que después nadie limpia.
 
+- [ ] **T-929** **El aviso de la pestaña de factura electrónica dice algo que
+      dejó de ser cierto.** `settings_einvoicing_warning_2` afirma que «la llave y
+      su PIN no se piden ni se guardan», y desde T-603 se piden, y la llave va a
+      Vault. La primera mitad del aviso —que todavía no se emite— sigue siendo
+      verdad hasta F7. Visto el 2026-09-26 al reescribir el aviso de al lado;
+      no se tocó porque no era parte de T-723.
+
 - [ ] **T-926** **La prueba de punta a punta de F11 pasa sola y falla en la
       suite completa.** `contabilidad.spec.ts › de la activación al mes cerrado`
       falla en el cierre de caja: el asiento «Cierre de caja n.º …» no aparece.
@@ -4575,6 +5217,42 @@ y el guardián que los vigila.
       Si eso se confirma, la salida es sacar `.data/` de lo que vigila `vite`
       (`server.watch.ignored`) y no reintentar el clic: un reintento escondería
       el mismo problema en las otras cincuenta y seis.
+
+      **Sigue igual el 2026-09-26**, con el árbol de T-723: falla en la suite
+      completa —75 pasan y esta falla— y pasa sola. Con el simulado sembrando de
+      cero por primera vez (el arreglo de T-920 que no llegaba) sigue fallando,
+      así que la pila de compañías viejas no era la causa. La pista de HMR queda
+      en pie: el simulado ahora escribe en `.data/mock-db.e2e.json`, que sigue
+      dentro de lo que vigila `vite`.
+
+      **Y no es la única** (2026-09-26, con T-726): en una corrida completa de
+      81 falló `categorias.spec.ts › dos niveles, sus reglas y sus productos`, y
+      corrida sola —con las de idiomas— pasa. El mismo síntoma que esta: estado
+      o recarga ajenos a la prueba, no lo que prueba.
+
+      **Sigue igual el 2026-09-27** (T-705, T-722): 83 de 84, y la que falla es
+      esta. En el camino apareció otra de la misma familia y esa sí se arregló:
+      `factura-electronica.spec.ts › guardar la configuración no mueve el
+      ambiente` esperaba `networkidle` después de guardar, que se cumple antes de
+      que salga el POST, y el `goto` siguiente cortaba el guardado
+      (`ERR_ABORTED`). Ahora espera la respuesta, como `guardarConfiguracion`.
+      No se reintenta nada.
+
+- [ ] **T-930** **El día de la compra de `test_aislamiento.py` se repite cada 50
+      minutos.** `DIA_DE_LA_COMPRA` es `2020-01-01 + (segundos del reloj % 3000)`
+      días, y la pila de pruebas conserva la base entre corridas: dos corridas
+      separadas por un múltiplo de 50 minutos compran el mismo día, y
+      `test_el_credito_fiscal_de_A_no_suma_las_compras_de_B` ve 4 000 en vez de
+      2 000. Pasó el 2026-09-27 con dos corridas completas a unos 50 minutos una
+      de la otra; sola pasa.
+
+      No es una fuga entre compañías —lo que la prueba vigila— sino compras de
+      la **misma** compañía hechas por la corrida anterior. La salida es que el
+      día no pueda repetirse entre corridas (un contador guardado, o el día más
+      lejano con compras más uno), no ensanchar la cuenta.
+
+      **Verificación:** dos corridas completas seguidas, sin reiniciar la pila,
+      en verde las dos.
 
 - [ ] **T-925** **`account_not_found` sirve para dos cosas.** Lo levantan
       `crud_accounting` en seis sitios, con `account_id`, sobre una cuenta del

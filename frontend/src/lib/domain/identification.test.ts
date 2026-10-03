@@ -1,0 +1,37 @@
+import { describe, expect, it } from 'vitest';
+import {
+	identificationTypeFor,
+	identificationTypeName,
+	isIdentificationType
+} from './identification';
+
+describe('el tipo de identificación (T-617)', () => {
+	it('son los cuatro de Hacienda', () => {
+		for (const code of ['01', '02', '03', '04']) expect(isIdentificationType(code)).toBe(true);
+		expect(isIdentificationType('05')).toBe(false);
+		expect(isIdentificationType(null)).toBe(false);
+	});
+
+	it('la longitud de la cédula deja ver el tipo, como en el backend', () => {
+		expect(identificationTypeFor('108840287')).toBe('01');
+		expect(identificationTypeFor('3101702934')).toBe('02');
+		expect(identificationTypeFor('15520012345')).toBe('03');
+		expect(identificationTypeFor('155200123456')).toBe('03');
+	});
+
+	it('los separadores no cuentan', () => {
+		expect(identificationTypeFor('1-0884-0287')).toBe('01');
+	});
+
+	it('lo que no se sabe se dice que no se sabe', () => {
+		expect(identificationTypeFor('')).toBeNull();
+		expect(identificationTypeFor('12345')).toBeNull();
+	});
+
+	it('el nombre es el legal, sin traducir', () => {
+		expect(identificationTypeName('01')).toBe('Cédula física');
+		expect(identificationTypeName('02')).toBe('Cédula jurídica');
+		expect(identificationTypeName('99')).toBeNull();
+		expect(identificationTypeName(null)).toBeNull();
+	});
+});

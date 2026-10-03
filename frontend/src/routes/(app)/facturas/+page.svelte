@@ -6,10 +6,20 @@
 	import { formatDateTime, formatInt, toDateInput } from '$lib/ui/format';
 	import { PAYMENT_METHODS } from '$lib/domain/types';
 	import { m } from '$lib/paraglide/messages.js';
-	import { paymentLabel } from '$lib/ui/messages';
+	import { documentTypeLabel, paymentLabel } from '$lib/ui/messages';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	/*
+	 * El comprobante de cada venta (RF-74). La columna aparece cuando hay algo
+	 * que decir: con la facturación activa, o con ventas que ya lo tienen aunque
+	 * después se haya apagado. En un negocio que nunca la usó sería una columna
+	 * de rayas.
+	 */
+	const conComprobante = $derived(
+		data.settings.eInvoicing.enabled || data.sales.some((s) => s.document_type)
+	);
 
 	let search = $state('');
 	let method = $state('');
@@ -145,6 +155,9 @@
 			<thead>
 				<tr>
 					<th scope="col">{m.invoices_col_invoice()}</th>
+					{#if conComprobante}
+						<th scope="col">{m.invoices_col_document()}</th>
+					{/if}
 					<th scope="col">{m.invoices_col_date()}</th>
 					<th scope="col">{m.invoices_payment_method()}</th>
 					<th scope="col" class="num">{m.invoices_col_subtotal()}</th>
@@ -157,6 +170,11 @@
 				{#each visible as sale (sale.id)}
 					<tr>
 						<td class="font-mono text-xs font-semibold">{sale.sale_number}</td>
+						{#if conComprobante}
+							<td class="whitespace-nowrap" data-comprobante={sale.document_type ?? ''}>
+								{documentTypeLabel(sale.document_type) ?? '—'}
+							</td>
+						{/if}
 						<td class="whitespace-nowrap">{formatDateTime(sale.created_at)}</td>
 						<td>{paymentLabel(sale.payment_method)}</td>
 						<td class="num tabular-nums">
@@ -176,7 +194,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="7">
+						<td colspan={conComprobante ? 8 : 7}>
 							<EmptyState
 								icon="receipt"
 								title={hasFilters ? m.invoices_no_results() : m.invoices_none()}

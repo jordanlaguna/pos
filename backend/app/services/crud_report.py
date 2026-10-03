@@ -20,6 +20,7 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.model_note import SaleNote
 from app.models.model_product import Product
 from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
@@ -81,6 +82,25 @@ def summary(db: Session, date_from: str | None, date_to: str | None) -> dict:
         )
     )
 
+    # Las notas por monto (T-726). La ND es plata que entró y la NC plata que
+    # salió, sin mercadería: la venta neta las cuenta a las dos.
+    def _notas(tipo: str) -> Decimal:
+        return Decimal(
+            str(
+                db.query(func.coalesce(func.sum(SaleNote.total), 0))
+                .filter(
+                    SaleNote.company_id == compania_actual(),
+                    SaleNote.document_type == tipo,
+                    SaleNote.created_at >= start,
+                    SaleNote.created_at <= end,
+                )
+                .scalar()
+            )
+        )
+
+    debit_notes = _notas("02")
+    credit_notes = _notas("03")
+
     items_sold = (
         db.query(func.coalesce(func.sum(SaleDetail.quantity), 0))
         .join(Sale, Sale.id == SaleDetail.sale_id)
@@ -103,7 +123,9 @@ def summary(db: Session, date_from: str | None, date_to: str | None) -> dict:
         "sales_count": count,
         "gross_total": _money(gross),
         "returns_total": _money(returns_total),
-        "net_total": _money(gross - returns_total),
+        "debit_notes_total": _money(debit_notes),
+        "credit_notes_total": _money(credit_notes),
+        "net_total": _money(gross + debit_notes - returns_total - credit_notes),
         "tax_total": _money(tax),
         "average_ticket": _money(gross / count) if count else 0.0,
         "items_sold": int(items_sold or 0),

@@ -23,18 +23,22 @@ from dataclasses import dataclass
 
 from app.application.ports.clock import Clock
 from app.application.ports.ledger import Ledger, NullLedger
+from app.application.ports.numbering import NumberedDocument
 from app.application.ports.repositories import (
+    ClientRepository,
     ProductRepository,
     SaleRepository,
     SettingsRepository,
     UnitOfWork,
 )
+from app.application.use_cases.number_document import SOURCE_SALE, NumberDocument
 from app.domain.errors import (
     DomainError,
     DuplicateSaleNumber,
     EmptySale,
     InvalidQuantity,
 )
+from app.domain.fe_document_type import document_type_for
 from app.domain.ledger import SoldDocument, SoldLine
 from app.domain.money import Money
 from app.domain.sale import (
@@ -59,6 +63,14 @@ class ProductWithoutPrice(DomainError):
     def __init__(self, product_id: int) -> None:
         super().__init__(f"el producto {product_id} no tiene precio")
         self.product_id = product_id
+
+
+class ClientNotFound(DomainError):
+    """El cliente no existe, o es de otra compañía: para esta venta es lo mismo."""
+
+    def __init__(self, client_id: int) -> None:
+        super().__init__(f"el cliente {client_id} no existe")
+        self.client_id = client_id
 
 
 @dataclass(frozen=True)
@@ -88,6 +100,9 @@ class SaleRequest:
     cash_received: Money
     change_given: Money
     lines: list[RequestedLine]
+    #: El comprobante que eligió el cajero (RN-85). Nulo es «el que sugiere el
+    #: receptor», que es lo que manda una pantalla que no sabe elegir.
+    document_type: str | None = None
 
     @property
     def declared(self) -> Totals:
@@ -100,6 +115,9 @@ class RegisteredSale:
     lines: list[SaleLine]
     totals: Totals
     change_given: Money
+    document_type: str | None = None
+    #: El comprobante numerado, si la venta es uno (T-704, T-705).
+    einvoice: NumberedDocument | None = None
 
 
 class RegisterSale:
@@ -108,13 +126,16 @@ class RegisterSale:
         *,
         products: ProductRepository,
         sales: SaleRepository,
+        clients: ClientRepository,
         settings: SettingsRepository,
         uow: UnitOfWork,
         clock: Clock,
         ledger: Ledger | None = None,
+        numbering: NumberDocument | None = None,
     ) -> None:
         self._products = products
         self._sales = sales
+        self._clients = clients
         self._settings = settings
         self._uow = uow
         self._clock = clock
@@ -122,6 +143,10 @@ class RegisterSale:
         # el libro es el nulo y no hace nada. El caso de uso no pregunta si está
         # activa: siempre cuenta lo que pasó (RN-59).
         self._ledger = ledger or NullLedger()
+        # Sin numeración, la venta con tipo queda «pendiente de emisión»: es lo
+        # que pasaba antes de T-705 y lo que sigue pasando en las pruebas que no
+        # son de esto.
+        self._numbering = numbering
 
     def __call__(self, request: SaleRequest) -> RegisteredSale:
         if not request.lines:
@@ -138,6 +163,32 @@ class RegisterSale:
         for pedida in request.lines:
             if not pedida.product_id or pedida.quantity <= 0:
                 raise InvalidQuantity(pedida.quantity)
+
+        # El cliente tiene que ser de esta compañía. Antes pasaba derecho a la
+        # foránea, que no sabe de compañías, y la venta quedaba colgando del
+        # cliente de otro negocio.
+        if request.client_id is not None and not self._clients.exists(request.client_id):
+            raise ClientNotFound(request.client_id)
+
+        # El comprobante se decide al vender (RN-85): va en el consecutivo y en
+        # la clave, así que no hay un «después» en el que elegirlo. Antes de la
+        # transacción, como lo demás que puede decir que no sin tocar existencias.
+        document_type = document_type_for(
+            request.document_type,
+            einvoicing=self._settings.einvoicing_enabled(),
+            # Lo que la compañía emite (RN-88): una distribuidora que apagó el
+            # tiquete no puede vender sin cliente.
+            enabled=self._settings.document_types(),
+            has_receiver=request.client_id is not None,
+        )
+        # Si la venta es un comprobante, el emisor se lee **antes** de la
+        # transacción: sin cédula no hay clave, y eso se dice sin haber tocado
+        # existencias.
+        emisor = (
+            self._numbering.prepare()
+            if document_type is not None and self._numbering is not None
+            else None
+        )
 
         with self._uow:
             # Se bloquean todos de una: pedirlos uno por uno en distinto orden
@@ -184,6 +235,10 @@ class RegisterSale:
                         # «nunca se compró» —así nace `products.cost`— y eso se
                         # guarda como nulo: cero diría que fue gratis.
                         unit_cost=producto.cost if producto.cost.is_positive else None,
+                        # El CABYS y la unidad, congelados igual (RN-86): el
+                        # comprobante los imprime por línea.
+                        cabys_code=producto.cabys_code,
+                        unit_of_measure=producto.unit_of_measure,
                     )
                 )
 
@@ -228,10 +283,27 @@ class RegisterSale:
                 # sella este mismo backend: dos relojes no se pueden comparar.
                 created_at=momento,
                 lines=lineas,
+                document_type=document_type,
             )
 
             for linea in lineas:
                 self._products.adjust_stock(linea.product_id, -linea.quantity)
+
+            # El número y la clave, en la misma transacción que la venta (plan
+            # §7.2): si algo de acá abajo falla, la serie no queda con un hueco.
+            # Con el mismo `momento`: la fecha de la clave tiene que ser la de la
+            # emisión.
+            comprobante = (
+                self._numbering.number(
+                    emisor,
+                    source_type=SOURCE_SALE,
+                    source_id=id_sale,
+                    document_type=document_type,
+                    issued_at=momento,
+                )
+                if emisor is not None and self._numbering is not None and document_type
+                else None
+            )
 
             # El asiento va **dentro** de la transacción (RN-59). Si no se puede
             # escribir, esto lanza y la venta entera se revierte: un libro no
@@ -258,5 +330,10 @@ class RegisterSale:
             self._uow.commit()
 
         return RegisteredSale(
-            id_sale=id_sale, lines=lineas, totals=totales, change_given=vuelto
+            id_sale=id_sale,
+            lines=lineas,
+            totals=totales,
+            change_given=vuelto,
+            document_type=document_type,
+            einvoice=comprobante,
         )

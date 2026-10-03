@@ -24,6 +24,10 @@ DecimalDeFormulario = Annotated[float | None, BeforeValidator(_vacio_es_nulo)]
 class ClientRegister(BaseModel):
     # client attributes
     identification: str
+    #: El tipo de Hacienda (T-617): '01' física, '02' jurídica, '03' DIMEX,
+    #: '04' NITE. Sin él se deduce de la cédula; si tampoco así se sabe, el
+    #: cliente no se guarda.
+    identification_type: str | None = None
     name: str
     last_name: str
     second_name: str
@@ -48,6 +52,8 @@ class ClientRegister(BaseModel):
 
 class ClientUpdate(BaseModel):
     identification: str | None = None
+    #: Ausente o en blanco deja el que tenía.
+    identification_type: str | None = None
     name: str | None = None
     last_name: str | None = None
     second_name: str | None = None
@@ -73,6 +79,7 @@ class ClientUpdate(BaseModel):
 class ClientResponse(BaseModel):
     id_client: int
     identification: str
+    identification_type: str | None = None
     name: str
     last_name: str
     second_name: str
@@ -95,6 +102,9 @@ class ClientRegisterSuccess(BaseModel):
 class ClientUserInformation(BaseModel):
     id_client: int
     identification: str
+    #: Lo imprime el comprobante en el receptor: «Cédula física 108840287».
+    #: Nulo en un cliente que ni la migración 011 pudo clasificar.
+    identification_type: str | None = None
     name: str
     last_name: str
     second_name: str
