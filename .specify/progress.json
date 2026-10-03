@@ -12,7 +12,7 @@
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-09-20",
+  "actualizado": "2026-10-02",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -548,6 +548,20 @@
       "causa": "El bucle de `update_product_information` solo trataba el nulo como valor vaciable.",
       "arreglo": "La cadena vacía en un campo vaciable se guarda como nulo.",
       "sesion": 70
+    },
+    {
+      "defecto": "Una prueba del POS leía un comprobante que no se versiona",
+      "sintoma": "En un clon limpio `hacienda.test.ts` no arranca (ENOENT en `XML-Ejemplos/…0022.xml`) y `npm test` sale en rojo con 648 de 670",
+      "causa": "El caso «ni contado ni crédito» leía un XML de `docs/hacienda/costa-rica/XML-Ejemplos/`, que `.gitignore` excluye a propósito por traer datos de un tercero.",
+      "arreglo": "El caso usa la factura a crédito versionada de `normativa/protocolos/` pasada a `CondicionVenta` 03, con su `PlazoCredito` de 30 intacto: comprueba además que el plazo no crea deuda.",
+      "sesion": 71
+    },
+    {
+      "defecto": "`lxml` faltaba en `requirements-dev.txt`",
+      "sintoma": "Las 10 validaciones contra el XSD de Hacienda se saltan con «lxml no está instalado» y `pytest` sigue en verde",
+      "causa": "La prueba decía que estaba en `requirements-dev.txt` y nunca se agregó; en la máquina donde se escribió estaba instalado a mano.",
+      "arreglo": "`lxml>=5.0,<7.0` en `requirements-dev.txt`.",
+      "sesion": 71
     }
   ],
   "decisiones": [
@@ -2387,6 +2401,21 @@
         "Cifras: 2 018 pruebas del backend con cobertura 100 %, 670 del POS con cobertura 100 %, `npm run check` en 0 y 0."
       ],
       "lo_que_ensena": "**Cuatro reglas de plata que el anexo dice y el XSD no.** El esquema valida la forma; la aritmética la valida Hacienda contra sí misma, y ahí es donde un comprobante bien formado se rechaza sin decir por qué. Las cuatro salieron de leer las páginas 50 a 55 y de mirar dos comprobantes aceptados al lado del mío: los baldes del resumen van **antes** del descuento (100 000 gravado con 2 500 de descuento, no 97 500); una exoneración parcial **reparte** la línea entre gravado y exonerado en proporción a lo perdonado, no la muda entera; `TotalComprobante` **resta** el IVA devuelto; y con dos o más medios de pago la suma tiene que dar el total. Ninguna de las cuatro la habría encontrado el validador: las cuatro producen XML válido y cuentas equivocadas."
+    },
+    {
+      "fecha": "2026-10-02",
+      "titulo": "Compilar y levantar desde cero en la máquina de desarrollo",
+      "hecho": [
+        "`backend/.env` no tenía ninguna variable de F6 (`FE_CRYPTO_KEY`, `MINIO_ROOT_*`, `FE_STORAGE_*`, `FE_VAULT_*`) y el compose se negaba a arrancar, como está previsto. Se agregaron con claves generadas al azar.",
+        "La imagen fijada de MinIO ya no existe en quay.io ni en Docker Hub (T-625). Se resolvió en esta máquina re-etiquetando una `minio/minio:latest` local que resultó ser la misma versión.",
+        "La base viva era de antes de F2: `sales` sin `company_id` y, encima, las tablas nuevas vacías que `create_all` había creado al arrancar, así que la 002 ya no podía correr. Por decisión del usuario se respaldó (`../respaldo-posdb-2026-10-02.sql`, fuera del repositorio), se borró el volumen `ventasys_db_data` y se recreó con bootstrap, soporte y seed.",
+        "`node_modules` estaba atrasado respecto de `package.json` (faltaba Paraglide); `npm ci` y `npm run build` limpios. El build arranca con `--env-file=.env`, el administrador entra y `/ventas` responde 200.",
+        "El seed registró 11 de 35 ventas: calcula el IVA al 13 % fijo y el backend rechaza con `totals_mismatch` las que llevan productos de otra tarifa (T-626).",
+        "Verificación completa desde un clon limpio: salieron dos defectos que solo se ven fuera de la máquina donde se escribió el código (una prueba que leía un XML no versionado y `lxml` sin declarar). Corregidos los dos.",
+        "`pytest` corre ahora desde `backend/.venv` (se ignora solo: Python 3.13 le pone su propio `.gitignore`).",
+        "Cifras: `npm run check` en 0 y 0, 670 pruebas del POS, 2 018 del backend con cobertura 100 % (2 008 en la corrida completa más las 10 del XSD una vez instalado `lxml`)."
+      ],
+      "lo_que_ensena": "**Una base de antes de una migración no se puede dejar arrancar con el backend nuevo.** `create_all` crea las tablas que faltan y no toca las que existen, así que el primer arranque deja la base a medio camino entre los dos esquemas, y la migración que la habría llevado al nuevo ya no corre porque sus `CREATE TABLE` chocan. La migración se aplica **antes** de levantar la API nueva, no después."
     }
   ],
   "$reparto": {

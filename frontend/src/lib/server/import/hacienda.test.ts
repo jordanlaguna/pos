@@ -177,8 +177,14 @@ describe('facturas reales del material de Hacienda', () => {
 	});
 
 	describe('una con condición que no es ni contado ni crédito', () => {
+		// La de crédito de arriba, pasada a consignación. Antes se leía una de
+		// `XML-Ejemplos/`, que no se versiona (.gitignore), y en un clon limpio
+		// la batería entera de este archivo no arrancaba. Conserva su
+		// `PlazoCredito` de 30 a propósito: tampoco ese plazo puede crear deuda.
 		const r = parseHaciendaXml(
-			oficial('XML-Ejemplos/' + '50616072600310170293400100002030000500153170510022.xml')
+			oficial(
+				'normativa/protocolos/' + '50606012600310134122000100001010000009369100009369.xml'
+			).replace('<CondicionVenta>02</CondicionVenta>', '<CondicionVenta>03</CondicionVenta>')
 		);
 
 		it('se trata como contado', () => {

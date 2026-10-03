@@ -8,5 +8,9 @@
 pytest>=8.0,<10.0
 pytest-cov>=5.0,<8.0
 
+# Valida los comprobantes contra el XSD oficial de Hacienda (test_fe_xml.py).
+# Sin él esas pruebas se saltan en silencio y `pytest` sigue en verde.
+lxml>=5.0,<7.0
+
 # Las pruebas de caracterización hablan con la API por HTTP, igual que el POS.
 requests>=2.31,<3.0

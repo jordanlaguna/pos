@@ -1540,6 +1540,31 @@ T-602b ya decía de Vault, ahora vale para los dos—.
       la VM de un negocio el 9000 está libre, pero en una máquina de desarrollo
       suele haber otro MinIO y sin eso los dos stacks no conviven.
 
+- [ ] **T-625** **La imagen de MinIO ya no se puede descargar.** Apareció el
+      2026-10-02: `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z` responde
+      401 / «no such manifest», igual que `:latest` en quay y la misma etiqueta
+      en Docker Hub. Una máquina que no la tenga en caché —la VM de un negocio,
+      un desarrollador nuevo— no levanta la pila. En la de Antony se salvó
+      re-etiquetando una `minio/minio:latest` local que resultó ser
+      exactamente esa versión. Hay que decidir de dónde sale la imagen (otra
+      fuente, una construida y publicada por nosotros, o un almacén S3
+      compatible distinto) sin perder lo que T-623 comprobó contra esta versión
+      (`IfNoneMatch=*` devuelve 412).
+
+      **Verificación:** con la imagen borrada de la caché local,
+      `docker compose up -d --build` en las dos pilas la descarga y la batería
+      del almacén pasa.
+
+- [ ] **T-626** **`seed.py` calcula el IVA al 13 % fijo** y el backend le
+      rechaza con `totals_mismatch` toda venta que lleve un producto
+      clasificado con otra tarifa: de 35 pedidas entraron 11, y las demás
+      fallan sin decir por qué. Tiene que calcular con la tarifa de cada
+      producto (la que ya devuelve `products_list`) e informar las que fallan
+      con su código.
+
+      **Verificación:** `python seed.py --ventas 35` contra una base nueva
+      registra las 35.
+
 - [x] **T-623** Puerto `DocumentStore` y adaptador de S3 (`boto3`), con la
       **derivación de la llave en el dominio**. Plan §7.3.
 
