@@ -1,8 +1,9 @@
 """Proveedores (F10, RF-41).
 
-**Es la primera ruta que exige un módulo del plan.** `require_module("purchases")`
-va al lado de `require_admin` y no en su lugar: que el plan incluya compras no
-dice quién de la compañía puede escribirlas. Y solo corta lo que escribe —un
+**Es la primera ruta que exigió un módulo del plan.** `require_module("suppliers")`
+—«purchases» hasta QA-01, cuando proveedores pasó a ser su propio módulo— va al
+lado de `require_admin` y no en su lugar: que el plan lo incluya no dice quién
+de la compañía puede escribir. Y solo corta lo que escribe —un
 `GET` pasa aunque el módulo esté apagado—, que es RN-50: bajar de plan deja lo
 que ya existe en solo lectura, no lo borra.
 """
@@ -27,7 +28,9 @@ from app.utils.auth_dependency import Sesion, get_db, require_admin, require_mod
 router = APIRouter()
 
 #: La dependencia del módulo, construida una vez. Es la misma en las tres rutas.
-exige_compras = require_module("purchases")
+#: Proveedores es su propio módulo desde QA-01: el paquete Comercio lo trae sin
+#: compras.
+exige_proveedores = require_module("suppliers")
 
 
 def _validar(datos: SupplierIn) -> None:
@@ -93,7 +96,7 @@ def crear_proveedor(
     datos: SupplierIn,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
-    _modulo: Sesion = Depends(exige_compras),
+    _modulo: Sesion = Depends(exige_proveedores),
 ):
     _validar(datos)
     _cedula_libre(db, datos.identification)
@@ -110,7 +113,7 @@ def actualizar_proveedor(
     datos: SupplierUpdate,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
-    _modulo: Sesion = Depends(exige_compras),
+    _modulo: Sesion = Depends(exige_proveedores),
 ):
     """Corregir sus datos, o desactivarlo (RF-41).
 

@@ -110,6 +110,9 @@ EVENTS: tuple[str, ...] = (
 # entrada de mercadería con tres datos más (RN-52).
 SOURCE_SALE = "sale"
 SOURCE_RETURN = "return"
+#: Una nota por monto (T-726). Una sola tabla para la ND y la NC: la diferencia
+#: la dice el asiento, que es el de la venta o el de la devolución.
+SOURCE_NOTE = "note"
 SOURCE_CASH_SESSION = "cash_session"
 SOURCE_CASH_MOVEMENT = "cash_movement"
 SOURCE_STOCK_ENTRY = "stock_entry"
@@ -129,6 +132,17 @@ PAYABLES = "payables"
 CASH_OVER = "cash_over"
 CASH_SHORT = "cash_short"
 SALES_RETURNS = "sales_returns"
+#: Los papeles de la planilla (F12, RN-75): el gasto de salarios y el de cargas
+#: patronales contra lo que se le debe a cada quien —la CCSS, Hacienda, los
+#: terceros de las otras deducciones y el propio empleado—. Vivían en `chart.py`
+#: desde F11 porque la plantilla ya los sembraba; se mudaron acá en T-1206, con
+#: los demás papeles, el día que el libro empezó a usarlos.
+SALARIES = "salaries"
+EMPLOYER_CONTRIBUTIONS = "employer_contributions"
+INCOME_TAX_PAYABLE = "income_tax_payable"
+SOCIAL_SECURITY_PAYABLE = "social_security_payable"
+SALARIES_PAYABLE = "salaries_payable"
+OTHER_DEDUCTIONS_PAYABLE = "other_deductions_payable"
 
 #: Prefijo de los papeles de venta por tarifa: 'sales_13', 'sales_1', 'sales_0'.
 SALES = "sales"
@@ -444,7 +458,11 @@ def _entry(
 
 
 def post_sale(
-    sale: SoldDocument, lines: Sequence[SoldLine], mapping: AccountMap
+    sale: SoldDocument,
+    lines: Sequence[SoldLine],
+    mapping: AccountMap,
+    *,
+    source_type: str = SOURCE_SALE,
 ) -> JournalEntry | None:
     """La venta.
 
@@ -500,11 +518,15 @@ def post_sale(
             Line.credit_of(mapping.account_for(SALE, INVENTORY), costo, memo=INVENTORY)
         )
 
-    return _entry(AUTO, sale.date, SALE, asiento, source_type=SOURCE_SALE, source_id=sale.id)
+    return _entry(AUTO, sale.date, SALE, asiento, source_type=source_type, source_id=sale.id)
 
 
 def post_return(
-    ret: ReturnDocument, lines: Sequence[SoldLine], mapping: AccountMap
+    ret: ReturnDocument,
+    lines: Sequence[SoldLine],
+    mapping: AccountMap,
+    *,
+    source_type: str = SOURCE_RETURN,
 ) -> JournalEntry | None:
     """La devolución: la venta al revés, con **la tarifa de su venta** (RN-12).
 
@@ -559,9 +581,7 @@ def post_return(
         )
         asiento.append(Line.credit_of(mapping.account_for(RETURN, COGS), costo, memo=COGS))
 
-    return _entry(
-        AUTO, ret.date, RETURN, asiento, source_type=SOURCE_RETURN, source_id=ret.id
-    )
+    return _entry(AUTO, ret.date, RETURN, asiento, source_type=source_type, source_id=ret.id)
 
 
 def post_cash_close(
@@ -837,3 +857,96 @@ def assert_open(period: Period | None, on: date) -> None:
     """
     if period is not None and period.is_closed:
         raise PeriodClosed(on.year, on.month)
+
+
+# ------------------------------------------------------------------ planilla
+
+
+@dataclass(frozen=True)
+class PaidPayroll:
+    """Una corrida pagada, con lo único que el libro necesita de ella (RN-75).
+
+    Son los totales de sus líneas, ya congelados. `social_security` es lo que se
+    le retuvo al trabajador para la CCSS; las cargas patronales van aparte porque
+    son gasto y no retención, aunque las dos se le deban a la misma caja.
+    """
+
+    id: int
+    date: date
+    gross: Money
+    employer_charges: Money
+    social_security: Money
+    income_tax: Money
+    other_deductions: Money
+    net: Money
+
+
+def _signed(account_id: int, amount: Money, *, credit: bool, memo: str) -> Line | None:
+    """Una línea del lado que diga el signo. Un monto de cero no es una línea.
+
+    La renta puede salir negativa: la corrida que cierra el mes le devuelve al
+    empleado lo que la quincena anterior retuvo de más (RN-73). Una devolución
+    es la retención al revés, así que cambia de lado en vez de romper el asiento.
+    """
+    if amount.is_zero:
+        return None
+    monto = abs(amount)
+    if credit == (not amount.is_negative):
+        return Line.credit_of(account_id, monto, memo=memo)
+    return Line.debit_of(account_id, monto, memo=memo)
+
+
+def post_payroll(payroll: PaidPayroll, mapping: AccountMap) -> JournalEntry | None:
+    """La corrida pagada.
+
+        bruto 600 000 · cargas patronales 160 980 · CCSS obrera 64 980
+        renta 10 000 · otras deducciones 25 000 · neto 500 020
+
+        D  Salarios                        600 000,00
+        D  Cargas sociales patronales      160 980,00
+           C  CCSS por pagar                            225 960,00
+           C  Retenciones de renta por pagar             10 000,00
+           C  Otras deducciones por pagar                25 000,00
+           C  Salarios por pagar                        500 020,00
+
+    Balancea por construcción: el neto es el bruto menos lo retenido, así que
+    bruto más cargas es lo que se le debe a todos juntos. A la CCSS se le debe
+    lo del trabajador y lo del patrono en una sola línea, porque es una sola
+    planilla la que se le paga.
+    """
+    lineas = [
+        _signed(mapping.account_for(PAYROLL, SALARIES), payroll.gross, credit=False, memo=SALARIES),
+        _signed(
+            mapping.account_for(PAYROLL, EMPLOYER_CONTRIBUTIONS),
+            payroll.employer_charges,
+            credit=False,
+            memo=EMPLOYER_CONTRIBUTIONS,
+        ),
+        _signed(
+            mapping.account_for(PAYROLL, SOCIAL_SECURITY_PAYABLE),
+            payroll.social_security + payroll.employer_charges,
+            credit=True,
+            memo=SOCIAL_SECURITY_PAYABLE,
+        ),
+        _signed(
+            mapping.account_for(PAYROLL, INCOME_TAX_PAYABLE),
+            payroll.income_tax,
+            credit=True,
+            memo=INCOME_TAX_PAYABLE,
+        ),
+        _signed(
+            mapping.account_for(PAYROLL, OTHER_DEDUCTIONS_PAYABLE),
+            payroll.other_deductions,
+            credit=True,
+            memo=OTHER_DEDUCTIONS_PAYABLE,
+        ),
+        _signed(mapping.account_for(PAYROLL, SALARIES_PAYABLE), payroll.net, credit=True, memo=SALARIES_PAYABLE),
+    ]
+    return _entry(
+        AUTO,
+        payroll.date,
+        PAYROLL,
+        [linea for linea in lineas if linea is not None],
+        source_type=SOURCE_PAYROLL_RUN,
+        source_id=payroll.id,
+    )

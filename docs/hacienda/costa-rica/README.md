@@ -6,6 +6,7 @@
 
 - [esquemas/](esquemas/) — 9 XSDs oficiales de Hacienda v4.4 (FE, TE, NC, ND, FEC, FEE, REP, MR, MensajeHacienda) + `xmldsig-core-schema.xsd` del W3C. Listos para validación estructural.
 - [normativa/](normativa/) — documentos regulatorios oficiales de Hacienda. Actualmente incluye `ANEXOS_Y_ESTRUCTURAS_V4.4.pdf` (Dirección General de Tributación, noviembre 2024) — bitácora oficial de los 146 cambios 4.3→4.4, estructura del XML, Anexo 2 (firma XAdES-EPES) y Anexo 3 (API REST).
+- [normativa/Codificacionubicacion_V4.4.xlsx](normativa/Codificacionubicacion_V4.4.xlsx) — la división territorial de la **nota 14** del anexo (provincia, cantón, distrito y barrio), del 2024-11-20. El anexo la nombra y no la trae: Hacienda la publica aparte en la página de anexos y estructuras de ATV, como `docs/esquemas/2024/v4.4/Codificacionubicacion_V4.4.rar`. De ella salen los catálogos del backend y del POS con [`generar_ubicaciones.py`](generar_ubicaciones.py) (T-722).
 
 ---
 
@@ -234,7 +235,15 @@ La recepción de comprobantes se realiza contra la API REST de Hacienda. La aute
 | Ambiente | Endpoint base API | Endpoint token IdP (OIDC) | Realm | client_id |
 |----------|-------------------|--------------------------|-------|-----------|
 | **Producción** | `https://api.comprobanteselectronicos.go.cr/recepcion/v1/` | `https://idp.comprobanteselectronicos.go.cr/auth/realms/rut/protocol/openid-connect/token` | `rut` | `api-prod` |
-| **Sandbox (staging)** | `https://api.comprobanteselectronicos.go.cr/recepcion-sandbox/v1/` | `https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token` | `rut-stag` | `api-stag` |
+| **Sandbox (staging)** | `https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/` ⚠️ ver nota | `https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token` | `rut-stag` | `api-stag` |
+
+> **Corregido el 2026-10-03.** Este README decía `https://api.comprobanteselectronicos.go.cr/recepcion-sandbox/v1/`.
+> Esa ruta ya no existe: el Gateway de AWS que está delante de Hacienda contesta **403**
+> `IncompleteSignatureException` («Invalid key=value pair … in Authorization header») a cualquier
+> token, y eso se lee como unas credenciales sin permiso. Se comprobó consultando la misma clave con
+> el mismo token del realm `rut-stag`: `api-sandbox.…/recepcion/v1/recepcion/{clave}` contesta
+> Hacienda (400, `X-Error-Cause: El comprobante [...] no ha sido recibido.`); `api.…/recepcion-sandbox/…`,
+> el Gateway (403); y `api.…/recepcion/v1/…`, producción (401 a un token de pruebas). El IdP no cambió.
 
 - `client_secret` siempre **vacío** (la autenticación es por usuario/contraseña dentro del grant, no por secret del cliente).
 - `scope` también **vacío**.
@@ -365,7 +374,7 @@ Respuesta (JSON):
 4. **El `respuesta-xml` es firmado por Hacienda.** Debe conservarse junto al XML original como prueba documental del estado de la factura (requisito fiscal de archivo por 5 años).
 5. **El receptor puede responder con MR (Mensaje Receptor).** Aceptación, aceptación parcial o rechazo. Esto es independiente del estado de Hacienda: una factura `aceptado` por Hacienda puede ser `rechazada` por el receptor (y viceversa).
 6. **Callbacks HTTP sí funcionan.** El Anexo 3 (p. 98) confirma que el `callbackUrl` en el payload del `POST /recepcion` recibe un `POST application/json` con el mismo cuerpo que devuelve el `GET /recepcion/{clave}`. El endpoint del emisor debe responder `HTTP 200`; si no responde o hay timeout, Hacienda reintenta hasta **3 veces** y luego registra el fallo en bitácora (no se reenvía más). El polling por `GET` sigue disponible como mecanismo primario o de respaldo.
-7. **Contingencia.** Si Hacienda está caída, la factura se emite con `situacion=2` (contingencia) y se transmite cuando el servicio se restablezca, con un plazo máximo (usualmente 8 días hábiles según la resolución).
+7. **Contingencia.** *(Corregido el 2026-10-03 contra el anexo 4.4, nota 3, inciso g: la `situacion=2` es la del comprobante electrónico que sustituye uno **físico** emitido durante la caída; el que se genera electrónicamente sin poder transmitirse va con `situacion=3`, «sin internet», que es lo que hace VentaSys.)* Si Hacienda está caída, la factura se emite con `situacion=2` (contingencia) y se transmite cuando el servicio se restablezca, con un plazo máximo (usualmente 8 días hábiles según la resolución).
 
 ## 9. Mensaje Receptor (MR)
 
@@ -480,7 +489,7 @@ Los rechazos más frecuentes por parte del servicio de recepción de Hacienda se
 | Clave duplicada | Se reenvió un comprobante ya recibido (misma clave 50 dígitos) |
 | Clave mal formada | Estructura incorrecta (país != 506, fecha inconsistente, checksum) |
 | Consecutivo fuera de orden | Salto o retroceso en la numeración consecutiva del emisor para el punto de venta |
-| Situación incorrecta | Uso de `situacion=2` (contingencia) cuando Hacienda sí estaba disponible |
+| Situación incorrecta | Uso de `situacion=2` (contingencia) cuando Hacienda sí estaba disponible, o sin la referencia al comprobante físico que sustituye; declarar `3` (sin internet) cuando sí había conexión |
 
 ### Familia 3 — CABYS y actividad económica
 
@@ -532,7 +541,7 @@ Hacienda provee un ambiente de certificación (staging/sandbox) paralelo a produ
 
 | Recurso | URL |
 |---------|-----|
-| API recepción sandbox | `https://api.comprobanteselectronicos.go.cr/recepcion-sandbox/v1/` |
+| API recepción sandbox | `https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/` |
 | IdP OIDC sandbox | `https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token` |
 | Realm | `rut-stag` |
 | client_id | `api-stag` |

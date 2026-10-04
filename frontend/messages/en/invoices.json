@@ -28,6 +28,7 @@
 	"invoices_sum": "Total: {total}",
 
 	"invoices_col_invoice": "Invoice",
+	"invoices_col_document": "Document",
 	"invoices_col_date": "Date",
 	"invoices_col_subtotal": "Subtotal",
 	"invoices_col_tax": "Tax",
@@ -47,14 +48,115 @@
 	"invoice_not_found": "Invoice not found.",
 	"invoice_registered": "Sale recorded successfully.",
 	"invoice_print": "Print",
+	"invoice_print_hint": "The print dialog can also save it as a PDF.",
 	"invoice_back": "Back to invoices",
 	"invoice_return": "Return",
-	"invoice_backend_pdf": "Backend PDF",
 	"invoice_fully_returned": "Sale returned in full",
 	"invoice_partially_returned": "Sale with partial returns",
 	"invoice_return_line": "{date} — {total} · {reason}",
-
-	"invoice_mock_no_pdf": "Demo mode does not generate a PDF. Use «Print» to save it from the browser.",
-	"invoice_pdf_failed": "The backend could not generate the PDF for this invoice."
-
+	"invoice_annul": "Void",
+	"invoice_annul_title": "Void {number}",
+	"invoice_annul_hint": "A credit note voiding the whole document is issued, stock is restored and the amount charged is refunded. Use it when the document should not have existed: the wrong customer or type.",
+	"invoice_annul_failed": "Could not void",
+	"invoice_annul_reason_placeholder": "Why it is being voided",
+	"invoice_annul_confirm": "Void document",
+	"invoice_note": "Note by amount",
+	"invoice_note_title": "Note by amount on {number}",
+	"invoice_note_hint": "Corrects what was charged without moving goods. A debit note is collected now; a credit note is refunded from the drawer. Enter each amount including tax.",
+	"invoice_note_type": "Note type",
+	"invoice_note_debit": "Debit note: charge more",
+	"invoice_note_credit": "Credit note: refund money",
+	"invoice_note_debit_off": "Debit notes are turned off in Settings.",
+	"invoice_note_lines": "Amount per line, including tax",
+	"invoice_note_line": "{product} · sold at {price}",
+	"invoice_note_payment": "Collected by",
+	"invoice_note_reason_placeholder": "Why the amount is being corrected",
+	"invoice_note_confirm": "Issue note",
+	"invoice_note_failed": "The note could not be issued",
+	"invoice_notes_list": "Notes by amount",
+	"invoice_note_row": "{date} — {document} · {total} · {reason}",
+	"invoice_note_view": "View the note",
+	"amount_note_not_found": "That note does not exist.",
+	"amount_note_tab_title": "Note {number}",
+	"amount_note_registered_debit": "Debit note issued. Collect the amount from the customer.",
+	"amount_note_registered_credit": "Credit note issued. Hand over the refund from the drawer.",
+	"amount_note_back": "Back to the invoice",
+	"invoices_col_hacienda": "Hacienda",
+	"invoice_state": [
+		{
+			"declarations": ["input state"],
+			"selectors": ["state"],
+			"match": {
+				"state=numbered": "Numbered",
+				"state=signed": "Signed",
+				"state=sent": "Sent",
+				"state=accepted": "Accepted",
+				"state=rejected": "Rejected",
+				"state=retrying": "Retrying",
+				"state=stopped": "Stopped",
+				"state=*": "{state}"
+			}
+		}
+	],
+	"invoice_stop_reason": [
+		{
+			"declarations": ["input reason"],
+			"selectors": ["reason"],
+			"match": {
+				"reason=certificate_missing": "The signing certificate for this environment is missing.",
+				"reason=certificate_expired": "The signing certificate has expired.",
+				"reason=credentials_missing": "The ATV user or password is missing.",
+				"reason=credentials_rejected": "Hacienda did not accept the ATV user or password.",
+				"reason=document_invalid": "The document is missing data Hacienda requires.",
+				"reason=reception_rejected": "Hacienda rejected the submission before processing it.",
+				"reason=forbidden": "The credentials are not allowed for this issuer.",
+				"reason=hacienda_error": "Hacienda could not process it and gave no reason.",
+				"reason=retries_exhausted": "Tried for 72 hours without reaching Hacienda.",
+				"reason=no_verdict": "Hacienda received it 72 hours ago and has not decided yet.",
+				"reason=*": "{reason}"
+			}
+		}
+	],
+	"invoice_event": [
+		{
+			"declarations": ["input event"],
+			"selectors": ["event"],
+			"match": {
+				"event=signed": "Signed",
+				"event=sent": "Sent to Hacienda",
+				"event=polled": "Checked: Hacienda is still processing",
+				"event=accepted": "Accepted by Hacienda",
+				"event=rejected": "Rejected by Hacienda",
+				"event=deferred": "Could not; retrying later",
+				"event=stopped": "Stopped",
+				"event=resumed": "Retried by hand",
+				"event=xml_lost": "The signed XML was missing; signing again",
+				"event=*": "{event}"
+			}
+		}
+	],
+	"invoice_file_title": "With Hacienda",
+	"invoice_file_hint": "Where the document is and when each step happened. The XML you download is the one that was signed, byte for byte.",
+	"invoice_file_none": "This sale has no electronic document: it was charged without electronic invoicing.",
+	"invoice_xml": "Signed XML",
+	"invoice_response": "Hacienda's response",
+	"invoice_xml_pending": "The XML can be downloaded once the document is signed.",
+	"invoice_response_pending": "The response can be downloaded once Hacienda answers.",
+	"invoice_hacienda_detail": "What Hacienda said",
+	"invoice_next_attempt": "Next attempt: {when}",
+	"invoice_last_attempt": "Last attempt: {when}",
+	"invoice_in_queue": "Queued: the queue picks it up within seconds.",
+	"invoice_retry": "Retry",
+	"invoice_retry_hint": "Puts it back in the queue after fixing what stopped it. A rejection by Hacienda is not retried: a new document is issued.",
+	"invoice_retry_done": "The document is back in the queue.",
+	"invoice_retry_failed": "Could not retry.",
+	"invoice_events_title": "Steps",
+	"invoice_events_none": "Nothing yet: the queue picks it up within seconds.",
+	"invoices_stopped_title": "Stopped: they need a person",
+	"invoices_stopped_hint": "What the queue cannot solve on its own. Each one says why and how long it has been waiting; the deadline to transmit what was issued in contingency is about eight business days.",
+	"invoices_stopped_waiting": "Waiting since {since}",
+	"invoices_queue_pending": "{count} on their way to Hacienda",
+	"invoices_queue_alarm_warning": "Some documents have been waiting for Hacienda for more than a day ({count} pending, the oldest from {since}). Check the connection, the certificate and the credentials under Invoices.",
+	"invoices_queue_alarm_danger": "Some documents have had no answer from Hacienda for five days or more ({count} pending, the oldest from {since}). The contingency deadline is running out: deal with it today.",
+	"invoices_contingency": "The business is issuing in contingency: Hacienda has not answered since the last attempt. Documents are transmitted on their own when it comes back."
 }

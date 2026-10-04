@@ -154,3 +154,39 @@ class TestCambiarElIdiomaDeLaCompania:
         )
         assert estado == 400
         assert cuerpo["detail"]["code"] == "unsupported_locale"
+
+
+class TestElIdiomaDelPanelDeSoporte:
+    """`POST /support/locale` (QA-02): soporte también elige el suyo.
+
+    El de `/auth/locale` no le sirve: arma un token de sesión, con compañía, y
+    el de soporte no la tiene (RN-4). Cada prueba deja el idioma como estaba.
+    """
+
+    def test_elegir_uno_emite_un_token_de_soporte_con_ese_idioma(self, soporte: Api):
+        cliente = Api(soporte.base)
+        cliente.token = soporte.token
+        try:
+            cuerpo = cliente.ok("POST", "/support/locale", {"locale": "en"})
+            assert (cuerpo["locale"], cuerpo["user_locale"]) == ("en", "en")
+            nuevo = payload(cuerpo["access_token"])
+            assert (nuevo["loc"], nuevo["tipo"], nuevo.get("cid")) == ("en", "soporte", None)
+
+            cliente.token = cuerpo["access_token"]
+            assert cliente.ok("GET", "/support/me")["locale"] == "en"
+        finally:
+            cliente.ok("POST", "/support/locale", {"locale": None})
+
+    def test_sin_preferencia_es_espanol(self, soporte: Api):
+        cuerpo = soporte.ok("POST", "/support/locale", {"locale": None})
+        assert (cuerpo["locale"], cuerpo["user_locale"]) == ("es", None)
+
+    def test_un_idioma_sin_catalogo_se_rechaza(self, soporte: Api):
+        estado, cuerpo = soporte.call("POST", "/support/locale", {"locale": "fr"})
+        assert estado == 400
+        assert cuerpo["detail"]["code"] == "unsupported_locale"
+
+    def test_una_sesion_de_compania_no_lo_usa(self, api: Api):
+        estado, cuerpo = api.call("POST", "/support/locale", {"locale": "en"})
+        assert estado == 403
+        assert cuerpo["detail"]["code"] == "support_only"

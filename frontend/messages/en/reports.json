@@ -60,5 +60,6 @@
 	"reports_col_rate": "Rate",
 	"reports_col_base": "Base",
 	"reports_col_tax": "Tax",
-	"reports_rate_percent": "{rate}%"
+	"reports_rate_percent": "{rate}%",
+	"reports_net_includes_notes": "Includes notes: +{debit} / −{credit}"
 }

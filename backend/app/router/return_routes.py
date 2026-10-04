@@ -7,7 +7,7 @@ from app.models.model_user import User
 from app.schemas.schemas_return import ReturnCreate, ReturnCreateSuccess, ReturnResponse
 from app.services import crud_return
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user
+from app.utils.auth_dependency import Sesion, exigir_modulo, get_current_user
 
 router = APIRouter()
 
@@ -47,5 +47,13 @@ def add_return(
     db: Session = Depends(get_db),
     current: Sesion = Depends(get_current_user),
 ):
-    """Registra la devolución y devuelve las unidades al inventario."""
+    """Registra la devolución y devuelve las unidades al inventario.
+
+    El módulo depende de lo que se pide (QA-01): anular un comprobante entero es
+    del módulo de facturas, y devolver unidades, del de devoluciones. Un
+    restaurante no compra devoluciones, pero tiene que poder anular una factura
+    mal hecha. Por eso se decide acá y no en una dependencia, que no ve el
+    cuerpo.
+    """
+    exigir_modulo(db, current, "invoices" if payload.annul else "returns")
     return crud_return.create_return(db, payload)

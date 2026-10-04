@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.application.use_cases.register_sale import (
+    ClientNotFound,
     ProductNotFound,
     ProductWithoutPrice,
     RegisterSale,
@@ -19,17 +20,28 @@ from app.application.use_cases.register_sale import (
     SaleRequest,
 )
 from app.domain.errors import (
+    DocumentTypeNotEnabled,
     DuplicateSaleNumber,
     EmptySale,
+    ExportLineNeedsTariffHeading,
+    ExportNeedsForeignAddress,
+    ExportNeedsForeignReceiver,
+    ExportNeedsReceiver,
+    ExportTariffNotAllowed,
     InsufficientPayment,
     InsufficientStock,
     InvalidQuantity,
+    InvalidSaleDocumentType,
     InvalidSalePaymentMethod,
+    InvoiceNeedsReceiver,
+    InvoiceNeedsResident,
+    IssuerIdentificationRequired,
     TotalsMismatch,
 )
 from app.domain.money import Money
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_repositories import (
+    SqlAlchemyClientRepository,
     SqlAlchemyProductRepository,
     SqlAlchemySaleRepository,
     SqlAlchemySettingsRepository,
@@ -39,7 +51,7 @@ from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.schemas.schemas_sales import SaleRegister, SaleRegisterSuccess
-from app.services import crud_accounting
+from app.services import crud_accounting, crud_numbering
 from app.utils.api_errors import api_error
 
 
@@ -48,12 +60,15 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
     caso = RegisterSale(
         products=productos,
         sales=SqlAlchemySaleRepository(db),
+        clients=SqlAlchemyClientRepository(db),
         settings=SqlAlchemySettingsRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
         # El asiento, en la misma transacción (RN-59). Con contabilidad apagada
         # —casi todas las compañías— esto es el libro nulo y no hace nada.
         ledger=crud_accounting.libro(db, user_id=sale.user_id),
+        # El consecutivo y la clave, en la misma transacción (T-704, T-705).
+        numbering=crud_numbering.numerador(db),
     )
 
     peticion = SaleRequest(
@@ -69,6 +84,7 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
         # `stock` es la CANTIDAD vendida, no el inventario. El nombre viene del
         # cliente WinForms y se conserva en el contrato del API.
         lines=[RequestedLine(l.id_product, l.stock) for l in sale.products],
+        document_type=sale.document_type,
     )
 
     try:
@@ -82,6 +98,57 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
         # Va el valor que llegó: el caso real no es un método inventado sino uno
         # mal escrito, y verlo ahorra el viaje a la base.
         raise api_error(400, "invalid_sale_payment_method", method=e.method) from None
+    except InvalidSaleDocumentType as e:
+        # El valor que llegó, por lo mismo que el método de pago.
+        raise api_error(
+            400, "invalid_sale_document_type", document_type=e.document_type
+        ) from None
+    except InvoiceNeedsReceiver:
+        raise api_error(400, "invoice_needs_receiver") from None
+    except InvoiceNeedsResident:
+        # Al cliente del extranjero no se le factura: se le exporta (RN-87).
+        raise api_error(400, "invoice_needs_resident") from None
+    except ExportNeedsReceiver:
+        raise api_error(400, "export_needs_receiver") from None
+    except ExportNeedsForeignReceiver:
+        raise api_error(400, "export_needs_foreign_receiver") from None
+    except ExportNeedsForeignAddress as e:
+        # Se arregla en la ficha del cliente, no en la caja.
+        raise api_error(400, "export_needs_foreign_address", client_id=e.client_id) from None
+    except ExportLineNeedsTariffHeading as e:
+        # Con el nombre del producto, como `insufficient_stock`: «falta la
+        # partida» sin decir de cuál obliga a revisar la venta entera.
+        producto = productos.get(e.product_id)
+        raise api_error(
+            400,
+            "export_line_needs_tariff_heading",
+            product_id=e.product_id,
+            name=producto.name if producto else None,
+        ) from None
+    except ExportTariffNotAllowed as e:
+        producto = productos.get(e.product_id)
+        raise api_error(
+            400,
+            "export_tariff_not_allowed",
+            product_id=e.product_id,
+            name=producto.name if producto else None,
+            tax_code=e.tax_code,
+        ) from None
+    except IssuerIdentificationRequired as e:
+        # La compañía emite y no tiene cédula de emisor, o la que tiene no cabe
+        # en la clave (RN-45). Lo arregla soporte, no quien cobra.
+        raise api_error(409, "issuer_identification_required", reason=e.reason) from None
+    except DocumentTypeNotEnabled as e:
+        # La compañía no emite ese comprobante (RN-88). Va el tipo, para que la
+        # frase pueda nombrarlo.
+        raise api_error(
+            400, "document_type_not_enabled", document_type=e.document_type
+        ) from None
+    except ClientNotFound as e:
+        # El mismo código que la ficha de clientes: para quien cobra, el de otra
+        # compañía y el que no existe son la misma cosa, y decir cuál sería
+        # contarle qué ids tienen los demás negocios.
+        raise api_error(404, "client_not_found", client_id=e.client_id) from None
     except InvalidQuantity:
         # El dominio rechaza el valor pero no dice qué línea venía mal: eso lo
         # sabe la interfaz, que es la que conoce el orden en que llegaron.
@@ -137,7 +204,22 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
 
 
 def get_all_sales(db: Session):
-    return db.query(Sale).order_by(Sale.created_at.desc()).all()
+    ventas = db.query(Sale).order_by(Sale.created_at.desc()).all()
+    # El estado ante Hacienda de cada venta, en una sola consulta: el vigente
+    # de cada origen es el último (plan §7.2).
+    from app.models.model_fe import FeDocument
+
+    estados: dict[int, str] = {}
+    for fila in (
+        db.query(FeDocument.source_id, FeDocument.status)
+        .filter(FeDocument.source_type == "sale")
+        .order_by(FeDocument.id)
+        .all()
+    ):
+        estados[fila.source_id] = fila.status
+    for venta in ventas:
+        venta.einvoice_status = estados.get(venta.id)
+    return ventas
 
 
 def get_sale_detail(db: Session, sale_id: int) -> dict | None:
@@ -176,6 +258,12 @@ def get_sale_detail(db: Session, sale_id: int) -> dict | None:
                 # El código de Hacienda con el que se cobró (RN-76). Del
                 # porcentaje no se vuelve al código, así que va guardado.
                 "tax_code": detail.tax_code,
+                # El CABYS y la unidad con que se vendió (RN-86): el comprobante
+                # los imprime por línea. Nulos antes de la migración 016.
+                "cabys_code": detail.cabys_code,
+                "unit_of_measure": detail.unit_of_measure,
+                # La partida con que se exportó (T-727); nula fuera de la FEE.
+                "tariff_heading": detail.tariff_heading,
             }
         )
 
@@ -209,8 +297,11 @@ def get_sale_detail(db: Session, sale_id: int) -> dict | None:
         "cash_received": float(sale.cash_received),
         "change_given": float(sale.change_given),
         "created_at": sale.created_at,
+        "document_type": sale.document_type,
         "client_name": client_name,
         "user_name": user_name,
         "returned": returned,
         "items": items,
+        # El comprobante numerado: lo que imprime el bloque fiscal (T-705).
+        "einvoice": crud_numbering.comprobante_de(db, "sale", sale.id),
     }

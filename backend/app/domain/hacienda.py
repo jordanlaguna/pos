@@ -19,6 +19,7 @@ from dataclasses import dataclass, replace
 from typing import Final, Mapping
 
 from .errors import (
+    IdentificationTypeRequired,
     InvalidEnvironment,
     InvalidIdentificationType,
     InvalidSigningKey,
@@ -77,9 +78,16 @@ class HaciendaEndpoints:
     realm: str
 
 
-#: El servidor de Hacienda. Uno solo: el sandbox NO está en otra máquina, es la
-#: misma con otra ruta (`recepcion-sandbox`), y eso es lo que se escribe mal de
-#: memoria.
+#: El dominio de Hacienda. La recepción de pruebas está en **otro servidor**
+#: (`api-sandbox.`), con la misma ruta que la de producción.
+#:
+#: Hasta el 2026-10-03 decía lo contrario —«el sandbox es la misma máquina con
+#: otra ruta, `api.…/recepcion-sandbox/v1/`»—, copiado del README de `docs/`.
+#: Esa ruta ya no existe: el Gateway de AWS que está delante contesta **403**
+#: `IncompleteSignatureException` a cualquier token, y la cola lo leía como
+#: «credenciales sin permiso». Se comprobó consultando la misma clave en las
+#: dos: `api-sandbox.…/recepcion/v1/` contesta Hacienda («no ha sido
+#: recibido»), la otra el Gateway.
 _HOST: Final = "comprobanteselectronicos.go.cr"
 
 
@@ -94,11 +102,12 @@ def _idp(realm: str) -> str:
     return f"https://idp.{_HOST}/auth/realms/{realm}/protocol/openid-connect/token"
 
 
-#: Lo publicado en `docs/hacienda/costa-rica/README.md` §7 y §12, verificado el
-#: 2026-09-13.
+#: Lo publicado en `docs/hacienda/costa-rica/README.md` §7 y §12. El IdP de los
+#: dos y la recepción de producción, verificados el 2026-09-13; la recepción
+#: del sandbox, corregida y verificada el 2026-10-03 (ver `_HOST`).
 _PUBLICADOS: Final[dict[str, HaciendaEndpoints]] = {
     SANDBOX: HaciendaEndpoints(
-        api_url=f"https://api.{_HOST}/recepcion-sandbox/v1/",
+        api_url=f"https://api-sandbox.{_HOST}/recepcion/v1/",
         idp_url=_idp("rut-stag"),
         client_id="api-stag",
         realm="rut-stag",
@@ -116,6 +125,18 @@ _PUBLICADOS: Final[dict[str, HaciendaEndpoints]] = {
 #: hacer es apuntar a otro lado ese mismo día, no esperar una versión.
 OVERRIDABLE: Final = ("api_url", "idp_url", "client_id", "realm")
 
+
+#: La política de firma XAdES-EPES de la 4.4 (README §6), tal como la escribe
+#: el comprobante aceptado: con los acentos codificados por ciento. El resumen
+#: es el del PDF que publica Hacienda; si Hacienda cambia el PDF hay que volver a
+#: calcularlo, y mientras tanto todo comprobante se rechaza por política. Viven
+#: acá y no en el firmante por lo mismo que las URLs: son quién es Hacienda.
+SIGNATURE_POLICY_ID: Final = (
+    f"https://cdn.{_HOST}/xml-schemas/"
+    "Resoluci%C3%B3n_General_sobre_disposiciones_t%C3%A9cnicas_comprobantes_"
+    "electr%C3%B3nicos_para_efectos_tributarios.pdf"
+)
+SIGNATURE_POLICY_HASH: Final = "DWxin1xWOeI8OuWQXazh4VjLWAaCLAA954em7DMh0h8="
 
 #: El espacio de nombres de cada tipo de comprobante, por su código en el
 #: consecutivo (nota 3 del anexo).
@@ -191,13 +212,30 @@ def signing_key_name(company_id: int, environment: str) -> str:
 # ------------------------------------------------- tipos de identificación
 
 
-#: Los cuatro de Hacienda. Física, jurídica, DIMEX (residencia) y NITE.
-IDENTIFICATION_TYPES: Final = ("01", "02", "03", "04")
+#: Los seis de la 4.4. Física, jurídica, DIMEX (residencia), NITE, extranjero
+#: no domiciliado y no contribuyente. Los dos últimos entraron con F7: el `05`
+#: es el receptor de una factura de exportación (T-727) y el `06` el vendedor
+#: de una factura de compra (T-728). Son de clientes y proveedores; el emisor
+#: sigue siendo de los cuatro primeros (`ISSUER_IDENTIFICATION_TYPES`).
+IDENTIFICATION_TYPES: Final = ("01", "02", "03", "04", "05", "06")
 
 PHYSICAL: Final = "01"
 LEGAL: Final = "02"
 DIMEX: Final = "03"
 NITE: Final = "04"
+FOREIGN: Final = "05"
+NON_TAXPAYER: Final = "06"
+
+#: Con los que se puede emitir: quien firma tiene cédula del país y está
+#: inscrito. Un extranjero no domiciliado o un no contribuyente reciben
+#: comprobantes; no los emiten.
+ISSUER_IDENTIFICATION_TYPES: Final = (PHYSICAL, LEGAL, DIMEX, NITE)
+
+
+def is_foreign(identification_type: object) -> bool:
+    """Si un receptor con este tipo es del extranjero, y por eso se le exporta
+    (T-727). Espejo de `isForeign` en el POS."""
+    return identification_type == FOREIGN
 
 
 def check_identification_type(value: object) -> str:
@@ -232,3 +270,23 @@ def identification_type_for(identification: str) -> str | None:
     if len(digitos) in (11, 12):
         return DIMEX
     return None
+
+
+def client_identification_type(requested: object, identification: str) -> str:
+    """El tipo con que se guarda un cliente (T-617).
+
+    El que se eligió, si se eligió; si no, el que deja ver la longitud de la
+    cédula. Es lo que permite que un cliente dado de alta por el API sin el
+    campo —`seed.py`, una importación— quede igual que los que ya estaban, que
+    la migración 011 clasificó así.
+
+    Y si tampoco así se sabe, **no se guarda**: el tipo va en el receptor del
+    comprobante, y un receptor sin tipo es un rechazo de Hacienda que llega
+    cuando el cliente ya se fue.
+    """
+    if requested not in (None, ""):
+        return check_identification_type(requested)
+    deducido = identification_type_for(identification)
+    if deducido is None:
+        raise IdentificationTypeRequired()
+    return deducido

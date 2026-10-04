@@ -786,6 +786,7 @@ class TestClientes:
             "last_name": "Prueba",
             "second_name": "Códigos",
             "identification": f"4{marca}",
+            "identification_type": "01",
             "telephone": "80000000",
             "email": f"cliente.{marca}@pruebas.ventasys.cr",
             "address": "San José",
@@ -806,38 +807,26 @@ class TestClientes:
 
 @pytest.mark.characterization
 class TestConfiguracion:
-    def test_tasa_que_no_es_un_numero(self, api: Api):
-        respuesta = api.call("PUT", "/settings/", {"data": {"impuesto": {"tasa": "mucho"}}})
-        assert codigo(respuesta, 400) == "tax_rate_not_a_number"
+    """El impuesto ya no se configura (QA-05): una tasa que llegue se descarta,
+    buena o mala, en vez de rechazarse. `tax_rate_out_of_range` sigue vivo para
+    la tarifa propia de un producto (`test_producto_cabys.py`).
 
-    def test_tasa_fuera_de_rango(self, api: Api):
-        """El 13 % es 0,13, no 13."""
-        respuesta = api.call("PUT", "/settings/", {"data": {"impuesto": {"tasa": 13}}})
-        assert codigo(respuesta, 400) == "tax_rate_out_of_range"
+    Antes, una prueba de acá guardó una tasa buena por el API y **tumbó
+    diecinueve pruebas de otros archivos**: la configuración es de la compañía
+    y la comparten todas. Esta guarda la configuración que ya había, más un
+    impuesto que no se guarda, y la deja igual en el `finally`: lo que lee el
+    resto de la batería no cambia en ningún momento.
+    """
 
-    # Las dos de arriba mandan `impuesto.tasa`, la forma vieja. El POS escribe
-    # `tax.rate` desde T-113, y era justo la que la validación no miraba: estas
-    # dos pruebas cubren el camino por el que de verdad llega la configuración.
-
-    def test_tasa_fuera_de_rango_con_la_clave_nueva(self, api: Api):
-        """El defecto: `tax.rate` se guardaba sin validar y el cálculo la
-        descartaba después, así que el dueño configuraba 500 % y se le cobraba
-        13 % sin un solo error."""
-        respuesta = api.call("PUT", "/settings/", {"data": {"tax": {"rate": 5}}})
-        assert codigo(respuesta, 400) == "tax_rate_out_of_range"
-
-    def test_tasa_que_no_es_un_numero_con_la_clave_nueva(self, api: Api):
-        respuesta = api.call("PUT", "/settings/", {"data": {"tax": {"rate": "mucho"}}})
-        assert codigo(respuesta, 400) == "tax_rate_not_a_number"
-
-    # Que el rechazo no se haya vuelto tan ancho que no deje pasar lo bueno se
-    # comprueba en `test_settings_tasa.py`, sobre la función pura y sin tocar la
-    # base. La primera versión de esta prueba guardaba una tasa buena por el API
-    # —0,04— y **tumbó diecinueve pruebas de otros archivos**: la configuración
-    # es de la compañía, la comparten todas las pruebas de la corrida, y a partir
-    # de ahí el servidor cobró 4 % donde cada una esperaba 13 %. Es la misma
-    # lección de T-310, esta vez en el backend: no se restaura mejor, no se toca
-    # lo que otros usan.
+    def test_una_tasa_mandada_se_descarta(self, api: Api):
+        original = api.ok("GET", "/settings/")["data"] or {}
+        try:
+            for impuesto in ({"tax": {"rate": 5}}, {"impuesto": {"tasa": "mucho"}}):
+                api.ok("PUT", "/settings/", {"data": {**original, **impuesto}, "keep_logo": True})
+                guardada = api.ok("GET", "/settings/")["data"]
+                assert "tax" not in guardada and "impuesto" not in guardada
+        finally:
+            api.ok("PUT", "/settings/", {"data": original, "keep_logo": True})
 
     def test_configuracion_demasiado_grande(self, api: Api):
         respuesta = api.call("PUT", "/settings/", {"data": {"relleno": "x" * 25_000}})

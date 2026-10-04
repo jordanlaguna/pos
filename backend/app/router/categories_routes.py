@@ -10,7 +10,7 @@ from app.schemas.schemas_categories import (
     CategoryUpdate,
 )
 from app.services import crud_categories
-from app.utils.auth_dependency import Sesion, get_current_user, require_admin
+from app.utils.auth_dependency import Sesion, get_current_user, require_admin, require_module
 
 router = APIRouter()
 
@@ -28,6 +28,7 @@ def register_category(
     category: CategoryRegister,
     db: Session = Depends(get_db_session),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     return crud_categories.create_category(db=db, category=category)
 
@@ -47,6 +48,7 @@ def update_category(
     cambios: CategoryUpdate,
     db: Session = Depends(get_db_session),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     """Renombrar, mover de madre o activar y desactivar."""
     return crud_categories.update_category(db=db, category_id=category_id, cambios=cambios)
@@ -57,6 +59,7 @@ def reorder_categories(
     orden: CategoryReorder,
     db: Session = Depends(get_db_session),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     return crud_categories.reorder(db=db, parent_id=orden.parent_id, ids=orden.ids)
 
@@ -66,6 +69,7 @@ def delete_category(
     category_id: int,
     db: Session = Depends(get_db_session),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     """Borra solo lo que no arrastra nada; con productos o hijas, 409 (RN-7)."""
     crud_categories.delete_category(db=db, category_id=category_id)

@@ -64,6 +64,8 @@
 	// publica Hacienda; entre 0 y 1 circula del lado del servidor. En blanco
 	// significa «la configurada del negocio» (RN-9), que no es lo mismo que 0.
 	let fCabys = $state('');
+	/** La partida arancelaria (T-727): doce dígitos, solo para exportar. */
+	let fTariff = $state('');
 	let fRatePct = $state('');
 	/**
 	 * La tarifa que el catálogo le pone a `fCabys`, si se pudo averiguar.
@@ -194,6 +196,7 @@
 		// blanco ES la configurada (RN-9), y dejarla así es lo que hace que el
 		// día que el dueño cambie su tasa le cambie el catálogo que no tocó.
 		limpiarCabys();
+		fTariff = '';
 		elegirCategoria(branchesForForm[0]?.root.id ?? 0);
 		productModal = true;
 	}
@@ -209,6 +212,7 @@
 		fCabys = product.cabys_code ?? '';
 		fRatePct = product.tax_rate == null ? '' : ratePercentText(product.tax_rate);
 		fTaxCode = product.tax_code ?? '';
+		fTariff = product.tariff_heading ?? '';
 		// `codigoLeido` se adelanta para que el vigilante no tome esto por una
 		// asignación: abrir la ficha lee el catálogo, pero no copia (ver
 		// `leerTarifaOficial`).
@@ -755,6 +759,18 @@
 						</p>
 					{/if}
 				</div>
+
+				<!-- La partida arancelaria (RF-78, T-727): lo que una mercancía necesita
+				     para salir en una factura de exportación. Vacía es «no tiene». -->
+				<Field
+					label={m.inventory_label_tariff_heading()}
+					name="tariff_heading"
+					bind:value={fTariff}
+					inputmode="numeric"
+					error={form?.errors?.tariff_heading}
+					hint={m.inventory_tariff_heading_hint()}
+					class="sm:col-span-2"
+				/>
 			</div>
 
 			{#if cabysProblem}

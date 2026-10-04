@@ -23,7 +23,8 @@ prueba que protege el invariante más importante del sistema.
 from __future__ import annotations
 
 import ast
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -37,10 +38,15 @@ from app.database.database import Base
 # tabla de menos: hace fallar la creación entera con `NoReferencedTableError`
 # —`user_companies.user_id` apunta a `users`—. Es la misma razón por la que
 # `app/main.py` los importa todos antes de crear el esquema.
+import app.models.model_accounting  # noqa: F401
+import app.models.model_fe  # noqa: F401
+import app.models.model_note  # noqa: F401
+import app.models.model_supplier  # noqa: F401
 from app.models.model_cash import CashMovement, CashSession  # noqa: F401
 from app.models.model_categories import Category
 from app.models.model_client import Client  # noqa: F401
 from app.models.model_company import AuditLog, Branch, Company, Plan, Terminal, UserCompany  # noqa: F401
+from app.models.model_payroll import Employee, PayrollRate
 from app.models.model_person import Person  # noqa: F401
 from app.models.model_product import Product
 from app.models.model_return import Return, ReturnDetail  # noqa: F401
@@ -167,6 +173,34 @@ def test_las_tablas_que_no_son_de_negocio_se_leen_sin_compania(db):
     assert current_company.get() is None
     assert db.query(Company).count() == 2
     assert db.query(Plan).count() == 1
+
+
+def test_las_tasas_de_planilla_son_del_pais_y_se_leen_sin_compania(db):
+    """RN-67: las cuatro tablas de tasas no llevan `company_id` (T-1201).
+
+    Son las mismas para todos los patronos y las mantiene soporte, que no tiene
+    compañía. Si heredaran el filtro, soporte no podría cargar el decreto nuevo.
+    """
+    db.add(
+        PayrollRate(
+            country="CR",
+            concept="sem",
+            payer="employee",
+            value=Decimal("0.055"),
+            valid_from=date(2026, 1, 1),
+            source="prueba",
+            verified_at=date(2026, 1, 1),
+        )
+    )
+    db.commit()
+    assert current_company.get() is None
+    assert len(db.query(PayrollRate).all()) == 1
+
+
+def test_los_empleados_si_son_de_la_compania(db):
+    """La otra mitad: un salario es lo más privado de la planilla."""
+    with pytest.raises(SinCompania):
+        db.query(Employee).all()
 
 
 # ------------------------------------------------------------------ escritura

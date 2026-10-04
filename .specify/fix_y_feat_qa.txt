@@ -1,0 +1,24 @@
+Tenemos varios fix que corregir, arrancamos con los fix y luego los feat
+
+1. El la parte de soporte, al dar de alta a un afiliado y su compañía, quiero decidir que módulos ponerle,
+podemos usar los que ya están, pero pensé en distribuirlos así, ventas, caja, facturas, devoluciones, inventario, Proveedores, usuarios y clientes como un solo paquete (configuración no se toma como módulo porque es indispensable que ya esté), luego ventas, facturas, clientes y usuarios (este paquete es como para un restaurante). El paquete completo que lleva todos los módulos, otro paquete puede ser ventas, cajas, facturas, devoluciones, reportes, inventario, compras y proveedores
+
+2. La pantalla de soporte no se puede escoger el idioma, hace falta eso.
+
+3. En planes debería de cargar la información de las compañía y sus planes porque al día de mañana podrían cambiar el plan que ya tenga
+
+4. Al crear un nuevo afiliado y una compañía, el número de afiliado deberpia de empezar en secuencia, es decir, si ya la 1 se registró, pues mostrar la 2, para la compañía igual, si el afiliado uno ya tiene compañía 1, debería de empezar por 2
+
+5. Quitar de Moneda e Impuesto el impuesto que se pone manual ya que eso no existe viable al manejar el cabys.
+
+6. Los botones de guardar el cert y las credenciales debería de tener el mismo diseño que todos, los combobox igual, deberíamos usar y aprovechar lo librería de svelte.
+
+Feat:
+1. Quiero que analices bien de la kb lo siguiente:
+Proveedores (módulo nuevo ventia-cr, así se llamará ahora pos) para moldearlo con lo que tenemos, esto lo guardas en .specify como una task nueva (fase)
+
+2. Quiero que analices compras con la kb porque siento que el nuestro es muy sencillo, así que profundiza como en Proveedores y los guardas en .specify para su feat correspondiente.
+
+3. Quiero que analices Inventario, el nuestro está muy completo, pero no está de más analizarlo.
+
+Construyé T-616 que es la pantalla para indicar el último consecutivo por tipo de comprobante; solo deja subirlo y queda en bitácora. La necesita cualquier negocio que venga de otro sistema.

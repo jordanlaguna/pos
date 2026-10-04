@@ -114,7 +114,8 @@ proporcionalidad. DetCore **relaya** estos montos; no los calcula.
   RSA-2048/4096, SHA-256/512. Para dar título ejecutivo (Ley 8454) la firma del receptor debe llevar
   `xades:ClaimedRole = 'Receptor'` (PDF p.84). **La emisión actual no fija `ClaimedRole`** → delta.
 - **Transmisión:** **mismo endpoint** que los comprobantes — `POST /recepcion/v1/` (sandbox
-  `/recepcion-sandbox/v1/`) (`README.md:414`).
+  `https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/`; la ruta `/recepcion-sandbox/v1/`
+  ya no existe, ver README §7).
 - **Auth:** OIDC/OAuth2 ROPC contra el Keycloak de Hacienda, idéntica a emisión.
 - **Respuesta:** Hacienda devuelve un `MensajeHacienda` firmado para la clave del MR; `Mensaje` solo
   enumera `1`=Aceptado / `3`=Rechazado (no hay "parcial" a nivel Hacienda —

@@ -98,6 +98,34 @@ CODES: frozenset[str] = frozenset(
         # más entraba sin avisar, no sumaba al efectivo esperado del arqueo y
         # aparecía como una fila propia en el reporte de métodos de pago.
         "invalid_sale_payment_method",
+        # `document_type` es el valor que llegó. Del mostrador salen dos: '01'
+        # factura y '04' tiquete (RN-85). Lo demás es un cliente roto.
+        "invalid_sale_document_type",
+        # Factura sin cliente. La factura electrónica exige un receptor
+        # identificado; sin él, lo que se emite es un tiquete (RN-85).
+        "invoice_needs_receiver",
+        # `document_type`: la compañía no emite ese comprobante (RN-88). La
+        # pantalla no lo ofrece; llegar acá es una pantalla vieja o el API.
+        "document_type_not_enabled",
+        # Factura a un cliente del extranjero (RN-87, T-727): lo suyo es la
+        # factura de exportación, o un tiquete.
+        "invoice_needs_resident",
+        # Exportación sin cliente, o a uno del país.
+        "export_needs_receiver",
+        "export_needs_foreign_receiver",
+        # `client_id`: el cliente del extranjero no tiene dirección (RF-78).
+        "export_needs_foreign_address",
+        # `product_id`, `name`: una mercancía de la venta sin partida
+        # arancelaria (RF-78). Se arregla en la ficha del producto.
+        "export_line_needs_tariff_heading",
+        # `product_id`, `name`, `tax_code`: la exportación no admite la tarifa
+        # 01 ni la 11 (T-720).
+        "export_tariff_not_allowed",
+        # `tariff_heading`: una partida que no son doce dígitos.
+        "invalid_tariff_heading",
+        # `max_length`: una dirección extranjera más larga que lo que admite
+        # el XML.
+        "invalid_foreign_address",
         "product_not_found",
         "product_without_price",
         "insufficient_stock",
@@ -106,7 +134,6 @@ CODES: frozenset[str] = frozenset(
         "totals_mismatch",
         "insufficient_payment",
         "sale_not_found",
-        "sale_details_not_found",
         "sale_failed",
         # --------------------------------------------------- devoluciones
         "empty_return",
@@ -116,6 +143,35 @@ CODES: frozenset[str] = frozenset(
         "excessive_return",
         "return_not_found",
         "return_failed",
+        # `sale_id`: anular es el comprobante entero (RN-89). Una venta con
+        # devoluciones ya no se anula —lo que queda se devuelve—, y anular sin
+        # devolver todo no es anular.
+        "annul_after_return",
+        "annul_must_be_full",
+        # `product_id`: la línea ya tiene una NC por monto (T-726). Devolverla
+        # reembolsaría dos veces la misma plata; lo que falte va en otra nota.
+        "return_after_credit_note",
+        # `sale_id`: una venta con notas por monto ya no se anula (T-726).
+        "annul_after_note",
+        # ---------------------------------------- notas por monto (T-726)
+        "note_not_found",
+        "note_failed",
+        # `sale_id`: la venta no fue comprobante; no hay qué referenciar.
+        "note_needs_document",
+        # `document_type`: no es ND ni NC.
+        "invalid_note_type",
+        # `document_type` y `reference_code`: un motivo que esa nota no admite
+        # en un mostrador de contado —hoy solo el '02'—.
+        "invalid_note_reason",
+        "note_reason_required",
+        "empty_note",
+        # `product_id`: la venta no llevaba ese producto.
+        "note_line_not_in_sale",
+        # `product_id`: el monto de la línea en cero o negativo.
+        "invalid_note_amount",
+        # `product_id`, `available` y `requested`: una NC por más de lo que
+        # queda de la línea. Pasarse sería reembolsar lo que nunca se pagó.
+        "credit_exceeds_line",
         # ------------------------------------------------------- entradas
         "empty_entry",
         "invalid_entry_source",
@@ -198,6 +254,12 @@ CODES: frozenset[str] = frozenset(
         # par de columnas y les sirve el mismo «no».
         "invalid_identification_type",
         "identification_required",
+        # Un cliente sin tipo y con una cédula que no lo deja deducir (T-617): el
+        # tipo va en el receptor del comprobante, y adivinarlo es un rechazo.
+        "identification_type_required",
+        # La compañía emite y no tiene cédula de emisor, o no cabe en la clave
+        # (`reason`: `missing` o `invalid`). La corrige soporte (RN-45, T-705).
+        "issuer_identification_required",
         # ------------------------------------------ abonos a proveedor (T-1010)
         # `balance` y `requested`: se quiso abonar más de lo que se debe de esa
         # compra. No se ajusta al saldo en silencio, porque o es un dedo de más
@@ -288,8 +350,13 @@ CODES: frozenset[str] = frozenset(
         # -------------------------------------------------- configuración
         "unsupported_locale",
         "settings_too_large",
-        "tax_rate_not_a_number",
         "tax_rate_out_of_range",
+        # La ubicación del emisor (T-722, RN-83). `field` dice cuál de los cinco
+        # y `reason` qué le pasa: `required`, `unknown`, `too_short`, `too_long`.
+        "invalid_location",
+        # Encender la factura electrónica sin lo que el emisor necesita.
+        # `missing`: la lista de `identification`, `email` y `location`.
+        "einvoicing_needs_issuer",
         "settings_save_failed",
         # ------------------------------------------- factura electrónica (F6)
         # `reason` dice cuál de los cuatro motivos —`bad_pin`, `not_a_p12`,
@@ -304,6 +371,14 @@ CODES: frozenset[str] = frozenset(
         # 503 dice «reintentá», que es exactamente el caso de alguien que
         # reinició la VM y no abrió Vault.
         "signing_unavailable",
+        # ------------------------------------------------- la transmisión (F7)
+        "document_not_found",
+        "document_not_stopped",
+        "document_not_signed",
+        "document_not_resolved",
+        "document_file_missing",
+        "storage_unavailable",
+        "production_gate_locked",
         # --------------------------- comprobar la transmisión (T-612, RF-31)
         # Los tres desenlaces de RF-31 son tres códigos y no uno con un dato
         # adentro: cada uno manda a hacer algo distinto, y el POS tiene que
@@ -342,6 +417,12 @@ CODES: frozenset[str] = frozenset(
         "terminal_code_taken",
         "branch_not_found",
         "terminal_not_found",
+        # El arranque de una serie (T-616, RN-36 a RN-38). `value` lo que llegó;
+        # `document_type` la serie que ya usó el sistema; `current` y
+        # `requested`, dónde va y adónde se la quería bajar.
+        "invalid_sequence_start",
+        "sequence_in_use",
+        "sequence_cannot_go_down",
         # `sales` y `terminals`: tiene historia o cajas colgando, así que se
         # desactiva en vez de borrarse (RN-7). Van las dos cuentas porque quien
         # lo lee necesita saber qué mover primero.
@@ -358,6 +439,93 @@ CODES: frozenset[str] = frozenset(
         # solo en la pantalla porque un desplegable sin querer no puede darle
         # efecto fiscal a lo que se emita después.
         "confirmation_required",
+        # -------------------------------------- tasas de planilla (T-1204)
+        # `field` y `reason`: un pagador que no existe, o una carga que no es una
+        # fracción —el 5,5 % es 0,055— (RN-67).
+        "invalid_payroll_rate",
+        # `concept`, `payer` y `latest`: una tasa no se edita, se agrega otra
+        # posterior. Con la fecha de la última, para que soporte vea contra qué
+        # chocó.
+        "payroll_rate_not_newer",
+        # `reason` e `index`: un juego de tramos de renta con un hueco, sin
+        # tramo abierto al final o que no arranca en cero (T-1221). Un salario
+        # que cae en el hueco no pagaría renta sin que nadie lo note.
+        "invalid_tax_brackets",
+        # ------------------------------------------------- planilla (F12)
+        # `field` y `reason`: el número patronal, los códigos de un puesto o la
+        # prima de una póliza que no tienen la forma que piden los archivos de
+        # la CCSS y del INS (T-1217).
+        "invalid_payroll_settings",
+        # `field` y `reason`: una jornada a la que le falta o le sobra su dato
+        # de corte, o con horas o días fuera de rango (RN-94).
+        "invalid_schedule",
+        # `resource` ('schedules' | 'positions' | 'policies') y `name`: el
+        # nombre —o el número de póliza— ya está tomado en esta compañía.
+        "payroll_name_taken",
+        # `schedule_id`: tiene corridas pagadas, así que sus cortes no se tocan
+        # (RF-83). Se crea otra jornada.
+        "schedule_locked",
+        "schedule_not_found",
+        "position_not_found",
+        "policy_not_found",
+        # `field` y `reason`: un dato del empleado que la CCSS o el INS
+        # rechazarían (RN-72).
+        "invalid_employee",
+        # `identification`: la misma persona no entra dos veces en la planilla.
+        "employee_identification_taken",
+        "employee_not_found",
+        # `employee_id` y `terminated_on`: ya salió, o la acción es posterior a
+        # su salida.
+        "employee_terminated",
+        # `field` y `reason`: un contrato que no se puede abrir (RN-94).
+        "invalid_contract",
+        # `employee_id`: no tiene contrato vigente en esa fecha; sin salario no
+        # hay de qué calcular.
+        "contract_missing",
+        # `field` y `reason`: una acción a la que le falta o le sobra algo
+        # (RN-90). La baja no entra por acá: tiene su propia ruta.
+        "invalid_action",
+        "action_not_found",
+        # `reason` ('applied' | 'cancellation' | 'contract'): ya entró en una
+        # corrida —se anula, no se edita (RN-91)—, es una anulación, o es un
+        # aumento o cambio de puesto que ya movió contratos.
+        "action_not_editable",
+        "action_already_cancelled",
+        # Suspender solo aplica a una deducción recurrente (RN-92).
+        "action_not_recurring",
+        "action_already_suspended",
+        # `cut` y `frequency`: la fecha no es corte de esa jornada (RN-94).
+        "invalid_cut_date",
+        # `run_id`: ya hay una corrida de esa jornada con ese corte.
+        "run_already_exists",
+        "run_not_found",
+        # `reason`: el estado que lo impide, o la clase de corrida que todavía
+        # no se calcula (RN-68).
+        "run_not_editable",
+        # Aprobar un borrador sin líneas: primero se calcula.
+        "run_not_calculated",
+        # `status`: pagar lo que no está aprobado.
+        "run_not_approved",
+        "run_already_paid",
+        # `missing` y `on`: a la fecha de corte falta una tasa (RN-67). Sin
+        # ella la boleta saldría cobrando de menos, sin que nadie lo note.
+        "rates_missing_for_date",
+        # `run_id` y `status`: solo una corrida pagada se ajusta (RN-68, T-1212);
+        # un borrador se recalcula.
+        "run_not_paid",
+        # `run_id` y `employee_id`: una liquidación de alguien que no está dado
+        # de baja no tiene qué liquidar (RN-71, T-1210).
+        "settlement_requires_termination",
+        # `employee_id`, `balance` y `requested`: pide más días de vacaciones
+        # de los que tiene (RN-70, T-1209).
+        "vacation_balance_exceeded",
+        # `errors`: las filas con error de una importación que pidió escribir
+        # (RN-97, T-1220). Cada una trae hoja, fila y el código que daría el
+        # formulario. No se escribió nada.
+        "import_has_errors",
+        # `missing` (empleado y campos) y `company`: lo que falta para armar el
+        # archivo de la CCSS o del INS (RN-96, T-1211). No se exporta a medias.
+        "export_data_incomplete",
     }
 )
 

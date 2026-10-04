@@ -114,6 +114,19 @@ def codes_for(rate: TaxRate) -> tuple[str, ...]:
     return tuple(code for code, fila in CODES.items() if fila.rate == rate)
 
 
+def purchase_line_code(product_code: object, rate: TaxRate) -> str | None:
+    """El código de una línea de compra (T-728, RN-53).
+
+    La tarifa es la del documento del proveedor; el código es el del producto
+    si dice esa misma tarifa —es lo que el negocio ya decidió sobre ese
+    artículo— y, si no, el que se propone para ella. En el 0 % eso es `None`,
+    por lo mismo que en `suggested_code`: nadie adivina el derecho a crédito.
+    """
+    if product_code in CODES and rate_for(product_code).value == rate.value:
+        return str(product_code)
+    return suggested_code(rate)
+
+
 def suggested_code(rate: TaxRate) -> str | None:
     """El código que se propone para una tarifa, o `None` si hay más de uno.
 
@@ -137,6 +150,7 @@ __all__ = [
     "TarifaIVA",
     "check_code",
     "codes_for",
+    "purchase_line_code",
     "only_in_notes",
     "rate_for",
     "suggested_code",

@@ -703,7 +703,7 @@ class TestLosLibros:
 
     @pytest.fixture(scope="class")
     def negocio(self, api: Api) -> Api:
-        cliente = compania_propia(api, "libros", modulos="accounting,purchases")
+        cliente = compania_propia(api, "libros", modulos="accounting,purchases,suppliers")
         activar(cliente)
 
         # Un catálogo mínimo y una venta del invariante: 3 × 1 450 al 13 %.
@@ -895,3 +895,27 @@ class TestSinElModuloEnElPlan:
         # La otra mitad: los libros de una compañía que bajó de plan siguen
         # siendo su respaldo ante Hacienda.
         assert sin_modulo.ok("GET", "/accounting")["active"] is False
+
+
+class TestGuardarLaConfiguracionNoApagaElLibro:
+    """El defecto del 2026-10-02: la pantalla de Configuración manda solo sus
+    seis secciones, y `save_settings` reemplazaba el JSON entero. Guardar la
+    moneda apagaba la contabilidad sin un solo error: `libro()` devolvía el
+    nulo y las ventas dejaban de asentarse."""
+
+    def test_la_seccion_del_backend_sobrevive_al_guardado_del_pos(self, api: Api):
+        cliente = compania_propia(api, "conf-sobrevive", modulos="accounting")
+        activar(cliente)
+        assert cliente.ok("GET", "/accounting")["active"] is True
+
+        guardado = cliente.ok("GET", "/settings/")["data"]
+        sin_libro = {k: v for k, v in guardado.items() if k != "accounting"}
+        cliente.ok("PUT", "/settings/", {"data": sin_libro, "logo": None, "keep_logo": True})
+
+        assert cliente.ok("GET", "/accounting")["active"] is True
+        assert "accounting" in cliente.ok("GET", "/settings/")["data"]
+
+    def test_y_tampoco_se_escribe_por_ahi(self, api: Api):
+        cliente = compania_propia(api, "conf-no-escribe", modulos="accounting")
+        cliente.ok("PUT", "/settings/", {"data": {"accounting": {"active": True}}, "logo": None, "keep_logo": True})
+        assert cliente.ok("GET", "/accounting")["active"] is False

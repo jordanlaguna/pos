@@ -12,7 +12,7 @@ from app.schemas.schemas_stock_entry import (
 )
 from app.services import crud_stock_entry
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, exigir_modulo, require_admin
+from app.utils.auth_dependency import Sesion, exigir_modulo, require_admin, require_module
 
 router = APIRouter()
 
@@ -34,15 +34,23 @@ def create_entry(
 ):
     """Recibe mercadería. Con proveedor es una compra (RN-52).
 
-    El módulo se exige **solo si trae proveedor**, y por eso se comprueba acá y
-    no como dependencia: una dependencia decide antes de que exista el cuerpo,
-    así que no puede distinguir las dos cosas que este endpoint escribe. Ponerla
-    igual le cerraría el inventario a una compañía que bajó de plan, que es lo
-    contrario de RN-50; no ponerla la dejaría registrando compras sin el módulo,
-    que es lo contrario de RN-49.
+    Los módulos dependen de lo que trae, y por eso se comprueban acá y no como
+    dependencia, que decide antes de que exista el cuerpo (QA-01):
+
+    - recibir mercadería es del **inventario**;
+    - nombrar a quién se le compró es de **proveedores**, que el paquete
+      Comercio trae sin compras;
+    - comprar **a crédito** deja una cuenta por pagar, y eso es de **compras**.
+
+    Pedir compras para cualquier entrada con proveedor —como antes de QA-01—
+    le cerraría a Comercio el recibir de su proveedor al contado, y no pedir
+    nada la dejaría registrando deudas sin el módulo (RN-49).
     """
+    exigir_modulo(db, admin, "inventory")
     if payload.supplier_id is not None:
-        exigir_modulo(db, admin, "purchases")
+        exigir_modulo(db, admin, "suppliers")
+        if payload.payment_terms == "credit":
+            exigir_modulo(db, admin, "purchases")
     return crud_stock_entry.create_entry(db, payload)
 
 
@@ -76,6 +84,7 @@ def cancel_entry(
     payload: EntryCancel | None = None,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     """Anula la entrada y devuelve el stock al valor previo.
 

@@ -1,10 +1,13 @@
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import IntegrityError
 
-from app.database.database import Base, engine
+from app.database.database import Base, SessionLocal, engine
 from app.infrastructure.crypto.fe_crypto import secret_box
+from app.services import crud_payroll_rates
 
 # Los modelos se importan antes de create_all para que SQLAlchemy conozca todas
 # las tablas, incluidas las nuevas de caja y devoluciones.
@@ -27,8 +30,31 @@ from app.models.model_company import (  # noqa: F401
 from app.models.model_cabys import CabysCache  # noqa: F401
 from app.models.model_categories import Category  # noqa: F401
 from app.models.model_client import Client  # noqa: F401
-from app.models.model_fe import FeCredentials, FeSequence  # noqa: F401
+from app.models.model_fe import (  # noqa: F401
+    FeCredentials,
+    FeDocument,
+    FeDocumentEvent,
+    FeSequence,
+)
+from app.models.model_note import SaleNote, SaleNoteLine  # noqa: F401
 from app.models.model_person import Person  # noqa: F401
+from app.models.model_payroll import (  # noqa: F401
+    Employee,
+    EmploymentContract,
+    IncomeTaxBracket,
+    IncomeTaxCredit,
+    InsPolicy,
+    PayrollOpeningEarning,
+    PayrollRate,
+    PayrollRun,
+    PayrollRunItem,
+    PayrollRunLine,
+    PersonnelAction,
+    Position,
+    SeveranceBracket,
+    VacationMovement,
+    WorkSchedule,
+)
 from app.models.model_product import Product  # noqa: F401
 from app.models.model_return import Return, ReturnDetail  # noqa: F401
 from app.models.model_sale_details import SaleDetail  # noqa: F401
@@ -45,8 +71,10 @@ from app.router import (
     categories_routes,
     client_routes,
     fe_routes,
+    note_routes,
     office_routes,
     payable_routes,
+    payroll_routes,
     person_routes,
     product_routes,
     purchase_routes,
@@ -69,7 +97,33 @@ secret_box()
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Postsys API", version="2.0.0")
+# Las tasas de planilla del país (T-1204, RN-67), con su fuente. Son de la
+# plataforma y no de una compañía, así que una instalación sin ellas no puede
+# calcular ninguna planilla: se siembran al arrancar lo mismo que se crea el
+# esquema. Solo entra lo que falta —una tasa existente no se edita nunca— y, si
+# dos procesos arrancan a la vez, el segundo choca con la clave única y se
+# retira sin hacer nada.
+with SessionLocal() as _db:
+    try:
+        crud_payroll_rates.sembrar(_db)
+        _db.commit()
+    except IntegrityError:
+        _db.rollback()
+
+from app.workers import fe_worker
+
+
+@asynccontextmanager
+async def _vida(_app: FastAPI):
+    """La cola de transmisión arranca con la API y se apaga con ella (T-708)."""
+    fe_worker.start()
+    try:
+        yield
+    finally:
+        fe_worker.stop()
+
+
+app = FastAPI(title="Postsys API", version="2.0.0", lifespan=_vida)
 
 # ---------------------------------------------------------------------------
 # CORS
@@ -102,6 +156,7 @@ app.include_router(categories_routes.router, prefix="/categories", tags=["Catego
 app.include_router(cabys_routes.router, prefix="/cabys", tags=["CABYS"])
 app.include_router(cash_routes.router, prefix="/cash", tags=["Cash register"])
 app.include_router(return_routes.router, prefix="/returns", tags=["Returns"])
+app.include_router(note_routes.router, prefix="/notes", tags=["Notes"])
 app.include_router(report_routes.router, prefix="/reports", tags=["Reports"])
 app.include_router(
     stock_entry_routes.router, prefix="/inventory", tags=["Inventory entries"]
@@ -110,6 +165,7 @@ app.include_router(supplier_routes.router, prefix="/suppliers", tags=["Suppliers
 app.include_router(purchase_routes.router, prefix="/purchases", tags=["Purchases"])
 app.include_router(payable_routes.router, prefix="/payables", tags=["Payables"])
 app.include_router(accounting_routes.router, prefix="/accounting", tags=["Accounting"])
+app.include_router(payroll_routes.router, prefix="/payroll", tags=["Payroll"])
 app.include_router(fe_routes.router, prefix="/fe", tags=["Factura electronica"])
 app.include_router(office_routes.router, prefix="/offices", tags=["Branches and terminals"])
 app.include_router(settings_routes.router, prefix="/settings", tags=["Settings"])

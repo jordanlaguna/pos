@@ -219,72 +219,29 @@ test.describe('los tres desenlaces de probar la conexión (RF-31)', () => {
 });
 
 test.describe('pasar a producción (RN-35, RN-46)', () => {
-	test('se confirma, avisa de la certificación y queda en bitácora', async ({ page }) => {
+	test('se confirma, pero la puerta dura dice qué falta (RN-46, T-713)', async ({ page }) => {
 		const dueno = await companiaPropia(page, 'produccion');
 		await abrirFacturaElectronica(page, dueno);
 
-		await clicHasta(page.getByRole('button', { name: /Pasar a producción/i }), async () => {
-			await expect(page.getByRole('dialog')).toBeVisible();
-		});
-
-		// RN-46: avisa de lo que Hacienda exige y **no lo impide**.
-		await expect(page.getByText(/una factura, un tiquete y una nota de crédito/i)).toBeVisible();
-
-		await page.getByRole('button', { name: /Sí, pasar a producción/i }).click();
-		await expect(page.getByText(/Ambiente en uso: producción/i)).toBeVisible();
-		await expect(page.getByText(/tiene efecto fiscal/i)).toBeVisible();
-
-		// La bitácora, con el antes y el después: «cambió el ambiente» no sirve
-		// para nada dentro de seis meses.
-		await salir(page);
-		await autenticar(page, SOPORTE);
-		// `autenticar` no espera a que la sesión quede hecha: sin esto, el `goto`
-		// corre contra el login y la bitácora sale vacía por la razón equivocada.
-		await expect(page).toHaveURL(/\/admin$/);
-		await page.goto('/admin/bitacora?accion=fe_ambiente');
-		await expect(page.getByText('sandbox → production').first()).toBeVisible();
-	});
-
-	test('volver a pruebas no pide confirmación', async ({ page }) => {
-		const dueno = await companiaPropia(page, 'volver');
-		await abrirFacturaElectronica(page, dueno);
+		// Cerrada y diciendo por qué, antes de tocar nada.
+		await expect(page.locator('[data-puerta-produccion="cerrada"]')).toContainText(/Falta:/);
 
 		await clicHasta(page.getByRole('button', { name: /Pasar a producción/i }), async () => {
 			await expect(page.getByRole('dialog')).toBeVisible();
 		});
-		await page.getByRole('button', { name: /Sí, pasar a producción/i }).click();
-		await expect(page.getByText(/Ambiente en uso: producción/i)).toBeVisible();
 
-		// Un solo clic, sin diálogo: exigir confirmación para deshacer convierte la
-		// salida de un error en un segundo trámite.
-		await page.getByRole('button', { name: /Volver a pruebas/i }).click();
+		// El aviso de la certificación sigue en el diálogo (RN-46).
+		await expect(
+			page.getByRole('dialog').getByText(/una factura, un tiquete y una nota de crédito/i)
+		).toBeVisible();
+
+		// Confirmar no alcanza: sin los tres aceptados en pruebas, Hacienda no deja
+		// pasar, y el POS dice cuáles faltan. El paso de verdad —con los tres
+		// aceptados, la vuelta a pruebas sin confirmación, la puerta lateral y la
+		// bitácora— está en tipo-de-comprobante.spec.ts, en el recorrido de F7.
+		await page.getByRole('button', { name: /Sí, pasar a producción/i }).click();
+		await expect(page.getByText(/Falta:.*factura electrónica/i).first()).toBeVisible();
 		await expect(page.getByText(/Ambiente en uso: pruebas/i)).toBeVisible();
-	});
-
-	test('guardar la configuración no mueve el ambiente', async ({ page }) => {
-		/*
-		 * La puerta lateral (T-611). Sin cerrarla, la confirmación y la bitácora de
-		 * RN-35 serían decoración: bastaría con guardar la pantalla de
-		 * Configuración para pasar a producción sin que quedara rastro.
-		 */
-		const dueno = await companiaPropia(page, 'lateral');
-		await abrirFacturaElectronica(page, dueno);
-
-		await clicHasta(page.getByRole('button', { name: /Pasar a producción/i }), async () => {
-			await expect(page.getByRole('dialog')).toBeVisible();
-		});
-		await page.getByRole('button', { name: /Sí, pasar a producción/i }).click();
-		await expect(page.getByText(/Ambiente en uso: producción/i)).toBeVisible();
-
-		// Se guarda la pantalla entera, como quien cambia el teléfono del negocio.
-		await page.getByRole('button', { name: /Guardar cambios/i }).click();
-		await page.waitForLoadState('networkidle');
-
-		await page.goto('/configuracion');
-		await clicHasta(page.getByRole('button', { name: /Factura electrónica/i }), async () => {
-			await expect(page.getByText(/Ambiente en uso/i)).toBeVisible();
-		});
-		await expect(page.getByText(/Ambiente en uso: producción/i)).toBeVisible();
 	});
 });
 

@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.application.ports.numbering import Issuer, NumberedDocument, Office
+from app.domain.fe_document_type import DEFAULT_ENABLED
 from app.domain.money import Money
 from app.domain.tax import TaxRate
 
@@ -34,6 +36,13 @@ class FakeProduct:
     #: que tienen los productos de las pruebas anteriores a F10 y lo que hace
     #: que la primera compra establezca el costo.
     cost: Money = field(default_factory=Money.zero)
+    #: El CABYS y la unidad (RN-86, T-731). Vacíos por omisión, como un
+    #: producto que nadie clasificó.
+    cabys_code: str | None = None
+    unit_of_measure: str | None = None
+    #: La partida arancelaria (T-727). Vacía por omisión: un producto que nadie
+    #: pensó exportar.
+    tariff_heading: str | None = None
 
 
 class FakeProductRepository:
@@ -89,6 +98,33 @@ class FilaDeVenta:
     change_given: Money
     created_at: datetime
     lines: list
+    document_type: str | None = None
+
+
+@dataclass
+class FakeClient:
+    """Un cliente visto desde la venta: quién es ante Hacienda (T-727)."""
+
+    id_client: int
+    identification_type: str | None = None
+    foreign_address: str | None = None
+
+
+class FakeClientRepository:
+    """Los clientes de **esta** compañía, por id. Los demás no existen.
+
+    Se construye con ids —clientes del país sin más datos, que es lo que
+    describen las pruebas anteriores a T-727— o con `FakeClient`.
+    """
+
+    def __init__(
+        self, ids: set[int] | None = None, clientes: list[FakeClient] | None = None
+    ) -> None:
+        self.clientes = {i: FakeClient(i) for i in (ids or ())}
+        self.clientes.update({c.id_client: c for c in (clientes or [])})
+
+    def get(self, client_id: int) -> FakeClient | None:
+        return self.clientes.get(client_id)
 
 
 class FakeSaleRepository:
@@ -163,6 +199,9 @@ class FilaDeDevolucion:
     total: Money
     created_at: datetime
     lines: list
+    #: La nota de crédito (RN-89). Nulos cuando la venta no fue comprobante.
+    document_type: str | None = None
+    reference_code: str | None = None
 
 
 class FakeReturnRepository:
@@ -191,6 +230,55 @@ class FakeReturnRepository:
             for d in self.devoluciones
             if d.user_id == user_id and start <= d.created_at <= end
         )
+
+
+@dataclass
+class FilaDeNota:
+    """Una nota por monto (T-726): la ND o la NC que no mueve mercadería."""
+
+    id_note: int
+    sale_id: int
+    user_id: int
+    document_type: str
+    reference_code: str
+    reason: str
+    payment_method: str | None
+    subtotal: Money
+    tax: Money
+    total: Money
+    created_at: datetime
+    lines: list
+
+
+class FakeNoteRepository:
+    def __init__(self) -> None:
+        self.notas: list[FilaDeNota] = []
+        self._siguiente = 1
+
+    def adjustments(self, sale_id: int) -> dict[int, tuple[Money, Money]]:
+        ajustes: dict[int, tuple[Money, Money]] = {}
+        for n in self.notas:
+            if n.sale_id != sale_id:
+                continue
+            for l in n.lines:
+                sumado, restado = ajustes.get(l.product_id, (Money.zero(), Money.zero()))
+                if n.document_type == "02":
+                    sumado = sumado + l.total
+                else:
+                    restado = restado + l.total
+                ajustes[l.product_id] = (sumado, restado)
+        return ajustes
+
+    def add(self, **datos) -> int:
+        id_note = self._siguiente
+        self._siguiente += 1
+        self.notas.append(FilaDeNota(id_note=id_note, **datos))
+        return id_note
+
+    def in_window(self, user_id: int, start: datetime, end: datetime) -> list:
+        return [
+            n for n in self.notas if n.user_id == user_id and start <= n.created_at <= end
+        ]
 
 
 @dataclass
@@ -286,6 +374,8 @@ class FilaDeEntrada:
     due_date: object = None
     subtotal: Money | None = None
     tax: Money | None = None
+    #: La factura de compra (T-728); nula en toda compra a un proveedor inscrito.
+    document_type: str | None = None
 
 
 class FakeStockEntryRepository:
@@ -355,13 +445,22 @@ class FakeSupplierPaymentRepository:
 
 
 class FakeSettingsRepository:
-    """La tasa configurada, sin tabla `settings` de por medio."""
+    """La configuración que lee la venta, sin tabla `settings` de por medio."""
 
-    def __init__(self, rate) -> None:
-        self._rate = rate
+    def __init__(
+        self, *, einvoicing: bool = False, document_types: frozenset[str] | None = None
+    ) -> None:
+        # Apagada por omisión: es lo que tiene toda compañía hasta que el dueño
+        # la activa, y lo que describen las pruebas anteriores a RN-85.
+        self._einvoicing = einvoicing
+        # Los de fábrica por omisión (RN-88), que es con lo que nace toda compañía.
+        self._document_types = document_types if document_types is not None else DEFAULT_ENABLED
 
-    def tax_rate(self):
-        return self._rate
+    def einvoicing_enabled(self) -> bool:
+        return self._einvoicing
+
+    def document_types(self) -> frozenset[str]:
+        return self._document_types
 
 
 class FakeUnitOfWork:
@@ -639,3 +738,253 @@ class FakeCertificateReader:
             subject=sujeto,
             expires_at=datetime.fromisoformat(vence),
         )
+
+
+class FakeIssuerRepository:
+    """El emisor de la numeración (T-705). Por omisión, el de la factura de
+    referencia del usuario: jurídica, en pruebas."""
+
+    def __init__(
+        self,
+        identification: str | None = "3101702934",
+        *,
+        environment: str = "sandbox",
+        economic_activity: str | None = "474100",
+    ) -> None:
+        self.emisor = Issuer(
+            identification=identification,
+            environment=environment,
+            economic_activity=economic_activity,
+        )
+
+    def issuer(self) -> Issuer:
+        return self.emisor
+
+
+class FakeDocumentNumbering:
+    """El contador y los comprobantes numerados, en memoria (T-704).
+
+    Lleva la cuenta de qué series se bloquearon, para poder decir que una venta
+    que no llegó a numerarse no tocó el contador.
+    """
+
+    def __init__(self, office: Office | None = None, series: dict | None = None) -> None:
+        self._office = office or Office(branch_code="001", terminal_code="00001")
+        #: (tipo, ambiente) → última secuencia.
+        self.series: dict[tuple[str, str], int] = dict(series or {})
+        self.bloqueadas: list[tuple[str, str]] = []
+        self.comprobantes: list[NumberedDocument] = []
+
+    def office(self) -> Office:
+        return self._office
+
+    def last_sequence(self, *, document_type: str, environment: str) -> int:
+        self.bloqueadas.append((document_type, environment))
+        return self.series.get((document_type, environment), 0)
+
+    def save_sequence(self, *, document_type: str, environment: str, value: int) -> None:
+        self.series[(document_type, environment)] = value
+
+    def record(self, document: NumberedDocument) -> None:
+        self.comprobantes.append(document)
+
+
+class FakeSecurityCodes:
+    """Códigos de seguridad predecibles: 00000001, 00000002…"""
+
+    def __init__(self) -> None:
+        self.entregados = 0
+
+    def new(self) -> str:
+        self.entregados += 1
+        return f"{self.entregados:08d}"
+
+
+def numerador(
+    issuer: FakeIssuerRepository | None = None,
+    numbering: FakeDocumentNumbering | None = None,
+):
+    """La numeración armada con sus dobles. Devuelve también el contador, que es
+    lo que las pruebas miran."""
+    from app.application.use_cases.number_document import NumberDocument
+
+    contador = numbering or FakeDocumentNumbering()
+    return (
+        NumberDocument(
+            issuer=issuer or FakeIssuerRepository(),
+            numbering=contador,
+            security_codes=FakeSecurityCodes(),
+        ),
+        contador,
+    )
+
+
+# ------------------------------------------------------- el recorrido (F7)
+
+
+def documento(**cambios):
+    """Un comprobante numerado, como lo ve el recorrido. Lo que no se diga es
+    el de una venta recién numerada, sin firmar ni enviar."""
+    from datetime import datetime
+
+    from app.application.ports.fe_documents import DocumentSnapshot
+
+    base = dict(
+        id=1,
+        company_id=1,
+        source_type="sale",
+        source_id=50,
+        document_type="04",
+        environment="sandbox",
+        clave="50603102600310170293400100001040000000001159971093",
+        consecutive="00100001040000000001",
+        situation="1",
+        issued_at=datetime(2026, 10, 3, 0, 13, 39),
+        status="numbered",
+        next_attempt_at=datetime(2026, 10, 3, 0, 13, 39),
+    )
+    return DocumentSnapshot(**{**base, **cambios})
+
+
+class FakeTransmissionRepository:
+    """`fe_documents` y su bitácora, en memoria.
+
+    Lo que importa que replique es lo que la cola mira: qué está pendiente y le
+    toca ya, y que `update` escriba solo lo nombrado —un paso que falla no
+    puede borrar el `signed_at` de otro—.
+    """
+
+    def __init__(self, docs=(), *, salud=None) -> None:
+        from app.application.ports.fe_documents import TransmissionHealth
+
+        self.docs = {d.id: d for d in docs}
+        self.eventos: dict[int, list] = {}
+        self.salud = salud or TransmissionHealth(None, None)
+
+    def get(self, document_id: int):
+        return self.docs.get(document_id)
+
+    def latest_for(self, source_type: str, source_id: int):
+        candidatos = [
+            d for d in self.docs.values() if d.source_type == source_type and d.source_id == source_id
+        ]
+        return max(candidatos, key=lambda d: d.id) if candidatos else None
+
+    def due(self, now, *, limit: int):
+        from app.domain.fe_transmission import PENDING
+
+        listos = [
+            d
+            for d in self.docs.values()
+            if d.status in PENDING and d.next_attempt_at is not None and d.next_attempt_at <= now
+        ]
+        listos.sort(key=lambda d: (d.next_attempt_at, d.id))
+        return listos[:limit]
+
+    def update(self, document_id: int, change):
+        from dataclasses import replace
+
+        actual = replace(self.docs[document_id], **change.fields())
+        self.docs[document_id] = actual
+        return actual
+
+    def add_event(self, document_id: int, event) -> None:
+        self.eventos.setdefault(document_id, []).append(event)
+
+    def events(self, document_id: int):
+        return list(self.eventos.get(document_id, []))
+
+    def health(self):
+        return self.salud
+
+    def stopped(self):
+        return sorted(
+            (d for d in self.docs.values() if d.status == "stopped"),
+            key=lambda d: (d.issued_at, d.id),
+        )
+
+    def counts(self):
+        from app.application.ports.fe_documents import QueueCounts
+        from app.domain.fe_transmission import PENDING
+
+        por_estado: dict[str, int] = {}
+        for d in self.docs.values():
+            por_estado[d.status] = por_estado.get(d.status, 0) + 1
+        pendientes = [d.issued_at for d in self.docs.values() if d.status in PENDING]
+        return QueueCounts(by_status=por_estado, oldest_pending_at=min(pendientes) if pendientes else None)
+
+    def accepted_by_type(self, environment: str):
+        cuenta: dict[str, int] = {}
+        for d in self.docs.values():
+            if d.status == "accepted" and d.environment == environment:
+                cuenta[d.document_type] = cuenta.get(d.document_type, 0) + 1
+        return cuenta
+
+
+class FakeHaciendaReception:
+    """La recepción de Hacienda, con las respuestas escritas de antemano.
+
+    `envios` y `consultas` son colas: cada llamada saca la siguiente, que es
+    `None` (202) o una excepción para `submit`, y un `Verdict` o una excepción
+    para `status`. Lo que se le mandó queda en `payloads` y `tokens`.
+    """
+
+    def __init__(self, *, envios=(), consultas=()) -> None:
+        self.envios = list(envios)
+        self.consultas = list(consultas)
+        self.payloads: list[dict] = []
+        self.tokens: list[str] = []
+        self.claves: list[str] = []
+
+    def submit(self, endpoints, *, token: str, payload) -> None:
+        self.tokens.append(token)
+        self.payloads.append(dict(payload))
+        siguiente = self.envios.pop(0) if self.envios else None
+        if isinstance(siguiente, Exception):
+            raise siguiente
+
+    def status(self, endpoints, *, token: str, clave: str):
+        from app.application.ports.transmission import Verdict
+
+        self.tokens.append(token)
+        self.claves.append(clave)
+        siguiente = self.consultas.pop(0) if self.consultas else Verdict("aceptado")
+        if isinstance(siguiente, Exception):
+            raise siguiente
+        return siguiente
+
+
+class FakeComprobanteSource:
+    """Arma siempre el mismo comprobante, o falla como se le diga."""
+
+    def __init__(self, comprobante=None, *, falla: Exception | None = None) -> None:
+        self._comprobante = comprobante
+        self._falla = falla
+        self.pedidos: list[int] = []
+
+    def comprobante(self, document):
+        self.pedidos.append(document.id)
+        if self._falla is not None:
+            raise self._falla
+        return self._comprobante
+
+
+class FakeCertificateParser:
+    """Devuelve los datos que se le dieron, o `InvalidCertificate`."""
+
+    def __init__(self, facts=None, *, falla: Exception | None = None) -> None:
+        self._facts = facts
+        self._falla = falla
+
+    def facts(self, certificate_pem: str):
+        if self._falla is not None:
+            raise self._falla
+        return self._facts
+
+
+class FakeContingency:
+    def __init__(self, activa: bool = False) -> None:
+        self.activa = activa
+
+    def active(self) -> bool:
+        return self.activa

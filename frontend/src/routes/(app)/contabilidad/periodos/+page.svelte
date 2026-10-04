@@ -16,10 +16,10 @@
 </script>
 
 {#if form?.success}
-	<p class="mb-4 rounded-lg bg-[var(--success-soft)] px-3 py-2 text-sm">{form.success}</p>
+	<p class="mb-4 rounded-lg bg-[var(--positive-bg)] px-3 py-2 text-sm">{form.success}</p>
 {/if}
 {#if form?.errors?.form}
-	<p class="mb-4 rounded-lg bg-[var(--danger-soft)] px-3 py-2 text-sm">{form.errors.form}</p>
+	<p class="mb-4 rounded-lg bg-[var(--negative-bg)] px-3 py-2 text-sm">{form.errors.form}</p>
 {/if}
 
 {#if !data.periodos.length}
@@ -49,14 +49,14 @@
 									{/if}
 								</span>
 							{:else}
-								<span class="font-medium text-[var(--success)]">{m.accounting_period_open()}</span>
+								<span class="font-medium text-[var(--positive)]">{m.accounting_period_open()}</span>
 							{/if}
 						</td>
 						<td class="px-3 py-2 text-right">
 							{#if periodo.status === 'open'}
 								<button
 									type="button"
-									class="btn btn-ghost btn-sm"
+									class="btn btn-ghost px-2 py-1 text-xs"
 									onclick={() => (cerrando = periodo)}
 								>
 									{m.accounting_close_period()}

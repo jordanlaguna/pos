@@ -24,6 +24,7 @@ from app.application.use_cases.stock_entry import (
     SupplierInactive,
     SupplierNotFound,
 )
+from app.application.use_cases.number_document import SOURCE_PURCHASE
 from app.application.use_cases.supplier_payment import PaySupplier
 from app.domain.errors import (
     AlreadyCancelled,
@@ -34,6 +35,8 @@ from app.domain.errors import (
     InvalidMovement,
     InvalidPayment,
     InvalidQuantity,
+    IssuerIdentificationRequired,
+    SupplierNeedsIdentification,
     InvalidSource,
     LineWithoutProduct,
     PurchaseHasPayments,
@@ -47,6 +50,7 @@ from app.infrastructure.persistence.sqlalchemy_repositories import (
     SqlAlchemySupplierPaymentRepository,
     SqlAlchemySupplierRepository,
     SqlAlchemyUnitOfWork,
+    SqlAlchemySettingsRepository,
 )
 from app.models.model_person import Person
 from app.models.model_product import Product
@@ -56,6 +60,7 @@ from app.services import (
     crud_accounting,
     crud_categories,
     crud_membership,
+    crud_numbering,
     crud_supplier_payment,
 )
 from app.utils.api_errors import api_error
@@ -119,6 +124,14 @@ def serialize(db: Session, entry: StockEntry) -> dict:
         "due_date": entry.due_date,
         "subtotal": _money(entry.subtotal),
         "tax": _money(entry.tax),
+        # La factura electrónica de compra (T-728), con su recorrido ante
+        # Hacienda; nula en toda compra a un proveedor inscrito.
+        "document_type": entry.document_type,
+        "einvoice": (
+            crud_numbering.comprobante_de(db, SOURCE_PURCHASE, entry.id)
+            if entry.document_type
+            else None
+        ),
     }
 
 
@@ -145,6 +158,10 @@ def create_entry(db: Session, payload) -> dict:
             ledger=contable,
         ),
         ledger=contable,
+        # La factura de compra (T-728): lo que la compañía emite y la numeración,
+        # en la misma transacción que la mercadería.
+        settings=SqlAlchemySettingsRepository(db),
+        numbering=crud_numbering.numerador(db),
     )
 
     # RN-6, también acá: la entrada de mercadería crea productos, así que sin
@@ -228,6 +245,14 @@ def create_entry(db: Session, payload) -> dict:
         raise api_error(400, "barcode_taken", barcode=e.barcode) from None
     except LineWithoutProduct as e:
         raise api_error(400, "entry_line_without_product", line=e.index) from None
+    except IssuerIdentificationRequired as e:
+        # La compañía emite la factura de compra y no tiene cédula de emisor
+        # (RN-45). Lo arregla soporte, no quien carga la mercadería.
+        raise api_error(409, "issuer_identification_required", reason=e.reason) from None
+    except SupplierNeedsIdentification:
+        # El proveedor no contribuyente es el emisor de la factura de compra y
+        # no tiene cédula: se completa en su ficha, como pide el mismo código.
+        raise api_error(400, "identification_required") from None
 
     # ------------------------------- los del abono de una compra de contado
     #

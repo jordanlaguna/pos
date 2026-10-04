@@ -331,7 +331,9 @@ export function postSale(
 	companyId: number,
 	venta: { id: number; date: string; payment_method: string },
 	lineas: LineaVendida[],
-	userId: number
+	userId: number,
+	/** `'note'` para una ND (T-726): el asiento de la venta, con su propio origen. */
+	sourceType: 'sale' | 'note' = 'sale'
 ): JournalEntry | null {
 	const db = getDb(companyId);
 	const cuenta = mapeoVigente(db);
@@ -372,7 +374,7 @@ export function postSale(
 			entry_date: venta.date,
 			description: 'sale',
 			lines: asiento,
-			source_type: 'sale',
+			source_type: sourceType,
 			source_id: venta.id
 		},
 		userId
@@ -384,7 +386,9 @@ export function postReturn(
 	companyId: number,
 	devolucion: { id: number; date: string },
 	lineas: LineaVendida[],
-	userId: number
+	userId: number,
+	/** `'note'` para una NC por monto (T-726). */
+	sourceType: 'return' | 'note' = 'return'
 ): JournalEntry | null {
 	const db = getDb(companyId);
 	const cuenta = mapeoVigente(db);
@@ -426,7 +430,7 @@ export function postReturn(
 			entry_date: devolucion.date,
 			description: 'return',
 			lines: asiento,
-			source_type: 'return',
+			source_type: sourceType,
 			source_id: devolucion.id
 		},
 		userId
@@ -577,6 +581,65 @@ export function postSupplierPayment(
 			],
 			source_type: 'supplier_payment',
 			source_id: abono.id
+		},
+		userId
+	);
+}
+
+/**
+ * La corrida de planilla pagada (RN-75, T-1206), como `domain/ledger.post_payroll`.
+ *
+ *     D  Salarios                     bruto
+ *     D  Cargas sociales patronales   patronales
+ *        C  CCSS por pagar                      obreras + patronales
+ *        C  Retenciones de renta                renta
+ *        C  Otras deducciones por pagar         otras
+ *        C  Salarios por pagar                  neto
+ *
+ * Un monto negativo —la renta que una quincena devuelve, un ajuste en contra—
+ * cambia de lado en vez de romper el asiento; uno de cero no es una línea.
+ */
+export function postPayroll(
+	companyId: number,
+	corrida: {
+		id: number;
+		date: string;
+		gross: number;
+		employer_charges: number;
+		social_security: number;
+		income_tax: number;
+		other_deductions: number;
+		net: number;
+	},
+	userId: number
+): JournalEntry | null {
+	const cuenta = mapeoVigente(getDb(companyId));
+	const linea = (papel: string, monto: number, alHaber: boolean): LineaCruda | null => {
+		const redondeado = round2(monto);
+		if (redondeado === 0) return null;
+		const id = cuenta('payroll', papel);
+		const positivo = redondeado > 0;
+		return alHaber === positivo
+			? credito(id, Math.abs(redondeado), { memo: papel })
+			: debito(id, Math.abs(redondeado), { memo: papel });
+	};
+	const lineas = [
+		linea('salaries', corrida.gross, false),
+		linea('employer_contributions', corrida.employer_charges, false),
+		linea('social_security_payable', corrida.social_security + corrida.employer_charges, true),
+		linea('income_tax_payable', corrida.income_tax, true),
+		linea('other_deductions_payable', corrida.other_deductions, true),
+		linea('salaries_payable', corrida.net, true)
+	].filter((l): l is LineaCruda => l !== null);
+	return postEntry(
+		companyId,
+		{
+			kind: 'auto',
+			entry_date: corrida.date,
+			description: 'payroll',
+			lines: lineas,
+			source_type: 'payroll_run',
+			source_id: corrida.id
 		},
 		userId
 	);

@@ -1,20 +1,37 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { submit } from '$lib/ui/forms';
 	import Icon from '$lib/ui/components/Icon.svelte';
 	import PageHeader from '$lib/ui/components/PageHeader.svelte';
 	import Field from '$lib/ui/components/Field.svelte';
+	import Select from '$lib/ui/components/Select.svelte';
 	import Modal from '$lib/ui/components/Modal.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import DocumentSheet from '$lib/ui/components/documents/DocumentSheet.svelte';
+	import IssuerLocationFields from '$lib/ui/components/IssuerLocationFields.svelte';
+	import { identificationTypeName } from '$lib/domain/identification';
 	import { computeTotals, configureMoney, formatMoney, round2 } from '$lib/domain/money';
 	import { accentTheme } from '$lib/domain/color';
+	import {
+		ALL_TYPES,
+		ALWAYS_ON,
+		AVAILABLE,
+		DEBIT_NOTE,
+		EXPORT_INVOICE,
+		INVOICE,
+		PURCHASE_INVOICE,
+		TICKET,
+		canToggle
+	} from '$lib/domain/documentType';
+	import { documentTypeLabel } from '$lib/ui/messages';
 	import { formatDateTime } from '$lib/ui/format';
 	import {
 		CURRENCIES,
 		TEMPLATE_IDS,
-		ID_TYPES,
+		VAT,
 		type TemplateId,
 		type Settings
 	} from '$lib/domain/settings';
@@ -26,7 +43,6 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	type Seccion = 'negocio' | 'moneda' | 'documentos' | 'electronica' | 'sucursales';
-	let seccion = $state<Seccion>('negocio');
 	let submitting = $state(false);
 
 	/**
@@ -58,6 +74,29 @@
 		}
 	}
 
+	/*
+	 * La pestaña abierta viaja en la dirección (`?seccion=moneda`).
+	 *
+	 * Guardar recarga la pantalla entera —ver el formulario—, y con la pestaña
+	 * solo en memoria la recarga volvía siempre a Negocio: quien acababa de
+	 * cambiar la moneda tenía que ir a buscarla para ver si se guardó. En la
+	 * dirección sobrevive a la recarga y el servidor ya la pinta abierta.
+	 * `replaceState` y no `goto`: cambiar de pestaña no es navegar, no vuelve a
+	 * pedir los datos ni deja una entrada por pestaña en el historial.
+	 */
+	function seccionDe(valor: string | null): Seccion {
+		return SECCIONES.find((item) => item.id === valor)?.id ?? 'negocio';
+	}
+
+	let seccion = $state<Seccion>(untrack(() => seccionDe(page.url.searchParams.get('seccion'))));
+
+	function abrirSeccion(id: Seccion) {
+		seccion = id;
+		const url = new URL(page.url);
+		url.searchParams.set('seccion', id);
+		replaceState(url, page.state);
+	}
+
 	// ---------------------------------------------------------------- borrador
 	/*
 	 * Los campos se enlazan a este estado y no directamente al formulario, porque
@@ -71,8 +110,6 @@
 
 	let business = $state({ ...inicial.business });
 	let currency = $state({ ...inicial.currency });
-	let impuestoNombre = $state(inicial.tax.name);
-	let tasaPorcentaje = $state(String(round2(inicial.tax.rate * 100)));
 	let document = $state({ ...inicial.document });
 	let colorAcento = $state(inicial.appearance.accentColor);
 	let eInvoicing = $state({ ...inicial.eInvoicing });
@@ -95,7 +132,8 @@
 	const borrador: Settings = $derived({
 		business,
 		currency,
-		tax: { name: impuestoNombre, rate: (Number(tasaPorcentaje.replace(',', '.')) || 0) / 100 },
+		// El impuesto no se configura (QA-05): es el IVA de ley.
+		tax: { ...VAT },
 		document,
 		appearance: { accentColor: colorAcento },
 		eInvoicing
@@ -127,7 +165,7 @@
 	 * propiedad y se redibuja porque la propiedad cambió.
 	 */
 	const claveMoneda = $derived(
-		`${currency.code}|${currency.symbol}|${currency.decimals}|${currency.thousandsSeparator}|${currency.decimalSeparator}|${currency.symbolAtEnd}|${currency.space}|${tasaPorcentaje}|${impuestoNombre}`
+		`${currency.code}|${currency.symbol}|${currency.decimals}|${currency.thousandsSeparator}|${currency.decimalSeparator}|${currency.symbolAtEnd}|${currency.space}`
 	);
 
 	function aplicarMoneda(codigo: string) {
@@ -190,6 +228,13 @@
 			client_id: 1,
 			user_id: 2,
 			user_name: 'María Rojas',
+			/*
+			 * Con la casilla marcada, la muestra sale como la vería el cliente: la
+			 * venta tiene cliente, así que es factura (RN-85), y todavía no tiene
+			 * clave, así que dice «pendiente de emisión» (RN-86). No se le inventa una
+			 * clave de ejemplo: la vista previa prometería algo que hoy no pasa.
+			 */
+			document_type: borrador.eInvoicing.enabled ? INVOICE : null,
 			items
 		};
 	});
@@ -198,6 +243,32 @@
 
 	function seleccionarPlantilla(id: TemplateId) {
 		document = { ...document, template: id };
+	}
+
+	// ---------------------------------- comprobantes que emite (RN-88)
+
+	/** Enciende o apaga uno. La casilla solo se mueve si `canToggle` la deja. */
+	function alternarComprobante(codigo: string, encendido: boolean) {
+		const resto = eInvoicing.documentTypes.filter((c) => c !== codigo);
+		eInvoicing = {
+			...eInvoicing,
+			documentTypes: ALL_TYPES.filter((c) => (c === codigo ? encendido : resto.includes(c)))
+		};
+	}
+
+	/**
+	 * Qué es cada uno o, si la casilla no se mueve, por qué. Una casilla apagada
+	 * sin decir por qué es un misterio; con el motivo, es una respuesta.
+	 */
+	function detalleComprobante(codigo: string): string {
+		if (ALWAYS_ON.includes(codigo)) return m.settings_doctype_always_on();
+		// Solo el REP espera todavía su flujo: la venta a crédito (T-729).
+		if (!AVAILABLE.includes(codigo)) return m.settings_doctype_pending_receipt();
+		if (!canToggle(codigo, eInvoicing.documentTypes)) return m.settings_doctype_last_counter();
+		if (codigo === EXPORT_INVOICE) return m.settings_doctype_export();
+		if (codigo === DEBIT_NOTE) return m.settings_doctype_debit();
+		if (codigo === PURCHASE_INVOICE) return m.settings_doctype_purchase();
+		return codigo === TICKET ? m.settings_doctype_ticket() : m.settings_doctype_invoice();
 	}
 
 	// ------------------------------------------ factura electrónica (F6)
@@ -313,7 +384,7 @@
 				{seccion === item.id
 				? 'border-[var(--accent)] text-[var(--accent)]'
 				: 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]'}"
-			onclick={() => (seccion = item.id)}
+			onclick={() => abrirSeccion(item.id)}
 			aria-current={seccion === item.id ? 'true' : undefined}
 		>
 			<Icon name={item.icon} size={15} />
@@ -369,27 +440,23 @@
 						hint={m.settings_legal_name_hint()}
 					/>
 
-					<div>
-						<label class="label" for="tipo-id">{m.settings_id_type()}</label>
-						<select
-							id="tipo-id"
-							name="negocio_tipo_identificacion"
-							class="input"
-							bind:value={business.taxIdType}
-						>
-							{#each ID_TYPES as tipo (tipo.code)}
-								<option value={tipo.code}>{tipo.label}</option>
-							{/each}
-						</select>
+					<!--
+						La identificación del emisor **se ve y no se edita** (RN-45, RF-37,
+						T-621). Es la de `companies`: el certificado se emite a ella y va
+						dentro de la clave de cada comprobante. La fija soporte.
+					-->
+					<div data-cedula-emisor>
+						<span class="label">{m.settings_tax_id()}</span>
+						{#if data.issuer?.identification}
+							<p class="font-mono text-sm text-[var(--text)]">
+								{identificationTypeName(data.issuer.identification_type) ?? ''}
+								{data.issuer.identification}
+							</p>
+							<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.settings_issuer_id_hint()}</p>
+						{:else}
+							<p class="text-sm text-[var(--warning)]">{m.settings_issuer_id_missing()}</p>
+						{/if}
 					</div>
-
-					<Field
-						label={m.settings_tax_id()}
-						name="negocio_identificacion"
-						bind:value={business.taxId}
-						icon="idcard"
-						error={form?.errors?.negocio_identificacion}
-					/>
 					<Field
 						label={m.settings_phone()}
 						name="negocio_telefono"
@@ -416,23 +483,44 @@
 						name="negocio_direccion"
 						bind:value={business.address}
 						error={form?.errors?.negocio_direccion}
+						hint={m.settings_address_hint()}
 						class="sm:col-span-2"
 					/>
+
+					<!--
+						La ubicación del XML (T-722, RN-83): códigos de Hacienda y otras
+						señas. No reemplaza a la dirección de arriba, que es la del tiquete.
+					-->
+					<fieldset class="sm:col-span-2" data-ubicacion-emisor>
+						<legend class="mb-1 text-sm font-bold text-[var(--text)]">
+							{m.settings_location_title()}
+						</legend>
+						<p class="mb-3 text-xs text-[var(--text-subtle)]">
+							{eInvoicing.enabled ? m.settings_location_required() : m.settings_location_hint()}
+						</p>
+						<IssuerLocationFields
+							bind:location={business.location}
+							errors={form?.errors ?? {}}
+							required={eInvoicing.enabled}
+						/>
+					</fieldset>
 
 					<!--
 						El idioma de la compañía (T-810, RN-28). Es el que recibe quien no
 						eligió otro para su sesión; cada persona cambia el suyo desde el
 						menú, sin tocar esto.
 					-->
-					<div>
-						<label class="label" for="idioma-interfaz">{m.settings_locale()}</label>
-						<select id="idioma-interfaz" name="idioma_interfaz" class="input" bind:value={locale}>
-							<option value="es">{m.language_es()}</option>
-							<option value="en">{m.language_en()}</option>
-							<option value="pt">{m.language_pt()}</option>
-						</select>
-						<p class="hint">{m.settings_locale_hint()}</p>
-					</div>
+					<Select
+						id="idioma-interfaz"
+						name="idioma_interfaz"
+						label={m.settings_locale()}
+						hint={m.settings_locale_hint()}
+						bind:value={locale}
+					>
+						<option value="es">{m.language_es()}</option>
+						<option value="en">{m.language_en()}</option>
+						<option value="pt">{m.language_pt()}</option>
+					</Select>
 				</div>
 			</div>
 
@@ -548,14 +636,14 @@
 				</p>
 
 				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="sm:col-span-2">
-						<label class="label" for="moneda-preset">{m.settings_currency()}</label>
-						<select
-							id="moneda-preset"
-							class="input"
-							value={currency.code}
-							onchange={(e) => aplicarMoneda(e.currentTarget.value)}
-						>
+					<Select
+						id="moneda-preset"
+						name="moneda_preset"
+						label={m.settings_currency()}
+						class="sm:col-span-2"
+						value={currency.code}
+						onchange={(e) => aplicarMoneda(e.currentTarget.value)}
+					>
 							{#each CURRENCIES as moneda (moneda.code)}
 								<option value={moneda.code}>
 									{m.settings_currency_option({
@@ -569,8 +657,7 @@
 									{m.settings_currency_custom({ code: currency.code })}
 								</option>
 							{/if}
-						</select>
-					</div>
+					</Select>
 
 					<Field
 						label={m.settings_currency_code()}
@@ -636,29 +723,15 @@
 					</div>
 				</div>
 
+				<!--
+					El impuesto ya no se escribe acá (QA-05): lo da el CABYS de cada
+					producto y, sin él, el 13 % de ley. Queda dicho, para que nadie
+					lo busque.
+				-->
 				<h2 class="mt-6 mb-1 text-sm font-bold text-[var(--text)]">{m.settings_tax()}</h2>
-				<p class="mb-4 text-xs text-[var(--text-subtle)]">
+				<p class="text-xs text-[var(--text-subtle)]" data-impuesto-de-ley>
 					{m.settings_tax_hint()}
 				</p>
-				<div class="grid gap-4 sm:grid-cols-2">
-					<Field
-						label={m.settings_tax_name()}
-						name="impuesto_nombre"
-						bind:value={impuestoNombre}
-						required
-						error={form?.errors?.impuesto_nombre}
-						hint={m.settings_tax_name_hint()}
-					/>
-					<Field
-						label={m.settings_tax_rate()}
-						name="impuesto_tasa"
-						inputmode="decimal"
-						bind:value={tasaPorcentaje}
-						required
-						error={form?.errors?.impuesto_tasa}
-						hint={m.settings_tax_rate_hint()}
-					/>
-				</div>
 			</div>
 
 			<!-- Vista previa de la moneda -->
@@ -676,7 +749,7 @@
 					<p class="mt-3 text-xs text-[var(--text-subtle)]">
 						{m.settings_money_example({
 							amount: formatMoney(10000),
-							tax: impuestoNombre,
+							tax: VAT.name,
 							taxAmount: formatMoney(round2(10000 * borrador.tax.rate))
 						})}
 					</p>
@@ -796,18 +869,17 @@
 							es del documento.
 						-->
 						<div>
-							<label class="label" for="idioma-documento">{m.settings_document_locale()}</label>
-							<select
+							<Select
 								id="idioma-documento"
 								name="idioma_documento"
-								class="input"
+								label={m.settings_document_locale()}
+								hint={m.settings_document_locale_hint()}
 								bind:value={documentLocale}
 							>
 								<option value="es">{m.language_es()}</option>
 								<option value="en">{m.language_en()}</option>
 								<option value="pt">{m.language_pt()}</option>
-							</select>
-							<p class="hint">{m.settings_document_locale_hint()}</p>
+							</Select>
 						</div>
 
 						<Field
@@ -903,6 +975,51 @@
 						</span>
 					</span>
 				</label>
+
+				<!--
+					Los comprobantes que emite este negocio (RN-88). Los siete se ven; el
+					que no se puede mover dice por qué. Una casilla apagada no se envía,
+					así que la que está encendida y bloqueada viaja además en un campo
+					oculto: si no, guardar la pantalla apagaría la NC o la ND sin que
+					nadie lo pidiera.
+				-->
+				<fieldset class="mb-5" data-comprobantes>
+					<legend class="label">{m.settings_document_types()}</legend>
+					<p class="mb-2 text-xs text-[var(--text-subtle)]">{m.settings_document_types_hint()}</p>
+					<div class="grid gap-2 sm:grid-cols-2">
+						{#each ALL_TYPES as codigo (codigo)}
+							{@const encendido = eInvoicing.documentTypes.includes(codigo)}
+							{@const movible = canToggle(codigo, eInvoicing.documentTypes)}
+							<label
+								class="flex items-start gap-2 rounded-lg border p-2.5 text-sm {encendido
+									? 'border-[var(--accent)]'
+									: 'border-[var(--border)]'} {movible ? 'cursor-pointer' : 'cursor-not-allowed'}"
+								data-comprobante={codigo}
+							>
+								<input
+									type="checkbox"
+									name="electronica_comprobantes"
+									value={codigo}
+									checked={encendido}
+									disabled={!movible}
+									onchange={(e) => alternarComprobante(codigo, e.currentTarget.checked)}
+									class="mt-1"
+								/>
+								{#if encendido && !movible}
+									<input type="hidden" name="electronica_comprobantes" value={codigo} />
+								{/if}
+								<span class="min-w-0">
+									<span class="font-semibold {movible || encendido ? 'text-[var(--text)]' : 'text-[var(--text-muted)]'}">
+										{documentTypeLabel(codigo)}
+									</span>
+									<span class="block text-xs text-[var(--text-subtle)]">
+										{detalleComprobante(codigo)}
+									</span>
+								</span>
+							</label>
+						{/each}
+					</div>
+				</fieldset>
 
 				<!--
 					El ambiente **ya no se elige acá** (T-611). Vivía en este formulario
@@ -1026,7 +1143,8 @@
 				{#if data.fe.active === 'production'}
 					<form method="POST" action="?/feAmbiente" use:enhance={submit()}>
 						<input type="hidden" name="ambiente" value="sandbox" />
-						<button type="submit" class="btn btn-secondary">
+						<button type="submit" class="btn btn-ghost">
+							<Icon name="back" size={15} />
 							{m.settings_fe_back_to_sandbox()}
 						</button>
 					</form>
@@ -1036,6 +1154,26 @@
 					</button>
 				{/if}
 			</div>
+			{#if data.fe.production_gate && data.fe.active !== 'production'}
+				<!-- T-713, RN-46: la puerta dura de la certificación, con lo que falta. -->
+				<p
+					class="flex gap-2 rounded-lg border p-3 text-xs {data.fe.production_gate.ready
+						? 'border-[var(--positive)] bg-[var(--positive-bg)] text-[var(--positive)]'
+						: 'border-[var(--border)] bg-[var(--surface-sunken)] text-[var(--text-muted)]'}"
+					data-puerta-produccion={data.fe.production_gate.ready ? 'abierta' : 'cerrada'}
+				>
+					<Icon name={data.fe.production_gate.ready ? 'check' : 'info'} size={15} class="mt-px shrink-0" />
+					<span>
+						{data.fe.production_gate.ready
+							? m.settings_production_gate_ready()
+							: m.settings_production_gate_missing({
+									missing: data.fe.production_gate.missing
+										.map((t) => documentTypeLabel(t) ?? t)
+										.join(', ')
+								})}
+					</span>
+				</p>
+			{/if}
 
 			<!-- ------------------------------------------ una tarjeta por ambiente -->
 			<div class="grid gap-4 lg:grid-cols-2">
@@ -1060,7 +1198,7 @@
 							<span
 								class="rounded-full px-2.5 py-1 text-xs font-semibold {amb.ready
 									? 'bg-[var(--positive-bg)] text-[var(--positive)]'
-									: 'bg-[var(--surface-muted)] text-[var(--text-subtle)]'}"
+									: 'bg-[var(--surface-sunken)] text-[var(--text-subtle)]'}"
 							>
 								{amb.ready ? m.settings_fe_ready() : m.settings_fe_not_ready()}
 							</span>
@@ -1151,7 +1289,8 @@
 									hint={m.settings_fe_pin_hint()}
 								/>
 								<div class="flex flex-wrap gap-2">
-									<button type="submit" class="btn btn-secondary">
+									<button type="submit" class="btn btn-primary">
+										<Icon name="check" size={15} />
 										{m.settings_fe_send_certificate()}
 									</button>
 									{#if amb.certificate_configured}
@@ -1217,7 +1356,8 @@
 									error={form?.errors?.atv_clave}
 									hint={m.settings_fe_atv_password_hint()}
 								/>
-								<button type="submit" class="btn btn-secondary">
+								<button type="submit" class="btn btn-primary">
+									<Icon name="check" size={15} />
 									{m.settings_fe_save_atv()}
 								</button>
 							</form>
@@ -1236,6 +1376,85 @@
 					</div>
 				{/each}
 			</div>
+		{/if}
+
+		<!--
+			La numeración que viene de otro sistema (T-616, RF-32, RN-36 a RN-38).
+			Una fila por caja y por comprobante encendido, en el ambiente en uso. La
+			que ya emitió con este sistema se muestra sin campo: desde ahí el
+			contador es del sistema. Que solo suba lo decide el servidor.
+		-->
+		{#if data.series}
+			<section class="card mt-4 p-5" data-series>
+				<h3 class="text-sm font-bold text-[var(--text)]">{m.settings_fe_sequences_title()}</h3>
+				<p class="mt-1 mb-4 text-xs text-[var(--text-subtle)]">
+					{m.settings_fe_sequences_hint({ environment: rotuloAmbiente(data.series.environment) })}
+				</p>
+				{#if data.series.items.length === 0}
+					<p class="text-sm text-[var(--text-muted)]">{m.settings_fe_sequences_empty()}</p>
+				{:else}
+					<div class="overflow-x-auto">
+						<table class="data-table">
+							<thead>
+								<tr>
+									<th>{m.settings_fe_sequence_terminal()}</th>
+									<th>{m.settings_fe_sequence_document()}</th>
+									<th>{m.settings_fe_sequence_last()}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each data.series.items as serie (`${serie.terminal_id}-${serie.document_type}`)}
+									{@const caja = `${serie.branch_code}-${serie.terminal_code}`}
+									<tr data-serie={serie.document_type}>
+										<td class="whitespace-nowrap">
+											<span class="font-mono text-xs">{caja}</span>
+											<span class="text-[var(--text-muted)]">{serie.terminal_name}</span>
+										</td>
+										<td>{documentTypeLabel(serie.document_type) ?? serie.document_type}</td>
+										<td>
+											{#if serie.in_use}
+												<span class="tabular-nums">{serie.last_number}</span>
+												<span class="ml-2 text-xs text-[var(--text-subtle)]" data-serie-usada>
+													{m.settings_fe_sequence_in_use()}
+												</span>
+											{:else}
+												<form
+													method="POST"
+													action="?/feSerie"
+													class="flex items-center gap-2"
+													use:enhance={submit()}
+												>
+													<input type="hidden" name="terminal_id" value={serie.terminal_id} />
+													<input type="hidden" name="document_type" value={serie.document_type} />
+													<!--
+														`defaultValue` y no `value`: con `value`, Svelte lo reinicia al
+														hidratar y se come lo que se escribió antes —se guardaba el número
+														de siempre y aparecía «Numeración guardada» igual—.
+													-->
+													<input
+														name="last_number"
+														class="input w-36 py-1 text-right tabular-nums"
+														inputmode="numeric"
+														defaultValue={String(serie.last_number)}
+														aria-label={m.settings_fe_sequence_label({
+															document: documentTypeLabel(serie.document_type) ?? serie.document_type,
+															terminal: caja
+														})}
+													/>
+													<button type="submit" class="btn btn-primary px-3 py-1 text-xs">
+														<Icon name="check" size={13} />
+														{m.settings_fe_sequence_save()}
+													</button>
+												</form>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</section>
 		{/if}
 	</div>
 {/if}

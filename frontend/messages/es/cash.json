@@ -95,5 +95,7 @@
 	"cash_close_notes": "Notas del cierre (opcional)",
 	"cash_close_notes_placeholder": "Ej.: faltante por vuelto mal dado",
 	"cash_closing_now": "Cerrando…",
-	"cash_closed_done": "Caja cerrada."
+	"cash_closed_done": "Caja cerrada.",
+	"cash_debit_notes_in_cash": "Notas de débito en efectivo",
+	"cash_credit_notes": "Notas de crédito por monto"
 }

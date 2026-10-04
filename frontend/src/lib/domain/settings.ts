@@ -22,6 +22,9 @@
  * dueño su moneda, su logo y su tasa de impuesto sin decir nada.
  */
 
+import { DEFAULT_ENABLED, enabledTypes } from './documentType';
+import { EMPTY_LOCATION, normalizeLocation, type IssuerLocation } from './location';
+
 export interface BusinessSettings {
 	name: string;
 	legalName: string;
@@ -31,6 +34,11 @@ export interface BusinessSettings {
 	email: string;
 	address: string;
 	website: string;
+	/**
+	 * La ubicación con los códigos de Hacienda (T-722, RN-83). No reemplaza a
+	 * `address`: esa es la del tiquete, en texto libre; esta es la del XML.
+	 */
+	location: IssuerLocation;
 }
 
 export interface CurrencySettings {
@@ -46,11 +54,23 @@ export interface CurrencySettings {
 }
 
 export interface TaxSettings {
-	/** Cómo se llama el impuesto en la factura: IVA, ISV, IGV… */
+	/** Cómo se llama el impuesto en la factura. */
 	name: string;
 	/** Expresada entre 0 y 1. 0.13 = 13 %. */
 	rate: number;
 }
+
+/**
+ * El impuesto, que **ya no se configura** (QA-05).
+ *
+ * La tarifa de cada producto la da su CABYS; la de uno sin CABYS es la general
+ * del IVA, el 13 % de ley (RN-9). Antes era «la tasa del negocio» de la pestaña
+ * Moneda, y con la tarifa por CABYS ese campo solo servía para equivocarse: un
+ * 10 % escrito ahí se cobraba en todo producto sin clasificar. El backend tiene
+ * la misma tarifa en `domain/tax.py` (`GENERAL_RATE`), y descarta lo que llegue
+ * como impuesto al guardar la configuración.
+ */
+export const VAT: TaxSettings = Object.freeze({ name: 'IVA', rate: 0.13 });
 
 export type TemplateId = 'tiquete' | 'clasica' | 'moderna';
 
@@ -105,6 +125,12 @@ export interface EInvoiceSettings {
 	 */
 	environment: 'sandbox' | 'production';
 	economicActivity: string;
+	/**
+	 * Los comprobantes que emite este negocio (RN-88): códigos de Hacienda, en
+	 * el orden de `ALL_TYPES`. **Siempre saneada**: sin tiquete ni factura, o
+	 * sin la NC, no sale de `mergeSettings`.
+	 */
+	documentTypes: string[];
 }
 
 export interface Settings {
@@ -133,6 +159,38 @@ export interface StoredSettings {
 	 * así que `/marca/logo?v=…` se puede cachear para siempre sin quedar viejo.
 	 */
 	logo_version: string;
+	/**
+	 * La identificación del emisor, de `companies` (RN-45). La fija soporte y la
+	 * pantalla la muestra sin dejarla editar; nula mientras no la haya fijado.
+	 */
+	issuer: Issuer | null;
+}
+
+/** Lo que `GET /settings/` dice del emisor. */
+export interface Issuer {
+	identification: string | null;
+	identification_type: string | null;
+}
+
+/**
+ * La configuración con la identificación **de la compañía** en lugar de la
+ * escrita en Configuración (RN-45, T-621).
+ *
+ * La clave de cada comprobante lleva la de `companies`, así que es la que se
+ * imprime: dos cédulas distintas en la misma factura —una en la clave y otra en
+ * el emisor— son un comprobante que no se sostiene. Sin la de la compañía, queda
+ * la escrita, que es lo que había antes.
+ */
+export function withIssuer(settings: Settings, issuer: Issuer | null | undefined): Settings {
+	if (!issuer?.identification) return settings;
+	return {
+		...settings,
+		business: {
+			...settings.business,
+			taxId: issuer.identification,
+			taxIdType: issuer.identification_type ?? settings.business.taxIdType
+		}
+	};
 }
 
 // ------------------------------------------------------------------- monedas
@@ -185,10 +243,11 @@ export const DEFAULT_SETTINGS: Settings = {
 		phone: '',
 		email: '',
 		address: '',
-		website: ''
+		website: '',
+		location: { ...EMPTY_LOCATION }
 	},
 	currency: { ...CURRENCIES[0] },
-	tax: { name: 'IVA', rate: 0.13 },
+	tax: { ...VAT },
 	document: {
 		template: 'tiquete',
 		color: '#0e7490',
@@ -219,7 +278,8 @@ export const DEFAULT_SETTINGS: Settings = {
 	eInvoicing: {
 		enabled: false,
 		environment: 'sandbox',
-		economicActivity: ''
+		economicActivity: '',
+		documentTypes: [...DEFAULT_ENABLED]
 	}
 };
 
@@ -235,7 +295,11 @@ export const ID_TYPES = [
 	{ code: '01', label: 'Cédula física' },
 	{ code: '02', label: 'Cédula jurídica' },
 	{ code: '03', label: 'DIMEX' },
-	{ code: '04', label: 'NITE' }
+	{ code: '04', label: 'NITE' },
+	// Los dos de F7: el extranjero recibe la factura de exportación (T-727) y
+	// el no contribuyente, como proveedor, la de compra (T-728).
+	{ code: '05', label: 'Extranjero no domiciliado' },
+	{ code: '06', label: 'No contribuyente' }
 ] as const;
 
 // ------------------------------------------------------------------- fusión
@@ -341,7 +405,6 @@ export function mergeSettings(raw: unknown): Settings {
 
 	const business = obj(legacy(source, 'business', 'negocio'));
 	const currency = obj(legacy(source, 'currency', 'moneda'));
-	const tax = obj(legacy(source, 'tax', 'impuesto'));
 	// `doc` y no `document`: una variable con ese nombre tapa el global del
 	// navegador, justo en el módulo que tiene prohibido tocarlo.
 	const doc = obj(legacy(source, 'document', 'documento'));
@@ -368,7 +431,8 @@ export function mergeSettings(raw: unknown): Settings {
 			phone: optional(legacy(business, 'phone', 'telefono'), d.business.phone, 30),
 			email: optional(legacy(business, 'email', 'correo'), d.business.email, 120),
 			address: optional(legacy(business, 'address', 'direccion'), d.business.address, 300),
-			website: optional(legacy(business, 'website', 'sitio_web'), d.business.website, 120)
+			website: optional(legacy(business, 'website', 'sitio_web'), d.business.website, 120),
+			location: normalizeLocation(business.location)
 		},
 		currency: {
 			code: str(legacy(currency, 'code', 'codigo'), d.currency.code, 8).toUpperCase(),
@@ -385,10 +449,8 @@ export function mergeSettings(raw: unknown): Settings {
 			symbolAtEnd: bool(legacy(currency, 'symbolAtEnd', 'simbolo_al_final'), d.currency.symbolAtEnd),
 			space: bool(legacy(currency, 'space', 'espacio'), d.currency.space)
 		},
-		tax: {
-			name: str(legacy(tax, 'name', 'nombre'), d.tax.name, 20),
-			rate: num(legacy(tax, 'rate', 'tasa'), d.tax.rate, 0, 1)
-		},
+		// Lo que haya guardado no cuenta: el impuesto no se configura (QA-05).
+		tax: { ...VAT },
 		document: {
 			template: pick(
 				legacy(doc, 'template', 'plantilla'),
@@ -427,7 +489,10 @@ export function mergeSettings(raw: unknown): Settings {
 				legacy(eInvoicing, 'economicActivity', 'actividad_economica'),
 				d.eInvoicing.economicActivity,
 				10
-			)
+			),
+			// El mismo saneo que el servidor (RN-88): lo que la pantalla muestra
+			// encendido es lo que el backend deja emitir.
+			documentTypes: enabledTypes(eInvoicing.documentTypes)
 		}
 	};
 }

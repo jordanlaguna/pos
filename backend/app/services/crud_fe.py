@@ -43,7 +43,7 @@ from app.application.use_cases.fe_credentials import (
 )
 from app.domain.errors import InvalidEnvironment
 from app.domain.fe_credentials import EnvironmentStatus
-from app.domain.hacienda import SANDBOX, check_environment, needs_confirmation
+from app.domain.hacienda import PRODUCTION, SANDBOX, check_environment, needs_confirmation
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.crypto.fe_crypto import secret_box
 from app.infrastructure.crypto.pkcs12_reader import Pkcs12CertificateReader
@@ -51,7 +51,7 @@ from app.infrastructure.crypto.vault_signer import document_signer
 from app.infrastructure.external.hacienda_idp import endpoints_for, hacienda_idp
 from app.infrastructure.persistence.sqlalchemy_fe import SqlAlchemyFeCredentialsRepository
 from app.infrastructure.persistence.sqlalchemy_repositories import SqlAlchemyUnitOfWork
-from app.services import crud_membership, crud_settings
+from app.services import crud_fe_documents, crud_membership, crud_settings
 from app.utils.api_errors import api_error
 
 #: Dónde vive el ambiente activo. Es un campo protegido de la configuración
@@ -88,6 +88,8 @@ def estado(db: Session) -> dict:
     return {
         "environments": [_salida(e) for e in caso()],
         "active": _activo(db),
+        # T-713: qué falta ver aceptado en pruebas antes de poder pasar.
+        "production_gate": crud_fe_documents.puerta_de_produccion(db),
     }
 
 
@@ -259,6 +261,14 @@ def cambiar_ambiente(
 
     if needs_confirmation(entorno) and not confirmado:
         raise api_error(400, "confirmation_required", environment=entorno)
+
+    # La puerta dura de la certificación (T-713, RN-46): a producción no se pasa
+    # sin una factura, un tiquete y una nota de crédito **aceptados** en pruebas.
+    # Dice cuál falta: «no se puede todavía» sin el porqué es un misterio.
+    if entorno == PRODUCTION:
+        puerta = crud_fe_documents.puerta_de_produccion(db)
+        if not puerta["ready"]:
+            raise api_error(409, "production_gate_locked", missing=puerta["missing"])
 
     crud_settings.write_protected(db, *ACTIVE_PATH, entorno)
     crud_membership.registrar(

@@ -11,6 +11,7 @@
 	import { businessName } from '$lib/domain/settings';
 	import { m } from '$lib/paraglide/messages.js';
 	import { roleLabel, subscriptionNotice } from '$lib/ui/messages';
+	import { formatDateTime } from '$lib/ui/format';
 	import { DEFAULT_SETTINGS } from '$lib/domain/settings';
 	import type { LayoutData } from './$types';
 
@@ -525,7 +526,39 @@
 			</div>
 		{/if}
 
-		<main class="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+		{#if data.feQueue && data.feQueue.alarm !== 'ok'}
+			<!-- T-711: comprobantes esperando a Hacienda desde hace demasiado. -->
+			<a
+				href="/facturas"
+				class="no-print flex flex-wrap items-center gap-2 border-b px-4 py-2 text-xs
+					{data.feQueue.alarm === 'danger'
+					? 'border-[var(--negative)] bg-[var(--negative-bg)] text-[var(--negative)]'
+					: 'border-[var(--warning)] bg-[var(--warning-bg)] text-[var(--warning)]'}"
+				data-alarma-hacienda={data.feQueue.alarm}
+			>
+				<Icon name="alert" size={14} class="shrink-0" />
+				<span class="min-w-0 flex-1">
+					{data.feQueue.alarm === 'danger'
+						? m.invoices_queue_alarm_danger({
+								count: data.feQueue.pending,
+								since: formatDateTime(data.feQueue.oldest_pending_at ?? '')
+							})
+						: m.invoices_queue_alarm_warning({
+								count: data.feQueue.pending,
+								since: formatDateTime(data.feQueue.oldest_pending_at ?? '')
+							})}
+				</span>
+			</a>
+		{/if}
+
+		<!--
+			`relative` no es decoración: hace de `main` el contenedor de lo que va
+			en `position: absolute` adentro, empezando por cada `sr-only`. Sin él,
+			un rótulo así —el del monto en letras del tiquete— no quedaba dentro de
+			`main` sino del documento, lo estiraba hasta su altura y la página
+			entera se desplazaba llevándose el menú (tests/e2e/desplazamiento).
+		-->
+		<main class="relative min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
 			{@render children()}
 		</main>
 	</div>

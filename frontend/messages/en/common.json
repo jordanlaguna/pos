@@ -3,6 +3,15 @@
 	"module_purchases": "Purchasing",
 	"module_accounting": "Accounting",
 	"module_payroll": "Payroll",
+	"module_sales": "Sales",
+	"module_cash": "Cash register",
+	"module_invoices": "Invoices",
+	"module_returns": "Returns",
+	"module_reports": "Reports",
+	"module_inventory": "Inventory",
+	"module_suppliers": "Suppliers",
+	"module_clients": "Customers",
+	"module_users": "Users",
 	"common_cancel": "Cancel",
 	"common_close": "Close",
 	"common_subtotal": "Subtotal",
@@ -29,6 +38,13 @@
 	"payment_cash": "Cash",
 	"payment_credit_card": "Credit card",
 	"payment_bank_transfer": "Bank transfer",
-	"payment_mobile": "Mobile payment"
+	"payment_mobile": "Mobile payment",
 
+	"document_type_invoice": "Electronic invoice",
+	"document_type_ticket": "Electronic receipt",
+	"document_type_export_invoice": "Electronic export invoice",
+	"document_type_credit_note": "Electronic credit note",
+	"document_type_debit_note": "Electronic debit note",
+	"document_type_purchase_invoice": "Electronic purchase invoice",
+	"document_type_payment_receipt": "Electronic payment receipt"
 }

@@ -89,5 +89,12 @@
 	"clients_exo_inst_10": "INCAE",
 	"clients_exo_inst_11": "Junta de Protección Social",
 	"clients_exo_inst_12": "Aresep",
-	"clients_exo_inst_99": "Otra"
+	"clients_exo_inst_99": "Otra",
+	"clients_label_id_type": "Tipo de identificación",
+	"clients_id_type_auto": "Según la cédula: {type}",
+	"clients_id_type_auto_unknown": "Según la cédula",
+	"clients_id_type_hint": "Se imprime en la factura del cliente. Con la cédula basta para saberlo, salvo un NITE, que tiene diez dígitos como una jurídica.",
+	"clients_label_foreign_address": "Dirección en el extranjero",
+	"clients_foreign_address_hint": "La factura de exportación la lleva en lugar de la dirección del país. Hasta 300 caracteres.",
+	"clients_foreign_id_hint": "Con «Extranjero no domiciliado» la identificación puede ser un pasaporte: letras y números, hasta 20."
 }

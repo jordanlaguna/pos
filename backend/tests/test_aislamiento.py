@@ -73,6 +73,7 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         "/clients/register_client",
         {
             "identification": f"AI{marca}",
+            "identification_type": "01",
             "name": f"Cliente {etiqueta}",
             "last_name": "Aislamiento",
             "second_name": "Prueba",
@@ -198,7 +199,6 @@ def mundo_b(api_b: Api) -> dict:
 #: El cuerpo va aparte para los PUT/POST, que también tienen que rebotar.
 RUTAS_POR_ID = [
     ("GET", "/sales/sale/{venta_id}", None),
-    ("GET", "/sales/pdf/{venta_id}", None),
     ("GET", "/returns/return/{devolucion_id}", None),
     ("GET", "/inventory/entry/{entrada_id}", None),
     ("GET", "/users/{user_id}", None),
@@ -651,6 +651,10 @@ FUERA_DE_LA_BATERIA = {
     # `test_soporte.py::TestLaPuertaDelPanel`, que recorre las siete rutas y
     # exige 403 con el token de un administrador (T-302).
     "/support/me": "panel de soporte; el 403 al token de compañía está en test_soporte.py",
+    "/support/locale": (
+        "escribe el idioma de quien trae el token de soporte; no es de ninguna "
+        "compañía (QA-02). El 403 a un token de compañía está en test_idioma.py"
+    ),
     "/support/plans": "panel de soporte; ídem",
     "/support/plans/{plan_id}/modules": (
         "panel de soporte; ídem. Y además no es de una compañía: edita el "
@@ -659,11 +663,54 @@ FUERA_DE_LA_BATERIA = {
     "/support/companies": "panel de soporte; ídem, y cruzar compañías es su función",
     "/support/companies/{company_id}": "panel de soporte; ídem",
     "/support/companies/{company_id}/subscription": "panel de soporte; ídem",
+    "/support/companies/{company_id}/issuer": "panel de soporte; ídem (RN-45, T-621)",
     "/support/companies/{company_id}/enter": (
         "panel de soporte; el token que emite es de solo lectura y está probado "
         "en TestEntrarComo"
     ),
     "/support/audit": "panel de soporte; la bitácora es del sistema entero (RF-9)",
+    "/support/payroll/rates": (
+        "panel de soporte; ídem. Y no es de una compañía: la tasa es del país "
+        "(RN-67, T-1204), probado en test_tasas_planilla.py"
+    ),
+    # Las tasas de planilla son del país, como CABYS: `payroll_rates` y sus tres
+    # vecinas no llevan `company_id`, y la respuesta correcta es que las dos
+    # compañías vean lo mismo (RN-67). La exigencia de sesión y de rol está en
+    # `test_tasas_planilla.py`.
+    "/payroll/rates": "tasas del país, iguales para todas las compañías (T-1204)",
+    # La planilla (F12). Las rutas por id están probadas **con el token de otra
+    # compañía** en test_planilla.py::TestNoSeVeLaPlanillaDeLaOtra, todas, y
+    # las listas salen vacías para la intrusa en la misma clase.
+    "/payroll/settings": "la configuración de la compañía de la sesión",
+    "/payroll/schedules": "crea en la compañía de la sesión; la lista, probada en test_planilla.py",
+    "/payroll/schedules/{schedule_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/positions": "crea en la compañía de la sesión; la lista, probada en test_planilla.py",
+    "/payroll/positions/{position_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/policies": "crea en la compañía de la sesión; la lista, probada en test_planilla.py",
+    "/payroll/policies/{policy_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/employees": "crea en la compañía de la sesión; la lista, probada en test_planilla.py",
+    "/payroll/employees/{employee_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/employees/{employee_id}/terminate": "probado con el token de B en test_planilla.py",
+    "/payroll/employees/{employee_id}/actions": "probado con el token de B en test_planilla.py",
+    "/payroll/contracts": "el empleado ajeno responde 404; probado en test_planilla.py",
+    "/payroll/actions": "el empleado ajeno responde 404; probado en test_planilla.py",
+    "/payroll/actions/{action_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/actions/{action_id}/cancel": "probado con el token de B en test_planilla.py",
+    "/payroll/actions/{action_id}/suspend": "probado con el token de B en test_planilla.py",
+    "/payroll/runs": "la jornada ajena responde 404; la lista, probada en test_planilla.py",
+    "/payroll/runs/{run_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/runs/{run_id}/calculate": "probado con el token de B en test_planilla.py",
+    "/payroll/runs/{run_id}/approve": "probado con el token de B en test_planilla.py",
+    "/payroll/runs/{run_id}/pay": "probado con el token de B en test_planilla.py",
+    "/payroll/runs/aguinaldo": "crea en la compañía de la sesión; probado en test_planilla.py",
+    "/payroll/runs/{run_id}/payslips/{employee_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/runs/{run_id}/adjust": "probado con el token de B en test_planilla.py",
+    "/payroll/vacations/{employee_id}": "probado con el token de B en test_planilla.py",
+    "/payroll/import": "escribe en la compañía de la sesión; probado en test_planilla.py",
+    "/payroll/exports/ccss": "lee las corridas pagadas de la compañía de la sesión; probado en test_planilla.py",
+    "/payroll/exports/income-tax": "lee las corridas pagadas de la compañía de la sesión; probado en test_planilla.py",
+    "/payroll/exports/ins": "la póliza ajena responde 404; probado en test_planilla.py",
+    "/support/payroll/brackets": "panel de soporte; los tramos son del país (T-1221)",
     # CABYS es el catálogo del país, no dato de nadie: `cabys_cache` no lleva
     # `company_id` ni hereda `TenantMixin` a propósito (T-501). La premisa de esta
     # batería —«con el token de A no se ve B»— no aplica, porque acá la respuesta
@@ -693,6 +740,12 @@ FUERA_DE_LA_BATERIA = {
     ),
     "/sales/add_sale": "crea en la compañía de la sesión",
     "/returns/add_return": "crea en la compañía de la sesión",
+    # Las notas por monto (T-726). La batería de acá arma su mundo sin
+    # facturación, y una nota exige un comprobante: el intento con los ids de la
+    # otra compañía está en `test_notas_por_monto.py::TestLaOtraCompania`.
+    "/notes/add_note": "crea en la compañía de la sesión; la venta ajena, en test_notas_por_monto.py",
+    "/notes/note/{note_id}": "probado con el token de B en test_notas_por_monto.py",
+    "/notes/by_sale/{sale_id}": "probado con el token de B en test_notas_por_monto.py",
     "/inventory/entry": "crea en la compañía de la sesión",
     "/users/": "probado en TestLasListasNoMezclan",
     "/products/products_list": "probado en TestLasListasNoMezclan",
@@ -755,6 +808,15 @@ FUERA_DE_LA_BATERIA = {
     "/fe/{ambiente}/atv": "idem",
     "/fe/{ambiente}/atv/verify": "idem",
     "/fe/active": "sin id; el ambiente activo es de la compañía de la sesión",
+    "/fe/queue": "sin id; la cola es de la compañía de la sesión; probado en test_emision.py",
+    "/fe/documents/{document_id}": "el comprobante ajeno responde 404; probado en test_emision.py",
+    "/fe/documents/{document_id}/xml": "idem",
+    "/fe/documents/{document_id}/response": "idem",
+    "/fe/documents/{document_id}/retry": "idem",
+    "/fe/sequences": (
+        "las series de la compañía de la sesión; la caja de otra responde 404 "
+        "terminal_not_found, probado en test_series_fe.py (T-616)"
+    ),
     # T-608. Estas SÍ llevan id, y el aislamiento se prueba en
     # `test_sucursales.py`: con el token de A, tocar la sucursal de B da 404 por
     # el filtro automático, que es lo mismo que comprueba esta batería. Se
@@ -788,7 +850,6 @@ def test_ninguna_ruta_de_negocio_quedo_sin_probar():
     # los de FastAPI.
     equivalencias = {
         "/sales/sale/{venta_id}": "/sales/sale/{sale_id}",
-        "/sales/pdf/{venta_id}": "/sales/pdf/{sale_id}",
         "/returns/return/{devolucion_id}": "/returns/return/{return_id}",
         "/inventory/entry/{entrada_id}": "/inventory/entry/{entry_id}",
         "/inventory/entry/{entrada_id}/cancel": "/inventory/entry/{entry_id}/cancel",

@@ -161,11 +161,18 @@
 {#if data.summary}
 	{@const s = data.summary}
 	<div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+		<!-- Las ventas netas ya cuentan las notas por monto (T-726); se dice cuánto. -->
 		<StatCard
 			label={m.reports_net_sales()}
 			value={formatMoney(s.net_total)}
 			icon="wallet"
 			delta={formatDelta(s.net_total, s.previous_net_total)}
+			hint={s.debit_notes_total || s.credit_notes_total
+				? m.reports_net_includes_notes({
+						debit: formatMoney(s.debit_notes_total ?? 0),
+						credit: formatMoney(s.credit_notes_total ?? 0)
+					})
+				: undefined}
 		/>
 		<StatCard
 			label={m.reports_invoices_issued()}

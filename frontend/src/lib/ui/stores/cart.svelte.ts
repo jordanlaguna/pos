@@ -10,6 +10,7 @@ import {
 	type CartRejection
 } from '$lib/domain/cart';
 import { computeTotals, lineTotal, taxRate, type Totals } from '$lib/domain/money';
+import { effectiveDocumentType, type CounterDocumentType } from '$lib/domain/documentType';
 import type { CartLine, Product } from '$lib/domain/types';
 
 export { MAX_TICKETS };
@@ -34,6 +35,18 @@ export interface Ticket {
 	lines: CartLine[];
 	/** Cliente asociado, como string porque viene de un <select>. */
 	clientId: string;
+	/**
+	 * El comprobante que eligió el cajero (RN-85). Nulo es «el que sugiere el
+	 * cliente». Ausente en las ventas que quedaron guardadas antes de T-723, y
+	 * ausente vale lo mismo que nulo.
+	 */
+	documentType?: CounterDocumentType | null;
+	/**
+	 * Si el cliente elegido es del extranjero (T-727): al del extranjero se le
+	 * exporta, no se le factura. Lo dice la ficha del cliente al elegirlo; ausente
+	 * en las ventas guardadas antes, y ausente vale «del país».
+	 */
+	clientForeign?: boolean;
 	createdAt: number;
 }
 
@@ -51,7 +64,7 @@ interface Persisted {
 }
 
 function blankTicket(id: number): Ticket {
-	return { id, lines: [], clientId: '', createdAt: Date.now() };
+	return { id, lines: [], clientId: '', documentType: null, createdAt: Date.now() };
 }
 
 class Cart {
@@ -148,6 +161,7 @@ class Cart {
 		if (this.tickets.length === 1) {
 			this.tickets[0].lines = [];
 			this.tickets[0].clientId = '';
+			this.tickets[0].documentType = null;
 			this.save();
 			return;
 		}
@@ -176,8 +190,43 @@ class Cart {
 		return this.active.clientId;
 	}
 
-	setClient(value: string) {
+	/**
+	 * Cambia el cliente y **descarta la elección de comprobante**.
+	 *
+	 * Lo elegido era para el cliente anterior: dejar en tiquete a un cliente
+	 * frecuente no dice nada de lo que quiere el siguiente, y el que llega sin
+	 * elección recibe la sugerencia, que es factura (RN-85).
+	 */
+	setClient(value: string, foreign = false) {
 		this.active.clientId = value;
+		this.active.clientForeign = value !== '' && foreign;
+		this.active.documentType = null;
+		this.save();
+	}
+
+	/** Si el cliente de la venta activa es del extranjero (T-727). */
+	get clientForeign(): boolean {
+		return this.active.clientForeign ?? false;
+	}
+
+	/**
+	 * El comprobante que se va a emitir, con lo elegido, el cliente de ahora y lo
+	 * que la compañía emite (RN-88). Nulo es «así no se puede cobrar»: una
+	 * compañía que solo factura, sin cliente.
+	 *
+	 * Recibe lo encendido en vez de leerlo: el carrito no sabe de configuración.
+	 */
+	documentTypeFor(enabled: readonly string[]): CounterDocumentType | null {
+		return effectiveDocumentType(
+			this.active.documentType,
+			this.active.clientId !== '',
+			enabled,
+			this.clientForeign
+		);
+	}
+
+	setDocumentType(value: CounterDocumentType) {
+		this.active.documentType = value;
 		this.save();
 	}
 
@@ -283,6 +332,7 @@ class Cart {
 	clear() {
 		this.active.lines = [];
 		this.active.clientId = '';
+		this.active.documentType = null;
 		this.save();
 	}
 

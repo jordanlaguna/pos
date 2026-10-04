@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -411,7 +411,27 @@ const DATOS = new Map<string, string>([
 		'nombre legal del documento en Costa Rica: no se traduce a portugués, se ' +
 			'cambia por la lista de otro país'
 	],
-	['Cédula jurídica', 'ídem: nombre legal del documento en Costa Rica']
+	['Cédula jurídica', 'ídem: nombre legal del documento en Costa Rica'],
+	[
+		'Extranjero no domiciliado',
+		'ídem: el tipo 05 de Hacienda (T-727), nombre del catálogo y no una frase'
+	],
+	['No contribuyente', 'ídem: el tipo 06 de Hacienda (T-728)']
+]);
+
+/**
+ * Archivos **enteros** que son dato, con su razón. Son pocos y generados: una
+ * excepción por literal sería una lista de quinientas líneas que nadie revisa.
+ * Cada uno tiene que existir —lo comprueba una prueba de abajo—, para que la
+ * excepción no sobreviva a lo que exceptuaba.
+ */
+const ARCHIVOS_DE_DATOS = new Map<string, string>([
+	[
+		'lib/domain/locationsData.ts',
+		'la división territorial de Hacienda (nota 14, T-722), generada del Excel ' +
+			'oficial: los nombres de provincias, cantones y distritos son los de ' +
+			'Hacienda y no se traducen, como no se traduce «Cédula jurídica»'
+	]
 ]);
 
 function revisarLiterales(archivo: string, fuente: string): Hallazgo[] {
@@ -453,7 +473,15 @@ describe('ni en las plantillas de documento, que hablan otro idioma (RN-29)', ()
 	 * Es una prueba de importaciones y no de texto porque el error no es escribir
 	 * una cadena: es pedir el mensaje sin decir en qué idioma.
 	 */
-	const PLANTILLAS = ['Tiquete.svelte', 'FacturaClasica.svelte', 'FacturaModerna.svelte'];
+	const PLANTILLAS = [
+		'Tiquete.svelte',
+		'FacturaClasica.svelte',
+		'FacturaModerna.svelte',
+		// El bloque fiscal que usan las tres (RN-86): habla el idioma del documento.
+		'FiscalBlock.svelte',
+		// La boleta de pago (RF-58, T-1207): la cuarta plantilla, también del documento.
+		'Boleta.svelte'
+	];
 
 	it.each(PLANTILLAS)('%s no importa $lib/paraglide', (nombre) => {
 		const fuente = readFileSync(join(SRC, 'lib/ui/components/documents', nombre), 'utf-8');
@@ -468,10 +496,18 @@ describe('ni en las plantillas de documento, que hablan otro idioma (RN-29)', ()
 });
 
 describe('ni en el dominio ni en la aplicación, que no pueden traducir', () => {
-	const archivos = CAPAS_DE_ADENTRO.flatMap((c) => archivosTs(join(SRC, c)));
+	const archivos = CAPAS_DE_ADENTRO.flatMap((c) => archivosTs(join(SRC, c))).filter(
+		(archivo) => !ARCHIVOS_DE_DATOS.has(relative(SRC, archivo).replace(/\\/g, '/'))
+	);
 
 	it('hay módulos que revisar', () => {
 		expect(archivos.length).toBeGreaterThan(5);
+	});
+
+	it.each([...ARCHIVOS_DE_DATOS.keys()])('%s, exceptuado entero, existe', (ruta) => {
+		expect(existsSync(join(SRC, ruta)), `${ruta} ya no existe: sacarlo de ARCHIVOS_DE_DATOS`).toBe(
+			true
+		);
 	});
 
 	it('ningún literal tiene forma de frase en español', () => {

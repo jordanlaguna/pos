@@ -6,14 +6,20 @@ import { invalidateSettings, loadSettings, saveSettings } from '$lib/server/sett
 import { formError, Validator } from '$lib/application/validation';
 import { F } from '$lib/ui/fields';
 import { m } from '$lib/paraglide/messages.js';
-import { apiMessage, validationErrors } from '$lib/ui/messages';
+import {
+	apiMessage,
+	firstError,
+	issuerMissingMessage,
+	locationMessage,
+	validationErrors
+} from '$lib/ui/messages';
 import {
 	isHexColor,
 	mergeSettings,
-	ID_TYPES,
 	type LogoSettings,
 	type Settings
 } from '$lib/domain/settings';
+import { isBlankLocation, locationProblem, type LocationField } from '$lib/domain/location';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Los idiomas con catálogo. La misma lista que `app/domain/locale.py`. */
@@ -54,9 +60,25 @@ export interface EstadoDeAmbiente {
 	ready: boolean;
 }
 
+/** Una serie de numeración: una caja por un tipo de comprobante (T-616). */
+export interface Serie {
+	terminal_id: number;
+	branch_code: string;
+	branch_name: string;
+	terminal_code: string;
+	terminal_name: string;
+	document_type: string;
+	/** El último consecutivo emitido; el siguiente sale con uno más. */
+	last_number: number;
+	/** El sistema ya emitió con esta serie: desde ahí es suya (RN-38). */
+	in_use: boolean;
+}
+
 export interface EstadoFe {
 	environments: EstadoDeAmbiente[];
 	active: string;
+	/** T-713: si ya se puede pasar a producción y, si no, qué tipos faltan. */
+	production_gate?: { ready: boolean; missing: string[] } | null;
 }
 
 /**
@@ -101,6 +123,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	 * documentos a quien vino a cambiar otra cosa. Sin dato, la pestaña lo dice.
 	 */
 	const fe = await apiSafe<EstadoFe | null>('/fe', null, { token: locals.token });
+	// Las series, para el negocio que viene de otro sistema (T-616). `apiSafe`
+	// por lo mismo que `/fe`.
+	const series = await apiSafe<{ environment: string; items: Serie[] } | null>(
+		'/fe/sequences',
+		null,
+		{ token: locals.token }
+	);
 	// Por lo mismo que `/fe`: es una pestaña más y no puede tumbar las otras.
 	const oficinas = await apiSafe<EstadoOficinas | null>('/offices', null, {
 		token: locals.token
@@ -118,9 +147,21 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		 */
 		branchCode: admin.branch_code,
 		terminalCode: admin.terminal_code,
+		// La cédula del emisor, de `companies` (RN-45): se muestra sin editarse.
+		issuer: stored.issuer,
 		fe,
+		series,
 		oficinas
 	};
+};
+
+/** El campo del formulario que corresponde a cada campo de la ubicación. */
+const CAMPO_DE_UBICACION: Record<LocationField, string> = {
+	province: 'negocio_provincia',
+	canton: 'negocio_canton',
+	district: 'negocio_distrito',
+	neighborhood: 'negocio_barrio',
+	other_signs: 'negocio_otras_senas'
 };
 
 /** Casilla marcada. El navegador no envía nada cuando está desmarcada. */
@@ -169,7 +210,7 @@ async function readLogo(form: FormData, v: Validator): Promise<LogoSettings | un
 export const actions: Actions = {
 	guardar: async ({ request, cookies, locals, url }) => {
 		const admin = requireAdmin(locals, url.pathname);
-		const { settings: stored } = await loadSettings(locals.token, admin.company_id);
+		const { settings: stored, issuer } = await loadSettings(locals.token, admin.company_id);
 
 		const form = await request.formData();
 		const v = new Validator(form);
@@ -179,16 +220,9 @@ export const actions: Actions = {
 			required: false,
 			max: 160
 		});
-		const identificacion = v.text('negocio_identificacion', F.businessIdentification(), {
-			required: false,
-			max: 30
-		});
-		const tipoIdentificacion = v.oneOf(
-			'negocio_tipo_identificacion',
-			F.businessIdType(),
-			ID_TYPES.map((t) => t.code),
-			{ required: false }
-		);
+		// La identificación ya no sale del formulario (RN-45, T-621): es la de la
+		// compañía y la fija soporte. La que queda en la configuración es la que
+		// había, y el backend ni la mira.
 		const telefono = v.text('negocio_telefono', F.businessTelephone(), { required: false, max: 30 });
 		const correo = v.email('negocio_correo', F.businessEmail(), { required: false });
 		const direccion = v.text('negocio_direccion', F.businessAddress(), { required: false, max: 300 });
@@ -197,10 +231,6 @@ export const actions: Actions = {
 		const codigo = v.text('moneda_codigo', F.currencyCode(), { max: 8 });
 		const simbolo = v.text('moneda_simbolo', F.currencySymbol(), { max: 5 });
 		const decimales = v.integer('moneda_decimales', F.decimals(), { min: 0, max: 4 });
-
-		const impuestoNombre = v.text('impuesto_nombre', F.taxName(), { max: 20 });
-		// En pantalla se escribe 13, no 0.13: nadie piensa el IVA en fracciones.
-		const tasaPorcentaje = v.decimal('impuesto_tasa', F.taxRate(), { min: 0, max: 100 });
 
 		const plantilla = v.oneOf('documento_plantilla', F.documentTemplate(), [
 			'tiquete',
@@ -235,7 +265,32 @@ export const actions: Actions = {
 		const logo = await readLogo(form, v);
 		const quitarLogo = checked(form, 'quitar_logo');
 
+		/*
+		 * La ubicación del emisor (T-722, RN-83), con la misma regla que el
+		 * servidor: vacía se guarda —quien no emite no tiene por qué dar su
+		 * distrito—, a medias no. Y con la factura electrónica encendida es
+		 * obligatoria, como el correo.
+		 */
+		const encendida = checked(form, 'electronica_activa');
+		const ubicacion = {
+			province: String(form.get('negocio_provincia') ?? ''),
+			canton: String(form.get('negocio_canton') ?? ''),
+			district: String(form.get('negocio_distrito') ?? ''),
+			neighborhood: String(form.get('negocio_barrio') ?? ''),
+			otherSigns: String(form.get('negocio_otras_senas') ?? '')
+		};
+		if (encendida || !isBlankLocation(ubicacion)) {
+			const problema = locationProblem(ubicacion);
+			if (problema) v.add(CAMPO_DE_UBICACION[problema.field], locationMessage(problema));
+		}
+		if (encendida && !correo) v.add('negocio_correo', issuerMissingMessage(['email']));
+
 		if (!v.ok) return fail(400, { errors: validationErrors(v.errors) });
+
+		// Sin cédula de emisor no hay clave, y esa no se arregla en esta pantalla.
+		if (encendida && !issuer?.identification) {
+			return fail(400, { errors: formError(issuerMissingMessage(['identification'])) });
+		}
 
 		/*
 		 * Se arma el objeto y se vuelve a pasar por `mergeSettings`. Parece
@@ -248,12 +303,14 @@ export const actions: Actions = {
 			business: {
 				nombre,
 				legalName: razonSocial,
-				identificacion,
-				taxIdType: tipoIdentificacion || '01',
+				// Las de antes, sin tocar: la del emisor es la de la compañía.
+				identificacion: stored.business.taxId,
+				taxIdType: stored.business.taxIdType,
 				telefono,
 				correo,
 				direccion,
-				website: sitioWeb
+				website: sitioWeb,
+				location: ubicacion
 			},
 			currency: {
 				codigo,
@@ -263,11 +320,6 @@ export const actions: Actions = {
 				decimalSeparator: separator(form, 'moneda_separador_decimal', ','),
 				symbolAtEnd: checked(form, 'moneda_simbolo_al_final'),
 				space: checked(form, 'moneda_espacio')
-			},
-			tax: {
-				nombre: impuestoNombre,
-				// 13 → 0.13, sin arrastrar el error binario de la división.
-				rate: Math.round((tasaPorcentaje / 100) * 1e6) / 1e6
 			},
 			document: {
 				template: plantilla || 'tiquete',
@@ -293,7 +345,15 @@ export const actions: Actions = {
 				 * ignoren.
 				 */
 				environment: stored.eInvoicing.environment,
-				economicActivity: actividad
+				economicActivity: actividad,
+				/*
+				 * Los comprobantes que emite (RN-88). Las casillas que no se pueden
+				 * mover viajan en un campo oculto cuando están encendidas —una casilla
+				 * apagada no se envía—, así que acá llega la lista entera. Y la sanea
+				 * `mergeSettings`, con la misma regla que el servidor: sin tiquete ni
+				 * factura, o sin la NC, no se guarda así.
+				 */
+				documentTypes: form.getAll('electronica_comprobantes').map(String)
 			}
 		});
 
@@ -476,6 +536,34 @@ export const actions: Actions = {
 		// compañía quedó vieja (T-224).
 		invalidateSettings(admin.company_id);
 		return { success: m.settings_fe_environment_changed() };
+	},
+
+	/**
+	 * El último consecutivo de una serie, para el negocio que viene de otro
+	 * sistema (T-616, RN-36 a RN-38). Que solo suba y que una serie usada no se
+	 * mueva lo decide el servidor; acá solo se revisa que sea un número.
+	 */
+	feSerie: async ({ request, locals, url }) => {
+		requireAdmin(locals, url.pathname);
+		const form = await request.formData();
+		const v = new Validator(form);
+		const terminalId = v.integer('terminal_id', F.terminal(), { min: 1 });
+		const ultimo = v.integer('last_number', F.lastSequence(), { min: 0, max: 9_999_999_999 });
+		if (!v.ok) return fail(400, { message: firstError(v.errors), errors: validationErrors(v.errors) });
+		try {
+			await api('/fe/sequences', {
+				method: 'PUT',
+				token: locals.token,
+				body: {
+					terminal_id: terminalId,
+					document_type: String(form.get('document_type') ?? ''),
+					last_number: ultimo
+				}
+			});
+		} catch (error) {
+			return fail(400, { errors: formError(apiMessage(error)) });
+		}
+		return { success: m.settings_fe_sequence_saved() };
 	},
 
 	/*

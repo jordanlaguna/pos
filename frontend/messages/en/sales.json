@@ -59,6 +59,9 @@
   "sales_charge_sale": "Charge sale",
   "sales_charge_failed": "The sale could not be completed",
   "sales_invoice_number": "Invoice {number}",
+  "sales_document_number": "{document} {number}",
+  "sales_document_type": "Document",
+  "sales_invoice_needs_client": "To issue an electronic invoice, choose a customer.",
   "sales_amount_due": "Amount due",
   "sales_payment_method": "Payment method",
   "sales_cash_received": "Cash received",
@@ -67,5 +70,8 @@
   "sales_client_optional": "Customer (optional)",
   "sales_client_walk_in": "Walk-in customer",
   "sales_confirm_charge": "Confirm charge",
-  "sales_line_unclassified": "unclassified"
+  "sales_line_unclassified": "unclassified",
+  "sales_choose_client": "Choose a customer",
+  "sales_only_invoices_needs_client": "This business only issues electronic invoices: choose a customer to charge.",
+  "sales_export_client": "A foreign customer receives an export invoice or a ticket."
 }

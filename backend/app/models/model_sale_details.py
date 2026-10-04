@@ -1,4 +1,4 @@
-from sqlalchemy import CHAR, Column, ForeignKey, Integer, Numeric
+from sqlalchemy import CHAR, Column, ForeignKey, Integer, Numeric, String
 
 from app.database.database import Base
 from app.utils.tenancy import TenantMixin
@@ -38,6 +38,17 @@ class SaleDetail(TenantMixin, Base):
     #
     # NULL es «anterior a F7» o «el producto no estaba clasificado».
     tax_code = Column(CHAR(2), nullable=True)
+
+    # El CABYS y la unidad con que se vendió, congelados por lo mismo (T-731,
+    # RN-86): el comprobante los imprime por línea, y el producto puede cambiar
+    # de CABYS después —el dueño lo corrige, Hacienda actualiza el catálogo—.
+    # NULL es «anterior a la migración 016» o «el producto no tenía CABYS».
+    cabys_code = Column(CHAR(13), nullable=True)
+    unit_of_measure = Column(String(15), nullable=True)
+
+    # La partida arancelaria con que se exportó (T-727), congelada por lo mismo.
+    # Solo la lleva la línea de una factura de exportación; en las demás es NULL.
+    tariff_heading = Column(CHAR(12), nullable=True)
 
     # El costo promedio del producto AL MOMENTO DE VENDERSE (RN-63), congelado
     # igual que la tarifa y por la misma razón. Vender hoy con costo ₡110 y

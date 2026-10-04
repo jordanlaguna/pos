@@ -19,6 +19,7 @@ from app.domain.money import Money
 from app.domain.tax import TaxRate
 from app.models.model_cabys import CabysCache
 from app.models.model_cash import CashMovement, CashSession
+from app.models.model_note import SaleNote, SaleNoteLine
 from app.models.model_product import Product
 from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
@@ -46,6 +47,12 @@ class ProductData:
     #: Lo que cuesta (RN-54). Cero es «no se sabe»: los productos anteriores a
     #: F10 y los que nunca se compraron. La primera compra lo establece.
     cost: Money = Money.zero()
+    #: El CABYS y la unidad del comprobante (RN-86), para congelarlos en la línea.
+    cabys_code: str | None = None
+    unit_of_measure: str | None = None
+    #: La partida arancelaria (T-727): se congela en la línea de una factura de
+    #: exportación y decide, antes de cobrar, si la mercancía puede exportarse.
+    tariff_heading: str | None = None
 
 
 def _a_producto(fila: Product) -> ProductData:
@@ -59,6 +66,9 @@ def _a_producto(fila: Product) -> ProductData:
         tax_rate=TaxRate(fila.tax_rate) if fila.tax_rate is not None else None,
         tax_code=fila.tax_code,
         cost=Money(fila.cost) if fila.cost is not None else Money.zero(),
+        cabys_code=fila.cabys_code,
+        unit_of_measure=fila.unit_of_measure,
+        tariff_heading=fila.tariff_heading,
     )
 
 
@@ -145,6 +155,10 @@ class SupplierData:
     name: str
     is_active: bool
     payment_terms_days: int
+    #: Quién es ante Hacienda (T-728): el `06` da lugar a la factura de compra,
+    #: y su cédula va en ella como emisor.
+    identification_type: str | None = None
+    identification: str | None = None
 
 
 class SqlAlchemySupplierRepository:
@@ -160,6 +174,8 @@ class SqlAlchemySupplierRepository:
             name=fila.name,
             is_active=bool(fila.is_active),
             payment_terms_days=fila.payment_terms_days or 0,
+            identification_type=fila.identification_type,
+            identification=fila.identification,
         )
 
 
@@ -206,6 +222,7 @@ class SqlAlchemyStockEntryRepository:
         due_date: date | None = None,
         subtotal: Money | None = None,
         tax: Money | None = None,
+        document_type: str | None = None,
     ) -> int:
         entrada = StockEntry(
             # A qué sucursal entró. Sale del token, no del cuerpo de la
@@ -229,6 +246,8 @@ class SqlAlchemyStockEntryRepository:
             # total y el impuesto cero: es lo que esa entrada fue.
             subtotal=(subtotal or total_cost).amount,
             tax=(tax or Money.zero()).amount,
+            # La factura electrónica de compra, si la hay (T-728).
+            document_type=document_type,
         )
         self._db.add(entrada)
         self._db.flush()
@@ -325,6 +344,7 @@ class SqlAlchemySaleRepository:
         change_given: Money,
         created_at: datetime,
         lines: list,
+        document_type: str | None = None,
     ) -> int:
         venta = Sale(
             # Dónde y en qué caja se cobró. Del token, nunca del cliente: una
@@ -334,6 +354,9 @@ class SqlAlchemySaleRepository:
             terminal_id=terminal_actual(),
             sale_number=sale_number,
             client_id=client_id,
+            # Congelado como la tarifa: el documento reimpreso dice lo que se
+            # emitió aunque después se apague la facturación (RN-85).
+            document_type=document_type,
             user_id=user_id,
             subtotal=subtotal.amount,
             tax=tax.amount,
@@ -371,6 +394,12 @@ class SqlAlchemySaleRepository:
                     # (RN-63). NULL cuando el producto no tiene: es «no se sabe»,
                     # y esa línea no asienta el par costo / inventario.
                     unit_cost=None if linea.unit_cost is None else linea.unit_cost.amount,
+                    # El CABYS y la unidad, congelados igual (RN-86): la factura
+                    # reimpresa dice con qué se vendió, no lo que diga hoy el
+                    # producto.
+                    cabys_code=linea.cabys_code,
+                    unit_of_measure=linea.unit_of_measure,
+                    tariff_heading=linea.tariff_heading,
                 )
             )
 
@@ -464,6 +493,8 @@ class SqlAlchemyReturnRepository:
         total: Money,
         created_at: datetime,
         lines: list,
+        document_type: str | None = None,
+        reference_code: str | None = None,
     ) -> int:
         registro = Return(
             # La devolución se sella donde ocurre, que no tiene por qué ser
@@ -473,6 +504,10 @@ class SqlAlchemyReturnRepository:
             sale_id=sale_id,
             user_id=user_id,
             reason=reason,
+            # La nota de crédito, si la venta fue comprobante (RN-89). La decidió
+            # el dominio con el tipo de la venta.
+            document_type=document_type,
+            reference_code=reference_code,
             # Desde F5 se guarda el desglose y no solo el total: con tarifas
             # mezcladas el impuesto no se puede deducir del total, así que sin
             # estas dos columnas la devolución no tendría con qué cuadrar la caja
@@ -513,6 +548,103 @@ class SqlAlchemyReturnRepository:
             .scalar()
         )
         return Money(total or 0)
+
+
+class SqlAlchemyNoteRepository:
+    """Las notas por monto (T-726): la ND y la NC que no mueven mercadería."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def adjustments(self, sale_id: int) -> dict[int, tuple[Money, Money]]:
+        filas = (
+            self._db.query(
+                SaleNoteLine.product_id,
+                SaleNote.document_type,
+                SaleNoteLine.subtotal,
+                SaleNoteLine.tax_amount,
+            )
+            .join(SaleNote, SaleNote.id == SaleNoteLine.note_id)
+            .filter(SaleNote.sale_id == sale_id)
+            .all()
+        )
+        ajustes: dict[int, tuple[Money, Money]] = {}
+        for product_id, tipo, base, impuesto in filas:
+            sumado, restado = ajustes.get(product_id, (Money.zero(), Money.zero()))
+            total = Money(base) + Money(impuesto)
+            if tipo == "02":
+                sumado = sumado + total
+            else:
+                restado = restado + total
+            ajustes[product_id] = (sumado, restado)
+        return ajustes
+
+    def add(
+        self,
+        *,
+        sale_id: int,
+        user_id: int,
+        document_type: str,
+        reference_code: str,
+        reason: str,
+        payment_method: str | None,
+        subtotal: Money,
+        tax: Money,
+        total: Money,
+        created_at: datetime,
+        lines: list,
+    ) -> int:
+        nota = SaleNote(
+            # Donde se emite, como la devolución: no tiene por qué ser donde se
+            # vendió, y es la gaveta de acá la que cobra o reembolsa.
+            branch_id=sucursal_actual(),
+            terminal_id=terminal_actual(),
+            sale_id=sale_id,
+            user_id=user_id,
+            document_type=document_type,
+            reference_code=reference_code,
+            reason=reason,
+            payment_method=payment_method,
+            subtotal=subtotal.amount,
+            tax=tax.amount,
+            total=total.amount,
+            created_at=created_at,
+        )
+        self._db.add(nota)
+        self._db.flush()  # asigna el id sin cerrar la transacción
+
+        # El CABYS, la unidad y el código de tarifa, de la línea de la venta
+        # (RN-86): la nota repite con qué se vendió. Una línea por producto.
+        vendidas = {
+            d.product_id: d
+            for d in self._db.query(SaleDetail).filter(SaleDetail.sale_id == sale_id).all()
+        }
+        for linea in lines:
+            vendida = vendidas.get(linea.product_id)
+            self._db.add(
+                SaleNoteLine(
+                    note_id=nota.id,
+                    product_id=linea.product_id,
+                    subtotal=linea.subtotal.amount,
+                    tax_rate=linea.tax_rate.value,
+                    tax_amount=linea.tax.amount,
+                    tax_code=vendida.tax_code if vendida else None,
+                    cabys_code=vendida.cabys_code if vendida else None,
+                    unit_of_measure=vendida.unit_of_measure if vendida else None,
+                )
+            )
+        return nota.id
+
+    def in_window(self, user_id: int, start: datetime, end: datetime) -> list:
+        return (
+            self._db.query(SaleNote)
+            .filter(
+                SaleNote.user_id == user_id,
+                SaleNote.created_at >= start,
+                SaleNote.created_at <= end,
+            )
+            .all()
+        )
 
 
 class SqlAlchemyCashRepository:
@@ -583,18 +715,52 @@ class SqlAlchemyCashRepository:
 
 
 class SqlAlchemySettingsRepository:
-    """La tasa configurada, leída de la tabla `settings`."""
+    """Lo que la venta lee de la configuración, en la tabla `settings`."""
 
     def __init__(self, db: Session) -> None:
         self._db = db
 
-    def tax_rate(self) -> TaxRate:
-        # `get_tax_rate` ya devuelve la de Costa Rica cuando no hay fila o el
-        # valor guardado está fuera de rango: nunca propaga basura a un cálculo
-        # de plata.
-        from app.services.crud_settings import get_tax_rate
+    def einvoicing_enabled(self) -> bool:
+        from app.services.crud_settings import get_einvoicing_enabled
 
-        return TaxRate(get_tax_rate(self._db))
+        return get_einvoicing_enabled(self._db)
+
+    def document_types(self) -> frozenset[str]:
+        from app.services.crud_settings import get_document_types
+
+        return get_document_types(self._db)
+
+
+@dataclass(frozen=True)
+class ClientData:
+    """Un cliente visto desde la venta. Cumple `ClientSnapshot`."""
+
+    id_client: int
+    identification_type: str | None
+    foreign_address: str | None
+
+
+class SqlAlchemyClientRepository:
+    """Cumple `ClientRepository`. El filtro por compañía lo pone la sesión."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def get(self, client_id: int) -> ClientData | None:
+        # La entidad y no `query(Client.id_client)`: el filtro de `tenancy.py`
+        # se engancha al ORM, y consultar la fila entera es la forma que ya se
+        # sabe filtrada. Un cliente de otra compañía da `None`, igual que uno
+        # que no existe.
+        from app.models.model_client import Client
+
+        fila = self._db.query(Client).filter(Client.id_client == client_id).first()
+        if fila is None:
+            return None
+        return ClientData(
+            id_client=fila.id_client,
+            identification_type=fila.identification_type,
+            foreign_address=fila.foreign_address,
+        )
 
 
 class SqlAlchemyUnitOfWork:

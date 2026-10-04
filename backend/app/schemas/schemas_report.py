@@ -7,6 +7,10 @@ class ReportSummary(BaseModel):
     sales_count: int
     gross_total: float
     returns_total: float
+    # Las notas por monto del periodo (T-726): la ND suma a lo vendido y la NC
+    # resta, como una devolución.
+    debit_notes_total: float = 0
+    credit_notes_total: float = 0
     net_total: float
     tax_total: float
     average_ticket: float

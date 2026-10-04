@@ -36,6 +36,7 @@ from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
 from tests.application.fakes import (
     FakeCashRepository,
+    FakeNoteRepository,
     FakeProduct,
     FakeProductRepository,
     FakeReturnRepository,
@@ -56,6 +57,10 @@ class FakeSupplier:
     name: str
     is_active: bool = True
     payment_terms_days: int = 0
+    #: `06` es el no contribuyente, a quien se le emite la factura de compra
+    #: (T-728). El mayorista de estas pruebas es jurídico, con su cédula.
+    identification_type: str | None = "02"
+    identification: str | None = "3101000001"
 
 
 class FakeSupplierRepository:
@@ -139,6 +144,7 @@ def mundo_pagable() -> MundoPagable:
                     report=BuildSessionReport(
                         sales=FakeSaleRepository(),
                         returns=FakeReturnRepository(),
+                        notes=FakeNoteRepository(),
                         cash=caja,
                         clock=reloj,
                     ),
@@ -179,6 +185,138 @@ def compra(**cambios) -> EntryRequest:
     }
     datos.update(cambios)
     return EntryRequest(**datos)
+
+
+# ------------------------------------------------ la factura de compra (T-728)
+
+NO_CONTRIBUYENTE = 9
+CON_COMPRA = frozenset({"04", "01", "03", "08"})
+
+
+def mundo_que_factura(*, encendidos=CON_COMPRA, activa: bool = True):
+    """Una compañía que emite, con un mayorista inscrito (7) y una señora que
+    vende verduras y no es contribuyente (9)."""
+    from tests.application.fakes import FakeSettingsRepository, numerador
+
+    productos = FakeProductRepository(
+        [FakeProduct(1, "Arroz", Money(1500), stock=10, cost=Money(100))]
+    )
+    entradas = FakeStockEntryRepository()
+    proveedores = FakeSupplierRepository(
+        [
+            FakeSupplier(7, "Mayorista del Sur", payment_terms_days=30),
+            FakeSupplier(NO_CONTRIBUYENTE, "Doña Flor", identification_type="06"),
+        ]
+    )
+    numeracion, contador = numerador()
+    caso = RegisterStockEntry(
+        products=productos,
+        entries=entradas,
+        uow=FakeUnitOfWork(),
+        clock=FixedClock(HOY),
+        suppliers=proveedores,
+        settings=FakeSettingsRepository(einvoicing=activa, document_types=encendidos),
+        numbering=numeracion,
+    )
+    return caso, entradas, contador
+
+
+class TestLaFacturaDeCompra:
+    """RF-79, RN-87, T-728: comprarle a un no contribuyente emite la FEC, con el
+    negocio como comprador, en la misma transacción que la mercadería."""
+
+    def test_al_no_contribuyente_se_le_emite_y_se_numera_en_la_serie_08(self):
+        caso, entradas, contador = mundo_que_factura()
+        hecha = caso(compra(supplier_id=NO_CONTRIBUYENTE, payment_terms="cash"))
+
+        assert hecha.document_type == "08"
+        assert entradas.entradas[0].document_type == "08"
+        assert hecha.einvoice is not None
+        assert hecha.einvoice.source_type == "purchase"
+        assert hecha.einvoice.source_id == hecha.id_entry
+        assert hecha.einvoice.consecutive[8:10] == "08"
+        assert contador.series == {("08", "sandbox"): 1}
+        # Con la misma hora que la compra: la fecha de la clave es la de la emisión.
+        assert hecha.einvoice.issued_at == HOY
+
+    def test_al_mayorista_inscrito_nada(self):
+        caso, entradas, contador = mundo_que_factura()
+        hecha = caso(compra(supplier_id=7))
+        assert hecha.document_type is None
+        assert hecha.einvoice is None
+        assert entradas.entradas[0].document_type is None
+        assert contador.bloqueadas == []
+
+    def test_con_la_compra_apagada_la_compra_entra_sin_comprobante(self):
+        caso, entradas, _ = mundo_que_factura(encendidos=frozenset({"04", "01", "03"}))
+        hecha = caso(compra(supplier_id=NO_CONTRIBUYENTE))
+        assert hecha.document_type is None
+        assert len(entradas.entradas) == 1
+
+    def test_con_la_facturacion_apagada_tampoco(self):
+        caso, _, contador = mundo_que_factura(activa=False)
+        assert caso(compra(supplier_id=NO_CONTRIBUYENTE)).document_type is None
+        assert contador.bloqueadas == []
+
+    def test_una_entrada_sin_proveedor_nunca_lleva_factura_de_compra(self):
+        # RN-52: sin proveedor es un ajuste de inventario, no una compra. Con la
+        # FEC encendida y todo, no hay a quién emitírsela (T-728).
+        caso, entradas, contador = mundo_que_factura()
+        hecha = caso(compra(supplier_id=None, payment_terms="cash"))
+        assert hecha.document_type is None
+        assert hecha.einvoice is None
+        assert entradas.entradas[0].document_type is None
+        assert contador.bloqueadas == []
+
+    def test_un_no_contribuyente_sin_cedula_no_se_numera(self):
+        # Él es el emisor del XML: sin cédula el comprobante nacería para
+        # detenerse. Se dice antes de numerar y sin tocar existencias.
+        from app.domain.errors import SupplierNeedsIdentification
+        from tests.application.fakes import FakeSettingsRepository, numerador
+
+        productos = FakeProductRepository([FakeProduct(1, "Arroz", Money(1500), stock=10)])
+        entradas = FakeStockEntryRepository()
+        numeracion, contador = numerador()
+        caso = RegisterStockEntry(
+            products=productos,
+            entries=entradas,
+            uow=FakeUnitOfWork(),
+            clock=FixedClock(HOY),
+            suppliers=FakeSupplierRepository(
+                [FakeSupplier(NO_CONTRIBUYENTE, "Doña Flor", identification_type="06", identification=None)]
+            ),
+            settings=FakeSettingsRepository(einvoicing=True, document_types=CON_COMPRA),
+            numbering=numeracion,
+        )
+        with pytest.raises(SupplierNeedsIdentification) as e:
+            caso(compra(supplier_id=NO_CONTRIBUYENTE))
+        assert e.value.supplier_id == NO_CONTRIBUYENTE
+        assert entradas.entradas == []
+        assert contador.bloqueadas == []
+        assert productos.get(1).stock == 10
+
+    def test_sin_cedula_de_emisor_no_entra_y_no_toca_existencias(self):
+        from app.domain.errors import IssuerIdentificationRequired
+        from tests.application.fakes import FakeIssuerRepository, FakeSettingsRepository, numerador
+
+        productos = FakeProductRepository([FakeProduct(1, "Arroz", Money(1500), stock=10)])
+        entradas = FakeStockEntryRepository()
+        numeracion, _ = numerador(issuer=FakeIssuerRepository(None))
+        caso = RegisterStockEntry(
+            products=productos,
+            entries=entradas,
+            uow=FakeUnitOfWork(),
+            clock=FixedClock(HOY),
+            suppliers=FakeSupplierRepository(
+                [FakeSupplier(NO_CONTRIBUYENTE, "Doña Flor", identification_type="06")]
+            ),
+            settings=FakeSettingsRepository(einvoicing=True, document_types=CON_COMPRA),
+            numbering=numeracion,
+        )
+        with pytest.raises(IssuerIdentificationRequired):
+            caso(compra(supplier_id=NO_CONTRIBUYENTE))
+        assert entradas.entradas == []
+        assert productos.get(1).stock == 10
 
 
 class TestElCostoPromedio:

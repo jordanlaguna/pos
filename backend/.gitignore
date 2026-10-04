@@ -1,5 +1,8 @@
-# Credenciales y clave de firma: nunca al repositorio.
-.env
+# Credenciales y clave de firma: nunca al repositorio. El patrón es amplio a
+# propósito —`.env` solo casa exacto, y una copia como `.env.bak-vault` se le
+# escapa—; la plantilla es la única excepción y no lleva secretos.
+.env*
+!.env.example
 
 # Dumps que se cargan al inicializar la base; suelen traer datos reales.
 initdb/*.sql

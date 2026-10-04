@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 import datetime
 
+from app.schemas.schemas_einvoice import EInvoiceOut
+
 
 class ProductSale(BaseModel):
     id_product: int
@@ -10,7 +12,8 @@ class ProductSale(BaseModel):
 
 
 class SaleRegister(BaseModel):
-    sale_number: str
+    # Opcional desde T-706: sin él, el servidor lo pone con su reloj.
+    sale_number: str | None = None
     # Opcional: las ventas de contado no llevan cliente asociado.
     client_id: int | None = None
     user_id: int
@@ -24,6 +27,11 @@ class SaleRegister(BaseModel):
     # hora de la venta la sella el servidor. Ver crud_sale.create_sale().
     created_at: datetime.datetime | None = None
     products: list[ProductSale]
+    # '01' factura o '04' tiquete (RN-85). Opcional: sin él sale el que sugiere
+    # el receptor, y con la facturación electrónica apagada se ignora. Es texto
+    # y no un `Literal` para que un valor malo llegue al dominio y vuelva como
+    # `invalid_sale_document_type`, no como un 422 sin código.
+    document_type: str | None = None
 
 
 class SalesList(BaseModel):
@@ -38,6 +46,11 @@ class SalesList(BaseModel):
     cash_received: float
     change_given: float
     created_at: datetime.datetime
+    # El comprobante que se emitió (RN-85). Nulo sin facturación electrónica.
+    document_type: str | None = None
+    # En qué va ante Hacienda (RN-39): numbered, signed, sent, accepted,
+    # rejected, retrying, stopped. Nulo si la venta no tiene comprobante.
+    einvoice_status: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -61,6 +74,14 @@ class SaleItem(BaseModel):
     # sujeto sin ninguno. En nulo para lo anterior a F7.
     tax_code: str | None = None
 
+    # El CABYS y la unidad con que se vendió (F7, T-731, RN-86), congelados en
+    # la línea: el comprobante los imprime y el producto puede cambiarlos. En
+    # nulo para lo anterior a la migración 016.
+    cabys_code: str | None = None
+    unit_of_measure: str | None = None
+    #: La partida arancelaria con que se exportó (T-727). Solo en la FEE.
+    tariff_heading: str | None = None
+
 
 class SaleDetailResponse(SalesList):
     """Venta con sus líneas. La necesitan la factura y las devoluciones."""
@@ -69,6 +90,9 @@ class SaleDetailResponse(SalesList):
     user_name: str | None = None
     returned: bool = False
     items: list[SaleItem] = []
+    # El comprobante numerado (T-705). Nulo sin facturación electrónica, o en
+    # una venta de antes: esa se imprime «pendiente de emisión».
+    einvoice: EInvoiceOut | None = None
 
 
 class SaleRegisterSuccess(BaseModel):

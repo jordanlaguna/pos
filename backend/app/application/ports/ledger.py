@@ -32,6 +32,7 @@ from app.domain.ledger import (
     ClosedSession,
     DrawerMovement,
     JournalEntry,
+    PaidPayroll,
     PurchasedDocument,
     PurchasedLine,
     ReturnDocument,
@@ -76,6 +77,14 @@ class Ledger(JournalWriter, Protocol):
 
     def record_return(self, ret: ReturnDocument, lines: Sequence[SoldLine]) -> None: ...
 
+    #: Las notas por monto (T-726). Se asientan como la venta y la devolución
+    #: —la ND por su medio de pago, la NC contra la caja—, sin costo porque no hay
+    #: mercadería, y con su propio origen: el libro tiene que decir «Nota n.º 3»,
+    #: no confundirla con la venta 3.
+    def record_debit_note(self, note: SoldDocument, lines: Sequence[SoldLine]) -> None: ...
+
+    def record_credit_note(self, note: ReturnDocument, lines: Sequence[SoldLine]) -> None: ...
+
     def record_cash_close(
         self, session: ClosedSession, *, expected: Money, counted: Money
     ) -> None:
@@ -90,6 +99,16 @@ class Ledger(JournalWriter, Protocol):
     ) -> None: ...
 
     def record_supplier_payment(self, pay: SupplierPaymentRef) -> None: ...
+
+    def record_payroll(self, payroll: PaidPayroll) -> int | None:
+        """La corrida pagada (RN-75, T-1206).
+
+        Es el único `record_*` que devuelve algo: el id del asiento, porque la
+        corrida lo guarda (`payroll_runs.journal_entry_id`) para que la pantalla
+        pueda ir de la boleta al libro. `None` con el libro apagado o con una
+        fecha anterior al arranque de la contabilidad (RN-60).
+        """
+        ...
 
 
 class NullLedger:
@@ -113,6 +132,12 @@ class NullLedger:
     def record_return(self, ret: ReturnDocument, lines: Sequence[SoldLine]) -> None:
         return None
 
+    def record_debit_note(self, note: SoldDocument, lines: Sequence[SoldLine]) -> None:
+        return None
+
+    def record_credit_note(self, note: ReturnDocument, lines: Sequence[SoldLine]) -> None:
+        return None
+
     def record_cash_close(
         self, session: ClosedSession, *, expected: Money, counted: Money
     ) -> None:
@@ -127,4 +152,7 @@ class NullLedger:
         return None
 
     def record_supplier_payment(self, pay: SupplierPaymentRef) -> None:
+        return None
+
+    def record_payroll(self, payroll: PaidPayroll) -> int | None:
         return None

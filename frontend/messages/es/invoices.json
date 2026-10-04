@@ -28,6 +28,7 @@
 	"invoices_sum": "Total: {total}",
 
 	"invoices_col_invoice": "Factura",
+	"invoices_col_document": "Comprobante",
 	"invoices_col_date": "Fecha",
 	"invoices_col_subtotal": "Subtotal",
 	"invoices_col_tax": "IVA",
@@ -47,14 +48,115 @@
 	"invoice_not_found": "Factura no encontrada.",
 	"invoice_registered": "Venta registrada correctamente.",
 	"invoice_print": "Imprimir",
+	"invoice_print_hint": "Desde el diálogo de impresión también se guarda como PDF.",
 	"invoice_back": "Volver a facturas",
 	"invoice_return": "Devolver",
-	"invoice_backend_pdf": "PDF del backend",
 	"invoice_fully_returned": "Venta devuelta por completo",
 	"invoice_partially_returned": "Venta con devoluciones parciales",
 	"invoice_return_line": "{date} — {total} · {reason}",
-
-	"invoice_mock_no_pdf": "El modo demostración no genera PDF. Use «Imprimir» para guardarlo desde el navegador.",
-	"invoice_pdf_failed": "El backend no pudo generar el PDF de esta factura."
-
+	"invoice_annul": "Anular",
+	"invoice_annul_title": "Anular {number}",
+	"invoice_annul_hint": "Se emite una nota de crédito que anula el comprobante entero, se repone el inventario y se reembolsa lo cobrado. Úselo cuando el comprobante no debió existir: el cliente o el tipo equivocado.",
+	"invoice_annul_failed": "No se pudo anular",
+	"invoice_annul_reason_placeholder": "Por qué se anula",
+	"invoice_annul_confirm": "Anular comprobante",
+	"invoice_note": "Nota por monto",
+	"invoice_note_title": "Nota por monto sobre {number}",
+	"invoice_note_hint": "Corrige lo cobrado sin mover mercadería. La nota de débito se cobra ahora; la de crédito se reembolsa de la gaveta. Escriba cada monto con impuesto incluido.",
+	"invoice_note_type": "Tipo de nota",
+	"invoice_note_debit": "Nota de débito: cobrar de más",
+	"invoice_note_credit": "Nota de crédito: devolver plata",
+	"invoice_note_debit_off": "La nota de débito está apagada en Configuración.",
+	"invoice_note_lines": "Monto por línea, con impuesto",
+	"invoice_note_line": "{product} · vendido a {price}",
+	"invoice_note_payment": "Se cobra con",
+	"invoice_note_reason_placeholder": "Por qué se corrige el monto",
+	"invoice_note_confirm": "Emitir nota",
+	"invoice_note_failed": "No se pudo emitir la nota",
+	"invoice_notes_list": "Notas por monto",
+	"invoice_note_row": "{date} — {document} · {total} · {reason}",
+	"invoice_note_view": "Ver la nota",
+	"amount_note_not_found": "Esa nota no existe.",
+	"amount_note_tab_title": "Nota {number}",
+	"amount_note_registered_debit": "Nota de débito emitida. Cobre el monto al cliente.",
+	"amount_note_registered_credit": "Nota de crédito emitida. Entregue el reembolso de la gaveta.",
+	"amount_note_back": "Volver a la factura",
+	"invoices_col_hacienda": "Hacienda",
+	"invoice_state": [
+		{
+			"declarations": ["input state"],
+			"selectors": ["state"],
+			"match": {
+				"state=numbered": "Numerado",
+				"state=signed": "Firmado",
+				"state=sent": "Enviado",
+				"state=accepted": "Aceptado",
+				"state=rejected": "Rechazado",
+				"state=retrying": "Reintentando",
+				"state=stopped": "Detenido",
+				"state=*": "{state}"
+			}
+		}
+	],
+	"invoice_stop_reason": [
+		{
+			"declarations": ["input reason"],
+			"selectors": ["reason"],
+			"match": {
+				"reason=certificate_missing": "Falta el certificado de firma del ambiente.",
+				"reason=certificate_expired": "El certificado de firma venció.",
+				"reason=credentials_missing": "Faltan el usuario o la contraseña de ATV.",
+				"reason=credentials_rejected": "Hacienda no aceptó el usuario o la contraseña de ATV.",
+				"reason=document_invalid": "Al comprobante le falta un dato que Hacienda exige.",
+				"reason=reception_rejected": "Hacienda rechazó el envío antes de procesarlo.",
+				"reason=forbidden": "Las credenciales no tienen permiso para este emisor.",
+				"reason=hacienda_error": "Hacienda no pudo procesarlo y no dijo por qué.",
+				"reason=retries_exhausted": "Se intentó durante 72 horas sin alcanzar a Hacienda.",
+				"reason=no_verdict": "Hacienda lo recibió hace 72 horas y todavía no decide.",
+				"reason=*": "{reason}"
+			}
+		}
+	],
+	"invoice_event": [
+		{
+			"declarations": ["input event"],
+			"selectors": ["event"],
+			"match": {
+				"event=signed": "Firmado",
+				"event=sent": "Enviado a Hacienda",
+				"event=polled": "Consultado: Hacienda sigue procesando",
+				"event=accepted": "Hacienda lo aceptó",
+				"event=rejected": "Hacienda lo rechazó",
+				"event=deferred": "No se pudo; se reintenta más tarde",
+				"event=stopped": "Detenido",
+				"event=resumed": "Reintentado a mano",
+				"event=xml_lost": "El XML firmado no estaba; se vuelve a firmar",
+				"event=*": "{event}"
+			}
+		}
+	],
+	"invoice_file_title": "Ante Hacienda",
+	"invoice_file_hint": "Por dónde va el comprobante y a qué hora pasó cada cosa. El XML que se bajó es el que se firmó, byte por byte.",
+	"invoice_file_none": "Esta venta no tiene comprobante electrónico: se cobró sin facturación electrónica.",
+	"invoice_xml": "XML firmado",
+	"invoice_response": "Respuesta de Hacienda",
+	"invoice_xml_pending": "El XML se baja cuando el comprobante esté firmado.",
+	"invoice_response_pending": "La respuesta se baja cuando Hacienda conteste.",
+	"invoice_hacienda_detail": "Lo que dijo Hacienda",
+	"invoice_next_attempt": "Próximo intento: {when}",
+	"invoice_last_attempt": "Último intento: {when}",
+	"invoice_in_queue": "En cola: la cola lo toma en unos segundos.",
+	"invoice_retry": "Reintentar",
+	"invoice_retry_hint": "Vuelve a la cola después de arreglar lo que lo detuvo. Un rechazo de Hacienda no se reintenta: se emite otro comprobante.",
+	"invoice_retry_done": "El comprobante volvió a la cola.",
+	"invoice_retry_failed": "No se pudo reintentar.",
+	"invoice_events_title": "Pasos",
+	"invoice_events_none": "Todavía no pasó nada: la cola lo toma en unos segundos.",
+	"invoices_stopped_title": "Detenidos: necesitan a una persona",
+	"invoices_stopped_hint": "Lo que la cola no puede resolver sola. Cada uno dice por qué y cuánto lleva esperando; el plazo para transmitir lo emitido en contingencia es de unos ocho días hábiles.",
+	"invoices_stopped_waiting": "Esperando desde {since}",
+	"invoices_queue_pending": "{count} en camino a Hacienda",
+	"invoices_queue_alarm_warning": "Hay comprobantes esperando a Hacienda desde hace más de un día ({count} pendientes, el más viejo del {since}). Revise la conexión, el certificado y las credenciales en Facturas.",
+	"invoices_queue_alarm_danger": "Hay comprobantes sin respuesta de Hacienda desde hace cinco días o más ({count} pendientes, el más viejo del {since}). El plazo de contingencia se está acabando: atiéndalo hoy.",
+	"invoices_contingency": "El negocio está emitiendo en contingencia: Hacienda no contesta desde el último intento. Los comprobantes se transmiten solos cuando vuelva."
 }

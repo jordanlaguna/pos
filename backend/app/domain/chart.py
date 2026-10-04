@@ -24,6 +24,12 @@ from dataclasses import dataclass
 from .errors import AccountInUse, AccountIsSystem
 from .ledger import (
     BANK,
+    EMPLOYER_CONTRIBUTIONS,
+    INCOME_TAX_PAYABLE,
+    OTHER_DEDUCTIONS_PAYABLE,
+    SALARIES,
+    SALARIES_PAYABLE,
+    SOCIAL_SECURITY_PAYABLE,
     CARDS_RECEIVABLE,
     CASH,
     CASH_CLOSE,
@@ -121,14 +127,6 @@ CHART: tuple[AccountTemplate, ...] = (
     AccountTemplate("6.9.02", "Gastos generales", "expense", is_system=False),
 )
 
-# Los papeles de planilla (F12). Las cuentas ya están en la plantilla porque el
-# plan las siembra desde acá; los nombres de los papeles los confirma F12.
-SALARIES = "salaries"
-EMPLOYER_CONTRIBUTIONS = "employer_contributions"
-INCOME_TAX_PAYABLE = "income_tax_payable"
-SOCIAL_SECURITY_PAYABLE = "social_security_payable"
-SALARIES_PAYABLE = "salaries_payable"
-OTHER_DEDUCTIONS_PAYABLE = "other_deductions_payable"
 
 
 def default_mapping() -> dict[tuple[str, str], str]:

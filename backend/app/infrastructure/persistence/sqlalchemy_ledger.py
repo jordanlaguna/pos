@@ -32,21 +32,24 @@ from app.application.ports.clock import Clock
 from app.application.ports.ledger import AccountingNotActive
 from app.domain.chart import UNCLASSIFIED_CODE
 from app.domain.ledger import (
-    OPEN,
     AccountMap,
     ClosedSession,
     DrawerMovement,
     JournalEntry,
+    OPEN,
+    PaidPayroll,
     Period,
     PurchasedDocument,
     PurchasedLine,
     ReturnDocument,
+    SOURCE_NOTE,
     SoldDocument,
     SoldLine,
     SupplierPaymentRef,
     assert_open,
     post_cash_close,
     post_cash_movement,
+    post_payroll,
     post_purchase,
     post_return,
     post_sale,
@@ -81,6 +84,12 @@ class SqlAlchemyLedger:
     def record_return(self, ret: ReturnDocument, lines: Sequence[SoldLine]) -> None:
         self.post(post_return(ret, lines, self._cuentas()))
 
+    def record_debit_note(self, note: SoldDocument, lines: Sequence[SoldLine]) -> None:
+        self.post(post_sale(note, lines, self._cuentas(), source_type=SOURCE_NOTE))
+
+    def record_credit_note(self, note: ReturnDocument, lines: Sequence[SoldLine]) -> None:
+        self.post(post_return(note, lines, self._cuentas(), source_type=SOURCE_NOTE))
+
     def record_cash_close(
         self, session: ClosedSession, *, expected: Money, counted: Money
     ) -> None:
@@ -96,6 +105,11 @@ class SqlAlchemyLedger:
 
     def record_supplier_payment(self, pay: SupplierPaymentRef) -> None:
         self.post(post_supplier_payment(pay, self._cuentas()))
+
+    def record_payroll(self, payroll: PaidPayroll) -> int | None:
+        """La corrida pagada (RN-75). Devuelve el id del asiento, que la
+        corrida guarda para que la pantalla pueda ir de la boleta al libro."""
+        return self.post(post_payroll(payroll, self._cuentas()))
 
     # ------------------------------------------------------------- escribir
 

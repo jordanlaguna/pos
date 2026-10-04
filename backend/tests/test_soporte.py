@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from app.domain.modules import BASE, MODULES
+
 from .conftest import SOPORTE, Api, bootstrap, marca_unica
 
 pytestmark = pytest.mark.characterization
@@ -271,6 +273,41 @@ class TestElAlta:
         # portugués sin que nadie la configure.
         assert cuerpo_del_token(sesion["access_token"])["loc"] == "pt"
 
+    def test_la_cedula_del_emisor_se_guarda_limpia_y_con_tipo(self, soporte: Api, plan_id: int):
+        """RN-45, T-621: va dentro de la clave de cada comprobante."""
+        alta = nueva_compania(soporte, plan_id, identificacion="3-101-555555")
+        compania = soporte.ok("GET", f"/support/companies/{alta['company_id']}")
+        assert (compania["identificacion"], compania["identification_type"]) == ("3101555555", "02")
+
+    def test_una_cedula_que_no_cabe_en_la_clave_no_da_de_alta(self, soporte: Api, plan_id: int):
+        estado, cuerpo = soporte.call(
+            "POST",
+            "/support/companies",
+            {
+                "nombre": "Cédula larga",
+                "plan_id": plan_id,
+                "identificacion": "31015555551234",
+                "admin": {"email": f"larga{marca_unica()}@pruebas.ventasys.cr", "password": "prueba123"},
+            },
+        )
+        assert estado == 409, cuerpo
+        assert cuerpo["detail"] == {"code": "issuer_identification_required", "reason": "invalid"}
+
+    def test_una_ubicacion_a_medias_no_da_de_alta(self, soporte: Api, plan_id: int):
+        """RF-73: la ubicación es opcional al dar de alta, pero a medias no."""
+        estado, cuerpo = soporte.call(
+            "POST",
+            "/support/companies",
+            {
+                "nombre": "Ubicación a medias",
+                "plan_id": plan_id,
+                "settings": {"business": {"location": {"province": "1", "canton": "01"}}},
+                "admin": {"email": f"medias{marca_unica()}@pruebas.ventasys.cr", "password": "prueba123"},
+            },
+        )
+        assert estado == 400, cuerpo
+        assert cuerpo["detail"] == {"code": "invalid_location", "field": "district", "reason": "required"}
+
     def test_un_correo_que_ya_existe_no_crea_otra_cuenta(self, soporte: Api, plan_id: int):
         """El caso del contador: una identidad, varias membresías (RN-3).
 
@@ -495,18 +532,28 @@ class TestLaSuscripcion:
 # --------------------------------------------------------------------------
 
 
+def modulos(**aparte: bool) -> dict[str, bool]:
+    """Los doce módulos (QA-01): la base siempre encendida y los que se venden
+    aparte como se digan. La base no se apaga acá porque el plan lo usan
+    compañías de otras pruebas, y sin ella no venden."""
+    return {**{n: n in BASE for n in MODULES}, **aparte}
+
+
 class TestLosModulosDelPlan:
-    def test_un_plan_nace_sin_ningun_modulo(self, soporte: Api, plan_id: int):
+    def test_un_plan_nace_con_la_base_y_sin_los_que_se_venden_aparte(
+        self, soporte: Api, plan_id: int
+    ):
         plan = next(p for p in soporte.ok("GET", "/support/plans") if p["id"] == plan_id)
-        # Apagados por omisión: un plan que ya existe es uno que alguien compró
-        # sin estos módulos.
-        assert (plan["purchases"], plan["accounting"], plan["payroll"]) == (False, False, False)
+        # La base es lo que el POS tuvo siempre (QA-01); lo demás, apagado: un
+        # plan del que no se dijo nada no incluye nada que se venda aparte.
+        assert all(plan[n] for n in BASE)
+        assert not any(plan[n] for n in ("purchases", "suppliers", "accounting", "payroll"))
 
     def test_se_encienden_y_se_apagan(self, soporte: Api, plan_id: int):
         encendido = soporte.ok(
             "PUT",
             f"/support/plans/{plan_id}/modules",
-            {"purchases": True, "accounting": True, "payroll": False},
+            modulos(purchases=True, accounting=True, payroll=False),
         )
         assert (encendido["purchases"], encendido["accounting"], encendido["payroll"]) == (
             True,
@@ -518,7 +565,7 @@ class TestLosModulosDelPlan:
         apagado = soporte.ok(
             "PUT",
             f"/support/plans/{plan_id}/modules",
-            {"purchases": False, "accounting": False, "payroll": False},
+            modulos(purchases=False, accounting=False, payroll=False),
         )
         assert apagado["purchases"] is False
         assert apagado["accounting"] is False
@@ -529,7 +576,7 @@ class TestLosModulosDelPlan:
         soporte.ok(
             "PUT",
             f"/support/plans/{plan_id}/modules",
-            {"purchases": True, "accounting": False, "payroll": False},
+            modulos(purchases=True, accounting=False, payroll=False),
         )
         lineas = soporte.ok("GET", "/support/audit?accion=plan_modulos&limite=10")["lineas"]
         assert lineas, "el cambio de módulos tiene que quedar registrado"
@@ -541,7 +588,7 @@ class TestLosModulosDelPlan:
         assert "compañías" in detalle
 
     def test_guardar_sin_cambiar_nada_se_registra_y_lo_dice(self, soporte: Api, plan_id: int):
-        apagar = {"purchases": False, "accounting": False, "payroll": False}
+        apagar = modulos(purchases=False, accounting=False, payroll=False)
         soporte.ok("PUT", f"/support/plans/{plan_id}/modules", apagar)
         soporte.ok("PUT", f"/support/plans/{plan_id}/modules", apagar)
 
@@ -555,7 +602,7 @@ class TestLosModulosDelPlan:
         estado, cuerpo = soporte.call(
             "PUT",
             "/support/plans/999999/modules",
-            {"purchases": True, "accounting": False, "payroll": False},
+            modulos(purchases=True),
         )
         assert estado == 404
         assert cuerpo["detail"]["code"] == "plan_not_found"
@@ -566,7 +613,7 @@ class TestLosModulosDelPlan:
         estado, cuerpo = api.call(
             "PUT",
             f"/support/plans/{plan_id}/modules",
-            {"purchases": True, "accounting": True, "payroll": True},
+            modulos(purchases=True, accounting=True, payroll=True),
         )
         assert estado == 403
         assert cuerpo["detail"]["code"] == "support_only"

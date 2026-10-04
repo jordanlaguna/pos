@@ -31,7 +31,7 @@ import sys
 from datetime import datetime
 
 from app.database.database import SessionLocal
-from app.domain.modules import MODULES
+from app.domain.modules import BASE, MODULES
 from app.models.model_person import Person
 from app.models.model_user import User
 from app.services import crud_company
@@ -124,9 +124,20 @@ def _compania(db, args) -> list[str]:
         args.plan,
         crear=True,
         limites=(args.plan_max_sucursales, args.plan_max_terminales, args.plan_max_usuarios),
-        modulos=_modulos(args.plan_modulos),
+        # La base va siempre (QA-01): es lo que el POS tuvo antes de que sus
+        # secciones fueran módulos. La bandera agrega los que se venden aparte.
+        modulos=(*BASE, *_modulos(args.plan_modulos)),
     )
     ya_estaba = crud_company.por_par(db, args.afiliado, args.compania) is not None
+
+    # La cédula del emisor (RN-45), limpia y con tipo: va en la clave de cada
+    # comprobante. Solo al crear; corregirla después es de soporte.
+    identificacion = tipo = None
+    if args.identificacion:
+        from app.domain.fe_issuer import check_issuer_identity
+
+        emisor = check_issuer_identity(args.identificacion, args.tipo_identificacion)
+        identificacion, tipo = emisor.identification, emisor.identification_type
 
     alta = crud_company.dar_de_alta(
         db,
@@ -136,6 +147,8 @@ def _compania(db, args) -> list[str]:
             nombre=args.nombre,
             email=args.email,
             password=args.password,
+            identificacion=identificacion,
+            identification_type=tipo,
             plan_id=plan.id,
             estado=args.estado,
             locale=args.idioma,
@@ -186,6 +199,16 @@ def main() -> None:
     ap.add_argument("--afiliado", type=int, default=1)
     ap.add_argument("--compania", type=int, default=1)
     ap.add_argument("--nombre", default="Compañía inicial", help="nombre comercial")
+    ap.add_argument(
+        "--identificacion",
+        default=None,
+        help="cédula del emisor, la del certificado (RN-45); con guiones o sin ellos",
+    )
+    ap.add_argument(
+        "--tipo-identificacion",
+        default=None,
+        help="01 física, 02 jurídica, 03 DIMEX, 04 NITE; si no, la que deja ver la cédula",
+    )
     ap.add_argument("--plan", default="Comercio")
     # Los límites solo se usan si el plan hay que crearlo; uno que ya existe no
     # se toca. −1 es «sin techo» (ver `app/domain/limits.py`).
@@ -195,7 +218,8 @@ def main() -> None:
     ap.add_argument(
         "--plan-modulos",
         default="",
-        help="módulos del plan, separados por coma: purchases,accounting,payroll",
+        help="módulos que se venden aparte, además de la base, separados por coma: "
+        "purchases,suppliers,accounting,payroll",
     )
     ap.add_argument("--estado", default="activa", help="prueba | activa | vencida | …")
     ap.add_argument("--idioma", default="es", help="idioma de la pantalla")

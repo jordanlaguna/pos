@@ -18,6 +18,8 @@
 		exemptionVerifiedByHacienda
 	} from '$lib/domain/exemptions';
 	import { exemptionInstitutionLabel, exemptionTypeLabel } from '$lib/ui/exemptions';
+	import { ID_TYPES } from '$lib/domain/settings';
+	import { FOREIGN, identificationTypeFor, identificationTypeName } from '$lib/domain/identification';
 	import type { Client } from '$lib/domain/types';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
@@ -43,12 +45,18 @@
 
 	let f = $state({
 		identification: '',
+		// El tipo de Hacienda (T-617). En blanco es «según la cédula»: el servidor
+		// lo deduce de la longitud, y solo pide elegirlo cuando no se puede.
+		identification_type: '',
 		name: '',
 		last_name: '',
 		second_name: '',
 		email: '',
 		telephone: '',
 		address: '',
+		// Las señas de un cliente del extranjero (T-727): van en la factura de
+		// exportación en lugar de la dirección del país.
+		foreign_address: '',
 		register_date: '',
 		// La exoneración (T-717, RN-78). Los ocho viajan siempre, aun vacíos:
 		// es lo que permite quitársela a un cliente que la tenía.
@@ -61,6 +69,15 @@
 		exo_date: '',
 		exo_points: ''
 	});
+
+	/** Lo que dice la cédula que se está escribiendo, para la opción en blanco. */
+	const tipoDeducido = $derived(identificationTypeName(identificationTypeFor(f.identification)));
+	/**
+	 * El cliente del extranjero (T-727): su identificación puede ser un pasaporte
+	 * y su dirección es la de afuera, que la factura de exportación lleva en
+	 * lugar de la del país.
+	 */
+	const extranjero = $derived(f.identification_type === FOREIGN);
 
 	const filtered = $derived.by(() => {
 		const term = search.trim().toLowerCase();
@@ -78,12 +95,14 @@
 		editing = null;
 		f = {
 			identification: '',
+			identification_type: '',
 			name: '',
 			last_name: '',
 			second_name: '',
 			email: '',
 			telephone: '',
 			address: '',
+			foreign_address: '',
 			register_date: toDateInput(new Date()),
 			...SIN_EXONERACION
 		};
@@ -94,12 +113,14 @@
 		editing = client;
 		f = {
 			identification: client.identification,
+			identification_type: client.identification_type ?? '',
 			name: client.name,
 			last_name: client.last_name,
 			second_name: client.second_name,
 			email: client.email,
 			telephone: String(client.telephone ?? ''),
 			address: client.address ?? '',
+			foreign_address: client.foreign_address ?? '',
 			register_date: toDateInput(client.register_date),
 			exo_document_type: client.exo_document_type ?? '',
 			exo_document_number: client.exo_document_number ?? '',
@@ -224,10 +245,32 @@
 			name="identification"
 			bind:value={f.identification}
 			icon="idcard"
-			inputmode="numeric"
+			inputmode={extranjero ? 'text' : 'numeric'}
 			required
 			error={form?.errors?.identification}
 		/>
+		<div>
+			<label class="label" for="id-type">{m.clients_label_id_type()}</label>
+			<select
+				id="id-type"
+				name="identification_type"
+				class="input"
+				bind:value={f.identification_type}
+				aria-describedby="id-type-hint"
+			>
+				<option value="">
+					{tipoDeducido
+						? m.clients_id_type_auto({ type: tipoDeducido })
+						: m.clients_id_type_auto_unknown()}
+				</option>
+				{#each ID_TYPES as tipo (tipo.code)}
+					<option value={tipo.code}>{tipo.label}</option>
+				{/each}
+			</select>
+			<p id="id-type-hint" class="mt-1 text-xs text-[var(--text-subtle)]">
+				{extranjero ? m.clients_foreign_id_hint() : m.clients_id_type_hint()}
+			</p>
+		</div>
 		<Field
 			label={m.people_label_name()}
 			name="name"
@@ -272,10 +315,21 @@
 			label={m.people_label_address()}
 			name="address"
 			bind:value={f.address}
-			required
+			required={!extranjero}
 			error={form?.errors?.address}
 			class="sm:col-span-2"
 		/>
+		{#if extranjero}
+			<Field
+				label={m.clients_label_foreign_address()}
+				name="foreign_address"
+				bind:value={f.foreign_address}
+				required
+				error={form?.errors?.foreign_address}
+				hint={m.clients_foreign_address_hint()}
+				class="sm:col-span-2"
+			/>
+		{/if}
 		<Field
 			label={m.people_label_register_date()}
 			name="register_date"

@@ -55,7 +55,7 @@
   "inventory_cabys_bad_code": "El código CABYS son trece dígitos.",
   "inventory_cabys_assign": "Asignar {description}",
   "inventory_label_tax_rate": "Tarifa (%)",
-  "inventory_tax_rate_inherited": "En blanco: la configurada del negocio, {rate} %.",
+  "inventory_tax_rate_inherited": "En blanco: la general del IVA, {rate} %.",
   "inventory_tax_rate_differs": "Difiere de la del catálogo, que es {rate} %.",
   "inventory_col_tax": "Tarifa",
   "inventory_col_cabys": "CABYS",
@@ -92,5 +92,7 @@
   "inventory_tax_code_08": "General 13 %",
   "inventory_tax_code_09": "Reducida 0,5 %",
   "inventory_tax_code_10": "Exenta",
-  "inventory_tax_code_11": "0 % sin derecho a crédito"
+  "inventory_tax_code_11": "0 % sin derecho a crédito",
+  "inventory_label_tariff_heading": "Partida arancelaria",
+  "inventory_tariff_heading_hint": "12 dígitos. Solo hace falta para venderle a un cliente del extranjero, con factura de exportación."
 }

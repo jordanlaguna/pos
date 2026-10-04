@@ -46,6 +46,8 @@ from app.infrastructure.clock import FixedClock
 
 from .fakes import (
     FakeCashRepository,
+    FakeClientRepository,
+    FakeNoteRepository,
     FakeProduct,
     FakeProductRepository,
     FakeReturnRepository,
@@ -79,6 +81,12 @@ class LibroEspia:
 
     def record_return(self, ret, lines) -> None:
         self.hechos.append(("return", ret, list(lines)))
+
+    def record_debit_note(self, note, lines) -> None:
+        self.hechos.append(("debit_note", note, list(lines)))
+
+    def record_credit_note(self, note, lines) -> None:
+        self.hechos.append(("credit_note", note, list(lines)))
 
     def record_cash_close(self, session, *, expected, counted) -> None:
         self.hechos.append(("cash_close", session, expected, counted))
@@ -131,7 +139,8 @@ def piezas_de_venta(libro, reloj, *, costo=Money(900)):
     caso = RegisterSale(
         products=productos,
         sales=ventas,
-        settings=FakeSettingsRepository(TRECE),
+        clients=FakeClientRepository(),
+        settings=FakeSettingsRepository(),
         uow=uow,
         clock=reloj,
         ledger=libro,
@@ -203,7 +212,8 @@ class TestLaVenta:
         caso = RegisterSale(
             products=productos,
             sales=FakeSaleRepository(),
-            settings=FakeSettingsRepository(TRECE),
+            clients=FakeClientRepository(),
+            settings=FakeSettingsRepository(),
             uow=FakeUnitOfWork(),
             clock=reloj,
             ledger=NullLedger(),
@@ -222,7 +232,8 @@ class TestLaVenta:
         caso = RegisterSale(
             products=productos,
             sales=FakeSaleRepository(),
-            settings=FakeSettingsRepository(TRECE),
+            clients=FakeClientRepository(),
+            settings=FakeSettingsRepository(),
             uow=FakeUnitOfWork(),
             clock=reloj,
         )
@@ -263,8 +274,8 @@ class TestLaDevolucion:
         caso = RegisterReturn(
             sales=ventas,
             returns=FakeReturnRepository(),
+            notes=FakeNoteRepository(),
             products=productos,
-            settings=FakeSettingsRepository(TRECE),
             uow=UowQueMira(libro),
             clock=reloj,
             ledger=libro,
@@ -311,7 +322,11 @@ class TestLaCaja:
             FakeCashRepository(),
         )
         reporte = BuildSessionReport(
-            sales=ventas, returns=devoluciones, cash=caja, clock=reloj
+            sales=ventas,
+            returns=devoluciones,
+            notes=FakeNoteRepository(),
+            cash=caja,
+            clock=reloj,
         )
         caja.create_session(
             user_id=CAJERO, opening=Money(50000), opened_at=AHORA, notes=None
@@ -369,6 +384,7 @@ class TestLaCompra:
             report=BuildSessionReport(
                 sales=FakeSaleRepository(),
                 returns=FakeReturnRepository(),
+                notes=FakeNoteRepository(),
                 cash=caja,
                 clock=reloj,
             ),
@@ -504,7 +520,7 @@ class TestElLibroNulo:
         with pytest.raises(DomainError):
             raise AccountingNotActive()
 
-    def test_los_seis_metodos_no_hacen_nada(self):
+    def test_los_ocho_metodos_no_hacen_nada(self):
         nulo = NullLedger()
 
         # Y el séptimo: el asiento ya armado —la apertura, el manual— tampoco se
@@ -516,3 +532,7 @@ class TestElLibroNulo:
         assert nulo.record_cash_movement(None) is None
         assert nulo.record_purchase(None, []) is None
         assert nulo.record_supplier_payment(None) is None
+        assert nulo.record_payroll(None) is None
+        # Las dos de las notas por monto (T-726).
+        assert nulo.record_debit_note(None, []) is None
+        assert nulo.record_credit_note(None, []) is None

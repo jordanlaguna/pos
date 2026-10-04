@@ -7,18 +7,30 @@
 	 * un fondo oscuro sale como una mancha gris— y el logo va en blanco y negro
 	 * por la misma razón.
 	 *
+	 * Lleva lo mismo que las dos de página (RN-86, T-731), acomodado al rollo: en
+	 * 58 mm no caben nueve columnas, así que cada producto va en su renglón con el
+	 * total a la derecha y, debajo, en chico, la cantidad con su unidad y su
+	 * precio, el impuesto y el CABYS.
+	 *
 	 * El ancho de la hoja lo pone `@page` desde acá, no una clase: `@page` es una
 	 * regla global y cada plantilla necesita la suya.
 	 */
 	import { formatMoney, ratePercentText } from '$lib/domain/money';
 	import { formatDateTime, fullName } from '$lib/ui/format';
 	import {
+		SALE_CONDITION_CASH,
+		documentKind,
+		documentLines,
+		documentNumber,
+		documentSummary,
+		exchangeRate,
+		issuerActivity,
 		issuerLines,
 		returnedTotal,
-		taxBreakdown,
 		type DocumentProps
 	} from '$lib/domain/documents';
 	import { documentLabels, issuerText } from '$lib/ui/documents';
+	import FiscalBlock from './FiscalBlock.svelte';
 
 	let {
 		sale,
@@ -38,15 +50,29 @@
 	const t = $derived(documentLabels(docLocale));
 
 	const doc = $derived(settings.document);
-	const emisor = $derived(issuerText(issuerLines(settings), t));
+	/** Tiquete o factura: lo dice la venta, no la configuración de hoy (RN-85). */
+	const kind = $derived(documentKind(sale));
+	/** Un comprobante electrónico lleva lo que pide Hacienda (RN-86). */
+	const fiscal = $derived(kind !== 'invoice');
+	const emisor = $derived(
+		issuerText(
+			issuerLines(settings, fiscal ? { activity: issuerActivity(sale, settings) } : null),
+			t
+		)
+	);
 	const devuelto = $derived(returnedTotal(returns));
-
+	const lineas = $derived(documentLines(sale));
 	/**
-	 * El desglose por tarifa (RF-21). Con una sola tarifa da una fila —igual que
-	 * antes de F5— y con varias, una por cada una. Sale de lo que se GUARDÓ en
+	 * El resumen, con el desglose por tarifa (RF-21). Sale de lo que se GUARDÓ en
 	 * cada línea, no de recalcular con la configuración de hoy.
 	 */
-	const impuestos = $derived(taxBreakdown(sale));
+	const resumen = $derived(documentSummary(sale));
+	const moneda = $derived(
+		t.currencyWithRate(settings.currency.code, exchangeRate(settings.currency.code))
+	);
+	const enLetras = $derived(
+		t.amountInWords(sale.total, settings.currency.code, settings.currency.decimals)
+	);
 </script>
 
 <svelte:head>
@@ -69,18 +95,25 @@
 		<h1 class="text-lg font-bold tracking-tight text-[var(--text)]">
 			{settings.business.name}
 		</h1>
-		{#each emisor as line (line)}
-			<p class="text-[11px] leading-snug text-[var(--text-muted)]">{line}</p>
-		{/each}
+		<div data-emisor>
+			{#each emisor as line (line)}
+				<p class="text-[11px] leading-snug text-[var(--text-muted)]">{line}</p>
+			{/each}
+		</div>
 
-		<p class="mt-3 text-sm font-semibold text-[var(--text)]">
-			{t.invoiceNumber(sale.sale_number)}
+		<p class="mt-3 text-sm font-semibold text-[var(--text)]" data-cabecera>
+			{t.numbered(kind, documentNumber(sale))}
 		</p>
-		<p class="text-xs text-[var(--text-muted)]">{formatDateTime(sale.created_at, docLocale)}</p>
+		<p class="text-xs text-[var(--text-muted)]">
+			{t.issueDate}: {formatDateTime(sale.created_at, docLocale)}
+		</p>
 	</header>
+
+	<FiscalBlock {sale} {t} locale={docLocale} variant="receipt" />
 
 	<dl
 		class="grid grid-cols-2 gap-x-4 gap-y-1 border-b border-dashed border-[var(--border)] py-3 text-xs"
+		data-receptor
 	>
 		<dt class="text-[var(--text-subtle)]">{t.client}</dt>
 		<dd class="text-right text-[var(--text)]">
@@ -88,47 +121,76 @@
 		</dd>
 
 		{#if client?.identification}
-			<dt class="text-[var(--text-subtle)]">{t.clientId}</dt>
+			<!-- En dos columnas el tipo es el rótulo: «Cédula física · 119870654». -->
+			<dt class="text-[var(--text-subtle)]">
+				{fiscal ? t.idLabel(client.identification_type) : t.clientId}
+			</dt>
 			<dd class="text-right text-[var(--text)]">{client.identification}</dd>
+		{/if}
+
+		{#if fiscal && client?.email}
+			<dt class="text-[var(--text-subtle)]">{t.email}</dt>
+			<dd class="text-right break-all text-[var(--text)]">{client.email}</dd>
+		{/if}
+
+		{#if fiscal && client?.foreign_address}
+			<!-- Las señas del cliente del extranjero (T-727), como van en la exportación. -->
+			<dt class="text-[var(--text-subtle)]">{t.foreignAddress}</dt>
+			<dd class="text-right text-[var(--text)]">{client.foreign_address}</dd>
 		{/if}
 
 		<dt class="text-[var(--text-subtle)]">{t.servedBy}</dt>
 		<dd class="text-right text-[var(--text)]">{sale.user_name ?? '—'}</dd>
 
+		{#if fiscal}
+			<dt class="text-[var(--text-subtle)]">{t.saleCondition}</dt>
+			<dd class="text-right text-[var(--text)]" data-condicion>
+				{t.saleConditionName(SALE_CONDITION_CASH)}
+			</dd>
+		{/if}
+
 		<dt class="text-[var(--text-subtle)]">{t.paymentMethod}</dt>
 		<dd class="text-right text-[var(--text)]">{t.paymentName(sale.payment_method)}</dd>
+
+		{#if fiscal}
+			<dt class="text-[var(--text-subtle)]">{t.currency}</dt>
+			<dd class="text-right text-[var(--text)]" data-moneda>{moneda}</dd>
+		{/if}
 	</dl>
 
-	{#if sale.items.length}
-		<table class="w-full border-b border-dashed border-[var(--border)] py-2 text-xs">
-			<thead>
-				<tr class="text-[var(--text-subtle)]">
-					<th scope="col" class="py-2 text-left font-semibold">{t.colProduct}</th>
-					<th scope="col" class="py-2 text-right font-semibold">{t.colQuantity}</th>
-					<th scope="col" class="py-2 text-right font-semibold">{t.colUnitPrice}</th>
-					<th scope="col" class="py-2 text-right font-semibold">{t.colTotal}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each sale.items as item (item.id_product)}
-					<tr class="align-top">
-						<td class="py-1 pr-2 text-[var(--text)]">
-							{item.name}
-							{#if doc.showBarcode && barcodes[item.id_product]}
-								<span class="block font-mono text-[10px] text-[var(--text-subtle)]">
-									{barcodes[item.id_product]}
-								</span>
-							{/if}
-						</td>
-						<td class="py-1 text-right text-[var(--text-muted)]">{item.quantity}</td>
-						<td class="py-1 text-right text-[var(--text-muted)]">{formatMoney(item.price)}</td>
-						<td class="py-1 text-right font-medium text-[var(--text)]">
-							{formatMoney(item.subtotal)}
-						</td>
-					</tr>
+	{#if lineas.length}
+		<div class="border-b border-dashed border-[var(--border)] py-2 text-xs" data-lineas>
+			<div class="flex justify-between py-1 font-semibold text-[var(--text-subtle)]">
+				<span>{t.colProduct}</span>
+				<span>{t.colTotal}</span>
+			</div>
+			<ol>
+				{#each lineas as linea (linea.id_product)}
+					<li class="py-1">
+						<div class="flex justify-between gap-2 text-[var(--text)]">
+							<span>{linea.number}. {linea.name}</span>
+							<span class="shrink-0 font-medium">{formatMoney(linea.total)}</span>
+						</div>
+						<p class="pl-3 text-[10px] text-[var(--text-muted)]">
+							{t.colQuantity}
+							{t.lineQuantity(linea.quantity, linea.unit ?? '', formatMoney(linea.unitPrice))}
+							· {t.taxAtRate(settings.tax.name, ratePercentText(linea.rate))}
+							{formatMoney(linea.tax)}
+						</p>
+						{#if fiscal && linea.cabys}
+							<p class="pl-3 font-mono text-[10px] text-[var(--text-subtle)]" data-cabys>
+								{t.lineCabys(linea.cabys)}
+							</p>
+						{/if}
+						{#if doc.showBarcode && barcodes[linea.id_product]}
+							<p class="pl-3 font-mono text-[10px] text-[var(--text-subtle)]">
+								{barcodes[linea.id_product]}
+							</p>
+						{/if}
+					</li>
 				{/each}
-			</tbody>
-		</table>
+			</ol>
+		</div>
 	{:else}
 		<p
 			class="border-b border-dashed border-[var(--border)] py-4 text-center text-xs text-[var(--text-subtle)]"
@@ -140,25 +202,57 @@
 		</p>
 	{/if}
 
-	<dl class="space-y-1 py-3 text-sm">
-		<div class="flex justify-between text-[var(--text-muted)]">
-			<dt>{t.subtotal}</dt>
-			<dd>{formatMoney(sale.subtotal)}</dd>
-		</div>
-		{#each impuestos as fila (fila.rate)}
+	<dl class="space-y-1 py-3 text-sm" data-resumen>
+		{#if fiscal}
+			<div class="flex justify-between text-[var(--text-muted)]">
+				<dt>{t.totalSale}</dt>
+				<dd>{formatMoney(resumen.gross)}</dd>
+			</div>
+			<div class="flex justify-between text-[var(--text-muted)]">
+				<dt>{t.totalDiscounts}</dt>
+				<dd>{formatMoney(resumen.discounts)}</dd>
+			</div>
+			<div class="flex justify-between text-[var(--text-muted)]">
+				<dt>{t.totalNet}</dt>
+				<dd>{formatMoney(resumen.net)}</dd>
+			</div>
+		{:else}
+			<div class="flex justify-between text-[var(--text-muted)]">
+				<dt>{t.subtotal}</dt>
+				<dd>{formatMoney(resumen.gross)}</dd>
+			</div>
+		{/if}
+		{#each resumen.taxes as fila (fila.rate)}
 			<div class="flex justify-between text-[var(--text-muted)]">
 				<dt>{t.taxAtRate(settings.tax.name, ratePercentText(fila.rate))}</dt>
 				<dd>{formatMoney(fila.tax)}</dd>
 			</div>
 		{/each}
+		{#if fiscal && resumen.taxes.length > 1}
+			<div class="flex justify-between text-[var(--text-muted)]">
+				<dt>{t.totalTax}</dt>
+				<dd>{formatMoney(resumen.tax)}</dd>
+			</div>
+		{/if}
 		<div
 			class="flex justify-between border-t border-[var(--border)] pt-2 text-base font-bold text-[var(--text)]"
 		>
-			<dt>{t.total}</dt>
-			<dd>{formatMoney(sale.total)}</dd>
+			<dt>{fiscal ? t.totalDocument : t.total}</dt>
+			<dd>{formatMoney(resumen.total)}</dd>
 		</div>
 
-		{#if sale.payment_method === 'Efectivo'}
+		{#if enLetras}
+			<div class="pt-1 text-[10px] text-[var(--text-muted)]" data-en-letras>
+				<dt class="sr-only">{t.amountInWordsLabel}</dt>
+				<dd>{enLetras}</dd>
+			</div>
+		{/if}
+
+		<!--
+			Con lo recibido mayor que cero, como en las facturas: una nota de crédito
+			no cobra (RN-89) y sin esto imprimiría «Efectivo recibido ₡0,00».
+		-->
+		{#if sale.payment_method === 'Efectivo' && sale.cash_received > 0}
 			<div class="flex justify-between pt-1 text-[var(--text-muted)]">
 				<dt>{t.cashReceived}</dt>
 				<dd>{formatMoney(sale.cash_received)}</dd>
@@ -176,6 +270,8 @@
 			</div>
 		{/if}
 	</dl>
+
+	<FiscalBlock {sale} {t} locale={docLocale} variant="receipt" part="foot" />
 
 	<footer class="border-t border-dashed border-[var(--border)] pt-4 text-center">
 		{#if doc.thanksMessage}

@@ -188,6 +188,12 @@ services:
       FE_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Falta MINIO_ROOT_PASSWORD en .env}
       FE_VAULT_ADDR: ${FE_VAULT_ADDR:-http://vault:8200}
       FE_VAULT_TOKEN: ${FE_VAULT_TOKEN:-}
+      # La cola de transmisión a Hacienda (F7): encendida salvo que se apague, y
+      # cada cuánto despierta. FE_PROVEEDOR_SISTEMAS es la cédula de quien hace
+      # el software, para el XML; vacía, va la del propio emisor.
+      FE_WORKER: ${FE_WORKER:-1}
+      FE_WORKER_INTERVAL_SECONDS: ${FE_WORKER_INTERVAL_SECONDS:-5}
+      FE_PROVEEDOR_SISTEMAS: ${FE_PROVEEDOR_SISTEMAS:-}
     ports:
       # 80 dentro del contenedor, ${API_PORT} en la VM. El POS apunta acá:
       #   API_BASE_URL=http://IP_DE_LA_VM:8001

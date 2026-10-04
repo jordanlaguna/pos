@@ -5,6 +5,7 @@ import { loadSettings } from '$lib/server/settings';
 import { prepareSale } from '$lib/application/checkout';
 import { Validator } from '$lib/application/validation';
 import { PAYMENT_METHODS, type CashSession, type Category, type Client, type Product } from '$lib/domain/types';
+import { isForeign } from '$lib/domain/identification';
 /*
  * La acción arma la frase acá y no en el navegador porque el idioma efectivo lo
  * resuelve el servidor (plan §8.4) y Paraglide funciona igual de bien de este
@@ -59,6 +60,7 @@ export const actions: Actions = {
 		const cashReceived = v.decimal('cash_received', F.cashReceived(), { min: 0 });
 		const clientRaw = String(form.get('client_id') ?? '').trim();
 		const clientId = clientRaw ? Number(clientRaw) : null;
+		const documentRaw = String(form.get('document_type') ?? '').trim();
 
 		let lines: { id_product: number; quantity: number }[];
 		try {
@@ -89,6 +91,15 @@ export const actions: Actions = {
 		 */
 		const { settings } = await loadSettings(token, user.company_id);
 
+		// Quién es el cliente ante Hacienda (RN-87, T-727): lo dice su ficha, no el
+		// formulario. Al del extranjero se le exporta, y para eso hace falta su
+		// dirección; las dos cosas se leen del servidor, que es quien las guarda.
+		let cliente: Client | undefined;
+		if (clientId !== null) {
+			const clientes = await apiSafe<Client[]>('/clients/clients_list', [], { token });
+			cliente = clientes.find((c) => c.id_client === clientId);
+		}
+
 		// La decisión entera vive en la capa de aplicación y es pura; acá solo se
 		// transporta lo que devuelve (T-112).
 		const preparada = prepareSale(
@@ -97,8 +108,19 @@ export const actions: Actions = {
 				paymentMethod,
 				cashReceived,
 				clientId,
-				saleNumber: String(form.get('sale_number') ?? '').trim(),
-				userId: user.id_user
+				// T-706: el número lo pone el servidor. Solo viaja si una pantalla vieja lo manda.
+				saleNumber: String(form.get('sale_number') ?? '').trim() || undefined,
+				userId: user.id_user,
+				/*
+				 * El comprobante se decide con la configuración que acaba de leer el
+				 * servidor y no con la que tenía la pantalla al abrirse: el dueño pudo
+				 * apagar la facturación, o un tipo, con la caja abierta (RN-85, RN-88).
+				 */
+				documentType: documentRaw || null,
+				einvoicing: settings.eInvoicing.enabled,
+				enabledTypes: settings.eInvoicing.documentTypes,
+				foreignReceiver: isForeign(cliente?.identification_type),
+				foreignAddress: cliente?.foreign_address ?? null
 			},
 			catalog,
 			settings.tax.rate,

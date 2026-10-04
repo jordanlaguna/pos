@@ -19,13 +19,22 @@ from app.application.use_cases.register_return import (
     ReturnRequest,
     SaleNotFound,
 )
-from app.domain.errors import ExcessiveReturn, InvalidQuantity, NotSoldInThisSale
+from app.domain.errors import (
+    AnnulAfterNote,
+    AnnulAfterReturn,
+    AnnulMustBeFull,
+    ExcessiveReturn,
+    InvalidQuantity,
+    IssuerIdentificationRequired,
+    NotSoldInThisSale,
+    ReturnAfterCreditNote,
+)
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_repositories import (
+    SqlAlchemyNoteRepository,
     SqlAlchemyProductRepository,
     SqlAlchemyReturnRepository,
     SqlAlchemySaleRepository,
-    SqlAlchemySettingsRepository,
     SqlAlchemyUnitOfWork,
 )
 from app.models.model_person import Person
@@ -34,7 +43,7 @@ from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.models.model_user import User
-from app.services import crud_accounting
+from app.services import crud_accounting, crud_numbering
 from app.utils.api_errors import api_error
 
 
@@ -77,9 +86,18 @@ def serialize(db: Session, record: Return) -> dict:
     sale = db.query(Sale).filter(Sale.id == record.sale_id).first()
     details = db.query(ReturnDetail).filter(ReturnDetail.return_id == record.id).all()
 
+    # La línea de la venta de cada producto: de ahí sale con qué CABYS y qué
+    # unidad se vendió, que es lo que la nota tiene que repetir (RN-86). Una
+    # venta lleva una línea por producto, así que el producto la identifica.
+    vendidas = {
+        d.product_id: d
+        for d in db.query(SaleDetail).filter(SaleDetail.sale_id == record.sale_id).all()
+    }
+
     items = []
     for detail in details:
         product = db.query(Product).filter(Product.id_product == detail.product_id).first()
+        vendida = vendidas.get(detail.product_id)
         items.append(
             {
                 "id_product": detail.product_id,
@@ -87,6 +105,13 @@ def serialize(db: Session, record: Return) -> dict:
                 "quantity": detail.quantity,
                 "price": _money(detail.unit_price),
                 "subtotal": _money(detail.subtotal),
+                # Lo que desglosa la nota impresa: lo reembolsado, con su tarifa.
+                "tax_rate": float(detail.tax_rate) if detail.tax_rate is not None else None,
+                "tax_amount": (
+                    _money(detail.tax_amount) if detail.tax_amount is not None else None
+                ),
+                "cabys_code": vendida.cabys_code if vendida else None,
+                "unit_of_measure": vendida.unit_of_measure if vendida else None,
             }
         )
 
@@ -110,6 +135,17 @@ def serialize(db: Session, record: Return) -> dict:
         "total": _money(record.total),
         "is_full": _is_full(db, record.sale_id),
         "items": items,
+        # La nota de crédito y lo que su representación impresa dice del
+        # original: tipo, número —arriba, `sale_number`— y fecha (RN-89).
+        "document_type": record.document_type,
+        "reference_code": record.reference_code,
+        "sale_document_type": sale.document_type if sale else None,
+        "sale_created_at": sale.created_at if sale else None,
+        "sale_client_id": sale.client_id if sale else None,
+        "sale_payment_method": sale.payment_method if sale else None,
+        # La NC numerada, y la clave del original, que es como se referencia.
+        "einvoice": crud_numbering.comprobante_de(db, "return", record.id),
+        "sale_clave": crud_numbering.clave_de(db, "sale", record.sale_id),
     }
 
 
@@ -117,17 +153,19 @@ def create_return(db: Session, payload) -> dict:
     caso = RegisterReturn(
         sales=SqlAlchemySaleRepository(db),
         returns=SqlAlchemyReturnRepository(db),
+        notes=SqlAlchemyNoteRepository(db),
         products=SqlAlchemyProductRepository(db),
-        settings=SqlAlchemySettingsRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
         ledger=crud_accounting.libro(db, user_id=payload.user_id),
+        numbering=crud_numbering.numerador(db),
     )
     peticion = ReturnRequest(
         sale_id=payload.sale_id,
         user_id=payload.user_id,
         reason=payload.reason or "",
         lines=[RequestedReturnLine(i.id_product, i.quantity) for i in (payload.items or [])],
+        annul=payload.annul,
     )
 
     try:
@@ -139,8 +177,24 @@ def create_return(db: Session, payload) -> dict:
         raise api_error(400, "empty_return") from None
     except MissingReason:
         raise api_error(400, "missing_return_reason") from None
+    except AnnulAfterReturn as e:
+        # Anular es el comprobante entero: con devoluciones, lo que queda se
+        # devuelve (RN-89).
+        raise api_error(409, "annul_after_return", sale_id=e.sale_id) from None
+    except AnnulMustBeFull as e:
+        raise api_error(400, "annul_must_be_full", sale_id=e.sale_id) from None
+    except AnnulAfterNote as e:
+        raise api_error(409, "annul_after_note", sale_id=e.sale_id) from None
+    except ReturnAfterCreditNote as e:
+        # La línea ya tiene una NC por monto: devolverla reembolsaría dos veces
+        # (T-726).
+        raise api_error(409, "return_after_credit_note", product_id=e.product_id) from None
     except NotSoldInThisSale as e:
         raise api_error(400, "not_sold_in_this_sale", product_id=e.product_id) from None
+    except IssuerIdentificationRequired as e:
+        # La compañía emite y no tiene cédula de emisor, o la que tiene no cabe
+        # en la clave (RN-45). Lo arregla soporte, no quien cobra.
+        raise api_error(409, "issuer_identification_required", reason=e.reason) from None
     except InvalidQuantity:
         malo = next((i for i in payload.items if i.quantity <= 0), None)
         raise api_error(
@@ -164,4 +218,5 @@ def create_return(db: Session, payload) -> dict:
         "message": "return_registered",
         "id_return": resultado.id_return,
         "total": resultado.total.as_float(),
+        "document_type": resultado.document_type,
     }

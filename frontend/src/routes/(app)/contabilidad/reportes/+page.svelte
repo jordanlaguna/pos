@@ -78,7 +78,7 @@
 {#if !data.datos}
 	<EmptyState icon="book" title={m.accounting_report_empty()} />
 {:else if comprobacion}
-	<p class="mb-2 text-xs {comprobacion.is_balanced ? 'text-[var(--text-subtle)]' : 'text-[var(--danger)]'}">
+	<p class="mb-2 text-xs {comprobacion.is_balanced ? 'text-[var(--text-subtle)]' : 'text-[var(--negative)]'}">
 		{comprobacion.is_balanced
 			? m.accounting_report_balanced({ debits: formatMoney(comprobacion.debits) })
 			: m.accounting_report_not_balanced({
@@ -141,7 +141,7 @@
 		</table>
 	</div>
 {:else if general}
-	<p class="mb-2 text-xs {general.is_balanced ? 'text-[var(--text-subtle)]' : 'text-[var(--danger)]'}">
+	<p class="mb-2 text-xs {general.is_balanced ? 'text-[var(--text-subtle)]' : 'text-[var(--negative)]'}">
 		{general.is_balanced ? m.accounting_equation_ok() : m.accounting_equation_broken()}
 	</p>
 	<div class="mb-4 grid gap-3 sm:grid-cols-4">

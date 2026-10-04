@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 
+from app.domain.errors import InvalidTariffHeading
+from app.domain.fe_export import check_tariff_heading
 from app.domain.fe_tax_codes import InvalidTaxCode, check_code, rate_for, suggested_code
 from app.domain.tax import TaxRate
 from app.models.model_categories import Category
@@ -29,6 +31,14 @@ def codigo_y_tarifa(codigo: object) -> tuple[str, float]:
         raise api_error(400, "invalid_tax_code", tax_code=str(codigo)) from None
 
 
+def partida_arancelaria(valor: object) -> str | None:
+    """La partida saneada (T-727), nula si viene vacía, o el «no» con su código."""
+    try:
+        return check_tariff_heading(valor)
+    except InvalidTariffHeading:
+        raise api_error(400, "invalid_tariff_heading", tariff_heading=str(valor)) from None
+
+
 def create_product(db: Session, product: ProductRegister):
     # RN-6: el producto va en la hoja del árbol. Con la categoría convertida en
     # raíz de una rama, colgarle un producto lo dejaría fuera de la grilla de
@@ -56,6 +66,8 @@ def create_product(db: Session, product: ProductRegister):
         cabys_code=product.cabys_code,
         tax_rate=tarifa,
         tax_code=codigo,
+        # La partida arancelaria (T-727), saneada o nula.
+        tariff_heading=partida_arancelaria(product.tariff_heading),
         # `unit_of_measure` tiene valor por omisión en la base; mandar None lo
         # dejaría en NULL y la columna es NOT NULL.
         **({"unit_of_measure": product.unit_of_measure} if product.unit_of_measure else {}),
@@ -102,7 +114,7 @@ def get_product_by_barcode(db: Session, term: str) -> Product | None:
 #: En el resto de las columnas la regla contraria es la correcta —`name=None`
 #: pondría el nombre en NULL y la columna no lo admite—, y por eso la lista es
 #: corta y explícita en vez de al revés.
-VACIABLES = {"cabys_code", "tax_rate", "tax_code"}
+VACIABLES = {"cabys_code", "tax_rate", "tax_code", "tariff_heading"}
 
 
 def update_product_information(db: Session, id_product: int, product_data: dict):
@@ -135,6 +147,14 @@ def update_product_information(db: Session, id_product: int, product_data: dict)
     if product_data.get("tax_code"):
         codigo, tarifa = codigo_y_tarifa(product_data["tax_code"])
         product_data = {**product_data, "tax_code": codigo, "tax_rate": tarifa}
+
+    # La partida se sanea antes del bucle (T-727): doce dígitos o nada, y la
+    # vacía es «ya no tiene», como el resto de `VACIABLES`.
+    if "tariff_heading" in product_data:
+        product_data = {
+            **product_data,
+            "tariff_heading": partida_arancelaria(product_data["tariff_heading"]),
+        }
 
     for key, value in product_data.items():
         if not hasattr(db_product, key):

@@ -73,18 +73,23 @@ export const actions: Actions = {
 			});
 		}
 
-		let returnId: number;
+		let result: { id_return: number; document_type?: string | null };
 		try {
-			const result = await api<{ id_return: number }>('/returns/add_return', {
-				method: 'POST',
-				token: locals.token,
-				body: { sale_id: saleId, user_id: user.id_user, reason, items }
-			});
-			returnId = result.id_return;
+			result = await api<{ id_return: number; document_type?: string | null }>(
+				'/returns/add_return',
+				{
+					method: 'POST',
+					token: locals.token,
+					body: { sale_id: saleId, user_id: user.id_user, reason, items }
+				}
+			);
 		} catch (error) {
 			return fail(400, { errors: formError(apiMessage(error)) });
 		}
 
-		redirect(303, `/devoluciones?creada=${returnId}`);
+		// Si la venta fue comprobante, la devolución es una nota de crédito y se
+		// lleva a imprimirla, como la venta lleva a su factura (RN-89).
+		if (result.document_type) redirect(303, `/devoluciones/${result.id_return}?nueva=1`);
+		redirect(303, `/devoluciones?creada=${result.id_return}`);
 	}
 };

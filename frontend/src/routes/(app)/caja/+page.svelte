@@ -183,6 +183,26 @@
 						−{formatMoney(session.returns_total)}
 					</dd>
 				</div>
+				<!--
+					Las notas por monto (T-726), solo si hubo: la ND cobrada en efectivo
+					entra a la gaveta y la NC sale de ella. El esperado ya las cuenta.
+				-->
+				{#if session.debit_notes_cash}
+					<div class="flex justify-between" data-arqueo-nd>
+						<dt class="text-[var(--text-muted)]">{m.cash_debit_notes_in_cash()}</dt>
+						<dd class="tabular-nums text-[var(--positive)]">
+							+{formatMoney(session.debit_notes_cash)}
+						</dd>
+					</div>
+				{/if}
+				{#if session.credit_notes_total}
+					<div class="flex justify-between" data-arqueo-nc>
+						<dt class="text-[var(--text-muted)]">{m.cash_credit_notes()}</dt>
+						<dd class="tabular-nums text-[var(--negative)]">
+							−{formatMoney(session.credit_notes_total)}
+						</dd>
+					</div>
+				{/if}
 				<div
 					class="flex justify-between border-t border-[var(--border)] pt-2 text-base font-bold"
 				>

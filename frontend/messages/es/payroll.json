@@ -1,0 +1,658 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"$comentario": "Planilla (F12). Las variantes traducen valores del API, que viajan en inglés como datos (RN-30).",
+	"payroll_title": "Planilla",
+	"payroll_description": "Empleados, acciones de personal, corridas, vacaciones y los archivos del mes.",
+	"payroll_tab_summary": "Resumen",
+	"payroll_tab_employees": "Empleados",
+	"payroll_tab_actions": "Acciones",
+	"payroll_tab_runs": "Corridas",
+	"payroll_tab_vacations": "Vacaciones",
+	"payroll_tab_files": "Archivos del mes",
+	"payroll_tab_settings": "Configuración",
+	"payroll_tab_import": "Importar",
+	"payroll_tab_rates": "Tasas",
+	"payroll_locked_title": "Su plan no incluye planilla",
+	"payroll_locked_text": "Puede consultar lo que ya existe, pero para registrar y pagar necesita el módulo de planilla. Escríbale a soporte.",
+	"payroll_none": "—",
+	"payroll_days_short": "{days} d",
+	"payroll_hours_short": "{hours} h",
+	"payroll_percent": "{value} %",
+	"payroll_period_range": "{from} a {to}",
+	"payroll_save": "Guardar",
+	"payroll_cancel": "Cancelar",
+	"payroll_close": "Cerrar",
+	"payroll_edit": "Editar",
+	"payroll_back": "Volver",
+	"payroll_summary_title": "Resumen de planilla",
+	"payroll_summary_description": "Lo que está en curso y lo que falta antes de pagar y declarar.",
+	"payroll_summary_open_runs": "Corridas en curso",
+	"payroll_summary_no_open_runs": "No hay corridas en borrador ni aprobadas.",
+	"payroll_summary_active_employees": "{count} empleados activos",
+	"payroll_summary_missing_title": "Datos que faltan para los archivos",
+	"payroll_summary_missing_none": "No falta nada para los archivos del mes.",
+	"payroll_summary_missing_employer": "El número patronal de la CCSS.",
+	"payroll_summary_missing_policy": "Una póliza de riesgos del trabajo.",
+	"payroll_summary_missing_insured": "{name}: el número de asegurado.",
+	"payroll_summary_missing_contract": "{name}: no tiene contrato y no entra en ninguna corrida.",
+	"payroll_summary_rates_stale": "Las tasas llevan más de seis meses sin comprobarse. Pida a soporte que las revise.",
+	"payroll_summary_rates_ok": "Tasas vigentes, comprobadas por última vez el {verified_at}.",
+	"payroll_summary_aguinaldo_due": "El aguinaldo de {year} se paga antes del 20 de diciembre y todavía no hay corrida.",
+	"payroll_summary_new_run": "Nueva corrida",
+	"payroll_summary_see_runs": "Ver corridas",
+	"payroll_summary_see_employees": "Ver empleados",
+	"payroll_summary_first_steps": "Para empezar: una jornada y un puesto en Configuración, después los empleados con su contrato.",
+	"payroll_employees_title": "Empleados",
+	"payroll_employees_description": "La ficha con los datos que piden la CCSS y el INS, el contrato y el historial.",
+	"payroll_employees_new": "Nuevo empleado",
+	"payroll_employees_show_terminated": "Mostrar los que salieron",
+	"payroll_employees_empty": "Todavía no hay empleados.",
+	"payroll_employees_col_name": "Nombre",
+	"payroll_employees_col_identification": "Identificación",
+	"payroll_employees_col_contract": "Contrato",
+	"payroll_employees_col_salary": "Salario",
+	"payroll_employees_col_status": "Estado",
+	"payroll_employees_active": "Activo",
+	"payroll_employees_terminated_on": "Salió el {date}",
+	"payroll_employees_no_contract": "Sin contrato",
+	"payroll_employees_saved": "Empleado guardado.",
+	"payroll_employees_form_new": "Nuevo empleado",
+	"payroll_employees_form_edit": "Editar empleado",
+	"payroll_employees_f_identification_type": "Tipo de identificación",
+	"payroll_employees_f_identification": "Número de identificación",
+	"payroll_employees_f_first_name": "Nombre",
+	"payroll_employees_f_last_name_1": "Primer apellido",
+	"payroll_employees_f_last_name_2": "Segundo apellido",
+	"payroll_employees_f_insured_number": "Número de asegurado (CCSS)",
+	"payroll_employees_f_insured_hint": "Solo para extranjeros: el de los nacionales es la cédula.",
+	"payroll_employees_f_birth_date": "Fecha de nacimiento",
+	"payroll_employees_f_gender": "Género",
+	"payroll_employees_f_marital_status": "Estado civil",
+	"payroll_employees_f_nationality": "Nacionalidad (código de dos letras)",
+	"payroll_employees_f_phone": "Teléfono",
+	"payroll_employees_f_email": "Correo",
+	"payroll_employees_f_iban": "Cuenta IBAN",
+	"payroll_employees_f_hired_on": "Fecha de ingreso",
+	"payroll_employees_f_dependent_children": "Hijos a cargo (crédito fiscal)",
+	"payroll_employees_f_spouse_credit": "Crédito fiscal por cónyuge",
+	"payroll_employees_f_is_pensioner": "Es pensionado",
+	"payroll_employees_f_with_contract": "Asignarle el contrato ahora",
+	"payroll_employees_contract_from_hire": "Rige desde la fecha de ingreso. Lo que cambie después, como un aumento, se registra desde la ficha del empleado.",
+	"payroll_employees_contract_needs_catalog": "Para asignarle el contrato hace falta al menos una jornada y un puesto activos. Puede agregarlo después desde la ficha del empleado.",
+	"payroll_employee_section_contract": "Contrato",
+	"payroll_employee_contract_none": "Todavía no tiene contrato: sin él no entra en ninguna corrida.",
+	"payroll_employee_contract_new": "Nuevo contrato",
+	"payroll_employee_contract_hint": "Uno nuevo cierra el anterior el día antes de su inicio.",
+	"payroll_employee_contract_saved": "Contrato guardado.",
+	"payroll_employee_f_schedule": "Jornada",
+	"payroll_employee_f_position": "Puesto",
+	"payroll_employee_f_policy": "Póliza del INS",
+	"payroll_employee_f_policy_default": "La póliza por omisión",
+	"payroll_employee_f_valid_from": "Rige desde",
+	"payroll_employee_f_period_salary": "Salario del periodo",
+	"payroll_employee_f_period_salary_hint": "Lo que gana en cada pago de su jornada: la quincena, la semana o el mes.",
+	"payroll_employee_f_solidarista_rate": "Aporte solidarista (%)",
+	"payroll_employee_contracts": "Contratos",
+	"payroll_employee_col_from": "Desde",
+	"payroll_employee_col_to": "Hasta",
+	"payroll_employee_col_open": "Vigente",
+	"payroll_employee_section_history": "Historial de acciones",
+	"payroll_employee_history_empty": "Sin acciones registradas.",
+	"payroll_employee_section_vacations": "Vacaciones",
+	"payroll_employee_vacation_balance": "Saldo: {days} días hábiles",
+	"payroll_employee_terminate": "Dar de baja",
+	"payroll_employee_terminate_title": "Dar de baja a {name}",
+	"payroll_employee_terminate_hint": "Se cierra el contrato, queda la acción en el historial y la liquidación nace en borrador.",
+	"payroll_employee_f_terminated_on": "Fecha de salida",
+	"payroll_employee_f_cause": "Causa",
+	"payroll_employee_see_settlement": "Ver liquidación",
+	"payroll_employee_register_action": "Registrar acción",
+	"payroll_actions_title": "Acciones de personal",
+	"payroll_actions_description": "Horas extra, incapacidades, permisos, deducciones, aumentos. Viven en el empleado; la corrida que le toque las toma.",
+	"payroll_actions_f_employee": "Empleado",
+	"payroll_actions_f_employees": "Empleados",
+	"payroll_actions_f_employees_hint": "Puede marcar varios: se registra la misma acción para cada uno.",
+	"payroll_actions_f_kind": "Tipo",
+	"payroll_actions_f_starts_on": "Fecha",
+	"payroll_actions_f_ends_on": "Hasta",
+	"payroll_actions_f_hours": "Horas",
+	"payroll_actions_f_days": "Días hábiles",
+	"payroll_actions_f_amount": "Monto",
+	"payroll_actions_f_quota": "Cuota por corrida",
+	"payroll_actions_f_total_amount": "Monto total (saldo)",
+	"payroll_actions_f_total_hint": "En blanco: sin tope.",
+	"payroll_actions_f_new_salary": "Salario nuevo del periodo",
+	"payroll_actions_f_position": "Puesto nuevo",
+	"payroll_actions_f_recurring": "Recurrente: se aplica en cada corrida mientras esté vigente",
+	"payroll_actions_f_memo": "Nota",
+	"payroll_actions_register": "Registrar",
+	"payroll_actions_registered": "Acción registrada.",
+	"payroll_actions_registered_many": "{count} acciones registradas.",
+	"payroll_actions_history_of": "Historial de {name}",
+	"payroll_actions_choose_employee": "Elija un empleado para ver su historial.",
+	"payroll_actions_col_kind": "Acción",
+	"payroll_actions_col_dates": "Fechas",
+	"payroll_actions_col_detail": "Detalle",
+	"payroll_actions_col_applied": "Aplicado",
+	"payroll_actions_col_balance": "Saldo",
+	"payroll_actions_cancel": "Anular",
+	"payroll_actions_cancelled": "Anulada",
+	"payroll_actions_cancels": "Anula la acción {id}",
+	"payroll_actions_cancelled_ok": "Acción anulada. La próxima corrida la revierte.",
+	"payroll_actions_suspend": "Suspender",
+	"payroll_actions_suspended_on": "Suspendida el {date}",
+	"payroll_actions_suspend_reason": "Motivo de la suspensión",
+	"payroll_actions_suspended_ok": "Deducción suspendida.",
+	"payroll_actions_applied_in": "En {count} corridas",
+	"payroll_actions_not_applied": "Sin aplicar",
+	"payroll_actions_source_import": "Importada",
+	"payroll_actions_source_system": "Del sistema",
+	"payroll_runs_title": "Corridas de planilla",
+	"payroll_runs_description": "Crear, calcular, aprobar y pagar. Una corrida pagada no cambia: se corrige con un ajuste.",
+	"payroll_runs_new": "Nueva corrida",
+	"payroll_runs_new_aguinaldo": "Corrida de aguinaldo",
+	"payroll_runs_f_schedule": "Jornada",
+	"payroll_runs_f_cut_date": "Fecha de corte",
+	"payroll_runs_f_cut_hint": "El periodo sale del corte: el 15 o el fin de mes en una quincenal, el fin de mes en una mensual.",
+	"payroll_runs_f_pay_date": "Fecha de pago",
+	"payroll_runs_f_year": "Año",
+	"payroll_runs_aguinaldo_hint": "Suma lo devengado del 1 de diciembre al 30 de noviembre y lo divide entre doce. Sin cargas ni renta.",
+	"payroll_runs_created": "Corrida creada en borrador.",
+	"payroll_runs_empty": "Todavía no hay corridas.",
+	"payroll_runs_col_period": "Periodo",
+	"payroll_runs_col_kind": "Clase",
+	"payroll_runs_col_status": "Estado",
+	"payroll_runs_col_employees": "Empleados",
+	"payroll_runs_col_gross": "Bruto",
+	"payroll_runs_col_net": "Neto",
+	"payroll_runs_col_employer": "Costo patronal",
+	"payroll_run_title": "Corrida {id}",
+	"payroll_run_adjusts": "Ajusta la corrida {run}",
+	"payroll_run_pay_date": "Pago: {date}",
+	"payroll_run_journal": "Asiento {id}",
+	"payroll_run_calculate": "Calcular",
+	"payroll_run_recalculate": "Recalcular",
+	"payroll_run_approve": "Aprobar",
+	"payroll_run_pay": "Pagar",
+	"payroll_run_adjust": "Crear ajuste",
+	"payroll_run_calculated": "Corrida calculada.",
+	"payroll_run_approved": "Corrida aprobada.",
+	"payroll_run_paid": "Corrida pagada.",
+	"payroll_run_adjust_created": "Ajuste creado en borrador: calcúlelo para ver la diferencia.",
+	"payroll_run_no_lines": "Sin líneas todavía. Calcule la corrida para ver a cada empleado con sus rubros.",
+	"payroll_run_draft_hint": "Borrador: se recalcula las veces que haga falta.",
+	"payroll_run_approved_hint": "Aprobada: ya no se recalcula. Al pagar se congela y, con contabilidad activa, deja su asiento.",
+	"payroll_run_paid_hint": "Pagada el {date}. Lo que haya que corregir va en un ajuste.",
+	"payroll_run_col_employee": "Empleado",
+	"payroll_run_col_gross": "Bruto",
+	"payroll_run_col_ccss": "CCSS",
+	"payroll_run_col_tax": "Renta",
+	"payroll_run_col_other": "Otras",
+	"payroll_run_col_net": "Neto",
+	"payroll_run_col_employer": "Patronal",
+	"payroll_run_items": "Rubros",
+	"payroll_run_payslip": "Boleta",
+	"payroll_run_item_col_concept": "Concepto",
+	"payroll_run_item_col_base": "Base",
+	"payroll_run_item_col_rate": "Tasa",
+	"payroll_run_item_col_quantity": "Cantidad",
+	"payroll_run_item_col_dates": "Fechas",
+	"payroll_run_item_col_amount": "Monto",
+	"payroll_run_totals": "Totales",
+	"payroll_run_back": "Volver a corridas",
+	"payroll_run_ibans_title": "Para pagar por transferencia",
+	"payroll_run_ibans_hint": "La planilla no mueve la caja: estos son los netos por cuenta, para copiar al banco.",
+	"payroll_run_no_iban": "Sin cuenta registrada",
+	"payroll_vacations_title": "Vacaciones",
+	"payroll_vacations_description": "El saldo por empleado y de dónde sale: lo acumulado al pagar cada corrida, lo disfrutado y lo pagado.",
+	"payroll_vacations_choose": "Elija un empleado.",
+	"payroll_vacations_balance": "Saldo de {name}: {days} días hábiles",
+	"payroll_vacations_col_date": "Fecha",
+	"payroll_vacations_col_kind": "Movimiento",
+	"payroll_vacations_col_days": "Días",
+	"payroll_vacations_col_origin": "Origen",
+	"payroll_vacations_origin_run": "Corrida {id}",
+	"payroll_vacations_origin_action": "Acción {id}",
+	"payroll_vacations_empty": "Sin movimientos todavía.",
+	"payroll_vacations_register": "Registrar disfrute",
+	"payroll_files_title": "Archivos del mes",
+	"payroll_files_description": "La planilla para la CCSS, el archivo del INS y la renta retenida, armados de las corridas pagadas del mes.",
+	"payroll_files_f_year": "Año",
+	"payroll_files_f_month": "Mes",
+	"payroll_files_show": "Ver el mes",
+	"payroll_files_ccss_title": "Planilla para la CCSS",
+	"payroll_files_ccss_hint": "La CCSS no publica el trazado del archivo de grandes clientes: esto es lo que se teclea en Autogestión Planilla en Línea, trabajador por trabajador.",
+	"payroll_files_empty": "No hay corridas pagadas en ese mes.",
+	"payroll_files_download_csv": "Descargar CSV",
+	"payroll_files_col_identification": "Identificación",
+	"payroll_files_col_name": "Nombre",
+	"payroll_files_col_occupation": "Ocupación",
+	"payroll_files_col_shift": "Jornada",
+	"payroll_files_col_salary": "Salario",
+	"payroll_files_col_days": "Días",
+	"payroll_files_col_movements": "Movimientos",
+	"payroll_files_ccss_total": "Total de salarios: {amount}",
+	"payroll_files_employer_number": "Número patronal {number}",
+	"payroll_files_ins_title": "Archivo para el INS (RT-Virtual)",
+	"payroll_files_ins_hint": "Un archivo de texto por póliza, para subir en RT-Virtual. El trazado está pendiente de cotejar con el documento del INS.",
+	"payroll_files_ins_download": "Descargar la póliza {number}",
+	"payroll_files_ins_no_policies": "No hay pólizas registradas.",
+	"payroll_files_tax_title": "Renta retenida",
+	"payroll_files_tax_total": "Retenido {withheld} sobre {taxable} gravables",
+	"payroll_files_col_taxable": "Gravable",
+	"payroll_files_col_withheld": "Retenido",
+	"payroll_files_missing_title": "Faltan datos",
+	"payroll_files_missing_company": "De la empresa: {fields}",
+	"payroll_files_missing_employee": "{name}: {fields}",
+	"payroll_files_movement": "{kind} {dates}",
+	"payroll_settings_title": "Configuración de planilla",
+	"payroll_settings_description": "Los datos patronales, las jornadas con sus cortes, los puestos con sus códigos y las pólizas del INS.",
+	"payroll_settings_employer_title": "Datos patronales",
+	"payroll_settings_f_employer_number": "Número patronal de la CCSS",
+	"payroll_settings_f_employer_hint": "Como lo imprime la planilla del SICERE: dígitos y guiones.",
+	"payroll_settings_f_ina_exempt": "Exento del INA (menos de cinco trabajadores, actividad no agrícola)",
+	"payroll_settings_saved": "Configuración guardada.",
+	"payroll_settings_schedules_title": "Jornadas",
+	"payroll_settings_schedules_hint": "Una corrida es de una jornada y de un corte válido para ella. Con corridas pagadas, la periodicidad y los cortes ya no cambian: se crea otra.",
+	"payroll_settings_schedule_new": "Nueva jornada",
+	"payroll_settings_schedule_saved": "Jornada guardada.",
+	"payroll_settings_f_name": "Nombre",
+	"payroll_settings_f_frequency": "Periodicidad",
+	"payroll_settings_f_shift": "Clase de jornada",
+	"payroll_settings_f_hours_per_day": "Horas por día",
+	"payroll_settings_f_hours_hint": "En blanco toma las de su clase: 8, 7 o 6.",
+	"payroll_settings_f_workdays_per_week": "Días hábiles por semana",
+	"payroll_settings_f_rest_day_paid": "Día de descanso pagado (establecimiento comercial)",
+	"payroll_settings_f_first_cut_day": "Día de corte de la primera quincena (8 a 15)",
+	"payroll_settings_f_cut_weekday": "Día de la semana del corte",
+	"payroll_settings_f_series_start": "Primer día de la serie bisemanal",
+	"payroll_settings_f_is_active": "Activa",
+	"payroll_settings_inactive": "Inactiva",
+	"payroll_settings_positions_title": "Puestos",
+	"payroll_settings_positions_hint": "Cada puesto lleva su código de ocupación de la CCSS (cuatro dígitos) y el del INS: los dos archivos lo piden.",
+	"payroll_settings_position_new": "Nuevo puesto",
+	"payroll_settings_position_saved": "Puesto guardado.",
+	"payroll_settings_f_ccss_code": "Código de ocupación (CCSS)",
+	"payroll_settings_f_ins_code": "Código del INS",
+	"payroll_settings_policies_title": "Pólizas de riesgos del trabajo",
+	"payroll_settings_policies_hint": "La prima la fija el INS por póliza. La primera queda por omisión para los contratos que no digan otra.",
+	"payroll_settings_policy_new": "Nueva póliza",
+	"payroll_settings_policy_saved": "Póliza guardada.",
+	"payroll_settings_f_policy_number": "Número de póliza",
+	"payroll_settings_f_rt_rate": "Prima (%)",
+	"payroll_settings_f_is_default": "Póliza por omisión",
+	"payroll_settings_default": "Por omisión",
+	"payroll_settings_col_codes": "Códigos",
+	"payroll_settings_col_cut": "Corte",
+	"payroll_settings_cut_monthly": "Fin de mes",
+	"payroll_settings_cut_semimonthly": "El {day} y fin de quincena",
+	"payroll_settings_cut_biweekly": "Cada 14 días desde el {date}",
+	"payroll_settings_cut_weekly": "Cada {weekday}",
+	"payroll_import_title": "Importar desde Excel",
+	"payroll_import_description": "Puestos, empleados con su contrato y saldos de apertura. Primero se revisa todo; nada se escribe hasta confirmar.",
+	"payroll_import_f_as_of": "Saldos al",
+	"payroll_import_sheet_positions": "Puestos",
+	"payroll_import_sheet_employees": "Empleados",
+	"payroll_import_sheet_earnings": "Devengado por mes",
+	"payroll_import_sheet_deductions": "Deducciones",
+	"payroll_import_template": "Descargar plantilla",
+	"payroll_import_file_hint": "Archivos .xlsx o .csv con la primera fila de encabezados, como la plantilla.",
+	"payroll_import_preview": "Revisar",
+	"payroll_import_confirm": "Confirmar importación",
+	"payroll_import_ok": "Todo en orden: {employees} empleados, {positions} puestos nuevos, {earnings} meses de devengado y {deductions} deducciones.",
+	"payroll_import_errors": "{count} filas con error. Corríjalas en el archivo y vuelva a revisar.",
+	"payroll_import_col_sheet": "Hoja",
+	"payroll_import_col_row": "Fila",
+	"payroll_import_col_problem": "Problema",
+	"payroll_import_done": "Importación hecha: {employees} empleados.",
+	"payroll_import_no_files": "Suba al menos el archivo de empleados.",
+	"payroll_import_read_error": "No se pudo leer {file}: {reason}",
+	"payroll_import_rows": "{count} filas",
+	"payroll_rates_title": "Tasas vigentes",
+	"payroll_rates_description": "Las cargas de la CCSS, los tramos del impuesto al salario y la tabla de cesantía que rigen a una fecha, con su fuente. Las actualiza soporte para todas las compañías.",
+	"payroll_rates_f_on": "Vigentes al",
+	"payroll_rates_stale": "Hay tasas con más de seis meses sin comprobar.",
+	"payroll_rates_missing": "Faltan a esa fecha: {missing}",
+	"payroll_rates_col_concept": "Concepto",
+	"payroll_rates_col_payer": "Pagador",
+	"payroll_rates_col_value": "Valor",
+	"payroll_rates_col_valid_from": "Rige desde",
+	"payroll_rates_col_source": "Fuente",
+	"payroll_rates_col_verified": "Comprobada",
+	"payroll_rates_brackets_title": "Tramos del impuesto al salario (mensual)",
+	"payroll_rates_col_from": "Desde",
+	"payroll_rates_col_to": "Hasta",
+	"payroll_rates_col_rate": "Tasa",
+	"payroll_rates_open_end": "en adelante",
+	"payroll_rates_credits_title": "Créditos fiscales mensuales",
+	"payroll_rates_severance_title": "Cesantía: días por año de antigüedad",
+	"payroll_rates_col_years": "Años",
+	"payroll_rates_col_days": "Días",
+	"payroll_rates_rule": "regla",
+	"payslip_tab_title": "Boleta de {name}",
+	"payslip_print": "Imprimir",
+	"payslip_back": "Volver a la corrida",
+	"payroll_frequency": [
+		{
+			"declarations": [
+				"input frequency"
+			],
+			"selectors": [
+				"frequency"
+			],
+			"match": {
+				"frequency=monthly": "Mensual",
+				"frequency=semimonthly": "Quincenal",
+				"frequency=biweekly": "Bisemanal",
+				"frequency=weekly": "Semanal",
+				"frequency=*": "{frequency}"
+			}
+		}
+	],
+	"payroll_shift": [
+		{
+			"declarations": [
+				"input shift"
+			],
+			"selectors": [
+				"shift"
+			],
+			"match": {
+				"shift=day": "Diurna",
+				"shift=mixed": "Mixta",
+				"shift=night": "Nocturna",
+				"shift=*": "{shift}"
+			}
+		}
+	],
+	"payroll_id_type": [
+		{
+			"declarations": [
+				"input type"
+			],
+			"selectors": [
+				"type"
+			],
+			"match": {
+				"type=national": "Cédula nacional",
+				"type=dimex": "DIMEX",
+				"type=nite": "NITE",
+				"type=passport": "Pasaporte",
+				"type=work_permit": "Permiso de trabajo",
+				"type=*": "{type}"
+			}
+		}
+	],
+	"payroll_gender": [
+		{
+			"declarations": [
+				"input gender"
+			],
+			"selectors": [
+				"gender"
+			],
+			"match": {
+				"gender=F": "Femenino",
+				"gender=M": "Masculino",
+				"gender=*": "{gender}"
+			}
+		}
+	],
+	"payroll_marital": [
+		{
+			"declarations": [
+				"input status"
+			],
+			"selectors": [
+				"status"
+			],
+			"match": {
+				"status=single": "Soltero(a)",
+				"status=married": "Casado(a)",
+				"status=divorced": "Divorciado(a)",
+				"status=widowed": "Viudo(a)",
+				"status=separated": "Separado(a)",
+				"status=free_union": "Unión libre",
+				"status=unknown": "Sin dato",
+				"status=*": "{status}"
+			}
+		}
+	],
+	"payroll_cause": [
+		{
+			"declarations": [
+				"input cause"
+			],
+			"selectors": [
+				"cause"
+			],
+			"match": {
+				"cause=resignation": "Renuncia",
+				"cause=dismissal_with_cause": "Despido con causa justa",
+				"cause=dismissal_without_cause": "Despido sin causa justa",
+				"cause=mutual": "Mutuo acuerdo",
+				"cause=end_of_contract": "Fin de contrato",
+				"cause=*": "{cause}"
+			}
+		}
+	],
+	"payroll_action_kind": [
+		{
+			"declarations": [
+				"input kind"
+			],
+			"selectors": [
+				"kind"
+			],
+			"match": {
+				"kind=overtime": "Horas extra",
+				"kind=double_time": "Horas dobles (feriado o descanso)",
+				"kind=bonus": "Bonificación",
+				"kind=sick_leave_ccss": "Incapacidad de la CCSS",
+				"kind=sick_leave_ins": "Incapacidad del INS",
+				"kind=maternity": "Licencia de maternidad",
+				"kind=paid_leave": "Permiso con goce de salario",
+				"kind=unpaid_leave": "Permiso sin goce de salario",
+				"kind=absence": "Ausencia injustificada",
+				"kind=vacation": "Vacaciones",
+				"kind=deduction": "Deducción",
+				"kind=child_support": "Pensión alimentaria",
+				"kind=garnishment": "Embargo",
+				"kind=raise": "Aumento de salario",
+				"kind=position_change": "Cambio de puesto",
+				"kind=termination": "Baja",
+				"kind=*": "{kind}"
+			}
+		}
+	],
+	"payroll_run_kind": [
+		{
+			"declarations": [
+				"input kind"
+			],
+			"selectors": [
+				"kind"
+			],
+			"match": {
+				"kind=regular": "Regular",
+				"kind=aguinaldo": "Aguinaldo",
+				"kind=settlement": "Liquidación",
+				"kind=adjustment": "Ajuste",
+				"kind=*": "{kind}"
+			}
+		}
+	],
+	"payroll_run_status": [
+		{
+			"declarations": [
+				"input status"
+			],
+			"selectors": [
+				"status"
+			],
+			"match": {
+				"status=draft": "Borrador",
+				"status=approved": "Aprobada",
+				"status=paid": "Pagada",
+				"status=*": "{status}"
+			}
+		}
+	],
+	"payroll_payer": [
+		{
+			"declarations": [
+				"input payer"
+			],
+			"selectors": [
+				"payer"
+			],
+			"match": {
+				"payer=earning": "Devengo",
+				"payer=employee": "Deducción",
+				"payer=employer": "Cargo patronal",
+				"payer=rule": "Regla",
+				"payer=*": "{payer}"
+			}
+		}
+	],
+	"payroll_concept": [
+		{
+			"declarations": [
+				"input concept"
+			],
+			"selectors": [
+				"concept"
+			],
+			"match": {
+				"concept=base": "Salario",
+				"concept=overtime": "Horas extra",
+				"concept=double_time": "Horas dobles",
+				"concept=bonus": "Bonificación",
+				"concept=sick_leave_ccss": "Incapacidad CCSS",
+				"concept=sick_leave_subsidy": "Subsidio patronal (CCSS)",
+				"concept=sick_leave_ins": "Incapacidad INS",
+				"concept=ins_subsidy": "Subsidio patronal (INS)",
+				"concept=maternity": "Licencia de maternidad",
+				"concept=maternity_pay": "Pago patronal de maternidad",
+				"concept=paid_leave": "Permiso con goce",
+				"concept=unpaid_leave": "Permiso sin goce",
+				"concept=absence": "Ausencia",
+				"concept=vacation": "Vacaciones",
+				"concept=sem": "SEM (salud)",
+				"concept=ivm": "IVM (pensión)",
+				"concept=banco_popular": "Banco Popular",
+				"concept=banco_popular_lpt": "Banco Popular (LPT)",
+				"concept=asignaciones_familiares": "Asignaciones Familiares",
+				"concept=imas": "IMAS",
+				"concept=ina": "INA",
+				"concept=fcl": "FCL",
+				"concept=rop": "ROP",
+				"concept=ins_lpt": "INS (LPT)",
+				"concept=rt": "Riesgos del trabajo",
+				"concept=income_tax": "Impuesto al salario",
+				"concept=solidarista": "Asociación solidarista",
+				"concept=deduction": "Deducción",
+				"concept=child_support": "Pensión alimentaria",
+				"concept=garnishment": "Embargo",
+				"concept=aguinaldo": "Aguinaldo",
+				"concept=notice": "Preaviso",
+				"concept=severance": "Cesantía",
+				"concept=vacation_payout": "Vacaciones no disfrutadas",
+				"concept=*": "{concept}"
+			}
+		}
+	],
+	"payroll_vacation_kind": [
+		{
+			"declarations": [
+				"input kind"
+			],
+			"selectors": [
+				"kind"
+			],
+			"match": {
+				"kind=opening": "Saldo de apertura",
+				"kind=accrual": "Acumulación",
+				"kind=taken": "Disfrute",
+				"kind=paid": "Pago en liquidación",
+				"kind=*": "{kind}"
+			}
+		}
+	],
+	"payroll_movement": [
+		{
+			"declarations": [
+				"input kind"
+			],
+			"selectors": [
+				"kind"
+			],
+			"match": {
+				"kind=inclusion": "Inclusión",
+				"kind=exclusion": "Exclusión",
+				"kind=sick_leave_sem": "Incapacidad SEM",
+				"kind=sick_leave_ins": "Incapacidad INS",
+				"kind=maternity": "Maternidad",
+				"kind=leave_paid": "Permiso con goce",
+				"kind=leave_unpaid": "Permiso sin goce",
+				"kind=occupation_change": "Cambio de ocupación",
+				"kind=*": "{kind}"
+			}
+		}
+	],
+	"payroll_ccss_shift": [
+		{
+			"declarations": [
+				"input shift"
+			],
+			"selectors": [
+				"shift"
+			],
+			"match": {
+				"shift=diurna": "Diurna",
+				"shift=parcial": "Parcial",
+				"shift=mixta": "Mixta",
+				"shift=nocturna": "Nocturna",
+				"shift=*": "{shift}"
+			}
+		}
+	],
+	"payroll_sheet": [
+		{
+			"declarations": [
+				"input sheet"
+			],
+			"selectors": [
+				"sheet"
+			],
+			"match": {
+				"sheet=positions": "Puestos",
+				"sheet=employees": "Empleados",
+				"sheet=earnings": "Devengado",
+				"sheet=deductions": "Deducciones",
+				"sheet=*": "{sheet}"
+			}
+		}
+	],
+	"payroll_weekday": [
+		{
+			"declarations": [
+				"input day"
+			],
+			"selectors": [
+				"day"
+			],
+			"match": {
+				"day=0": "lunes",
+				"day=1": "martes",
+				"day=2": "miércoles",
+				"day=3": "jueves",
+				"day=4": "viernes",
+				"day=5": "sábado",
+				"day=6": "domingo",
+				"day=*": "{day}"
+			}
+		}
+	],
+	"payroll_settings_codes_line": "CCSS {ccss} · INS {ins}"
+}

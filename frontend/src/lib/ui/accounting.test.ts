@@ -64,12 +64,15 @@ describe('el título de un asiento', () => {
 		// La descripción trae el código; lo que informa es de dónde salió.
 		expect(entryTitle(automatico('sale', 412))).toContain('412');
 		expect(entryTitle(automatico('stock_entry', 7))).toContain('7');
+		expect(entryTitle(automatico('note', 3))).toBe('Nota n.º 3');
 	});
 
-	it('los seis orígenes tienen frase', () => {
+	it('los siete orígenes tienen frase', () => {
 		for (const origen of [
 			'sale',
 			'return',
+			// La nota por monto (T-726): «Nota n.º 3», no la venta 3.
+			'note',
 			'cash_session',
 			'cash_movement',
 			'stock_entry',

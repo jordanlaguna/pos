@@ -6,7 +6,9 @@ import {
 	ID_TYPES,
 	businessName,
 	isHexColor,
-	mergeSettings
+	mergeSettings,
+	VAT,
+	withIssuer
 } from './settings';
 
 /**
@@ -66,29 +68,40 @@ describe('mergeSettings: reglas de cada tipo de campo', () => {
 	});
 
 	it('los números aceptan la cadena que los representa', () => {
-		expect(mergeSettings({ tax: { rate: '0.04' } }).tax.rate).toBe(0.04);
+		expect(mergeSettings({ currency: { decimals: '3' } }).currency.decimals).toBe(3);
 	});
 
 	it('y rechazan lo que se sale del rango o no es número', () => {
-		expect(mergeSettings({ tax: { rate: 13 } }).tax.rate).toBe(0.13); // 13 no es 13 %
-		expect(mergeSettings({ tax: { rate: -1 } }).tax.rate).toBe(0.13);
-		expect(mergeSettings({ tax: { rate: 'mucho' } }).tax.rate).toBe(0.13);
+		expect(mergeSettings({ currency: { decimals: 9 } }).currency.decimals).toBe(2);
+		expect(mergeSettings({ currency: { decimals: -1 } }).currency.decimals).toBe(2);
+		expect(mergeSettings({ currency: { decimals: 'mucho' } }).currency.decimals).toBe(2);
 	});
 
-	it('lo que JavaScript convierte a cero no es una tasa del 0 % (defecto 13)', () => {
+	it('lo que JavaScript convierte a cero no es un cero (defecto 13)', () => {
 		/*
 		 * `Number(null)`, `Number('')`, `Number([])` y `Number(false)` valen 0, y
-		 * el 0 cae dentro del rango 0..1. La versión anterior de `num` los
-		 * aceptaba, así que una fila de configuración a medias hacía que el POS
-		 * cobrara 0 % de impuesto sin avisar. Cada uno de estos tiene que caer al
-		 * 13 % de fábrica.
+		 * el 0 cae dentro del rango. La versión anterior de `num` los aceptaba, así
+		 * que una fila a medias hacía que el POS cobrara 0 % de impuesto sin
+		 * avisar —el impuesto se configuraba entonces—. Cada uno cae al de fábrica.
 		 */
 		for (const vacio of [null, undefined, '', '   ', [], false, {}]) {
-			expect(mergeSettings({ tax: { rate: vacio } }).tax.rate).toBe(0.13);
+			expect(mergeSettings({ currency: { decimals: vacio } }).currency.decimals).toBe(2);
 		}
-		// Un 0 escrito de verdad sí es 0 %: hay productos exentos.
-		expect(mergeSettings({ tax: { rate: 0 } }).tax.rate).toBe(0);
-		expect(mergeSettings({ tax: { rate: '0' } }).tax.rate).toBe(0);
+		// Un 0 escrito de verdad sí es 0: hay monedas sin decimales.
+		expect(mergeSettings({ currency: { decimals: 0 } }).currency.decimals).toBe(0);
+		expect(mergeSettings({ currency: { decimals: '0' } }).currency.decimals).toBe(0);
+	});
+
+	it('el impuesto guardado no cuenta: es el IVA de ley (QA-05)', () => {
+		for (const guardado of [
+			{ tax: { name: 'ISV', rate: 0.04 } },
+			{ tax: { rate: 0 } },
+			{ tax: { rate: 'mucho' } },
+			{ impuesto: { nombre: 'IVA', tasa: 0.25 } }
+		]) {
+			expect(mergeSettings(guardado).tax).toEqual(VAT);
+		}
+		expect(VAT).toEqual({ name: 'IVA', rate: 0.13 });
 	});
 
 	it('el mismo cero fantasma no puede colarse en los decimales de la moneda', () => {
@@ -124,6 +137,22 @@ describe('mergeSettings: reglas de cada tipo de campo', () => {
 		expect(mergeSettings({ document: { receiptWidth: 80 } }).document.receiptWidth).toBe(80);
 		expect(mergeSettings({ document: { receiptWidth: 72 } }).document.receiptWidth).toBe(80);
 		expect(mergeSettings({ document: { receiptWidth: 300 } }).document.receiptWidth).toBe(80);
+	});
+});
+
+describe('los comprobantes que emite el negocio (RN-88)', () => {
+	it('una compañía que nunca tocó la lista nace con los cuatro de fábrica', () => {
+		expect(mergeSettings({}).eInvoicing.documentTypes).toEqual(['04', '01', '03', '02']);
+	});
+
+	it('se lee lo guardado, saneado como en el servidor', () => {
+		const s = mergeSettings({ eInvoicing: { documentTypes: ['01', 'FE'] } });
+		expect(s.eInvoicing.documentTypes).toEqual(['01', '03']);
+	});
+
+	it('una lista sin con qué vender vuelve a la de fábrica', () => {
+		const s = mergeSettings({ eInvoicing: { documentTypes: ['03'] } });
+		expect(s.eInvoicing.documentTypes).toEqual(DEFAULT_SETTINGS.eInvoicing.documentTypes);
 	});
 });
 
@@ -279,9 +308,8 @@ describe('compatibilidad con las claves en español (T-113)', () => {
 		expect(s.currency.decimalSeparator).toBe('.');
 		expect(s.currency.thousandsSeparator).toBe(',');
 
-		// La que más duele si se pierde: cobraría al 13 % en vez de al 4 %.
-		expect(s.tax.name).toBe('ISV');
-		expect(s.tax.rate).toBe(0.04);
+		// El impuesto de la fila vieja ya no cuenta (QA-05): es el IVA de ley.
+		expect(s.tax).toEqual(VAT);
 
 		expect(s.document.template).toBe('moderna');
 		expect(s.document.color).toBe('#b45309');
@@ -309,8 +337,8 @@ describe('compatibilidad con las claves en español (T-113)', () => {
 	it('la clave nueva gana cuando están las dos', () => {
 		// Pasa justo después de guardar por primera vez con la versión nueva: la
 		// fila lleva las dos formas hasta que el backend reemplaza el JSON entero.
-		const s = mergeSettings({ ...VIEJA, tax: { name: 'IVA', rate: 0.13 } });
-		expect(s.tax.rate).toBe(0.13);
+		const s = mergeSettings({ ...VIEJA, currency: { code: 'EUR' } });
+		expect(s.currency.code).toBe('EUR');
 	});
 
 	it('una fila mezclada no rompe nada', () => {
@@ -318,5 +346,34 @@ describe('compatibilidad con las claves en español (T-113)', () => {
 		expect(s.business.name).toBe('Mixta');
 		expect(s.currency.code).toBe('EUR');
 		expect(s.tax.rate).toBe(0.13);
+	});
+});
+
+describe('withIssuer — la cédula que se imprime es la de la compañía (RN-45, T-621)', () => {
+	const escrita = mergeSettings({ business: { taxId: '999999999', taxIdType: '01' } });
+
+	it('reemplaza la escrita en Configuración por la de companies', () => {
+		const s = withIssuer(escrita, { identification: '3101234567', identification_type: '02' });
+		expect([s.business.taxId, s.business.taxIdType]).toEqual(['3101234567', '02']);
+	});
+
+	it('sin tipo conocido conserva el que había', () => {
+		const s = withIssuer(escrita, { identification: '3101234567', identification_type: null });
+		expect(s.business.taxIdType).toBe('01');
+	});
+
+	it('sin cédula de la compañía queda la escrita', () => {
+		expect(withIssuer(escrita, null)).toBe(escrita);
+		expect(withIssuer(escrita, { identification: null, identification_type: null })).toBe(escrita);
+	});
+});
+
+describe('la ubicación del emisor en la configuración (T-722)', () => {
+	it('nace vacía y se lee saneada', () => {
+		expect(mergeSettings({}).business.location.province).toBe('');
+		expect(
+			mergeSettings({ business: { location: { province: 1, canton: '01', district: '05', otherSigns: ' x ' } } })
+				.business.location
+		).toEqual({ province: '1', canton: '01', district: '05', neighborhood: '', otherSigns: 'x' });
 	});
 });

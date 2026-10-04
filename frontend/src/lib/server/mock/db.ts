@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import type {
+import type { DocumentState, StopReason,
+	AmountNote,
 	Account,
 	AccountingPeriod,
 	CashMovement,
@@ -17,6 +18,13 @@ import type {
 	Supplier
 } from '$lib/domain/types';
 import { DEFAULT_TAX_RATE, round2 } from '$lib/domain/money';
+import type {
+	EmploymentContract,
+	InsPolicy,
+	PayrollItem,
+	Position,
+	WorkSchedule
+} from '$lib/domain/payroll';
 
 /**
  * Base de datos del modo mock.
@@ -53,10 +61,19 @@ export interface MockPlan {
 	max_terminales: number;
 	max_usuarios: number;
 	factura_electronica: boolean;
-	/** Los módulos que incluye (RN-49). Los tres siempre, también apagados. */
+	/** Los módulos que incluye (RN-49, QA-01). Todos siempre, también apagados. */
+	sales: boolean;
+	cash: boolean;
+	invoices: boolean;
+	returns: boolean;
+	reports: boolean;
+	inventory: boolean;
 	purchases: boolean;
+	suppliers: boolean;
 	accounting: boolean;
 	payroll: boolean;
+	clients: boolean;
+	users: boolean;
 }
 
 /** Una línea de la bitácora (RF-9). */
@@ -83,6 +100,12 @@ export interface MockSale {
 	change_given: number;
 	created_at: string;
 	items: SaleItem[];
+	/**
+	 * `'01'` factura, `'04'` tiquete, nulo sin facturación electrónica (RN-85).
+	 * Ausente en las ventas del seed y en las guardadas antes de T-723, y ausente
+	 * vale lo mismo que nulo: por eso no hace falta subir `SEED_VERSION`.
+	 */
+	document_type?: string | null;
 }
 
 /** Fila única de configuración, igual que la tabla `settings` del backend. */
@@ -111,7 +134,43 @@ export interface MockCompany {
 	/** `YYYY-MM-DD`, o nulo si no vence. */
 	vence_el?: string | null;
 	identificacion?: string | null;
+	/** El tipo de Hacienda de la cédula del emisor (RN-45). */
+	identification_type?: string | null;
 	creada_el?: string;
+}
+
+/**
+ * Un comprobante numerado (T-704, T-705), como `fe_documents`: cuelga de su
+ * origen —la venta, la devolución o la nota— con su consecutivo y su clave.
+ */
+export interface MockFeDocument {
+	source_type: 'sale' | 'return' | 'note' | 'purchase';
+	source_id: number;
+	document_type: string;
+	environment: 'sandbox' | 'production';
+	sequence: number;
+	consecutive: string;
+	clave: string;
+	situation: string;
+	economic_activity: string | null;
+	issued_at: string;
+	/**
+	 * El recorrido (F7). Lo que la de verdad guarda en `fe_documents`; el
+	 * simulado lo avanza por el tiempo transcurrido desde `issued_at` cada vez
+	 * que alguien lo lee (`avanzar` en el manejador). Opcional porque los
+	 * comprobantes de un estado guardado anterior no lo traen.
+	 */
+	id?: number;
+	status?: DocumentState;
+	stop_reason?: StopReason | null;
+	stop_detail?: string | null;
+	hacienda_status?: string | null;
+	signed_at?: string | null;
+	sent_at?: string | null;
+	resolved_at?: string | null;
+	/** Cuándo se reintentó a mano por última vez: el reloj del recorrido vuelve a empezar ahí. */
+	resumed_at?: string | null;
+	events?: { at: string; event: string; detail?: string | null }[];
 }
 
 /** Quién entra a qué compañía y con qué rol. */
@@ -130,6 +189,8 @@ export interface MockCompanyData {
 	products: Product[];
 	sales: MockSale[];
 	returns: SaleReturn[];
+	/** Las notas por monto (T-726): la ND y la NC que no mueven mercadería. */
+	notes?: AmountNote[];
 	cash_sessions: CashSession[];
 	cash_movements: CashMovement[];
 	stock_entries: StockEntry[];
@@ -160,6 +221,167 @@ export interface MockCompanyData {
 	 */
 	branches?: MockBranch[];
 	terminals?: MockTerminal[];
+	/**
+	 * La numeración (T-704, T-705): la última secuencia de cada serie —tipo y
+	 * ambiente; la oficina es una sola en el simulado— y los comprobantes.
+	 */
+	fe_sequences?: Record<string, number>;
+	fe_documents?: MockFeDocument[];
+	/**
+	 * La planilla (F12, T-1214): las once tablas de la compañía, en un solo
+	 * objeto. Un archivo de antes de F12 no lo trae y nace vacío al tocarlo.
+	 */
+	payroll?: MockPayrollData;
+}
+
+/** Un empleado tal como se guarda; el contrato vigente se le pega al salir. */
+export interface MockEmployee {
+	id: number;
+	user_id: number | null;
+	identification_type: string;
+	identification: string;
+	first_name: string;
+	last_name_1: string;
+	last_name_2: string | null;
+	insured_number: string | null;
+	birth_date: string;
+	gender: string;
+	marital_status: string;
+	nationality: string;
+	phone: string | null;
+	email: string | null;
+	is_pensioner: boolean;
+	iban: string | null;
+	hired_on: string;
+	terminated_on: string | null;
+	termination_cause: string | null;
+	dependent_children: number;
+	spouse_credit: boolean;
+	is_active: boolean;
+}
+
+/** Una acción de personal (RN-90); lo aplicado se calcula al salir. */
+export interface MockAction {
+	id: number;
+	employee_id: number;
+	kind: string;
+	starts_on: string;
+	ends_on: string | null;
+	hours: number | null;
+	days: number | null;
+	amount: number | null;
+	total_amount: number | null;
+	new_salary: number | null;
+	position_id: number | null;
+	is_recurring: boolean;
+	memo: string | null;
+	cancels_action_id: number | null;
+	suspended_at: string | null;
+	suspended_by: number | null;
+	suspension_reason: string | null;
+	source: string;
+	created_by: number;
+	created_at: string;
+}
+
+export interface MockRun {
+	id: number;
+	kind: string;
+	schedule_id: number | null;
+	period_from: string;
+	period_to: string;
+	pay_date: string;
+	status: string;
+	adjusts_run_id: number | null;
+	journal_entry_id: number | null;
+	created_by: number;
+	created_at: string;
+	approved_by: number | null;
+	approved_at: string | null;
+	paid_by: number | null;
+	paid_at: string | null;
+}
+
+/** Una línea con sus rubros congelados (RN-66). */
+export interface MockLine {
+	id: number;
+	run_id: number;
+	employee_id: number;
+	contract_id: number;
+	gross: number;
+	employee_deductions: number;
+	income_tax: number;
+	other_deductions: number;
+	net: number;
+	employer_charges: number;
+	items: PayrollItem[];
+}
+
+export interface MockPayrollData {
+	settings: { employer_number: string | null; ina_exempt: boolean };
+	schedules: WorkSchedule[];
+	positions: Position[];
+	policies: InsPolicy[];
+	employees: MockEmployee[];
+	contracts: EmploymentContract[];
+	actions: MockAction[];
+	runs: MockRun[];
+	lines: MockLine[];
+	vacations: {
+		id: number;
+		employee_id: number;
+		kind: string;
+		days: number;
+		on_date: string;
+		run_id: number | null;
+		action_id: number | null;
+	}[];
+	opening: { id: number; employee_id: number; period_month: string; gross: number }[];
+}
+
+export function planillaVacia(): MockPayrollData {
+	return {
+		settings: { employer_number: null, ina_exempt: false },
+		schedules: [],
+		positions: [],
+		policies: [],
+		employees: [],
+		contracts: [],
+		actions: [],
+		runs: [],
+		lines: [],
+		vacations: [],
+		opening: []
+	};
+}
+
+/**
+ * La planilla del negocio de demostración (T-1214): dos jornadas, dos puestos,
+ * una póliza y dos empleados con contrato, sin corridas. Las personas son
+ * inventadas y los números también.
+ */
+export function planillaDemo(): MockPayrollData {
+	return {
+		...planillaVacia(),
+		settings: { employer_number: '2-03101000000-001-001', ina_exempt: true },
+		schedules: [
+			{ id: 1, name: 'Quincenal', frequency: 'semimonthly', shift: 'day', hours_per_day: 8, workdays_per_week: 6, rest_day_paid: true, first_cut_day: 15, cut_weekday: null, series_start: null, is_active: true },
+			{ id: 2, name: 'Mensual', frequency: 'monthly', shift: 'day', hours_per_day: 8, workdays_per_week: 6, rest_day_paid: true, first_cut_day: null, cut_weekday: null, series_start: null, is_active: true }
+		],
+		positions: [
+			{ id: 1, name: 'Caja', ccss_code: '4211', ins_code: '52', is_active: true },
+			{ id: 2, name: 'Bodega', ccss_code: '9333', ins_code: '93', is_active: true }
+		],
+		policies: [{ id: 1, number: 'RT-100200', rt_rate: 0.0146, is_default: true }],
+		employees: [
+			{ id: 1, user_id: null, identification_type: 'national', identification: '112340567', first_name: 'María Fernanda', last_name_1: 'Rojas', last_name_2: 'Vega', insured_number: null, birth_date: '1992-03-15', gender: 'F', marital_status: 'single', nationality: 'CR', phone: '8888-0001', email: null, is_pensioner: false, iban: 'CR05015202001026284066', hired_on: '2025-02-01', terminated_on: null, termination_cause: null, dependent_children: 1, spouse_credit: false, is_active: true },
+			{ id: 2, user_id: null, identification_type: 'national', identification: '204560789', first_name: 'Carlos Andrés', last_name_1: 'Jiménez', last_name_2: 'Mora', insured_number: null, birth_date: '1988-07-20', gender: 'M', marital_status: 'married', nationality: 'CR', phone: '8888-0002', email: null, is_pensioner: false, iban: null, hired_on: '2024-09-01', terminated_on: null, termination_cause: null, dependent_children: 0, spouse_credit: true, is_active: true }
+		],
+		contracts: [
+			{ id: 1, employee_id: 1, schedule_id: 1, position_id: 1, ins_policy_id: null, valid_from: '2025-02-01', valid_to: null, period_salary: 325000, solidarista_rate: null },
+			{ id: 2, employee_id: 2, schedule_id: 2, position_id: 2, ins_policy_id: 1, valid_from: '2024-09-01', valid_to: null, period_salary: 540000, solidarista_rate: 0.03 }
+		]
+	};
 }
 
 /** Una sucursal. El código son tres dígitos y va en el consecutivo (RN-15). */
@@ -257,8 +479,25 @@ export interface MockRoot {
 	/** El catálogo de planes y la bitácora: de la plataforma, no de una compañía. */
 	plans: MockPlan[];
 	audit: MockAudit[];
+	/**
+	 * Las tasas de planilla que se agregaron **después** de la siembra (T-1204).
+	 * Son del país, como las de la API: una lista para todas las compañías. Lo
+	 * sembrado sale de `payrollRates.ts` y no se guarda, así que un archivo de un
+	 * seed viejo no necesita `SEED_VERSION` nuevo: le falta esta lista y ya.
+	 */
+	payroll_rates?: MockPayrollRate[];
 	empresas: Record<number, MockCompanyData>;
 	counters: Record<string, number>;
+}
+
+/** Una fila de `payroll_rates` agregada desde el panel (`PUT /support/payroll/rates`). */
+export interface MockPayrollRate {
+	concept: string;
+	payer: string;
+	value: number;
+	valid_from: string;
+	source: string;
+	verified_at: string;
 }
 
 /**
@@ -271,7 +510,21 @@ export interface MockRoot {
  */
 export type MockDb = MockRoot & MockCompanyData;
 
-const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
+/*
+ * Las pruebas de punta a punta escriben **en su propio archivo** (T-920).
+ *
+ * `POS_MOCK_FRESH` hace que no se lea lo guardado, pero `persist()` escribe en
+ * cada cambio: con un solo archivo, la primera venta de la batería reemplazaba
+ * la demostración de quien estuviera usando el POS a mano, que es justo lo que
+ * T-920 prometía no tocar. No se notaba porque la bandera nunca llegaba —la
+ * configuración de Playwright tenía dos `env` y el segundo pisaba al primero—.
+ * Se lee directo de `process.env` porque `SEMBRAR_DE_CERO` se define más abajo.
+ */
+const DB_PATH = resolve(
+	process.cwd(),
+	'.data',
+	process.env.POS_MOCK_FRESH === '1' ? 'mock-db.e2e.json' : 'mock-db.json'
+);
 
 /**
  * Versión de los datos de demostración. **Se sube al cambiar el seed.**
@@ -319,7 +572,13 @@ const DB_PATH = resolve(process.cwd(), '.data', 'mock-db.json');
 // 14 (F7, T-715): los productos llevan `tax_code`, el código de tarifa de
 // Hacienda. Los tres sin clasificar siguen sin él, que es lo cierto: su tarifa
 // es la del negocio y del porcentaje no se vuelve al código (RN-76).
-const SEED_VERSION = 14;
+// 15 (F7, T-731): las líneas de venta congelan el CABYS y la unidad, y los
+// clientes llevan su tipo de identificación (T-617). Sin eso el comprobante del
+// demo imprimiría la línea sin CABYS y al receptor sin su tipo.
+// 17 (F12, T-1214): la compañía de demostración trae su planilla —dos
+// jornadas, dos puestos, una póliza y dos empleados con contrato— y los
+// contadores que siguen. Un archivo de la 16 no tiene nada de eso.
+const SEED_VERSION = 18;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -414,6 +673,7 @@ export function empresaVacia(): MockCompanyData {
 		products: [],
 		sales: [],
 		returns: [],
+		notes: [],
 		cash_sessions: [],
 		cash_movements: [],
 		stock_entries: [],
@@ -430,7 +690,8 @@ export function empresaVacia(): MockCompanyData {
 		// se puede vender, así que no pueden ser un paso que alguien tenga que
 		// acordarse de dar.
 		branches: [{ id: 1, codigo: '001', nombre: 'Casa matriz', activa: true }],
-		terminals: [{ id: 1, branch_id: 1, codigo: '00001', nombre: 'Caja 1', activa: true }]
+		terminals: [{ id: 1, branch_id: 1, codigo: '00001', nombre: 'Caja 1', activa: true }],
+		payroll: planillaVacia()
 	};
 }
 
@@ -574,12 +835,22 @@ const PLAN_SEED: MockPlan[] = [
 		max_sucursales: 1,
 		max_terminales: 1,
 		max_usuarios: 3,
-		// El plan de la segunda compañía del demo: sin ningún módulo. Es lo que
-		// permite comprobar el rechazo de RN-49 sin dar de alta nada (T-1004).
+		// El plan de la segunda compañía del demo: la base del POS y ninguno de
+		// los que se venden aparte. Es lo que permite comprobar el rechazo de
+		// RN-49 sin dar de alta nada (T-1004).
 		factura_electronica: false,
+		sales: true,
+		cash: true,
+		invoices: true,
+		returns: true,
+		reports: true,
+		inventory: true,
 		purchases: false,
+		suppliers: false,
 		accounting: false,
-		payroll: false
+		payroll: false,
+		clients: true,
+		users: true
 	},
 	{
 		id: 2,
@@ -589,10 +860,19 @@ const PLAN_SEED: MockPlan[] = [
 		max_terminales: 3,
 		max_usuarios: 10,
 		factura_electronica: false,
-		// El de la primera: con los tres, para poder recorrerlos en el demo.
+		// El de la primera: con todo, para poder recorrerlo en el demo.
+		sales: true,
+		cash: true,
+		invoices: true,
+		returns: true,
+		reports: true,
+		inventory: true,
 		purchases: true,
+		suppliers: true,
 		accounting: true,
-		payroll: true
+		payroll: true,
+		clients: true,
+		users: true
 	},
 	{
 		id: 3,
@@ -602,9 +882,84 @@ const PLAN_SEED: MockPlan[] = [
 		max_terminales: 15,
 		max_usuarios: 40,
 		factura_electronica: true,
+		sales: true,
+		cash: true,
+		invoices: true,
+		returns: true,
+		reports: true,
+		inventory: true,
 		purchases: true,
+		suppliers: true,
 		accounting: true,
-		payroll: true
+		payroll: true,
+		clients: true,
+		users: true
+	},
+	{
+		// Uno de los paquetes de QA-01, como los da de alta la migración 022.
+		id: 4,
+		nombre: 'Restaurante',
+		precio_mensual: 0,
+		max_sucursales: 1,
+		max_terminales: 3,
+		max_usuarios: 10,
+		factura_electronica: false,
+		sales: true,
+		cash: false,
+		invoices: true,
+		returns: false,
+		reports: false,
+		inventory: false,
+		purchases: false,
+		suppliers: false,
+		accounting: false,
+		payroll: false,
+		clients: true,
+		users: true
+	},
+	{
+		// Uno de los paquetes de QA-01, como los da de alta la migración 022.
+		id: 5,
+		nombre: 'Comercio con compras',
+		precio_mensual: 0,
+		max_sucursales: 1,
+		max_terminales: 3,
+		max_usuarios: 10,
+		factura_electronica: false,
+		sales: true,
+		cash: true,
+		invoices: true,
+		returns: true,
+		reports: true,
+		inventory: true,
+		purchases: true,
+		suppliers: true,
+		accounting: false,
+		payroll: false,
+		clients: true,
+		users: true
+	},
+	{
+		// Uno de los paquetes de QA-01, como los da de alta la migración 022.
+		id: 6,
+		nombre: 'Completo',
+		precio_mensual: 0,
+		max_sucursales: 1,
+		max_terminales: 3,
+		max_usuarios: 10,
+		factura_electronica: false,
+		sales: true,
+		cash: true,
+		invoices: true,
+		returns: true,
+		reports: true,
+		inventory: true,
+		purchases: true,
+		suppliers: true,
+		accounting: true,
+		payroll: true,
+		clients: true,
+		users: true
 	}
 ];
 
@@ -693,7 +1048,12 @@ function seed(): MockRoot {
 		cost: round2(p.price / 1.3)
 	}));
 
-	const clients: Client[] = CLIENT_SEED.map((c, i) => ({ ...c, id_client: i + 1 }));
+	// Las cuatro cédulas son de nueve dígitos: física, como las clasificaría la 011.
+	const clients: Client[] = CLIENT_SEED.map((c, i) => ({
+		...c,
+		id_client: i + 1,
+		identification_type: '01'
+	}));
 
 	/*
 	 * Dos compañías (T-228). La segunda nace **vacía**, que es exactamente lo que
@@ -728,6 +1088,7 @@ function seed(): MockRoot {
 				// que sería lo primero que se ve al entrar.
 				vence_el: enDias(30),
 				identificacion: '3101234567',
+				identification_type: '02',
 				creada_el: created
 			},
 			{
@@ -785,7 +1146,32 @@ function seed(): MockRoot {
 				accounting_periods: [],
 				journal_entries: [],
 				journal_lines: [],
-				settings: { data: {}, logo: null, updated_at: null, updated_by: null },
+				/*
+				 * Con correo y ubicación de emisor (T-722): la facturación sigue
+				 * apagada, pero se puede encender sin llenar nada, que es lo que las
+				 * pruebas de punta a punta de comprobantes necesitan.
+				 */
+				settings: {
+					data: {
+						business: {
+							email: 'facturas@laesquina.cr',
+							location: {
+								province: '1',
+								canton: '18',
+								district: '01',
+								neighborhood: '',
+								otherSigns: '200 m sur del parque de Curridabat'
+							}
+						}
+					},
+					logo: null,
+					updated_at: null,
+					updated_by: null
+				},
+				// La planilla de muestra (T-1214): dos empleados con contrato y
+				// ninguna corrida, que es como se encuentra una compañía que acaba
+				// de cargar su gente y todavía no ha pagado nada desde acá.
+				payroll: planillaDemo(),
 				// Sin certificado, igual que el libro. La factura electrónica se
 				// configura (F6) y sembrar un certificado sería sembrar uno que no
 				// existe: la pantalla nace teniendo que decir qué falta.
@@ -810,6 +1196,11 @@ function seed(): MockRoot {
 			stock_entries: 0,
 			suppliers: SUPPLIERS.length,
 			supplier_payments: 0,
+			payroll_schedules: 2,
+			payroll_positions: 2,
+			payroll_policies: 1,
+			payroll_employees: 2,
+			payroll_contracts: 2,
 			accounts: 0,
 			account_mappings: 0,
 			accounting_periods: 0,
@@ -854,7 +1245,9 @@ function seed(): MockRoot {
 					name: product.name,
 					quantity,
 					price: product.price,
-					subtotal: round2(product.price * quantity)
+					subtotal: round2(product.price * quantity),
+					cabys_code: product.cabys_code ?? null,
+					unit_of_measure: 'Unid'
 				};
 			});
 

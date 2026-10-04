@@ -7,7 +7,6 @@ import {
 	nextActiveId,
 	quickCash,
 	reservedElsewhere,
-	saleNumber,
 	unitCount,
 	type Decision
 } from './cart';
@@ -245,22 +244,6 @@ describe('MAX_TICKETS', () => {
 		expect(MAX_TICKETS).toBe(8);
 	});
 });
-
-describe('saleNumber', () => {
-	it('es yyyyMMddHHmmss, como generaba Bills.cs', () => {
-		expect(saleNumber(new Date(2026, 7, 16, 21, 43, 5))).toBe('20260816214305');
-	});
-
-	it('rellena con ceros a la izquierda', () => {
-		expect(saleNumber(new Date(2026, 0, 2, 3, 4, 5))).toBe('20260102030405');
-	});
-
-	it('tiene siempre 14 dígitos, que es lo que valida la acción', () => {
-		const n = saleNumber(new Date(2026, 11, 31, 23, 59, 59));
-		expect(n).toMatch(/^\d{14}$/);
-	});
-});
-
 describe('quickCash', () => {
 	it('ofrece el exacto y los redondeos al alza', () => {
 		// Los pasos son los billetes que circulan en Costa Rica.

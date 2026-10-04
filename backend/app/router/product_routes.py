@@ -20,7 +20,7 @@ from app.schemas.schemas_product import (
 )
 from app.services import crud_product
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user, require_admin
+from app.utils.auth_dependency import Sesion, get_current_user, require_admin, require_module
 
 router = APIRouter()
 
@@ -38,6 +38,7 @@ def register_product(
     product: ProductRegister,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     existing = db.query(Product).filter(Product.barcode == product.barcode).first()
     if existing:
@@ -108,6 +109,7 @@ def update_product(
     product_data: ProductUpdate,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     # `exclude_unset` y no `.dict()`: es lo que distingue «no mandé este campo»
     # de «ponelo en nulo». Sin eso los dos llegan como None y son indistinguibles,
@@ -126,6 +128,7 @@ def assign_cabys(
     payload: CabysAssignment,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     """Clasifica varios productos de una vez (RF-20).
 
@@ -161,6 +164,7 @@ def delete_product(
     id_product: int,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
 ):
     deleted = crud_product.delete_product(db=db, id_product=id_product)
     if not deleted:

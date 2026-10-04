@@ -29,6 +29,8 @@
 	"suppliers_id_type_02": "Company",
 	"suppliers_id_type_03": "DIMEX",
 	"suppliers_id_type_04": "NITE",
+	"suppliers_id_type_05": "Non-resident foreigner",
+	"suppliers_id_type_06": "Non-taxpayer",
 	"suppliers_label_email": "Email",
 	"suppliers_label_phone": "Phone",
 	"suppliers_label_terms": "Usual terms (days)",

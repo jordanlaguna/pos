@@ -12,12 +12,20 @@ privada vive en Vault, el PIN además no se guarda en ninguna parte.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
 from sqlalchemy.orm import Session
 
-from app.schemas.schemas_fe import ActiveEnvironmentIn, AtvIn, FeStatusOut
-from app.services import crud_fe
-from app.utils.auth_dependency import Sesion, get_db, require_admin
+from app.schemas.schemas_einvoice import DocumentFileOut, QueueOut
+from app.schemas.schemas_fe import (
+    ActiveEnvironmentIn,
+    AtvIn,
+    FeStatusOut,
+    SequencesOut,
+    SequenceStartIn,
+    SequenceStartOut,
+)
+from app.services import crud_fe, crud_fe_documents, crud_fe_sequences
+from app.utils.auth_dependency import Sesion, get_current_user, get_db, require_admin
 
 router = APIRouter()
 
@@ -122,4 +130,99 @@ def cambiar_ambiente(
         confirmado=payload.confirm,
         user_id=admin.user.id_user,
         company_id=admin.company_id,
+    )
+
+
+# ----------------------------------------------------------- el recorrido (F7)
+#
+# Leer el expediente y bajar los dos XML lo puede hacer quien ve la factura
+# (RF-33, RF-34): el cajero imprime la factura y tiene que poder decir en qué va.
+# Reintentar es de administrador, como todo lo que escribe acá (RF-36).
+
+
+@router.get("/queue", response_model=QueueOut)
+def cola(
+    db: Session = Depends(get_db),
+    sesion: Sesion = Depends(get_current_user),
+):
+    """Cuántos hay en cada estado, lo detenido y la alarma de antigüedad (T-711)."""
+    return crud_fe_documents.cola(db)
+
+
+@router.get("/documents/{document_id}", response_model=DocumentFileOut)
+def expediente(
+    document_id: int,
+    db: Session = Depends(get_db),
+    sesion: Sesion = Depends(get_current_user),
+):
+    """El comprobante con su bitácora: por dónde va y a qué hora pasó cada cosa (T-721)."""
+    return crud_fe_documents.expediente(db, document_id)
+
+
+def _archivo(contenido: bytes, nombre: str) -> Response:
+    return Response(
+        content=contenido,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
+
+
+@router.get("/documents/{document_id}/xml")
+def xml_firmado(
+    document_id: int,
+    db: Session = Depends(get_db),
+    sesion: Sesion = Depends(get_current_user),
+):
+    """El XML firmado **tal como se envió**, byte por byte (RF-34, RN-44)."""
+    contenido, nombre = crud_fe_documents.xml_firmado(db, document_id)
+    return _archivo(contenido, nombre)
+
+
+@router.get("/documents/{document_id}/response")
+def respuesta_de_hacienda(
+    document_id: int,
+    db: Session = Depends(get_db),
+    sesion: Sesion = Depends(get_current_user),
+):
+    """La respuesta firmada de Hacienda, tal como llegó (RF-34)."""
+    contenido, nombre = crud_fe_documents.respuesta_hacienda(db, document_id)
+    return _archivo(contenido, nombre)
+
+
+@router.post("/documents/{document_id}/retry", response_model=DocumentFileOut)
+def reintentar(
+    document_id: int,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """Vuelve a la cola un comprobante detenido (RF-36, RN-42)."""
+    return crud_fe_documents.reintentar(
+        db, document_id, user_id=admin.user.id_user, company_id=admin.company_id
+    )
+
+
+# ------------------------------------------- el arranque de las series (T-616)
+
+
+@router.get("/sequences", response_model=SequencesOut)
+def series(db: Session = Depends(get_db), admin: Sesion = Depends(require_admin)):
+    """Cada caja por cada tipo encendido, con su último consecutivo (RN-37)."""
+    return crud_fe_sequences.series(db)
+
+
+@router.put("/sequences", response_model=SequenceStartOut)
+def arrancar_serie(
+    datos: SequenceStartIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    """El último consecutivo que trae un negocio de otro sistema (RF-32, RN-36 a
+    RN-38). Solo sube, no se toca una serie que el sistema ya usó, y queda en
+    bitácora."""
+    return crud_fe_sequences.arrancar(
+        db,
+        datos,
+        user_id=admin.user.id_user,
+        ip=request.client.host if request.client else None,
     )

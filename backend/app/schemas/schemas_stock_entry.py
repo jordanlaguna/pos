@@ -1,4 +1,6 @@
 from pydantic import BaseModel
+
+from app.schemas.schemas_einvoice import EInvoiceOut
 import datetime
 
 
@@ -102,6 +104,11 @@ class StockEntryResponse(BaseModel):
     due_date: datetime.date | None = None
     subtotal: float = 0
     tax: float = 0
+
+    # La factura electrónica de compra (T-728): '08' y su recorrido, cuando la
+    # compra fue a un no contribuyente y la compañía la emite.
+    document_type: str | None = None
+    einvoice: EInvoiceOut | None = None
 
     model_config = {"from_attributes": True}
 

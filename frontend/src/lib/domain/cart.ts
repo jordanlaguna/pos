@@ -168,25 +168,6 @@ export function nextActiveId(tickets: TicketLines[], closedIndex: number): numbe
 }
 
 // ------------------------------------------------------------------- cobro
-
-/**
- * Número de factura `yyyyMMddHHmmss`, igual que generaba `Bills.cs`.
- *
- * Recibe la fecha en vez de leer el reloj para poder probarse: el mismo motivo
- * por el que el backend tiene un puerto `Clock`.
- */
-export function saleNumber(date: Date): string {
-	const pad = (n: number) => String(n).padStart(2, '0');
-	return [
-		date.getFullYear(),
-		pad(date.getMonth() + 1),
-		pad(date.getDate()),
-		pad(date.getHours()),
-		pad(date.getMinutes()),
-		pad(date.getSeconds())
-	].join('');
-}
-
 /**
  * Montos sugeridos para el pago en efectivo: el exacto y los redondeos al alza.
  *

@@ -3,11 +3,13 @@
 import pytest
 
 from app.domain.errors import (
+    IdentificationTypeRequired,
     InvalidEnvironment,
     InvalidIdentificationType,
     InvalidSigningKey,
 )
 from app.domain.hacienda import (
+    is_foreign,
     DIMEX,
     ENVIRONMENTS,
     LEGAL,
@@ -16,6 +18,7 @@ from app.domain.hacienda import (
     SANDBOX,
     check_environment,
     check_identification_type,
+    client_identification_type,
     endpoints,
     identification_type_for,
     needs_confirmation,
@@ -67,12 +70,13 @@ class TestDondeViveHacienda:
     def test_sandbox_y_produccion_no_son_el_mismo_sitio(self):
         assert endpoints(SANDBOX) != endpoints(PRODUCTION)
 
-    def test_el_sandbox_es_otra_RUTA_y_no_otro_servidor(self):
-        # Es lo que se escribe mal de memoria: los dos salen del mismo dominio.
+    def test_el_sandbox_es_otro_SERVIDOR_con_la_misma_ruta(self):
+        # Al revés de lo que decía el README: `api.…/recepcion-sandbox/v1/` ya no
+        # existe y el Gateway de AWS contesta 403 a cualquier token (2026-10-03).
         pruebas, produccion = endpoints(SANDBOX), endpoints(PRODUCTION)
-        assert "recepcion-sandbox" in pruebas.api_url
-        assert "recepcion/v1" in produccion.api_url
-        assert pruebas.api_url.split("/recepcion")[0] == produccion.api_url.split("/recepcion")[0]
+        assert pruebas.api_url == "https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/"
+        assert produccion.api_url == "https://api.comprobanteselectronicos.go.cr/recepcion/v1/"
+        assert "recepcion-sandbox" not in pruebas.api_url
 
     def test_el_realm_y_el_client_id_de_cada_uno(self):
         assert (endpoints(SANDBOX).realm, endpoints(SANDBOX).client_id) == (
@@ -169,11 +173,18 @@ class TestElNombreDeLaLlaveDeFirma:
 
 
 class TestElTipoDeIdentificacion:
-    @pytest.mark.parametrize("bueno", ["01", "02", "03", "04"])
-    def test_los_cuatro_de_Hacienda(self, bueno):
+    def test_el_05_es_el_extranjero_y_se_le_exporta(self):
+        assert is_foreign("05")
+        for otro in ("01", "02", "03", "04", "06", None, ""):
+            assert not is_foreign(otro)
+
+    @pytest.mark.parametrize("bueno", ["01", "02", "03", "04", "05", "06"])
+    def test_los_seis_de_Hacienda(self, bueno):
+        # Los dos últimos entraron con F7: el extranjero no domiciliado recibe
+        # la factura de exportación y el no contribuyente la de compra.
         assert check_identification_type(bueno) == bueno
 
-    @pytest.mark.parametrize("malo", ["05", "1", 1, "", None, "fisica"])
+    @pytest.mark.parametrize("malo", ["07", "1", 1, "", None, "fisica"])
     def test_uno_inventado_no_lo_rechaza_el_sistema_sino_Hacienda(self, malo):
         with pytest.raises(InvalidIdentificationType):
             check_identification_type(malo)
@@ -204,3 +215,23 @@ class TestElTipoDeIdentificacion:
     def test_lo_que_no_se_sabe_se_dice_que_no_se_sabe(self, raro):
         # `None` es «preguntá», y es distinto de un tipo equivocado.
         assert identification_type_for(raro) is None
+
+
+class TestElTipoDelCliente:
+    """T-617: el que se eligió, o el que deja ver la cédula; si no, se pregunta."""
+
+    def test_manda_el_que_se_eligio(self):
+        # Diez dígitos dirían jurídica; quien tiene un NITE lo elige y se respeta.
+        assert client_identification_type("04", "3101234567") == "04"
+
+    def test_sin_elegir_se_deduce_de_la_cedula(self):
+        assert client_identification_type(None, "108840287") == PHYSICAL
+        assert client_identification_type("", "3101702934") == LEGAL
+
+    def test_uno_inventado_no_entra(self):
+        with pytest.raises(InvalidIdentificationType):
+            client_identification_type("07", "108840287")
+
+    def test_si_no_se_puede_saber_se_pregunta(self):
+        with pytest.raises(IdentificationTypeRequired):
+            client_identification_type(None, "A-12")

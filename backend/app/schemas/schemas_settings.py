@@ -19,11 +19,19 @@ class Logo(BaseModel):
     data: str = Field(max_length=350_000)
 
 
+class Issuer(BaseModel):
+    """La identificación del emisor, de `companies` (RN-45). Solo lectura."""
+
+    identification: str | None = None
+    identification_type: str | None = None
+
+
 class SettingsResponse(BaseModel):
     data: dict = {}
     logo: Logo | None = None
     updated_at: datetime.datetime | None = None
     updated_by: int | None = None
+    issuer: Issuer = Issuer()
 
 
 class SettingsUpdate(BaseModel):

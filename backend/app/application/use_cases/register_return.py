@@ -11,6 +11,11 @@ Dos reglas mandan, y las dos son de plata:
 
 Y una consecuencia que sí se veía en el sistema original: **el stock vuelve al
 inventario**. Antes no volvía.
+
+Desde T-725 la devolución de una venta que fue comprobante **es una nota de
+crédito** (RN-89), y **anular es una devolución entera con otro motivo**: el
+mismo camino, con `annul=True`. Así la plata, el inventario y el asiento de una
+anulación son exactamente los de una devolución total, y no una segunda copia.
 """
 
 from __future__ import annotations
@@ -19,14 +24,22 @@ from dataclasses import dataclass
 
 from app.application.ports.clock import Clock
 from app.application.ports.ledger import Ledger, NullLedger
+from app.application.ports.numbering import NumberedDocument
+from app.application.use_cases.number_document import SOURCE_RETURN, NumberDocument
 from app.application.ports.repositories import (
+    NoteRepository,
     ProductRepository,
     ReturnRepository,
     SaleRepository,
-    SettingsRepository,
     UnitOfWork,
 )
-from app.domain.errors import DomainError, InvalidQuantity
+from app.domain.errors import (
+    AnnulAfterNote,
+    DomainError,
+    InvalidQuantity,
+    ReturnAfterCreditNote,
+)
+from app.domain.fe_notes import check_annul, credit_note_for_return
 from app.domain.ledger import ReturnDocument, SoldLine
 from app.domain.money import Money
 from app.domain.returns import (
@@ -35,7 +48,7 @@ from app.domain.returns import (
     is_fully_returned,
     refund_totals,
 )
-from app.domain.tax import TaxRate
+from app.domain.tax import GENERAL_RATE, TaxRate
 
 
 class SaleNotFound(DomainError):
@@ -66,6 +79,9 @@ class ReturnRequest:
     user_id: int
     reason: str
     lines: list[RequestedReturnLine]
+    #: Anular el comprobante en vez de devolver mercadería (RN-89). Exige que
+    #: la venta no tenga devoluciones y que se devuelva entera.
+    annul: bool = False
 
 
 @dataclass(frozen=True)
@@ -74,6 +90,11 @@ class RegisteredReturn:
     total: Money
     lines: list[ReturnLine]
     is_full: bool
+    #: `'03'` y el motivo cuando hubo nota de crédito; nulos cuando no.
+    document_type: str | None = None
+    reference_code: str | None = None
+    #: La nota de crédito numerada, si la hubo (T-704, T-705).
+    einvoice: NumberedDocument | None = None
 
 
 class RegisterReturn:
@@ -82,19 +103,21 @@ class RegisterReturn:
         *,
         sales: SaleRepository,
         returns: ReturnRepository,
+        notes: NoteRepository,
         products: ProductRepository,
-        settings: SettingsRepository,
         uow: UnitOfWork,
         clock: Clock,
         ledger: Ledger | None = None,
+        numbering: NumberDocument | None = None,
     ) -> None:
         self._sales = sales
         self._returns = returns
+        self._notes = notes
         self._products = products
-        self._settings = settings
         self._uow = uow
         self._clock = clock
         self._ledger = ledger or NullLedger()
+        self._numbering = numbering
 
     def __call__(self, request: ReturnRequest) -> RegisteredReturn:
         venta = self._sales.get(request.sale_id)
@@ -113,18 +136,35 @@ class RegisterReturn:
         # proveedor sube el precio entre la venta y la devolución.
         costos = self._sales.sold_costs(request.sale_id)
         ya_devuelto = self._returns.returned_quantities(request.sale_id)
+        # Lo que las notas por monto le cambiaron a cada línea (T-726).
+        ajustes = self._notes.adjustments(request.sale_id)
+
+        # Anular es todo o nada (RN-89), y se mira **antes** que las cantidades:
+        # anular una venta a medio devolver es «ya tiene devoluciones», no «pidió
+        # de más», aunque las dos cosas sean ciertas.
+        if request.annul:
+            pedido: dict[int, int] = {}
+            for linea in request.lines:
+                pedido[linea.product_id] = pedido.get(linea.product_id, 0) + linea.quantity
+            check_annul(
+                request.sale_id, sold=vendido, already_returned=ya_devuelto, requested=pedido
+            )
+            # Con una ND encima, anular no devolvería lo que se cobró de más; con
+            # una NC, devolvería dos veces. Se corrige con otra nota (T-726).
+            if ajustes:
+                raise AnnulAfterNote(request.sale_id)
 
         # La tasa del ENCABEZADO de esta venta, reconstruida de sus montos. Desde
         # F5 es solo el respaldo: sirve para las ventas anteriores a la migración
         # 006, que no tienen tarifa en la línea y llevan una sola, así que el
-        # cociente la reconstruye exacta. La configurada entra un escalón más
-        # abajo, para las del WinForms que quedaron sin desglose.
+        # cociente la reconstruye exacta. La general del IVA entra un escalón
+        # más abajo, para las del WinForms que quedaron sin desglose.
         #
         # **No sirve cuando la venta mezcla tarifas**: ahí `tax / subtotal` es un
         # promedio, y devolver una sola línea con el promedio reembolsa de más o
         # de menos. Por eso lo primero que se mira es la tarifa de la línea.
         del_encabezado = TaxRate.of_sale(
-            Money(venta.subtotal), Money(venta.tax), default=self._settings.tax_rate()
+            Money(venta.subtotal), Money(venta.tax), default=GENERAL_RATE
         )
 
         # Se valida TODO antes de escribir: o entra la devolución completa, o
@@ -134,6 +174,11 @@ class RegisterReturn:
             if pedida.quantity <= 0:
                 raise InvalidQuantity(pedida.quantity)
             check_returnable(pedida.product_id, vendido, ya_devuelto, pedida.quantity)
+            # La devolución reembolsa el precio de la línea; con una NC por monto
+            # encima, reembolsaría dos veces la misma plata (T-726).
+            _, acreditado = ajustes.get(pedida.product_id, (Money.zero(), Money.zero()))
+            if acreditado.is_positive:
+                raise ReturnAfterCreditNote(pedida.product_id)
             lineas.append(
                 ReturnLine(
                     product_id=pedida.product_id,
@@ -148,6 +193,16 @@ class RegisterReturn:
 
         totales = refund_totals(lineas, del_encabezado)
 
+        # La nota la decide el comprobante ORIGINAL, no la configuración de hoy:
+        # una venta que salió como tiquete emite su nota aunque después se haya
+        # apagado la facturación, y una que no fue comprobante no tiene a qué
+        # referirse.
+        nota = credit_note_for_return(venta.document_type, annul=request.annul)
+        # Como en la venta: el emisor antes de la transacción, y solo si hay nota.
+        emisor = (
+            self._numbering.prepare() if nota is not None and self._numbering is not None else None
+        )
+
         with self._uow:
             # Una sola lectura del reloj para la devolución y su asiento.
             momento = self._clock.now()
@@ -160,10 +215,26 @@ class RegisterReturn:
                 total=totales.total,
                 created_at=momento,
                 lines=lineas,
+                document_type=nota.document_type if nota else None,
+                reference_code=nota.reference_code if nota else None,
             )
             for linea in lineas:
                 # Lo que el sistema original no hacía: reponer.
                 self._products.adjust_stock(linea.product_id, +linea.quantity)
+
+            # La NC lleva su propia serie, la `03` (nota 3), y se numera con la
+            # devolución: si esto falla, no queda ni la devolución ni el número.
+            comprobante = (
+                self._numbering.number(
+                    emisor,
+                    source_type=SOURCE_RETURN,
+                    source_id=id_return,
+                    document_type=nota.document_type,
+                    issued_at=momento,
+                )
+                if emisor is not None and self._numbering is not None and nota is not None
+                else None
+            )
 
             # El inverso de la venta, dentro de la misma transacción (RN-59).
             self._ledger.record_return(
@@ -190,4 +261,7 @@ class RegisterReturn:
             total=totales.total,
             lines=lineas,
             is_full=is_fully_returned(vendido, despues),
+            document_type=nota.document_type if nota else None,
+            reference_code=nota.reference_code if nota else None,
+            einvoice=comprobante,
         )

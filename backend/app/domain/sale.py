@@ -92,6 +92,17 @@ class SaleLine:
     #: gratis», que es falso, y le inflaría el margen al negocio.
     unit_cost: Money | None = None
 
+    #: El CABYS y la unidad con que se vendió (RN-86): el comprobante los
+    #: imprime por línea y el producto puede cambiarlos después. Viajan tal
+    #: cual; `None` en el CABYS es «el producto no tenía».
+    cabys_code: str | None = None
+    unit_of_measure: str | None = None
+
+    #: La partida arancelaria con que se exportó (RF-78, T-727), congelada por
+    #: lo mismo que el CABYS. Solo la lleva la línea de una factura de
+    #: exportación; en las demás es `None`.
+    tariff_heading: str | None = None
+
     def __post_init__(self) -> None:
         # `bool` antes que `int` por lo mismo que en Money: `True` es 1.
         if isinstance(self.quantity, bool) or not isinstance(self.quantity, int):

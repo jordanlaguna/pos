@@ -14,11 +14,11 @@
  * regla es fácil de romper sin darse cuenta: basta escribir `m.doc_total()`.
  */
 
-import type { IssuerLine } from '$lib/domain/documents';
-import type { Settings } from '$lib/domain/settings';
-import { documentKind } from '$lib/domain/documents';
+import type { DocumentKind, IssuerLine } from '$lib/domain/documents';
+import { identificationTypeName } from '$lib/domain/identification';
 import { m } from '$lib/paraglide/messages.js';
 import { baseLocale, isLocale, type Locale } from '$lib/paraglide/runtime.js';
+import { amountInWords } from './amountInWords';
 
 /**
  * Idioma en el que se emite el documento.
@@ -42,10 +42,72 @@ function comoLocale(valor: string): Locale {
  */
 export function documentLabels(locale: string) {
 	const o = { locale: comoLocale(locale) } as const;
+
+	/**
+	 * «Factura», «Factura electrónica» o «Tiquete electrónico», según **la
+	 * venta** (RN-85). Antes lo decía la configuración de hoy, y una venta de
+	 * antes de activar la facturación se reimprimía como electrónica.
+	 */
+	const title = (kind: DocumentKind) => {
+		switch (kind) {
+			case 'einvoice':
+				return m.doc_einvoice({}, o);
+			case 'eticket':
+				return m.doc_eticket({}, o);
+			case 'eexport':
+				return m.doc_eexport({}, o);
+			case 'ecredit':
+				return m.doc_ecredit({}, o);
+			case 'edebit':
+				return m.doc_edebit({}, o);
+			default:
+				return m.doc_invoice({}, o);
+		}
+	};
+
 	return {
 		invoice: m.doc_invoice({}, o),
 		einvoice: m.doc_einvoice({}, o),
-		invoiceNumber: (number: string | number) => m.doc_invoice_number({ number }, o),
+		eticket: m.doc_eticket({}, o),
+		title,
+		/** «Tiquete electrónico 20260815143200»: el tipo y el número, juntos. */
+		numbered: (kind: DocumentKind, number: string | number) =>
+			m.doc_numbered({ document: title(kind), number }, o),
+
+		/*
+		 * El bloque fiscal (RN-86). La clave, el consecutivo y la actividad son
+		 * datos; lo que se traduce es cómo se rotulan y las tres leyendas.
+		 */
+		fiscalKey: m.doc_fiscal_key({}, o),
+		fiscalConsecutive: m.doc_fiscal_consecutive({}, o),
+		fiscalActivity: (code: string) => m.doc_fiscal_activity({ code }, o),
+		fiscalPending: m.doc_fiscal_pending({}, o),
+		fiscalSandbox: m.doc_fiscal_sandbox({}, o),
+		fiscalResolution: (resolution: string) => m.doc_fiscal_resolution({ resolution }, o),
+		fiscalVerify: (url: string) => m.doc_fiscal_verify({ url }, o),
+		/** Lo que un lector de pantalla dice del QR de la clave (T-705). */
+		fiscalQr: m.doc_fiscal_qr({}, o),
+
+		/*
+		 * La referencia de una nota al comprobante que modifica (RN-89): qué es,
+		 * cuál es y por qué. La fecha llega ya formateada en el idioma del
+		 * documento; el motivo es el código de Hacienda y se nombra acá.
+		 */
+		fiscalReference: m.doc_fiscal_reference({}, o),
+		referenceTo: (kind: DocumentKind, number: string, date: string) =>
+			m.doc_fiscal_reference_to({ document: title(kind), number, date }, o),
+		referenceReason: (code: string) => {
+			switch (code) {
+				case '01':
+					return m.doc_reason_annul({}, o);
+				case '02':
+					return m.doc_reason_corrects_amount({}, o);
+				case '06':
+					return m.doc_reason_goods_return({}, o);
+				default:
+					return m.doc_reason_other({ code }, o);
+			}
+		},
 
 		issuer: m.doc_issuer({}, o),
 		issuerIncomplete: m.doc_issuer_incomplete({}, o),
@@ -56,6 +118,7 @@ export function documentLabels(locale: string) {
 		walkIn: m.doc_walk_in({}, o),
 		walkInHint: m.doc_walk_in_hint({}, o),
 		clientId: m.doc_client_id({}, o),
+		email: m.doc_email({}, o),
 
 		/**
 		 * Cédula y teléfono rotulados, sueltos.
@@ -66,8 +129,37 @@ export function documentLabels(locale: string) {
 		 */
 		taxId: (id: string | number) => m.doc_tax_id({ id }, o),
 		phone: (phone: string | number) => m.doc_phone({ phone }, o),
+		/**
+		 * La identificación con su tipo —«Cédula física 108840287»—, como la pide
+		 * el comprobante (RN-86). Sin un tipo de Hacienda queda la «Cédula» a
+		 * secas: mejor un rótulo genérico que uno equivocado.
+		 */
+		idTyped: (type: string | null | undefined, id: string | number) => {
+			const nombre = identificationTypeName(type);
+			return nombre ? m.doc_id_typed({ type: nombre, id }, o) : m.doc_tax_id({ id }, o);
+		},
+		/** Lo mismo como rótulo de una columna, para el tiquete: el tipo, o «Cédula». */
+		idLabel: (type: string | null | undefined) =>
+			identificationTypeName(type) ?? m.doc_client_id({}, o),
+
+		/** El rótulo de las señas del cliente del extranjero (T-727). */
+		foreignAddress: m.doc_foreign_address({}, o),
 
 		date: m.doc_date({}, o),
+		issueDate: m.doc_issue_date({}, o),
+		/*
+		 * La condición de venta, la moneda y el tipo de cambio (RN-86). La
+		 * condición es un código de la nota 5 del anexo; hoy solo existe el
+		 * contado, porque el POS no vende a crédito.
+		 */
+		saleCondition: m.doc_sale_condition({}, o),
+		saleConditionName: (code: string) =>
+			code === '01' ? m.doc_sale_condition_cash({}, o) : code,
+		currency: m.doc_currency({}, o),
+		currencyWithRate: (code: string, rate: number | null) =>
+			rate === null
+				? code
+				: m.doc_currency_with_rate({ code, rate: rate.toFixed(2) }, o),
 		paymentMethod: m.doc_payment_method({}, o),
 		payment: m.doc_payment({}, o),
 		servedBy: m.doc_served_by({}, o),
@@ -78,6 +170,16 @@ export function documentLabels(locale: string) {
 		colUnitPrice: m.doc_col_unit_price({}, o),
 		colUnitPriceLong: m.doc_col_unit_price_long({}, o),
 		colTotal: m.doc_col_total({}, o),
+		colCabys: m.doc_col_cabys({}, o),
+		colUnit: m.doc_col_unit({}, o),
+		colSubtotal: m.doc_col_subtotal({}, o),
+		colTax: m.doc_col_tax({}, o),
+		/** Las dos líneas chicas de cada producto en el tiquete, que no tiene columnas. */
+		lineCabys: (code: string) => m.doc_line_cabys({ code }, o),
+		lineQuantity: (quantity: number, unit: string, price: string) =>
+			unit
+				? m.doc_line_quantity({ quantity, unit, price }, o)
+				: m.doc_line_quantity_no_unit({ quantity, price }, o),
 
 		noDetail: m.doc_no_detail({}, o),
 		noDetailHint: (endpoint: string) => m.doc_no_detail_hint({ endpoint }, o),
@@ -99,6 +201,16 @@ export function documentLabels(locale: string) {
 		taxAtRate: (name: string, rate: string) => m.doc_tax_at_rate({ name, rate }, o),
 
 		total: m.doc_total({}, o),
+		/** Los renglones del resumen de Hacienda (`ResumenFactura`). */
+		totalSale: m.doc_total_sale({}, o),
+		totalDiscounts: m.doc_total_discounts({}, o),
+		totalNet: m.doc_total_net({}, o),
+		totalTax: m.doc_total_tax({}, o),
+		totalDocument: m.doc_total_document({}, o),
+		amountInWordsLabel: m.doc_amount_in_words_label({}, o),
+		/** El total en letras, en el idioma del documento. Nulo si no cabe. */
+		amountInWords: (amount: number, currency: string, decimals: number) =>
+			amountInWords(amount, { locale: o.locale, currency, decimals }),
 		cashReceived: m.doc_cash_received({}, o),
 		change: m.doc_change({}, o),
 		returned: m.doc_returned({}, o),
@@ -106,10 +218,6 @@ export function documentLabels(locale: string) {
 
 		notes: m.doc_notes({}, o),
 		notesAndTerms: m.doc_notes_and_terms({}, o),
-
-		/** «Factura» o «Factura electrónica», según lo configurado. */
-		title: (settings: Settings) =>
-			documentKind(settings) === 'einvoice' ? m.doc_einvoice({}, o) : m.doc_invoice({}, o),
 
 		/**
 		 * Una línea del emisor, con su rótulo si lo lleva.
@@ -120,8 +228,27 @@ export function documentLabels(locale: string) {
 		 */
 		issuerLine: (linea: IssuerLine) => {
 			switch (linea.kind) {
-				case 'taxId':
-					return m.doc_tax_id({ id: linea.value }, o);
+				case 'taxId': {
+					// En un comprobante, con su tipo (RN-86); si no, la «Cédula» de siempre.
+					const nombre = linea.idType ? identificationTypeName(linea.idType) : null;
+					return nombre
+						? m.doc_id_typed({ type: nombre, id: linea.value }, o)
+						: m.doc_tax_id({ id: linea.value }, o);
+				}
+				case 'activity':
+					return m.doc_fiscal_activity({ code: linea.value }, o);
+				case 'location':
+					// Los nombres son los de Hacienda y no se traducen; los rótulos sí.
+					return linea.place
+						? m.doc_issuer_location(
+								{
+									province: linea.place.province,
+									canton: linea.place.canton,
+									district: linea.place.district
+								},
+								o
+							)
+						: linea.value;
 				case 'phone':
 					return m.doc_phone({ phone: linea.value }, o);
 				default:
@@ -154,6 +281,63 @@ export function documentLabels(locale: string) {
 }
 
 export type DocumentLabels = ReturnType<typeof documentLabels>;
+
+/**
+ * Los rótulos de la boleta de pago (RF-58, T-1207), en el idioma del documento.
+ *
+ * La cuarta plantilla de documento. Como las tres de la venta, no habla el
+ * idioma de la pantalla sino el de la compañía (RN-29): la boleta es para el
+ * empleado y para un reclamo laboral, no para quien la imprime. Los conceptos
+ * de los rubros son datos del API (`base`, `sem`, `income_tax`…) y acá se les
+ * pone nombre.
+ */
+export function payslipLabels(locale: string) {
+	const o = { locale: comoLocale(locale) } as const;
+	return {
+		locale: o.locale,
+		title: (kind: string) => {
+			switch (kind) {
+				case 'aguinaldo':
+					return m.doc_payslip_aguinaldo({}, o);
+				case 'settlement':
+					return m.doc_payslip_settlement({}, o);
+				case 'adjustment':
+					return m.doc_payslip_adjustment({}, o);
+				default:
+					return m.doc_payslip({}, o);
+			}
+		},
+		employee: m.doc_payslip_employee({}, o),
+		identification: m.doc_payslip_identification({}, o),
+		position: m.doc_payslip_position({}, o),
+		period: m.doc_payslip_period({}, o),
+		periodRange: (from: string, to: string) => m.doc_payslip_period_range({ from, to }, o),
+		payDate: m.doc_payslip_pay_date({}, o),
+		employerNumber: m.doc_payslip_employer_number({}, o),
+		salary: m.doc_payslip_salary({}, o),
+		earnings: m.doc_payslip_earnings({}, o),
+		deductions: m.doc_payslip_deductions({}, o),
+		employerCharges: m.doc_payslip_employer_charges({}, o),
+		gross: m.doc_payslip_gross({}, o),
+		totalDeductions: m.doc_payslip_total_deductions({}, o),
+		net: m.doc_payslip_net({}, o),
+		colConcept: m.doc_payslip_col_concept({}, o),
+		colDetail: m.doc_payslip_col_detail({}, o),
+		colAmount: m.doc_payslip_col_amount({}, o),
+		hours: (hours: number) => m.doc_payslip_hours({ hours }, o),
+		days: (days: number) => m.doc_payslip_days({ days }, o),
+		rate: (rate: number) => m.doc_payslip_rate({ rate }, o),
+		account: m.doc_payslip_account({}, o),
+		received: m.doc_payslip_received({}, o),
+		draft: m.doc_payslip_draft({}, o),
+		adjusts: (from: string, to: string) => m.doc_payslip_adjusts({ from, to }, o),
+		cause: m.doc_payslip_cause({}, o),
+		concept: (concept: string) => m.doc_payslip_concept({ concept }, o),
+		causeName: (cause: string) => m.doc_payslip_cause_name({ cause }, o)
+	};
+}
+
+export type PayslipLabels = ReturnType<typeof payslipLabels>;
 
 /** Las líneas del emisor, ya en texto, en el idioma del documento. */
 export function issuerText(lineas: IssuerLine[], labels: DocumentLabels): string[] {

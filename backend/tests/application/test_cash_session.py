@@ -25,7 +25,12 @@ from app.domain.errors import InsufficientCash, InvalidMovement
 from app.domain.money import Money
 from app.infrastructure.clock import FixedClock
 
-from .fakes import FakeCashRepository, FakeReturnRepository, FakeSaleRepository
+from .fakes import (
+    FakeCashRepository,
+    FakeNoteRepository,
+    FakeReturnRepository,
+    FakeSaleRepository,
+)
 
 APERTURA = datetime(2026, 8, 16, 22, 0, 0)
 CAJERO = 7
@@ -44,7 +49,9 @@ def piezas(reloj):
 @pytest.fixture
 def reporte(piezas):
     ventas, devoluciones, caja, reloj = piezas
-    return BuildSessionReport(sales=ventas, returns=devoluciones, cash=caja, clock=reloj)
+    return BuildSessionReport(
+        sales=ventas, returns=devoluciones, notes=FakeNoteRepository(), cash=caja, clock=reloj
+    )
 
 
 def vender(ventas, cuando, total, metodo="Efectivo", user_id=CAJERO):

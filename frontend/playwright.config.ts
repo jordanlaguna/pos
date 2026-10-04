@@ -65,8 +65,18 @@ export default defineConfig({
 		 * cuatro pruebas de tres archivos empezaban a fallar señalando pantallas
 		 * que no eran el problema. Se ignora lo guardado; no se borra, para no
 		 * llevarse por delante la demostración de quien esté usando el POS.
+		 *
+		 * **Un solo `env`.** Había dos claves `env` en este objeto, y en un literal
+		 * la segunda pisa a la primera sin aviso: `POS_MOCK_FRESH` no llegaba nunca
+		 * y T-920 estaba escrito pero no funcionaba. Se vio el 2026-09-26, con 109
+		 * compañías acumuladas y la del aviso de vencimiento ya vencida.
 		 */
-		env: { ...process.env, POS_MOCK_FRESH: '1' },
+		env: {
+			...process.env,
+			// Sin backend: datos de ejemplo en memoria.
+			POS_MOCK: '1',
+			POS_MOCK_FRESH: '1'
+		},
 		url: `http://127.0.0.1:${PORT}/login`,
 		/*
 		 * **Nunca se reutiliza un servidor que ya esté escuchando.**
@@ -82,10 +92,20 @@ export default defineConfig({
 		 * unos segundos por corrida y quita una forma silenciosa de mentir.
 		 */
 		reuseExistingServer: false,
-		timeout: 120_000,
-		env: {
-			// Sin backend: datos de ejemplo en memoria.
-			POS_MOCK: '1'
-		}
+		/*
+		 * **Diez minutos, no dos.** Casi todo el arranque es la compilación de
+		 * Paraglide dentro del plugin de Vite: con 2 250 mensajes en tres idiomas
+		 * tarda tres minutos y veinte segundos en una máquina de dieciséis núcleos
+		 * (medido el 2026-10-02: «ready in 203058 ms»), y crece más que
+		 * proporcional con los catálogos —antes de F12, con 1 833, eran dos
+		 * minutos—. El tiempo no es nuestro: el hilo principal de Node está
+		 * ocioso el 95 % de la compilación y el trabajo lo hace la base SQLite del
+		 * SDK de inlang. Con el límite viejo la suite moría con «Timed out waiting
+		 * 120000ms from config.webServer» sin haber abierto una página. Un
+		 * servidor que de verdad no arranca sigue fallando rápido: con
+		 * `--strictPort` Vite sale si el puerto está ocupado y Playwright lo
+		 * reporta al instante.
+		 */
+		timeout: 600_000
 	}
 });

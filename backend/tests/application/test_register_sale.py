@@ -13,6 +13,7 @@ from datetime import datetime
 import pytest
 
 from app.application.use_cases.register_sale import (
+    ClientNotFound,
     ProductNotFound,
     ProductWithoutPrice,
     RegisterSale,
@@ -20,18 +21,30 @@ from app.application.use_cases.register_sale import (
     SaleRequest,
 )
 from app.domain.errors import (
+    DocumentTypeNotEnabled,
     DuplicateSaleNumber,
     EmptySale,
+    ExportLineNeedsTariffHeading,
+    ExportNeedsForeignAddress,
+    ExportNeedsForeignReceiver,
+    ExportNeedsReceiver,
+    ExportTariffNotAllowed,
     InsufficientPayment,
     InsufficientStock,
     InvalidQuantity,
+    InvalidSaleDocumentType,
+    InvoiceNeedsReceiver,
+    InvoiceNeedsResident,
     TotalsMismatch,
 )
+from app.domain.fe_document_type import DEFAULT_ENABLED, EXPORT_INVOICE, INVOICE, TICKET
 from app.domain.money import Money
-from app.domain.tax import TaxRate
+from app.domain.tax import GENERAL_RATE, TaxRate
 from app.infrastructure.clock import FixedClock
 
 from .fakes import (
+    FakeClient,
+    FakeClientRepository,
     FakeProduct,
     FakeProductRepository,
     FakeSaleRepository,
@@ -41,6 +54,8 @@ from .fakes import (
 
 MOMENTO = datetime(2026, 8, 16, 22, 30, 0)
 IVA = TaxRate("0.13")
+#: El único cliente de la compañía de estas pruebas.
+CLIENTE = 7
 
 
 @pytest.fixture
@@ -62,7 +77,8 @@ def escenario(catalogo):
     caso = RegisterSale(
         products=catalogo,
         sales=ventas,
-        settings=FakeSettingsRepository(IVA),
+        clients=FakeClientRepository({CLIENTE}),
+        settings=FakeSettingsRepository(),
         uow=uow,
         clock=FixedClock(MOMENTO),
     )
@@ -249,12 +265,14 @@ class TestLaPlataLaCalculaElServidor:
         assert resultado.change_given == Money("84.50")
         assert ventas.ventas[0].change_given == Money("84.50")
 
-    def test_usa_la_tasa_configurada_y_no_una_fija(self, catalogo):
+    def test_sin_tarifa_propia_paga_la_general_del_iva(self, catalogo):
+        """RN-9 desde QA-05: el respaldo es el 13 % de ley y ya no se configura."""
         ventas = FakeSaleRepository()
         caso = RegisterSale(
             products=catalogo,
             sales=ventas,
-            settings=FakeSettingsRepository(TaxRate("0.04")),
+            clients=FakeClientRepository(),
+            settings=FakeSettingsRepository(),
             uow=FakeUnitOfWork(),
             clock=FixedClock(MOMENTO),
         )
@@ -262,13 +280,14 @@ class TestLaPlataLaCalculaElServidor:
             peticion(
                 [(1, 1)],
                 subtotal=Money(1450),
-                tax=Money(58),
-                total=Money(1508),
-                cash_received=Money(1508),
+                tax=Money("188.50"),
+                total=Money("1638.50"),
+                cash_received=Money("1638.50"),
             )
         )
 
-        assert ventas.ventas[0].tax == Money(58)
+        assert ventas.ventas[0].tax == Money("188.50")
+        assert ventas.ventas[0].lines[0].tax_rate == GENERAL_RATE
 
     @pytest.mark.parametrize(
         "campo, valor",
@@ -322,3 +341,290 @@ class TestLaPlataLaCalculaElServidor:
         caso, _, ventas, _ = escenario
         caso(peticion([(1, 3)], cash_received=Money("4915.50")))
         assert ventas.ventas[0].change_given == Money.zero()
+
+
+class TestElCliente:
+    def test_el_cliente_de_la_compania_entra(self, escenario):
+        caso, _, ventas, _ = escenario
+        caso(peticion([(1, 1)], client_id=CLIENTE))
+        assert ventas.ventas[0].client_id == CLIENTE
+
+    def test_el_de_otra_compania_no(self, escenario):
+        """Antes pasaba derecho a la foránea, que no sabe de compañías."""
+        caso, _, ventas, uow = escenario
+        with pytest.raises(ClientNotFound) as e:
+            caso(peticion([(1, 1)], client_id=99))
+
+        assert e.value.client_id == 99
+        assert ventas.ventas == []
+        assert uow.entradas == 0, "se abrió una transacción para nada"
+
+
+def con_facturacion(catalogo, *, activa: bool = True, encendidos=None):
+    ventas = FakeSaleRepository()
+    caso = RegisterSale(
+        products=catalogo,
+        sales=ventas,
+        clients=FakeClientRepository({CLIENTE}),
+        settings=FakeSettingsRepository(einvoicing=activa, document_types=encendidos),
+        uow=FakeUnitOfWork(),
+        clock=FixedClock(MOMENTO),
+    )
+    return caso, ventas
+
+
+class TestElComprobante:
+    """RN-85: el tipo se decide al vender y lo decide el receptor."""
+
+    def test_sin_cliente_sale_tiquete(self, catalogo):
+        # El supermercado: el cliente de contado no puede recibir una factura.
+        caso, ventas = con_facturacion(catalogo)
+        resultado = caso(peticion([(1, 1)]))
+
+        assert ventas.ventas[0].document_type == TICKET
+        assert resultado.document_type == TICKET
+
+    def test_con_cliente_sale_factura(self, catalogo):
+        caso, ventas = con_facturacion(catalogo)
+        caso(peticion([(1, 1)], client_id=CLIENTE))
+        assert ventas.ventas[0].document_type == INVOICE
+
+    def test_el_cajero_puede_dejar_en_tiquete_a_un_cliente(self, catalogo):
+        caso, ventas = con_facturacion(catalogo)
+        caso(peticion([(1, 1)], client_id=CLIENTE, document_type=TICKET))
+        assert ventas.ventas[0].document_type == TICKET
+
+    def test_factura_sin_cliente_no_entra(self, catalogo):
+        caso, ventas = con_facturacion(catalogo)
+        with pytest.raises(InvoiceNeedsReceiver):
+            caso(peticion([(1, 1)], document_type=INVOICE))
+        assert ventas.ventas == []
+
+    def test_un_tipo_desconocido_no_entra(self, catalogo):
+        caso, ventas = con_facturacion(catalogo)
+        with pytest.raises(InvalidSaleDocumentType):
+            caso(peticion([(1, 1)], document_type="03"))
+        assert ventas.ventas == []
+
+    def test_con_la_facturacion_apagada_no_lleva_tipo(self, catalogo):
+        """Aunque se lo pidan: el dueño pudo apagarla con la caja abierta."""
+        caso, ventas = con_facturacion(catalogo, activa=False)
+        caso(peticion([(1, 1)], client_id=CLIENTE, document_type=INVOICE))
+        assert ventas.ventas[0].document_type is None
+
+
+class TestLoQueEmiteLaCompania:
+    """RN-88: la venta respeta lo que la compañía tiene encendido."""
+
+    SOLO_FACTURA = frozenset({INVOICE, "03"})
+    SOLO_TIQUETE = frozenset({TICKET, "03"})
+
+    def test_sin_tiquete_y_sin_cliente_no_hay_venta(self, catalogo):
+        # La distribuidora que solo factura.
+        caso, ventas = con_facturacion(catalogo, encendidos=self.SOLO_FACTURA)
+        with pytest.raises(InvoiceNeedsReceiver):
+            caso(peticion([(1, 1)]))
+        assert ventas.ventas == []
+
+    def test_sin_tiquete_con_cliente_sale_factura(self, catalogo):
+        caso, ventas = con_facturacion(catalogo, encendidos=self.SOLO_FACTURA)
+        caso(peticion([(1, 1)], client_id=CLIENTE))
+        assert ventas.ventas[0].document_type == INVOICE
+
+    def test_sin_factura_el_cliente_recibe_tiquete(self, catalogo):
+        caso, ventas = con_facturacion(catalogo, encendidos=self.SOLO_TIQUETE)
+        caso(peticion([(1, 1)], client_id=CLIENTE))
+        assert ventas.ventas[0].document_type == TICKET
+
+    def test_pedir_uno_apagado_no_entra(self, catalogo):
+        caso, ventas = con_facturacion(catalogo, encendidos=self.SOLO_TIQUETE)
+        with pytest.raises(DocumentTypeNotEnabled):
+            caso(peticion([(1, 1)], client_id=CLIENTE, document_type=INVOICE))
+        assert ventas.ventas == []
+
+
+class TestLaLineaDiceConQueSeVendio:
+    """RN-86, T-731: el CABYS y la unidad se congelan en la línea, como la tarifa."""
+
+    def test_copia_el_cabys_y_la_unidad_del_producto(self):
+        catalogo = FakeProductRepository(
+            [
+                FakeProduct(
+                    1, "Arroz 1 kg", Money(1450), stock=20,
+                    cabys_code="2316100000100", unit_of_measure="kg",
+                ),
+            ]
+        )
+        caso, _, ventas, _ = _escenario_con(catalogo)
+        caso(peticion([(1, 2)]))
+
+        linea = ventas.ventas[0].lines[0]
+        assert linea.cabys_code == "2316100000100"
+        assert linea.unit_of_measure == "kg"
+
+    def test_un_producto_sin_clasificar_deja_la_linea_vacia(self, escenario):
+        caso, _, ventas, _ = escenario
+        caso(peticion([(1, 1)]))
+
+        linea = ventas.ventas[0].lines[0]
+        assert linea.cabys_code is None
+        assert linea.unit_of_measure is None
+
+
+def _escenario_con(catalogo):
+    ventas = FakeSaleRepository()
+    uow = FakeUnitOfWork()
+    caso = RegisterSale(
+        products=catalogo,
+        sales=ventas,
+        clients=FakeClientRepository({CLIENTE}),
+        settings=FakeSettingsRepository(),
+        uow=uow,
+        clock=FixedClock(MOMENTO),
+    )
+    return caso, catalogo, ventas, uow
+
+
+#: El cliente del extranjero de la compañía (identificación 05) y una partida.
+EXTRANJERO = 8
+PARTIDA = "090111000000"
+MERCANCIA = "2316100000100"
+SERVICIO = "8595400000000"
+CON_EXPORTACION = DEFAULT_ENABLED | {EXPORT_INVOICE}
+
+
+def catalogo_exportable(**cafe):
+    """El café (1), una mercancía con partida y tarifa general, y una asesoría
+    (2), un servicio sin partida. Los precios son los de `peticion`."""
+    base = dict(tax_code="08", cabys_code=MERCANCIA, tariff_heading=PARTIDA)
+    base.update(cafe)
+    return FakeProductRepository(
+        [
+            FakeProduct(1, "Café de exportación", Money(1450), stock=20, **base),
+            FakeProduct(2, "Asesoría", Money(4250), stock=10, tax_code="08", cabys_code=SERVICIO),
+        ]
+    )
+
+
+def exportando(catalogo, *, direccion="12 Main St, Miami", encendidos=CON_EXPORTACION):
+    ventas = FakeSaleRepository()
+    uow = FakeUnitOfWork()
+    caso = RegisterSale(
+        products=catalogo,
+        sales=ventas,
+        clients=FakeClientRepository(
+            {CLIENTE},
+            [FakeClient(EXTRANJERO, identification_type="05", foreign_address=direccion)],
+        ),
+        settings=FakeSettingsRepository(einvoicing=True, document_types=encendidos),
+        uow=uow,
+        clock=FixedClock(MOMENTO),
+    )
+    return caso, ventas, uow
+
+
+class TestLaExportacion:
+    """RF-78, RN-87, T-727: al cliente del extranjero se le exporta, y la
+    exportación exige la partida de cada mercancía, una tarifa que la FEE
+    admita y la dirección del cliente. Todo antes de escribir."""
+
+    def test_al_extranjero_le_sale_exportacion_con_la_partida_congelada(self):
+        caso, ventas, _ = exportando(catalogo_exportable())
+        resultado = caso(peticion([(1, 2)], client_id=EXTRANJERO))
+
+        assert resultado.document_type == EXPORT_INVOICE
+        assert ventas.ventas[0].document_type == EXPORT_INVOICE
+        assert ventas.ventas[0].lines[0].tariff_heading == PARTIDA
+
+    def test_un_servicio_sin_partida_tambien_se_exporta(self):
+        caso, ventas, _ = exportando(catalogo_exportable())
+        caso(peticion([(2, 1)], client_id=EXTRANJERO))
+        assert ventas.ventas[0].lines[0].tariff_heading is None
+
+    def test_el_cajero_puede_dejar_al_extranjero_en_tiquete(self):
+        caso, ventas, _ = exportando(catalogo_exportable())
+        caso(peticion([(1, 1)], client_id=EXTRANJERO, document_type=TICKET))
+        assert ventas.ventas[0].document_type == TICKET
+        # Y la partida no se congela: en un tiquete no significa nada.
+        assert ventas.ventas[0].lines[0].tariff_heading is None
+
+    def test_con_la_exportacion_apagada_el_extranjero_recibe_tiquete(self):
+        caso, ventas, _ = exportando(catalogo_exportable(), encendidos=DEFAULT_ENABLED)
+        caso(peticion([(1, 1)], client_id=EXTRANJERO))
+        assert ventas.ventas[0].document_type == TICKET
+
+    def test_facturarle_al_extranjero_no_entra_ni_abre_transaccion(self):
+        caso, ventas, uow = exportando(catalogo_exportable())
+        with pytest.raises(InvoiceNeedsResident):
+            caso(peticion([(1, 1)], client_id=EXTRANJERO, document_type=INVOICE))
+        assert ventas.ventas == []
+        assert uow.entradas == 0
+
+    def test_exportarle_a_uno_del_pais_no(self):
+        caso, ventas, _ = exportando(catalogo_exportable())
+        with pytest.raises(ExportNeedsForeignReceiver):
+            caso(peticion([(1, 1)], client_id=CLIENTE, document_type=EXPORT_INVOICE))
+        assert ventas.ventas == []
+
+    def test_exportar_sin_cliente_no(self):
+        caso, ventas, _ = exportando(catalogo_exportable())
+        with pytest.raises(ExportNeedsReceiver):
+            caso(peticion([(1, 1)], document_type=EXPORT_INVOICE))
+        assert ventas.ventas == []
+
+    @pytest.mark.parametrize("sin", [None, "   "])
+    def test_sin_direccion_extranjera_no_entra_antes_de_la_transaccion(self, sin):
+        caso, ventas, uow = exportando(catalogo_exportable(), direccion=sin)
+        with pytest.raises(ExportNeedsForeignAddress) as e:
+            caso(peticion([(1, 1)], client_id=EXTRANJERO))
+        assert e.value.client_id == EXTRANJERO
+        assert ventas.ventas == []
+        assert uow.entradas == 0
+
+    def test_una_mercancia_sin_partida_no_entra_y_dice_cual(self):
+        catalogo = catalogo_exportable(tariff_heading=None)
+        caso, ventas, _ = exportando(catalogo)
+        with pytest.raises(ExportLineNeedsTariffHeading) as e:
+            caso(peticion([(2, 1), (1, 1)], client_id=EXTRANJERO))
+        assert e.value.product_id == 1
+        assert ventas.ventas == []
+        # Y no tocó existencias: se dijo que no antes de escribir.
+        assert catalogo.get(1).stock == 20
+        assert catalogo.get(2).stock == 10
+
+    @pytest.mark.parametrize("codigo", ["01", "11"])
+    def test_una_tarifa_que_la_exportacion_no_admite_no_entra(self, codigo):
+        caso, ventas, _ = exportando(catalogo_exportable(tax_code=codigo))
+        with pytest.raises(ExportTariffNotAllowed) as e:
+            caso(peticion([(1, 1)], client_id=EXTRANJERO))
+        assert (e.value.product_id, e.value.tax_code) == (1, codigo)
+        assert ventas.ventas == []
+
+    def test_a_uno_del_pais_la_partida_no_se_congela(self):
+        caso, ventas, _ = exportando(catalogo_exportable())
+        caso(peticion([(1, 1)], client_id=CLIENTE))
+        assert ventas.ventas[0].document_type == INVOICE
+        assert ventas.ventas[0].lines[0].tariff_heading is None
+
+
+class TestElNumeroLoPoneElServidor:
+    """T-706: `sale_number` deja de venir del navegador."""
+
+    def test_sin_numero_sale_el_del_reloj_del_servidor(self, escenario):
+        caso, _, ventas, _ = escenario
+        hecha = caso(peticion([(1, 1)], sale_number=None))
+        assert ventas.get(hecha.id_sale).sale_number == "20260816223000"
+
+    def test_dos_ventas_en_el_mismo_segundo_no_chocan(self, escenario):
+        caso, _, ventas, _ = escenario
+        primera = caso(peticion([(1, 1)], sale_number=None))
+        segunda = caso(peticion([(1, 1)], sale_number=None))
+        tercera = caso(peticion([(1, 1)], sale_number=None))
+        assert ventas.get(primera.id_sale).sale_number == "20260816223000"
+        assert ventas.get(segunda.id_sale).sale_number == "20260816223000-2"
+        assert ventas.get(tercera.id_sale).sale_number == "20260816223000-3"
+
+    def test_un_cliente_viejo_que_lo_manda_sigue_pudiendo(self, escenario):
+        caso, _, ventas, _ = escenario
+        hecha = caso(peticion([(1, 1)], sale_number="A-1"))
+        assert ventas.get(hecha.id_sale).sale_number == "A-1"

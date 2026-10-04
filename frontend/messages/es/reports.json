@@ -60,5 +60,6 @@
 	"reports_col_rate": "Tarifa",
 	"reports_col_base": "Base",
 	"reports_col_tax": "Impuesto",
-	"reports_rate_percent": "{rate} %"
+	"reports_rate_percent": "{rate} %",
+	"reports_net_includes_notes": "Incluye notas: +{debit} / −{credit}"
 }

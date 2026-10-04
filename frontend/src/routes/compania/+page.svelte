@@ -86,7 +86,7 @@
 
 		{#if form?.message}
 			<p
-				class="mt-4 rounded-lg border border-[var(--danger)] bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger-text)]"
+				class="mt-4 rounded-lg border border-[var(--negative)] bg-[var(--negative-bg)] px-4 py-3 text-sm text-[var(--negative)]"
 				role="alert"
 			>
 				{form.message}
@@ -223,7 +223,7 @@
 							<span class="block text-xs text-[var(--text-muted)]">
 								{m.company_identity({ affiliate: c.afiliado, company: c.compania })}
 							</span>
-							<span class="mt-1 block text-xs text-[var(--danger-text)]">{motivo(c)}</span>
+							<span class="mt-1 block text-xs text-[var(--negative)]">{motivo(c)}</span>
 						</span>
 					</div>
 				{/each}

@@ -103,6 +103,11 @@ compañía ya exista.
 Desde F3 las compañías también se dan de alta **desde el panel** (`/admin`), con
 el mismo código: `app/services/crud_company.py`.
 
+`FE_PROVEEDOR_SISTEMAS` es la cédula de quien hace el software, que va en cada
+comprobante (`ProveedorSistemas`); sin ella va la del propio emisor, que es lo
+que traen los comprobantes aceptados de `docs/`. `FE_WORKER=0` apaga el hilo de
+la cola.
+
 Para desarrollar sin backend: `POS_MOCK=1` en `frontend/.env`. El modo simulado
 tiene **dos** compañías: la primera con catálogo y ventas, la segunda vacía como
 nace una recién dada de alta. El administrador pertenece a las dos y por eso ve
@@ -121,14 +126,17 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   navegador**, nunca la fuente: después de hidratar no hay token que leer porque
   la cookie de sesión es httpOnly. Cambiar de idioma significa emitir un token
   nuevo.
-- **La moneda y el impuesto se configuran**, no se escriben en el código. Salen
-  de `/configuracion` (tabla `settings`) vía `$lib/settings.ts`. En un `load` o
-  una acción hay que leerlos con `loadSettings()` y pasar la tasa explícita a
-  `computeTotals`: el estado de módulo de `money.ts` lo fija el layout al
-  renderizar, y ahí todavía no corrió.
-- **Una devolución usa la tasa de SU venta** (`tax / subtotal`), no la
-  configurada hoy. Si el dueño cambia el IVA, lo que se reembolsa sigue siendo
-  lo que se cobró.
+- **La moneda se configura; el impuesto no.** La moneda sale de
+  `/configuracion` (tabla `settings`) vía `$lib/settings.ts`. La tarifa de cada
+  producto es la de su CABYS y, sin ella, la general del IVA, el 13 % de ley
+  (`VAT` en el POS, `GENERAL_RATE` en `domain/tax.py`); lo que llegue como
+  impuesto a la configuración se descarta (QA-05, RN-9). En un `load` o una
+  acción hay que leer la configuración con `loadSettings()` y pasar la tasa
+  explícita a `computeTotals`: el estado de módulo de `money.ts` lo fija el
+  layout al renderizar, y ahí todavía no corrió.
+- **Una devolución usa la tasa de SU venta** (`tax / subtotal`), no la de hoy.
+  Si cambia la tarifa de un producto, lo que se reembolsa sigue siendo lo que
+  se cobró.
 - **La hora de las ventas la pone el backend**, nunca el cliente. El arqueo de
   caja depende de comparar marcas del mismo reloj.
 - **Los permisos se aplican en el servidor** (`requireUser`, `requireAdmin`,
@@ -150,6 +158,15 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   cliente acaba de pagar.
 - **El modo mock se mantiene sincronizado.** Un endpoint nuevo en FastAPI va
   también a `frontend/src/lib/server/mock/handler.ts`, con contrato idéntico.
+- **Los comprobantes van a Hacienda por una cola, y la cola es un hilo de la
+  API.** Al cobrar solo se numera (clave y consecutivo); firmar, enviar y
+  consultar el veredicto lo hace `workers/fe_worker.py` cada cinco segundos,
+  compañía por compañía, con las reglas de `domain/fe_transmission.py`. **El
+  XML firmado se guarda antes de anotarlo y no se vuelve a firmar nunca**
+  (RN-44): lo que se baja es lo que se mandó, byte por byte. Lo que falla por
+  algo nuestro —certificado, credenciales, un dato que falta— se detiene en el
+  primer intento y se ve en Facturas; solo lo transitorio se reintenta.
+  `FE_WORKER=0` apaga el hilo.
 - **Los colores salen de los tokens de `app.css`.** Hay tema claro y oscuro. El
   acento se puede cambiar desde Configuración: el tono oscuro y el color del
   texto se derivan en OKLab (`$lib/color.ts`), nunca se eligen a ojo.
@@ -244,6 +261,17 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   node` y contar cuántos hay: en agosto de 2026 había seis de este proyecto, del
   16 y el 22, y hacían que el primer `check` después de editar un catálogo
   mintiera siempre.
+- **La compilación de Paraglide tarda minutos, no segundos.** Con los 2 250
+  mensajes de hoy en tres idiomas, `paraglide-js compile` tarda unos tres
+  minutos (medido el 2026-10-02 en una máquina de dieciséis núcleos; con los
+  1 833 de antes de F12 eran dos, y crece más que proporcional), y la pagan
+  `npm run dev`, `npm test` y `npm run check` cada vez. No es la máquina ni los
+  catálogos: el hilo principal de Node está ocioso el 95 % y el trabajo lo hace
+  la base SQLite del SDK de inlang; la versión 2.25.4 tarda lo mismo. Un `vite
+  dev` que no dice «ready» en minuto y medio no está roto: está compilando. Por
+  eso el `webServer` de Playwright espera diez minutos; con dos, la suite moría
+  con «Timed out waiting 120000ms from config.webServer» sin abrir una página.
+  Qué hacer con eso es T-1224.
 - **Las pruebas de integración del backend hablan con el contenedor, y la imagen
   hornea el código.** `docker-compose.test.yml` no monta `app/` como volumen, así
   que después de cambiar el backend hay que
@@ -265,6 +293,20 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   Y si el modelo nuevo no se importa en `app/main.py`, SQLAlchemy no conoce la
   tabla: una foránea hacia ella falla con «could not find table … with which to
   generate a foreign key», en un 500 de un endpoint que no tiene nada que ver.
+- **Un comprobante que se queda en «numerado» para siempre** casi nunca es
+  de la pantalla. Primero `docker compose logs fastapi | grep "cola de
+  transmisión"`: una excepción no esperada en un paso tumba el turno de **esa
+  compañía entera** y nada avanza, sin que ninguna petición lo cuente. Lo
+  segundo es `next_attempt_at`: la cola solo toma lo que lo tiene puesto, y una
+  fila escrita a mano sin él no entra nunca. Y después de la migración 020 la
+  API tiene que reiniciarse: el modelo nuevo contra la tabla vieja da
+  `Unknown column 'fe_documents.status'` en cada turno.
+- **La pila de pruebas trae una Hacienda de mentira** (`tests/stub_hacienda.py`,
+  servicio `hacienda-stub`), y los overrides `FE_HACIENDA_*` del compose de
+  pruebas apuntan ahí: `test_emision.py` ve un comprobante recorrer la cola
+  entera sin internet. El guion está **montado**, no horneado: tocarlo pide
+  `up -d hacienda-stub`, no `--build`. Contraseña `mala` → credenciales
+  rechazadas; clave terminada en `00` → 400; en `99` → rechazado.
 - **El estado del modo simulado se guarda en `.data/mock-db.json`.** Un archivo
   de una versión anterior del seed sobrevive al cambio, así que al tocar el seed
   hay que subir `SEED_VERSION` en `mock/db.ts`; si no, la prueba de punta a punta
@@ -289,6 +331,27 @@ la pantalla de selección; los cajeros, a una sola, y entran directo.
   caso al revés: `audit_log` tenía sus índices solo en la migración, así que la
   base de pruebas —hecha con `create_all`— no los tenía. Ahora los declara el
   modelo también.
+- **`documentType.ts` no puede importar `identification.ts`.** Ese módulo
+  importa `settings.ts`, y `settings.ts` importa `documentType.ts` para la
+  configuración de fábrica. El ciclo deja `DEFAULT_ENABLED` sin definir a medio
+  cargar, y el síntoma engaña: tres archivos de prueba que nadie tocó dejan de
+  cargar con «DEFAULT_ENABLED is not iterable». Lo que haga falta de ahí se
+  repite con su comentario (así está el `06` de la factura de compra).
+- **Una lista o un campo con `value=` fijo se reinicia al hidratar.** Lo que
+  la persona eligió o escribió antes de que Svelte enganche la página se pierde
+  y el formulario manda el valor de siempre, sin error. Pasó tres veces el
+  2026-10-03: el plan del alta de compañía volvía al primero, la fila de Planes
+  mandaba el plan de siempre y la numeración guardaba el número viejo con el
+  aviso de «guardada». La opción inicial se marca con `selected` (sin `value`
+  en `Select`) y el número de un campo, con `defaultValue`. Las pruebas de punta
+  a punta lo destapan solas: eligen antes de hidratar.
+- **Una clase o una `var(--x)` que no existe no da ningún error**: el navegador
+  la ignora. Había diez pantallas con colores sin definir y dos clases de
+  botón inventadas. `src/lib/ui/css-tokens.test.ts` las caza.
+- **El guardián de textos sueltos exime por nombre los nombres legales** que
+  no se traducen —los tipos de identificación de Hacienda— en una lista con su
+  razón (`loose-text.test.ts`, `DATOS`). Un tipo nuevo hay que anotarlo ahí, o
+  el guardián lo toma por una frase escrita a mano en el dominio.
 
 ## Agentes del proyecto
 

@@ -172,22 +172,34 @@ export interface SupportUser {
 
 /** Un plan: lo que el sistema deja hacer, no una lista de precios. */
 /**
- * Los módulos que un plan incluye o no (RN-49, F10 a F12).
- *
- * Las tres claves están siempre, también en `false`: una clave ausente y una en
- * `false` no se leen igual, y la navegación tiene que poder distinguir «no lo
- * tiene» de «no vino el dato».
+ * Los módulos, en el orden del menú (RN-49, QA-01). Desde QA-01 cada sección
+ * del POS es uno, y los planes son paquetes de ellos; Configuración no, porque
+ * sin ella no hay negocio. Es la misma lista que `MODULES` en
+ * `backend/app/domain/modules.py`.
  */
-export interface Modules {
-	purchases: boolean;
-	accounting: boolean;
-	payroll: boolean;
-}
-
-/** Los nombres de los módulos, para recorrerlos sin escribirlos tres veces. */
-export const MODULES = ['purchases', 'accounting', 'payroll'] as const;
+export const MODULES = [
+	'sales',
+	'cash',
+	'invoices',
+	'returns',
+	'reports',
+	'inventory',
+	'purchases',
+	'suppliers',
+	'accounting',
+	'payroll',
+	'clients',
+	'users'
+] as const;
 
 export type ModuleName = (typeof MODULES)[number];
+
+/**
+ * Los módulos que un plan incluye o no. Las claves están siempre, también en
+ * `false`: una clave ausente y una en `false` no se leen igual, y la navegación
+ * tiene que poder distinguir «no lo tiene» de «no vino el dato».
+ */
+export type Modules = Record<ModuleName, boolean>;
 
 export interface Plan extends Modules {
 	id: number;
@@ -218,6 +230,8 @@ export interface SupportCompany {
 	compania: number;
 	nombre: string;
 	identificacion: string | null;
+	/** El tipo de Hacienda de la cédula del emisor (RN-45). */
+	identification_type?: string | null;
 	creada_el: string | null;
 	locale: string;
 	document_locale: string;
@@ -301,12 +315,23 @@ export interface PersonInput {
 export interface Client {
 	id_client: number;
 	identification: string;
+	/**
+	 * El tipo de Hacienda (T-617): `'01'` física, `'02'` jurídica, `'03'` DIMEX,
+	 * `'04'` NITE. Lo imprime el receptor del comprobante. Nulo en un cliente que
+	 * ni la migración 011 pudo clasificar por la longitud de su cédula.
+	 */
+	identification_type?: string | null;
 	name: string;
 	last_name: string;
 	second_name: string;
 	email: string;
 	telephone: number;
 	address: string;
+	/**
+	 * Las otras señas de un cliente del extranjero (RF-78, T-727): van en el
+	 * receptor de la factura de exportación en lugar de la ubicación del país.
+	 */
+	foreign_address?: string | null;
 	register_date: string;
 
 	// --- F7: la exoneración del cliente (RF-67, RN-78) -----------------------
@@ -361,6 +386,11 @@ export interface Product {
 	tax_rate?: number | null;
 	/** Unidad de medida del comprobante de Hacienda. 'Unid' por omisión. */
 	unit_of_measure?: string;
+	/**
+	 * La partida arancelaria (RF-78, T-727): doce dígitos, lo que una mercancía
+	 * necesita para salir en una factura de exportación. Nula es «no tiene».
+	 */
+	tariff_heading?: string | null;
 
 	// --- F7: el código de tarifa de Hacienda (RN-76) -------------------------
 
@@ -416,6 +446,120 @@ export interface Sale {
 	created_at: string;
 	payment_method: string;
 	total: number;
+	/**
+	 * El comprobante que se emitió (RN-85): `'01'` factura, `'04'` tiquete.
+	 *
+	 * `null` o ausente es «sin facturación electrónica», que es lo que tienen
+	 * todas las ventas anteriores a la migración 014. Se decide al cobrar y no
+	 * cambia: el documento reimpreso dice lo que se emitió, no lo que la compañía
+	 * tenga configurado hoy.
+	 */
+	document_type?: string | null;
+	/** En qué va ante Hacienda (RN-39); nulo sin comprobante o en un backend anterior a F7. */
+	einvoice_status?: DocumentState | null;
+}
+
+/**
+ * Lo que Hacienda le asignó al comprobante (RN-86).
+ *
+ * **Todavía no viaja.** Es el contrato que T-705 tiene que llenar: ni el backend
+ * ni el simulado lo mandan hoy, y el documento lo sabe —dice «pendiente de
+ * emisión», que es la verdad—. Está escrito acá para que las tres plantillas ya
+ * sepan imprimirlo el día que llegue, y para que quien lo implemente no tenga
+ * que adivinar qué forma espera la pantalla.
+ */
+export interface EmittedDocument {
+	/** Los 50 dígitos. Va impresa y se entrega en el mostrador (RN-43). */
+	clave: string;
+	/** Los 20: sucursal, terminal, tipo y secuencia. */
+	consecutive: string;
+	/** Lo emitido en pruebas no tiene efecto fiscal, y lo dice (RN-17). */
+	environment: 'sandbox' | 'production';
+	/** El código con el que se declaró, que puede no ser el configurado hoy. */
+	economic_activity?: string | null;
+	/** 1 normal, 2 contingencia, 3 sin internet: la posición 42 de la clave. */
+	situation?: string;
+
+	// ------------------------------------------- el recorrido (F7, T-707)
+	/** El id del comprobante en `fe_documents`; con él se pide el expediente. */
+	id?: number | null;
+	document_type?: string | null;
+	/** De dónde nació, para ir a su pantalla desde la lista de detenidos. */
+	source_type?: 'sale' | 'return' | 'note' | 'purchase' | null;
+	source_id?: number | null;
+	/** Ver `DocumentState`. Nulo en un backend anterior a F7. */
+	status?: DocumentState | null;
+	/** Por qué se detuvo (`StopReason`), y lo que dijo Hacienda o la falla. */
+	stop_reason?: StopReason | null;
+	stop_detail?: string | null;
+	hacienda_status?: string | null;
+	failures?: number;
+	polls?: number;
+	issued_at?: string | null;
+	signed_at?: string | null;
+	sent_at?: string | null;
+	resolved_at?: string | null;
+	last_attempt_at?: string | null;
+	next_attempt_at?: string | null;
+	has_xml?: boolean;
+	has_response?: boolean;
+}
+
+/** Los siete estados del recorrido (RN-39). */
+export type DocumentState =
+	| 'numbered'
+	| 'signed'
+	| 'sent'
+	| 'accepted'
+	| 'rejected'
+	| 'retrying'
+	| 'stopped';
+
+/** Por qué un comprobante se detuvo (`domain/fe_transmission.STOP_*`). */
+export type StopReason =
+	| 'certificate_missing'
+	| 'certificate_expired'
+	| 'credentials_missing'
+	| 'credentials_rejected'
+	| 'document_invalid'
+	| 'reception_rejected'
+	| 'forbidden'
+	| 'hacienda_error'
+	| 'retries_exhausted'
+	| 'no_verdict';
+
+/** Un paso del recorrido, con su hora (T-721). */
+export interface DocumentEvent {
+	at: string;
+	event:
+		| 'signed'
+		| 'sent'
+		| 'polled'
+		| 'accepted'
+		| 'rejected'
+		| 'deferred'
+		| 'stopped'
+		| 'resumed'
+		| 'xml_lost';
+	detail?: string | null;
+}
+
+/** El expediente de un comprobante: `GET /fe/documents/{id}`. */
+export interface DocumentFile {
+	document: EmittedDocument;
+	source_type: 'sale' | 'return' | 'note' | 'purchase';
+	source_id: number;
+	events: DocumentEvent[];
+}
+
+/** La cola de la compañía: `GET /fe/queue` (RF-33, RF-35, T-711). */
+export interface FeQueue {
+	counts: Record<string, number>;
+	pending: number;
+	stopped: EmittedDocument[];
+	oldest_pending_at: string | null;
+	alarm: 'ok' | 'warning' | 'danger';
+	contingency: boolean;
 }
 
 /** Línea del carrito en el navegador. Nunca se envía tal cual al backend. */
@@ -458,6 +602,17 @@ export interface SaleItem {
 	 * línea no asienta el par costo / inventario.
 	 */
 	unit_cost?: number | null;
+	/** El código de tarifa de Hacienda con que se cobró (RN-76). */
+	tax_code?: string | null;
+	/**
+	 * El CABYS y la unidad con que se vendió, congelados en la línea (T-731,
+	 * RN-86): el comprobante los imprime y el producto puede cambiarlos después.
+	 * Ausentes en lo anterior a la migración 016.
+	 */
+	cabys_code?: string | null;
+	unit_of_measure?: string | null;
+	/** La partida arancelaria con que se exportó (T-727). Solo en la FEE. */
+	tariff_heading?: string | null;
 }
 
 /** Respuesta de GET /sales/sale/{id} — endpoint añadido por este proyecto. */
@@ -472,11 +627,20 @@ export interface SaleDetail extends Sale {
 	user_name?: string | null;
 	items: SaleItem[];
 	returned?: boolean;
+	/** La clave y el consecutivo, cuando los haya. Ver `EmittedDocument`. */
+	einvoice?: EmittedDocument | null;
+	/**
+	 * El comprobante que este documento modifica, cuando es una nota (RN-89).
+	 * Una venta no lo lleva nunca; lo arma la pantalla de la nota.
+	 */
+	reference?: DocumentReference | null;
 }
 
 export interface SalePayload {
 	sale_number: string;
 	client_id: number | null;
+	/** `'01'` o `'04'` (RN-85). Sin él, el servidor aplica la sugerencia. */
+	document_type?: string | null;
 	user_id: number;
 	subtotal: number;
 	tax: number;
@@ -540,6 +704,14 @@ export interface CashSessionReport extends CashSession {
 	movements_in: number;
 	movements_out: number;
 	returns_total: number;
+	/**
+	 * Las notas por monto del turno (T-726): lo cobrado con ND —todo, y lo que
+	 * fue en efectivo, que es lo que entra a la gaveta— y lo reembolsado con NC.
+	 * Ausentes en un backend anterior: valen cero.
+	 */
+	debit_notes_total?: number;
+	debit_notes_cash?: number;
+	credit_notes_total?: number;
 }
 
 // ---------------------------------------------------------------- devoluciones
@@ -550,6 +722,58 @@ export interface ReturnItem {
 	quantity: number;
 	price: number;
 	subtotal: number;
+	/** La tarifa con que se cobró y lo reembolsado de impuesto: los desglosa la nota. */
+	tax_rate?: number | null;
+	tax_amount?: number | null;
+	/** Los de la línea de la venta: la nota repite con qué se vendió (RN-86). */
+	cabys_code?: string | null;
+	unit_of_measure?: string | null;
+}
+
+/** Una línea de una nota por monto (T-726): a qué producto y por cuánto. */
+export interface AmountNoteItem {
+	id_product: number;
+	name: string;
+	subtotal: number;
+	/** La tarifa de la línea de la venta, no la de hoy (RN-12). */
+	tax_rate: number;
+	tax_amount: number;
+	tax_code?: string | null;
+	/** Los de la línea de la venta: la nota repite con qué se vendió (RN-86). */
+	cabys_code?: string | null;
+	unit_of_measure?: string | null;
+}
+
+/**
+ * Una nota por monto sobre un comprobante (RF-77, T-726): la ND o la NC que no
+ * mueve mercadería. La plata se mueve en el momento: la ND se cobra con su
+ * `payment_method` y la NC sale de la gaveta, sin medio.
+ */
+export interface AmountNote {
+	id: number;
+	sale_id: number;
+	sale_number: string;
+	user_id: number;
+	user_name?: string | null;
+	created_at: string;
+	/** `'02'` nota de débito, `'03'` nota de crédito. */
+	document_type: string;
+	/** El motivo de Hacienda. Hoy solo `'02'`, corrige monto. */
+	reference_code: string;
+	reason: string;
+	payment_method: string | null;
+	subtotal: number;
+	tax: number;
+	total: number;
+	items: AmountNoteItem[];
+	/** Lo que la nota impresa dice del original (RN-89). */
+	sale_document_type?: string | null;
+	sale_created_at?: string | null;
+	sale_client_id?: number | null;
+	/** La nota numerada (T-705). */
+	einvoice?: EmittedDocument | null;
+	/** La clave del comprobante que modifica: es como se lo referencia. */
+	sale_clave?: string | null;
 }
 
 export interface SaleReturn {
@@ -573,6 +797,36 @@ export interface SaleReturn {
 	/** Devolución completa de la venta (todas las líneas, cantidad total). */
 	is_full: boolean;
 	items: ReturnItem[];
+	/**
+	 * La nota de crédito (RN-89): `'03'` y el motivo de Hacienda —`'06'`
+	 * devolución de mercancía, `'01'` anula—. Nulos cuando la venta no fue
+	 * comprobante: no hay qué referenciar.
+	 */
+	document_type?: string | null;
+	reference_code?: string | null;
+	/** Lo que la nota impresa dice del original. */
+	sale_document_type?: string | null;
+	sale_created_at?: string | null;
+	sale_client_id?: number | null;
+	sale_payment_method?: string | null;
+	/** La nota de crédito numerada, y la clave del original (T-705). */
+	einvoice?: EmittedDocument | null;
+	sale_clave?: string | null;
+}
+
+/** El comprobante que una nota modifica (RN-89), tal como se imprime. */
+export interface DocumentReference {
+	/** El tipo del original: `'01'` o `'04'`. */
+	document_type: string;
+	/**
+	 * Cómo se lo nombra: su **clave** desde T-705, que es como lo referencia el
+	 * XML; su número de venta si es anterior y nunca se numeró.
+	 */
+	number: string;
+	/** Su fecha de emisión. */
+	date: string;
+	/** El motivo del catálogo de Hacienda: `'01'` anula, `'06'` devolución. */
+	code: string;
 }
 
 export interface ReturnPayload {
@@ -626,6 +880,13 @@ export interface StockEntry {
 	 * las de siempre y nada de lo de abajo significa nada.
 	 */
 	supplier_id?: number | null;
+	/**
+	 * La factura electrónica de compra (T-728): `'08'` y su recorrido ante
+	 * Hacienda cuando la compra fue a un no contribuyente y la compañía la
+	 * emite. Nulos en toda compra a un proveedor inscrito.
+	 */
+	document_type?: string | null;
+	einvoice?: EmittedDocument | null;
 	/** La clave de 50 dígitos del comprobante, cuando vino de un XML. */
 	document_key?: string | null;
 	/** La del documento, que no es la de carga: el IVA es del día de la factura. */
@@ -1044,6 +1305,9 @@ export interface ReportSummary {
 	sales_count: number;
 	gross_total: number;
 	returns_total: number;
+	/** Las notas por monto del periodo (T-726). `net_total` ya las cuenta. */
+	debit_notes_total?: number;
+	credit_notes_total?: number;
 	net_total: number;
 	tax_total: number;
 	average_ticket: number;

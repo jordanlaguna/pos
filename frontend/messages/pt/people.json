@@ -89,5 +89,12 @@
 	"clients_exo_inst_10": "INCAE",
 	"clients_exo_inst_11": "Junta de Protección Social",
 	"clients_exo_inst_12": "Aresep",
-	"clients_exo_inst_99": "Outra"
+	"clients_exo_inst_99": "Outra",
+	"clients_label_id_type": "Tipo de identificação",
+	"clients_id_type_auto": "Pelo número: {type}",
+	"clients_id_type_auto_unknown": "Pelo número",
+	"clients_id_type_hint": "É impresso na fatura do cliente. O número basta para saber, exceto um NITE, que tem dez dígitos como uma pessoa jurídica.",
+	"clients_label_foreign_address": "Endereço no exterior",
+	"clients_foreign_address_hint": "A fatura de exportação o leva no lugar do endereço do país. Até 300 caracteres.",
+	"clients_foreign_id_hint": "Com «Estrangeiro não domiciliado» a identificação pode ser um passaporte: letras e números, até 20."
 }

@@ -59,6 +59,9 @@
   "sales_charge_sale": "Cobrar venta",
   "sales_charge_failed": "No se pudo completar la venta",
   "sales_invoice_number": "Factura {number}",
+  "sales_document_number": "{document} {number}",
+  "sales_document_type": "Comprobante",
+  "sales_invoice_needs_client": "Para emitir una factura electrónica, elija un cliente.",
   "sales_amount_due": "Total a pagar",
   "sales_payment_method": "Método de pago",
   "sales_cash_received": "Efectivo recibido",
@@ -67,5 +70,8 @@
   "sales_client_optional": "Cliente (opcional)",
   "sales_client_walk_in": "Cliente de contado",
   "sales_confirm_charge": "Confirmar cobro",
-  "sales_line_unclassified": "sin clasificar"
+  "sales_line_unclassified": "sin clasificar",
+  "sales_choose_client": "Elija un cliente",
+  "sales_only_invoices_needs_client": "Este negocio solo emite facturas electrónicas: elija un cliente para cobrar.",
+  "sales_export_client": "Al cliente del extranjero se le emite factura de exportación o tiquete."
 }

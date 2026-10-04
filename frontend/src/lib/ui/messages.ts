@@ -73,6 +73,24 @@ export function checkoutMessage(r: CheckoutRejection): string {
 			});
 		case 'checkout_cash_short':
 			return m.checkout_cash_short();
+		case 'checkout_invoice_needs_client':
+			return m.checkout_invoice_needs_client();
+		case 'checkout_document_type_not_enabled':
+			return m.checkout_document_type_not_enabled();
+		case 'checkout_bad_document_type':
+			return m.checkout_bad_document_type();
+		case 'checkout_invoice_needs_resident':
+			return m.checkout_invoice_needs_resident();
+		case 'checkout_export_needs_client':
+			return m.checkout_export_needs_client();
+		case 'checkout_export_needs_foreign_client':
+			return m.checkout_export_needs_foreign_client();
+		case 'checkout_export_needs_foreign_address':
+			return m.checkout_export_needs_foreign_address();
+		case 'checkout_export_line_needs_tariff_heading':
+			return m.checkout_export_line_needs_tariff_heading({ product: r.product });
+		case 'checkout_export_tariff_not_allowed':
+			return m.checkout_export_tariff_not_allowed({ product: r.product, tax_code: r.taxCode });
 		default:
 			return faltaMensaje(r);
 	}
@@ -253,13 +271,31 @@ export const API_CODES = [
 	'empty_sale',
 	'invalid_sale_line',
 	'invalid_sale_payment_method',
+	'invalid_sale_document_type',
+	'invoice_needs_receiver',
+	'document_type_not_enabled',
+	'invoice_needs_resident',
+	'export_needs_receiver',
+	'export_needs_foreign_receiver',
+	'export_needs_foreign_address',
+	'export_line_needs_tariff_heading',
+	'export_tariff_not_allowed',
+	'invalid_tariff_heading',
+	'invalid_foreign_address',
+	// F7: el recorrido hasta Hacienda
+	'document_not_found',
+	'document_not_stopped',
+	'document_not_signed',
+	'document_not_resolved',
+	'document_file_missing',
+	'storage_unavailable',
+	'production_gate_locked',
 	'product_not_found',
 	'product_without_price',
 	'insufficient_stock',
 	'totals_mismatch',
 	'insufficient_payment',
 	'sale_not_found',
-	'sale_details_not_found',
 	'sale_failed',
 	// devoluciones
 	'empty_return',
@@ -269,6 +305,21 @@ export const API_CODES = [
 	'excessive_return',
 	'return_not_found',
 	'return_failed',
+	'annul_after_return',
+	// notas por monto (T-726)
+	'return_after_credit_note',
+	'annul_after_note',
+	'note_not_found',
+	'note_failed',
+	'note_needs_document',
+	'invalid_note_type',
+	'invalid_note_reason',
+	'note_reason_required',
+	'empty_note',
+	'note_line_not_in_sale',
+	'invalid_note_amount',
+	'credit_exceeds_line',
+	'annul_must_be_full',
 	// entradas de mercadería
 	'empty_entry',
 	'invalid_entry_source',
@@ -312,6 +363,10 @@ export const API_CODES = [
 	'supplier_identification_taken',
 	'invalid_identification_type',
 	'identification_required',
+	// un cliente sin tipo y con una cédula que no lo deja deducir (T-617)
+	'identification_type_required',
+	// la compañía emite y no tiene cédula de emisor, o no cabe en la clave (T-705)
+	'issuer_identification_required',
 	// abonos a proveedor (T-1010)
 	'payment_exceeds_balance',
 	'payment_not_positive',
@@ -329,8 +384,10 @@ export const API_CODES = [
 	// configuración
 	'unsupported_locale',
 	'settings_too_large',
-	'tax_rate_not_a_number',
 	'tax_rate_out_of_range',
+	// la ubicación del emisor y lo que falta para encender la facturación (T-722)
+	'invalid_location',
+	'einvoicing_needs_issuer',
 	'settings_save_failed',
 	// contabilidad (F11)
 	'accounting_already_active',
@@ -364,12 +421,53 @@ export const API_CODES = [
 	'atv_unreachable',
 	'atv_password_unreadable',
 	'confirmation_required',
+	// tasas de planilla (T-1204)
+	'invalid_payroll_rate',
+	'payroll_rate_not_newer',
+	// planilla (F12: T-1221, T-1217, T-1205, T-1218, T-1206)
+	'invalid_tax_brackets',
+	'invalid_payroll_settings',
+	'invalid_schedule',
+	'payroll_name_taken',
+	'schedule_locked',
+	'schedule_not_found',
+	'position_not_found',
+	'policy_not_found',
+	'invalid_employee',
+	'employee_identification_taken',
+	'employee_not_found',
+	'employee_terminated',
+	'invalid_contract',
+	'contract_missing',
+	'invalid_action',
+	'action_not_found',
+	'action_not_editable',
+	'action_already_cancelled',
+	'action_not_recurring',
+	'action_already_suspended',
+	'invalid_cut_date',
+	'run_already_exists',
+	'run_not_found',
+	'run_not_editable',
+	'run_not_calculated',
+	'run_not_approved',
+	'run_already_paid',
+	'rates_missing_for_date',
+	// planilla (F12: T-1207 a T-1220)
+	'run_not_paid',
+	'settlement_requires_termination',
+	'vacation_balance_exceeded',
+	'import_has_errors',
+	'export_data_incomplete',
 	// sucursales y terminales (T-608)
 	'invalid_office_code',
 	'branch_code_taken',
 	'terminal_code_taken',
 	'branch_not_found',
 	'terminal_not_found',
+	'invalid_sequence_start',
+	'sequence_in_use',
+	'sequence_cannot_go_down',
 	'branch_in_use',
 	'terminal_in_use',
 	'last_active_branch',
@@ -405,6 +503,18 @@ function comoFallo(error: unknown): Failure {
 }
 
 const texto = (valor: unknown): string => (typeof valor === 'string' ? valor : '');
+
+/**
+ * El campo y el motivo de un «no» de planilla, ya traducidos: «Fecha de
+ * nacimiento» y «da menos de 15 años al ingresar». Las variantes del catálogo
+ * tienen un `*` para lo que el backend diga mañana y hoy no está.
+ */
+function datoDePlanilla(d: Record<string, unknown>): { field: string; reason: string } {
+	return {
+		field: m.api_payroll_field({ field: texto(d.field) }),
+		reason: m.api_payroll_reason({ reason: texto(d.reason) })
+	};
+}
 
 const numero = (valor: unknown): number => {
 	const n = typeof valor === 'number' ? valor : Number(valor);
@@ -504,6 +614,59 @@ function campo(valor: unknown): string {
  * configurada, que la fija el layout al renderizar, y una acción corre antes de
  * eso: pondría el símbolo equivocado. Se resuelve con T-806.
  */
+/**
+ * Un problema de la ubicación del emisor, como frase (T-722).
+ *
+ * La usan las dos puertas —el «no» del servidor (`invalid_location`) y la
+ * validación del formulario (`locationProblem`)—, así que dicen lo mismo. El
+ * campo va como rótulo entre comillas: así la frase sirve en los tres idiomas
+ * sin concordar artículos.
+ */
+export function locationMessage(problem: { field: string; reason: string }): string {
+	const campo = (() => {
+		switch (problem.field) {
+			case 'province':
+				return m.settings_province();
+			case 'canton':
+				return m.settings_canton();
+			case 'district':
+				return m.settings_district();
+			case 'neighborhood':
+				return m.api_location_field_neighborhood();
+			default:
+				return m.settings_other_signs();
+		}
+	})();
+	switch (problem.reason) {
+		case 'required':
+			return m.api_location_required({ field: campo });
+		case 'unknown':
+			return m.api_location_unknown({ field: campo });
+		case 'too_short':
+			return m.api_location_too_short({ field: campo, min: 5 });
+		default:
+			return m.api_location_too_long({ field: campo });
+	}
+}
+
+/**
+ * Lo que falta para encender la factura electrónica (T-722), todo en una frase:
+ * quien la enciende tiene que ver la lista entera y no descubrirla de a uno.
+ */
+export function issuerMissingMessage(missing: string[]): string {
+	const partes = missing.map((cual) => {
+		switch (cual) {
+			case 'identification':
+				return m.api_issuer_missing_identification();
+			case 'email':
+				return m.api_issuer_missing_email();
+			default:
+				return m.api_issuer_missing_location();
+		}
+	});
+	return m.api_einvoicing_needs_issuer({ missing: partes.join('; ') });
+}
+
 export function apiMessage(error: unknown): string {
 	const fallo = comoFallo(error);
 	if (!esConocido(fallo.code)) {
@@ -636,6 +799,30 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_invalid_sale_line({ product: producto(d) });
 		case 'invalid_sale_payment_method':
 			return m.api_invalid_sale_payment_method({ method: texto(d.method) });
+		case 'invalid_sale_document_type':
+			return m.api_invalid_sale_document_type({ document_type: texto(d.document_type) });
+		case 'invoice_needs_receiver':
+			return m.api_invoice_needs_receiver();
+		case 'document_type_not_enabled':
+			return m.api_document_type_not_enabled({
+				document: documentTypeLabel(texto(d.document_type)) ?? texto(d.document_type)
+			});
+		case 'invoice_needs_resident':
+			return m.api_invoice_needs_resident();
+		case 'export_needs_receiver':
+			return m.api_export_needs_receiver();
+		case 'export_needs_foreign_receiver':
+			return m.api_export_needs_foreign_receiver();
+		case 'export_needs_foreign_address':
+			return m.api_export_needs_foreign_address();
+		case 'export_line_needs_tariff_heading':
+			return m.api_export_line_needs_tariff_heading({ product: producto(d) });
+		case 'export_tariff_not_allowed':
+			return m.api_export_tariff_not_allowed({ product: producto(d), tax_code: texto(d.tax_code) });
+		case 'invalid_tariff_heading':
+			return m.api_invalid_tariff_heading();
+		case 'invalid_foreign_address':
+			return m.api_invalid_foreign_address({ max_length: numero(d.max_length) });
 		case 'product_not_found':
 			return m.api_product_not_found({ product: producto(d) });
 		case 'product_without_price':
@@ -659,8 +846,6 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			});
 		case 'sale_not_found':
 			return m.api_sale_not_found();
-		case 'sale_details_not_found':
-			return m.api_sale_details_not_found();
 		case 'sale_failed':
 			return m.api_sale_failed();
 
@@ -682,6 +867,39 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_return_not_found();
 		case 'return_failed':
 			return m.api_return_failed();
+		case 'annul_after_return':
+			return m.api_annul_after_return();
+		case 'annul_must_be_full':
+			return m.api_annul_must_be_full();
+
+		// --------------------------------------- notas por monto (T-726)
+		case 'return_after_credit_note':
+			return m.api_return_after_credit_note();
+		case 'annul_after_note':
+			return m.api_annul_after_note();
+		case 'note_not_found':
+			return m.api_note_not_found();
+		case 'note_failed':
+			return m.api_note_failed();
+		case 'note_needs_document':
+			return m.api_note_needs_document();
+		case 'invalid_note_type':
+			return m.api_invalid_note_type({ document_type: texto(d.document_type) });
+		case 'invalid_note_reason':
+			return m.api_invalid_note_reason({ reference_code: texto(d.reference_code) });
+		case 'note_reason_required':
+			return m.api_note_reason_required();
+		case 'empty_note':
+			return m.api_empty_note();
+		case 'note_line_not_in_sale':
+			return m.api_note_line_not_in_sale();
+		case 'invalid_note_amount':
+			return m.api_invalid_note_amount();
+		case 'credit_exceeds_line':
+			return m.api_credit_exceeds_line({
+				available: numero(d.available),
+				requested: numero(d.requested)
+			});
 
 		// ---------------------------------------------------------- entradas
 		case 'empty_entry':
@@ -791,6 +1009,14 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			});
 		case 'identification_required':
 			return m.api_identification_required();
+		case 'identification_type_required':
+			return m.api_identification_type_required();
+		case 'issuer_identification_required':
+			// Las dos las arregla soporte, pero no son lo mismo: una no está y la
+			// otra está mal cargada.
+			return texto(d.reason) === 'invalid'
+				? m.api_issuer_identification_invalid()
+				: m.api_issuer_identification_required();
 		case 'payment_exceeds_balance':
 			// Los dos montos, para que la frase diga cuánto se debe de verdad:
 			// sin el saldo, quien corrige el dedo de más no sabe a qué corregirlo.
@@ -830,10 +1056,12 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_unsupported_locale({ locale: texto(d.locale) });
 		case 'settings_too_large':
 			return m.api_settings_too_large();
-		case 'tax_rate_not_a_number':
-			return m.api_tax_rate_not_a_number();
 		case 'tax_rate_out_of_range':
 			return m.api_tax_rate_out_of_range();
+		case 'invalid_location':
+			return locationMessage({ field: texto(d.field), reason: texto(d.reason) });
+		case 'einvoicing_needs_issuer':
+			return issuerMissingMessage(Array.isArray(d.missing) ? d.missing.map(texto) : []);
 		case 'settings_save_failed':
 			return m.api_settings_save_failed();
 
@@ -925,6 +1153,126 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_atv_password_unreadable({ environment: ambiente(d.environment) });
 		case 'confirmation_required':
 			return m.api_confirmation_required({ environment: ambiente(d.environment) });
+		case 'document_not_found':
+			return m.api_document_not_found();
+		case 'document_not_stopped':
+			return m.api_document_not_stopped();
+		case 'document_not_signed':
+			return m.api_document_not_signed();
+		case 'document_not_resolved':
+			return m.api_document_not_resolved();
+		case 'document_file_missing':
+			return m.api_document_file_missing();
+		case 'storage_unavailable':
+			return m.api_storage_unavailable();
+		case 'production_gate_locked':
+			return m.api_production_gate_locked({
+				missing: (Array.isArray(d.missing) ? d.missing.map(texto) : [])
+					.map((t) => documentTypeLabel(t) ?? t)
+					.join(', ')
+			});
+
+		// ------------------------------------------ tasas de planilla (T-1204)
+		case 'invalid_payroll_rate':
+			// Dos frases: un pagador que no existe no se arregla igual que una carga
+			// escrita como porcentaje en vez de fracción.
+			return d.field === 'payer'
+				? m.api_invalid_payroll_rate_payer()
+				: m.api_invalid_payroll_rate_value();
+		case 'payroll_rate_not_newer':
+			return m.api_payroll_rate_not_newer({
+				concept: texto(d.concept),
+				latest: formatDate(texto(d.latest))
+			});
+
+		// ----------------------------------------------------------- planilla (F12)
+		// Cinco códigos con la misma forma —`field` y `reason`— y una frase cada
+		// uno que dice de qué cosa es el campo. El nombre del campo y el motivo
+		// se traducen aparte, con variantes, para no escribir cuarenta frases por
+		// código.
+		case 'invalid_payroll_settings':
+			return m.api_invalid_payroll_settings(datoDePlanilla(d));
+		case 'invalid_schedule':
+			return m.api_invalid_schedule(datoDePlanilla(d));
+		case 'invalid_employee':
+			return m.api_invalid_employee(datoDePlanilla(d));
+		case 'invalid_contract':
+			return m.api_invalid_contract(datoDePlanilla(d));
+		case 'invalid_action':
+			return m.api_invalid_action(datoDePlanilla(d));
+		case 'invalid_tax_brackets':
+			// El backend cuenta los tramos desde cero; la persona, desde uno.
+			return m.api_invalid_tax_brackets({
+				reason: texto(d.reason),
+				index: typeof d.index === 'number' ? d.index + 1 : 0
+			});
+		case 'payroll_name_taken':
+			return m.api_payroll_name_taken({ resource: texto(d.resource), name: texto(d.name) });
+		case 'schedule_locked':
+			return m.api_schedule_locked();
+		case 'schedule_not_found':
+			return m.api_schedule_not_found();
+		case 'position_not_found':
+			return m.api_position_not_found();
+		case 'policy_not_found':
+			return m.api_policy_not_found();
+		case 'employee_identification_taken':
+			return m.api_employee_identification_taken({ identification: texto(d.identification) });
+		case 'employee_not_found':
+			return m.api_employee_not_found();
+		case 'employee_terminated':
+			return m.api_employee_terminated({ terminated_on: formatDate(texto(d.terminated_on)) });
+		case 'contract_missing':
+			return m.api_contract_missing();
+		case 'action_not_found':
+			return m.api_action_not_found();
+		case 'action_not_editable':
+			return m.api_action_not_editable({ reason: texto(d.reason) });
+		case 'action_already_cancelled':
+			return m.api_action_already_cancelled();
+		case 'action_not_recurring':
+			return m.api_action_not_recurring();
+		case 'action_already_suspended':
+			return m.api_action_already_suspended();
+		case 'invalid_cut_date':
+			return m.api_invalid_cut_date({ cut: formatDate(texto(d.cut)), frequency: texto(d.frequency) });
+		case 'run_already_exists':
+			return m.api_run_already_exists();
+		case 'run_not_found':
+			return m.api_run_not_found();
+		case 'run_not_editable':
+			return m.api_run_not_editable({ reason: texto(d.reason) });
+		case 'run_not_calculated':
+			return m.api_run_not_calculated();
+		case 'run_not_approved':
+			return m.api_run_not_approved();
+		case 'run_already_paid':
+			return m.api_run_already_paid();
+		case 'rates_missing_for_date':
+			return m.api_rates_missing_for_date({
+				on: formatDate(texto(d.on)),
+				missing: Array.isArray(d.missing) ? d.missing.map(texto).join(', ') : ''
+			});
+		case 'run_not_paid':
+			return m.api_run_not_paid();
+		case 'settlement_requires_termination':
+			return m.api_settlement_requires_termination();
+		case 'vacation_balance_exceeded':
+			return m.api_vacation_balance_exceeded({ balance: numero(d.balance), requested: numero(d.requested) });
+		case 'import_has_errors':
+			// La pantalla lista las filas; la frase solo dice cuántas y que no entró nada.
+			return m.api_import_has_errors({ count: Array.isArray(d.errors) ? d.errors.length : 0 });
+		case 'export_data_incomplete': {
+			// Los campos de la empresa se nombran como los del formulario; los de
+			// cada empleado los lista la pantalla.
+			const empresa = Array.isArray(d.company)
+				? d.company.map((campo) => m.api_payroll_field({ field: texto(campo) })).join(', ')
+				: '';
+			return m.api_export_data_incomplete({
+				count: Array.isArray(d.missing) ? d.missing.length : 0,
+				company: empresa ? m.api_export_data_incomplete_company({ fields: empresa }) : ''
+			});
+		}
 
 		// --------------------------------------- sucursales y terminales (T-608)
 		case 'invalid_office_code':
@@ -950,6 +1298,18 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_branch_not_found();
 		case 'terminal_not_found':
 			return m.api_terminal_not_found();
+		// El arranque de una serie (T-616, RN-36 a RN-38).
+		case 'invalid_sequence_start':
+			return m.api_invalid_sequence_start({ value: texto(d.value) });
+		case 'sequence_in_use':
+			return m.api_sequence_in_use({
+				document: documentTypeLabel(texto(d.document_type)) ?? texto(d.document_type)
+			});
+		case 'sequence_cannot_go_down':
+			return m.api_sequence_cannot_go_down({
+				current: String(d.current ?? ''),
+				requested: String(d.requested ?? '')
+			});
 		case 'branch_in_use':
 			return m.api_branch_in_use({
 				sales: numero(d.sales),
@@ -1026,6 +1386,37 @@ export function paymentLabel(method: string): string {
 	}
 }
 
+/**
+ * Cómo se llama en pantalla el comprobante de una venta (RN-85).
+ *
+ * El **valor** es el código de Hacienda y no se traduce. Nulo es una venta sin
+ * facturación electrónica, y ahí no hay nombre que dar: quien lo muestre decide
+ * qué poner en el hueco.
+ *
+ * Es el idioma de la **pantalla**. El documento impreso tiene el suyo y sus
+ * propios rótulos (`$lib/ui/documents.ts`, RN-29).
+ */
+export function documentTypeLabel(code: string | null | undefined): string | null {
+	switch (code) {
+		case '01':
+			return m.document_type_invoice();
+		case '02':
+			return m.document_type_debit_note();
+		case '03':
+			return m.document_type_credit_note();
+		case '04':
+			return m.document_type_ticket();
+		case '08':
+			return m.document_type_purchase_invoice();
+		case '09':
+			return m.document_type_export_invoice();
+		case '10':
+			return m.document_type_payment_receipt();
+		default:
+			return null;
+	}
+}
+
 // ---------------------------------------------- soporte y suscripción (F3)
 
 /**
@@ -1067,12 +1458,30 @@ export function companyStateLabel(state: string): string {
  */
 export function moduleLabel(module: ModuleName): string {
 	switch (module) {
+		case 'sales':
+			return m.module_sales();
+		case 'cash':
+			return m.module_cash();
+		case 'invoices':
+			return m.module_invoices();
+		case 'returns':
+			return m.module_returns();
+		case 'reports':
+			return m.module_reports();
+		case 'inventory':
+			return m.module_inventory();
 		case 'purchases':
 			return m.module_purchases();
+		case 'suppliers':
+			return m.module_suppliers();
 		case 'accounting':
 			return m.module_accounting();
 		case 'payroll':
 			return m.module_payroll();
+		case 'clients':
+			return m.module_clients();
+		case 'users':
+			return m.module_users();
 		default: {
 			const nunca: never = module;
 			return nunca;
@@ -1147,6 +1556,10 @@ export function auditActionLabel(accion: string): string {
 			return m.admin_action_entrar_como();
 		case 'fe_ambiente':
 			return m.admin_action_fe_ambiente();
+		case 'emisor':
+			return m.admin_action_emisor();
+		case 'tasa_planilla':
+			return m.admin_action_tasa_planilla();
 		default:
 			// Una acción que este POS no conoce sale con su código. No es bonito y
 			// es lo correcto: la bitácora tiene que sobrevivir a lo que narra, y una

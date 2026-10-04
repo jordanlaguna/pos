@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from pydantic import BaseModel, Field
+from app.schemas.schemas_einvoice import ProductionGateOut
 
 
 class EnvironmentStatusOut(BaseModel):
@@ -47,6 +48,8 @@ class FeStatusOut(BaseModel):
     #: (plan §7.1): `fe_credentials` guarda credenciales **por** ambiente; cuál
     #: está activo es otro dato.
     active: str
+    #: T-713: si ya se puede pasar a producción y, si no, qué falta.
+    production_gate: ProductionGateOut
 
 
 class ActiveEnvironmentIn(BaseModel):
@@ -70,3 +73,41 @@ class AtvIn(BaseModel):
 
     user: str = Field(min_length=1, max_length=160)
     password: str = Field(min_length=1, max_length=200)
+
+
+# ------------------------------------------- el arranque de las series (T-616)
+
+
+class SequenceOut(BaseModel):
+    """Una serie: una caja por un tipo de comprobante, en el ambiente en uso."""
+
+    terminal_id: int
+    branch_code: str
+    branch_name: str
+    terminal_code: str
+    terminal_name: str
+    document_type: str
+    #: El último consecutivo emitido; el siguiente sale con uno más. 0 si ninguno.
+    last_number: int
+    #: El sistema ya emitió con esta serie: desde ahí es suya (RN-38).
+    in_use: bool
+
+
+class SequencesOut(BaseModel):
+    environment: str
+    items: list[SequenceOut]
+
+
+class SequenceStartIn(BaseModel):
+    """El último consecutivo que emitió el otro sistema (RN-36). Solo sube."""
+
+    terminal_id: int
+    document_type: str
+    last_number: int
+
+
+class SequenceStartOut(BaseModel):
+    terminal_id: int
+    document_type: str
+    environment: str
+    last_number: int

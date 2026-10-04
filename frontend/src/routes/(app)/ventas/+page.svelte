@@ -7,7 +7,7 @@
 	import Field from '$lib/ui/components/Field.svelte';
 	import Spinner from '$lib/ui/components/Spinner.svelte';
 	import EmptyState from '$lib/ui/components/EmptyState.svelte';
-	import { quickCash, saleNumber } from '$lib/domain/cart';
+	import { quickCash } from '$lib/domain/cart';
 	import { cart } from '$lib/ui/stores/cart.svelte';
 	import { toasts } from '$lib/ui/stores/toast.svelte';
 	import {
@@ -21,8 +21,10 @@
 	} from '$lib/domain/money';
 	import { PAYMENT_METHODS, type Product } from '$lib/domain/types';
 	import { buildTree, withDescendants } from '$lib/domain/categories';
+	import { COUNTER_TYPES, EXPORT_INVOICE, INVOICE } from '$lib/domain/documentType';
+	import { isForeign } from '$lib/domain/identification';
 	import { m } from '$lib/paraglide/messages.js';
-	import { cartMessage, paymentLabel } from '$lib/ui/messages';
+	import { cartMessage, documentTypeLabel, paymentLabel } from '$lib/ui/messages';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -40,10 +42,42 @@
 
 	let paymentMethod = $state<string>(PAYMENT_METHODS[0]);
 	let cashInput = $state('');
-	let currentSaleNumber = $state('');
 
 	const totals = $derived(cart.totals);
 	const hasCashSession = $derived(data.cashSession != null);
+
+	/*
+	 * Qué comprobante se va a emitir (RN-85). Solo existe con la facturación
+	 * activa; sin ella, la venta es el documento de siempre y no hay nada que
+	 * elegir. Se muestra junto al botón de cobrar y no solo dentro del cobro:
+	 * el cajero tiene que saber qué emite antes de decidir cobrar.
+	 */
+	const einvoicing = $derived(data.settings.eInvoicing.enabled);
+	/** Lo que la compañía emite (RN-88): el selector ofrece solo eso. */
+	const enabledTypes = $derived(data.settings.eInvoicing.documentTypes);
+	/**
+	 * Si el cliente de la venta es del extranjero (RN-87, T-727): a él no se le
+	 * ofrece la factura sino la de exportación, y al del país al revés. El
+	 * tiquete se le ofrece a cualquiera.
+	 */
+	const clientForeign = $derived(cart.clientForeign);
+	const counterTypes = $derived(
+		COUNTER_TYPES.filter(
+			(tipo) =>
+				enabledTypes.includes(tipo) &&
+				(tipo !== EXPORT_INVOICE || clientForeign) &&
+				(tipo !== INVOICE || !clientForeign)
+		)
+	);
+	const documentType = $derived(einvoicing ? cart.documentTypeFor(enabledTypes) : null);
+	/** La factura y la de exportación llevan receptor; el tiquete no. */
+	const conReceptor = (tipo: string | null) => tipo === INVOICE || tipo === EXPORT_INVOICE;
+	/** Lo que dice la ficha del cliente elegido: el carrito no conoce la lista. */
+	const esExtranjero = (id: string) =>
+		isForeign(data.clients.find((c) => String(c.id_client) === id)?.identification_type);
+	const documentName = $derived(documentTypeLabel(documentType));
+	/** Solo factura y sin cliente: no hay qué emitir hasta elegir uno. */
+	const needsClient = $derived(einvoicing && documentType === null);
 
 	/** La pestaña muestra el nombre del cliente si lo tiene; si no, su número. */
 	function ticketLabel(ticket: (typeof cart.tickets)[number]): string {
@@ -160,7 +194,6 @@
 			cashOpen = true;
 			return;
 		}
-		currentSaleNumber = saleNumber(new Date());
 		paymentMethod = PAYMENT_METHODS[0];
 		cashInput = String(totals.total.toFixed(2));
 		paymentOpen = true;
@@ -652,6 +685,23 @@
 				</div>
 			</dl>
 
+			{#if einvoicing}
+				<p
+					class="mt-3 flex items-center justify-between gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"
+					data-comprobante={documentType ?? ''}
+				>
+					<span class="text-[var(--text-subtle)]">{m.sales_document_type()}</span>
+					{#if documentName}
+						<span class="flex items-center gap-1.5 font-semibold text-[var(--text)]">
+							<Icon name={conReceptor(documentType) ? 'idcard' : 'receipt'} size={14} />
+							{documentName}
+						</span>
+					{:else}
+						<span class="font-semibold text-[var(--warning)]">{m.sales_choose_client()}</span>
+					{/if}
+				</p>
+			{/if}
+
 			<button
 				type="button"
 				class="btn btn-primary mt-3 h-12 w-full text-base"
@@ -671,7 +721,7 @@
 <Modal
 	open={paymentOpen}
 	title={m.sales_charge_sale()}
-	description={m.sales_invoice_number({ number: currentSaleNumber })}
+	description={einvoicing && documentName ? documentName : undefined}
 	busy={submitting}
 	onclose={() => (paymentOpen = false)}
 >
@@ -689,7 +739,6 @@
 		})}
 		class="space-y-4"
 	>
-		<input type="hidden" name="sale_number" value={currentSaleNumber} />
 		<input
 			type="hidden"
 			name="lines"
@@ -781,18 +830,74 @@
 				id="client-select"
 				name="client_id"
 				value={cart.clientId}
-				onchange={(e) => cart.setClient(e.currentTarget.value)}
+				onchange={(e) => cart.setClient(e.currentTarget.value, esExtranjero(e.currentTarget.value))}
 				class="input"
 			>
 				<option value="">{m.sales_client_walk_in()}</option>
 				{#each data.clients as client (client.id_client)}
-					<option value={client.id_client}>
+					<!--
+						`String(...)` y no el número: el carrito guarda el id como texto, y
+						Svelte elige la opción comparando con `===`. Con el número no
+						coincidía ninguna, el select quedaba sin opción elegida y el
+						formulario **no mandaba el cliente**: la pestaña decía «Ana» y la
+						venta se guardaba de contado.
+					-->
+					<option value={String(client.id_client)}>
 						{client.name}
 						{client.last_name} — {client.identification}
 					</option>
 				{/each}
 			</select>
 		</div>
+
+		{#if einvoicing}
+			<!--
+				El comprobante, debajo del cliente porque depende de él (RN-85): sin
+				cliente solo cabe un tiquete, y con cliente se sugiere factura pero se
+				puede dejar en tiquete. La opción que no se puede elegir se ve apagada
+				y no escondida: el cajero tiene que entender por qué no está.
+
+				Solo aparecen los que la compañía emite (RN-88): una distribuidora que
+				apagó el tiquete ve solo la factura.
+			-->
+			<fieldset>
+				<legend class="label">{m.sales_document_type()}</legend>
+				<div class="grid gap-2 {counterTypes.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}">
+					{#each counterTypes as tipo (tipo)}
+						{@const bloqueado = conReceptor(tipo) && !cart.clientId}
+						<label
+							class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors {documentType ===
+							tipo
+								? 'border-[var(--accent)] bg-[var(--surface-sunken)] font-semibold text-[var(--text)]'
+								: 'border-[var(--border)] text-[var(--text-muted)]'} {bloqueado
+								? 'cursor-not-allowed opacity-50'
+								: 'cursor-pointer hover:bg-[var(--surface-sunken)]'}"
+						>
+							<input
+								type="radio"
+								name="document_type"
+								value={tipo}
+								checked={documentType === tipo}
+								disabled={bloqueado}
+								onchange={() => cart.setDocumentType(tipo)}
+								class="sr-only"
+							/>
+							<Icon name={conReceptor(tipo) ? 'idcard' : 'receipt'} size={15} />
+							{documentTypeLabel(tipo)}
+						</label>
+					{/each}
+				</div>
+				{#if needsClient}
+					<p class="mt-1.5 text-xs font-semibold text-[var(--warning)]">
+						{m.sales_only_invoices_needs_client()}
+					</p>
+				{:else if clientForeign}
+					<p class="mt-1.5 text-xs text-[var(--text-subtle)]">{m.sales_export_client()}</p>
+				{:else if !cart.clientId && enabledTypes.includes(INVOICE)}
+					<p class="mt-1.5 text-xs text-[var(--text-subtle)]">{m.sales_invoice_needs_client()}</p>
+				{/if}
+			</fieldset>
+		{/if}
 	</form>
 
 	{#snippet footer()}
@@ -808,7 +913,7 @@
 			type="submit"
 			form="payment-form"
 			class="btn btn-primary"
-			disabled={submitting || insufficient || cart.isEmpty}
+			disabled={submitting || insufficient || cart.isEmpty || needsClient}
 		>
 			{#if submitting}
 				<Spinner size={15} />

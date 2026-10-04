@@ -26,6 +26,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
+from app.domain.fe_signature import CertificateFacts
+
 
 class SigningUnavailable(Exception):
     """Hoy no se puede firmar, y mañana quizá sí.
@@ -124,4 +126,18 @@ class CertificateReader(Protocol):
 
     def read(self, p12: bytes, pin: str) -> ParsedCertificate:
         """Lo de adentro, o `InvalidCertificate` con su motivo."""
+        ...
+
+
+class CertificateParser(Protocol):
+    """Lee la parte pública guardada y saca lo que la firma XAdES necesita.
+
+    Recibe el PEM de `fe_credentials` y devuelve el DER, el emisor y el serial
+    (`domain/fe_signature.CertificateFacts`). Es un puerto por lo mismo que
+    `CertificateReader`: la biblioteca de X.509 es del adaptador, y el caso de
+    uso que firma no la importa.
+    """
+
+    def facts(self, certificate_pem: str) -> CertificateFacts:
+        """Los datos, o `InvalidCertificate` si el PEM no se puede leer."""
         ...

@@ -136,42 +136,35 @@ class TestDevolucion:
         assert dev["total"] == 1638.5
         assert api.ok("GET", f"/products/product/{arroz['barcode']}")["stock"] == 8
 
-    def test_usa_la_tasa_de_su_venta_y_no_la_configurada_hoy(self, api: Api, producto):
+    def test_usa_la_tasa_de_su_venta_y_no_la_de_hoy(self, api: Api, producto):
         """
-        Regla del proyecto: si el dueño cambia el IVA, lo que se reembolsa sigue
-        siendo lo que se cobró. La tasa se reconstruye como tax / subtotal.
+        Regla del proyecto: si cambia la tarifa, lo que se reembolsa sigue siendo
+        lo que se cobró. La tasa se reconstruye como tax / subtotal.
 
-        Se cobra al 13 %, se cambia la configuración al 25 % y recién entonces
-        se devuelve. Antes esta prueba fabricaba una venta al 5 % mandando esos
-        montos directo al API; desde T-108b eso ya no se puede, porque el
-        servidor recalcula los totales con **su** tasa y rechaza lo que no
-        cuadre. Cambiar la configuración de verdad es además lo que la regla
-        describe.
+        Se cobra al 13 % —el producto no tiene tarifa propia y paga la general
+        del IVA— y después se le pone una propia del 4 %. Hasta QA-05 esta
+        prueba cambiaba la tasa de la configuración; desde entonces el impuesto
+        no se configura, y lo que puede cambiar después de vender es la tarifa
+        del producto.
         """
         p = producto("Cambio de tasa", 1000, 5)
         _, (estado, venta) = vender(api, [(p, 1)])
         assert estado == 200
 
-        original = api.ok("GET", "/settings/")["data"]
-        try:
-            nueva = {**(original or {}), "impuesto": {"nombre": "IVA", "tasa": 0.25}}
-            api.ok("PUT", "/settings/", {"data": nueva, "keep_logo": True})
-            assert api.ok("GET", "/settings/")["data"]["impuesto"]["tasa"] == 0.25
+        api.ok("PUT", f"/products/update_product/{p['id_product']}", {"tax_rate": 0.04})
 
-            dev = api.ok(
-                "POST",
-                "/returns/add_return",
-                {
-                    "sale_id": venta["id_sale"],
-                    "user_id": api.user_id,  # type: ignore[attr-defined]
-                    "reason": "cambio de tasa",
-                    "items": [{"id_product": p["id_product"], "quantity": 1}],
-                },
-            )
-        finally:
-            api.ok("PUT", "/settings/", {"data": original, "keep_logo": True})
+        dev = api.ok(
+            "POST",
+            "/returns/add_return",
+            {
+                "sale_id": venta["id_sale"],
+                "user_id": api.user_id,  # type: ignore[attr-defined]
+                "reason": "cambio de tasa",
+                "items": [{"id_product": p["id_product"], "quantity": 1}],
+            },
+        )
 
-        # 1000 × 1,13, no × 1,25.
+        # 1000 × 1,13, no × 1,04.
         assert dev["total"] == 1130.0, (
             "se reembolsó con la tasa de hoy y no con la de la venta"
         )

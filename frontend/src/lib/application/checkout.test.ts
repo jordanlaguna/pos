@@ -40,6 +40,10 @@ function peticion(cambios: Partial<CheckoutRequest> = {}): CheckoutRequest {
 		clientId: null,
 		saleNumber: '20260816214305',
 		userId: 7,
+		documentType: null,
+		einvoicing: false,
+		enabledTypes: ['04', '01', '03', '02'],
+		foreignReceiver: false,
 		...cambios
 	};
 }
@@ -106,11 +110,175 @@ describe('venta que se puede cobrar', () => {
 		expect(r.payload.client_id).toBe(4);
 	});
 
+	describe('el comprobante (RN-85, RN-88)', () => {
+		const activa = { einvoicing: true };
+
+		it('lleva el que eligió el cajero', () => {
+			const factura = prepareSale(
+				peticion({ ...activa, clientId: 4, documentType: '01' }),
+				CATALOGO,
+				IVA,
+				AHORA
+			);
+			const tiquete = prepareSale(peticion({ ...activa, documentType: '04' }), CATALOGO, IVA, AHORA);
+			if (!factura.ok || !tiquete.ok) throw new Error('debían poderse cobrar');
+			expect(factura.payload.document_type).toBe('01');
+			expect(tiquete.payload.document_type).toBe('04');
+		});
+
+		it('sin elección viaja la sugerencia', () => {
+			const r = prepareSale(peticion({ ...activa, clientId: 4 }), CATALOGO, IVA, AHORA);
+			if (!r.ok) throw new Error('debía poderse cobrar');
+			expect(r.payload.document_type).toBe('01');
+		});
+
+		it('sin facturación electrónica no lleva ninguno, aunque lo pidan', () => {
+			const r = prepareSale(peticion({ documentType: '01', clientId: 4 }), CATALOGO, IVA, AHORA);
+			if (!r.ok) throw new Error('debía poderse cobrar');
+			expect(r.payload.document_type).toBeNull();
+		});
+
+		it('una factura sin cliente no sale de acá', () => {
+			// El servidor diría lo mismo, pero después de un viaje y con un código.
+			const r = prepareSale(peticion({ ...activa, documentType: '01' }), CATALOGO, IVA, AHORA);
+			expect(r).toEqual({ ok: false, reason: { code: 'checkout_invoice_needs_client' } });
+		});
+
+		it('un tipo apagado tampoco', () => {
+			const r = prepareSale(
+				peticion({ ...activa, documentType: '04', enabledTypes: ['01', '03'], clientId: 4 }),
+				CATALOGO,
+				IVA,
+				AHORA
+			);
+			expect(r).toEqual({ ok: false, reason: { code: 'checkout_document_type_not_enabled' } });
+		});
+
+		it('ni uno que el mostrador no emite', () => {
+			const r = prepareSale(peticion({ ...activa, documentType: '03' }), CATALOGO, IVA, AHORA);
+			expect(r).toEqual({ ok: false, reason: { code: 'checkout_bad_document_type' } });
+		});
+	});
+
 	it('usa la tasa que se le pasa y no una constante', () => {
 		const r = prepareSale(peticion(), CATALOGO, 0.04, AHORA);
 		if (!r.ok) throw new Error('debía poderse cobrar');
 		expect(r.totals.tax).toBe(174);
 		expect(r.totals.total).toBe(4524);
+	});
+});
+
+describe('la exportación (RF-78, RN-87, T-727)', () => {
+	const PARTIDA = '090111000000';
+	const catalogo = (cafe: Partial<Product> = {}): Product[] => [
+		{
+			...producto(1, 'Café de exportación', 1450, 20),
+			cabys_code: '2316100000100',
+			tax_code: '08',
+			tariff_heading: PARTIDA,
+			...cafe
+		},
+		{ ...producto(2, 'Asesoría', 4250, 10), cabys_code: '8595400000000', tax_code: '08' }
+	];
+	const extranjero = {
+		einvoicing: true,
+		enabledTypes: ['04', '01', '03', '02', '09'],
+		clientId: 9,
+		foreignReceiver: true,
+		foreignAddress: '12 Main St, Miami'
+	};
+
+	it('al extranjero le sale la exportación, sin que nadie la pida', () => {
+		const r = prepareSale(peticion(extranjero), catalogo(), IVA, AHORA);
+		expect(r.ok).toBe(true);
+		if (r.ok) expect(r.payload.document_type).toBe('09');
+	});
+
+	it('un servicio sin partida también se exporta', () => {
+		const r = prepareSale(
+			peticion({ ...extranjero, lines: [{ id_product: 2, quantity: 1 }] }),
+			catalogo(),
+			IVA,
+			AHORA
+		);
+		expect(r.ok).toBe(true);
+	});
+
+	it('el cajero puede dejar al extranjero en tiquete', () => {
+		const r = prepareSale(peticion({ ...extranjero, documentType: '04' }), catalogo(), IVA, AHORA);
+		expect(r.ok).toBe(true);
+		if (r.ok) expect(r.payload.document_type).toBe('04');
+	});
+
+	it('facturarle al extranjero no sale de acá', () => {
+		const r = prepareSale(peticion({ ...extranjero, documentType: '01' }), catalogo(), IVA, AHORA);
+		expect(r).toEqual({ ok: false, reason: { code: 'checkout_invoice_needs_resident' }, field: undefined });
+	});
+
+	it('exportarle a uno del país, o sin cliente, tampoco', () => {
+		const delPais = prepareSale(
+			peticion({ ...extranjero, foreignReceiver: false, documentType: '09' }),
+			catalogo(),
+			IVA,
+			AHORA
+		);
+		expect(delPais.ok).toBe(false);
+		if (!delPais.ok) expect(delPais.reason.code).toBe('checkout_export_needs_foreign_client');
+		const sinCliente = prepareSale(
+			peticion({ ...extranjero, clientId: null, foreignReceiver: false, documentType: '09' }),
+			catalogo(),
+			IVA,
+			AHORA
+		);
+		expect(sinCliente.ok).toBe(false);
+		if (!sinCliente.ok) expect(sinCliente.reason.code).toBe('checkout_export_needs_client');
+	});
+
+	it('sin dirección extranjera no se cobra', () => {
+		for (const sin of [null, undefined, '  ']) {
+			const r = prepareSale(peticion({ ...extranjero, foreignAddress: sin }), catalogo(), IVA, AHORA);
+			expect(r.ok).toBe(false);
+			if (!r.ok) expect(r.reason.code).toBe('checkout_export_needs_foreign_address');
+		}
+	});
+
+	it('una mercancía sin partida no se cobra, y se dice cuál', () => {
+		const r = prepareSale(
+			peticion({ ...extranjero, lines: [{ id_product: 2, quantity: 1 }, { id_product: 1, quantity: 1 }] }),
+			catalogo({ tariff_heading: null }),
+			IVA,
+			AHORA
+		);
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.reason).toEqual({
+				code: 'checkout_export_line_needs_tariff_heading',
+				product: 'Café de exportación'
+			});
+		}
+	});
+
+	it('una tarifa que la exportación no admite tampoco', () => {
+		const r = prepareSale(peticion(extranjero), catalogo({ tax_code: '11' }), IVA, AHORA);
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.reason).toEqual({
+				code: 'checkout_export_tariff_not_allowed',
+				product: 'Café de exportación',
+				taxCode: '11'
+			});
+		}
+	});
+
+	it('a uno del país la partida no importa: sale la factura', () => {
+		const r = prepareSale(
+			peticion({ ...extranjero, foreignReceiver: false, foreignAddress: null }),
+			catalogo({ tariff_heading: null }),
+			IVA,
+			AHORA
+		);
+		expect(r.ok).toBe(true);
+		if (r.ok) expect(r.payload.document_type).toBe('01');
 	});
 });
 
@@ -156,10 +324,18 @@ describe('venta que no se puede cobrar', () => {
 	});
 
 	it('con un número de factura que no tiene la forma esperada', () => {
-		for (const malo of ['', '123', 'abcdefghijklmn', '202608162143050']) {
+		for (const malo of ['123', 'abcdefghijklmn', '202608162143050']) {
 			const r = prepareSale(peticion({ saleNumber: malo }), CATALOGO, IVA, AHORA);
 			expect(r.ok, malo).toBe(false);
 			if (!r.ok) expect(r.reason).toEqual({ code: 'checkout_bad_sale_number' });
+		}
+	});
+
+	it('sin número de factura el servidor lo pone: el envío no lo lleva (T-706)', () => {
+		for (const ausente of ['', undefined]) {
+			const r = prepareSale(peticion({ saleNumber: ausente }), CATALOGO, IVA, AHORA);
+			expect(r.ok).toBe(true);
+			if (r.ok) expect('sale_number' in r.payload).toBe(false);
 		}
 	});
 

@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-#: Los tipos de identificación de Hacienda, los mismos de `companies` (T-621).
-#: 01 física, 02 jurídica, 03 DIMEX, 04 NITE.
-TIPOS_DE_IDENTIFICACION = ("01", "02", "03", "04")
+from app.domain.hacienda import IDENTIFICATION_TYPES
+
+#: Los tipos de identificación de Hacienda, los seis de la 4.4 (T-621, T-728):
+#: 01 física, 02 jurídica, 03 DIMEX, 04 NITE, 05 extranjero no domiciliado y
+#: 06 no contribuyente, que es a quien se le emite la factura de compra.
+TIPOS_DE_IDENTIFICACION = IDENTIFICATION_TYPES
 
 
 class SupplierIn(BaseModel):

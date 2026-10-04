@@ -78,7 +78,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Final, Iterable, Iterator
 
-from .hacienda import NAMESPACES, RAICES
+from .hacienda import FOREIGN, NAMESPACES, RAICES
 
 #: Las condiciones de venta que **no llevan medio de pago** (anexo p. 55, RN-77):
 #: crédito, servicios al Estado a crédito y venta a crédito con IVA a 90 días.
@@ -91,6 +91,18 @@ TARIFA_NO_SUJETA: Final = ("01", "11")
 
 #: Un CABYS que empieza con uno de estos es un servicio (anexo pp. 50-52).
 CABYS_DE_SERVICIO: Final = "56789"
+#: El código de la factura de exportación, que es la que pide partida y receptor
+#: del extranjero.
+EXPORTACION: Final = "09"
+
+
+def is_merchandise(cabys: str | None) -> bool:
+    """Mercancía salvo que el CABYS diga servicio: los de 5 a 9 lo son. Sin
+    CABYS, mercancía: es lo que vende un mostrador, y de todos modos la línea
+    se detiene por el CABYS. (`"" in "56789"` es cierto en Python; por eso la
+    vacía se mira aparte.)"""
+    primera = (cabys or "")[:1]
+    return not primera or primera not in CABYS_DE_SERVICIO
 
 _CENTAVOS = Decimal("0.00001")
 _MILESIMAS = Decimal("0.001")
@@ -481,7 +493,7 @@ class Linea:
     @property
     def es_servicio(self) -> bool:
         """Lo dice el CABYS: 5 a 9 son servicios, 0 a 4 mercancías."""
-        return self.cabys[:1] in CABYS_DE_SERVICIO
+        return not is_merchandise(self.cabys)
 
     @property
     def monto_total(self) -> Decimal:
@@ -856,6 +868,14 @@ def _revisar_encabezado(c: Comprobante, p: Perfil) -> None:
         raise ComprobanteInvalido("falta_actividad_receptor")
     if p.obliga("Receptor") and c.receptor is None:
         raise ComprobanteInvalido("falta_receptor")
+    # La exportación es para el extranjero no domiciliado (RF-78, T-727): su
+    # receptor es un `05` y lleva sus señas de afuera en lugar de la ubicación
+    # del país. Se exige acá, para cualquier origen, y no en quien arma el dato.
+    if c.tipo == EXPORTACION and c.receptor is not None:
+        if c.receptor.identificacion.tipo != FOREIGN:
+            raise ComprobanteInvalido("receptor_no_extranjero", c.receptor.identificacion.tipo)
+        if not c.receptor.otras_senas_extranjero:
+            raise ComprobanteInvalido("receptor_sin_senas_extranjeras")
 
     # **El emisor y el receptor no piden lo mismo, y la asimetría es del XSD.**
     # De la factura son obligatorios del emisor nombre, identificación,
@@ -903,6 +923,10 @@ def _revisar_lineas(c: Comprobante, p: Perfil) -> None:
         _cabe(len(linea.surtido), "LineaDetalleSurtido")
         if p.tiene("CodigoCABYS") and not linea.cabys:
             raise ComprobanteInvalido("linea_sin_cabys", str(linea.numero))
+        # En la exportación cada mercancía lleva su partida arancelaria (RF-78);
+        # los servicios no la tienen, y el XSD la deja opcional por eso.
+        if c.tipo == EXPORTACION and not linea.es_servicio and not linea.partida_arancelaria:
+            raise ComprobanteInvalido("linea_sin_partida", str(linea.numero))
         if p.tiene("UnidadMedida") and not linea.unidad:
             raise ComprobanteInvalido("linea_sin_unidad", str(linea.numero))
         if p.tiene("BaseImponible") and not linea.impuestos:

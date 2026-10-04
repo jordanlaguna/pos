@@ -63,4 +63,8 @@
 			<span class="text-[var(--text-subtle)]">{hint}</span>
 		{/if}
 	</div>
+	<!-- Con variación y aclaración a la vez, la aclaración va debajo (T-726). -->
+	{#if delta && hint}
+		<p class="mt-0.5 text-xs text-[var(--text-subtle)]">{hint}</p>
+	{/if}
 </div>

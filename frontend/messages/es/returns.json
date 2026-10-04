@@ -47,5 +47,13 @@
 	"returns_to_refund": "A reembolsar",
 	"returns_stock_note": "Las unidades devueltas vuelven al inventario y se descuentan del arqueo de caja.",
 	"returns_register": "Registrar devolución",
-	"returns_at_least_one": "Indique al menos un producto con cantidad mayor que cero."
+	"returns_at_least_one": "Indique al menos un producto con cantidad mayor que cero.",
+	"returns_view_credit_note": "Ver nota de crédito",
+	"returns_view_annulment": "Ver anulación",
+	"credit_note_not_found": "Esa devolución no tiene nota de crédito.",
+	"credit_note_tab_title": "Nota de crédito {number}",
+	"credit_note_registered": "Devolución registrada con su nota de crédito.",
+	"credit_note_annulled": "Comprobante anulado con su nota de crédito.",
+	"credit_note_back": "Volver a devoluciones",
+	"credit_note_original": "Ver el comprobante original"
 }

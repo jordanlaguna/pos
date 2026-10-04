@@ -1,22 +1,11 @@
-import os
-import tempfile
-from pathlib import Path
-
 from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
-from app.models.model_product import Product
-from app.models.model_sale_details import SaleDetail
-from app.models.model_sales import Sale
-from app.models.model_user import User
 from app.schemas.schemas_sales import SaleDetailResponse, SaleRegister, SaleRegisterSuccess, SalesList
 from app.services import crud_sale
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user, require_module
 
 router = APIRouter()
 
@@ -34,6 +23,7 @@ def register_sale(
     sale: SaleRegister,
     db: Session = Depends(get_db),
     current: Sesion = Depends(get_current_user),
+    _modulo: Sesion = Depends(require_module("sales")),
 ):
     # Este endpoint solo transporta (T-110). Las reglas se fueron al caso de
     # uso, y con motivo:
@@ -73,65 +63,9 @@ def get_sale_detail(
     return detail
 
 
-@router.get("/pdf/{sale_id}", response_class=FileResponse)
-def generate_invoice_pdf(
-    sale_id: int,
-    db: Session = Depends(get_db),
-    current: Sesion = Depends(get_current_user),
-):
-    sale = db.query(Sale).filter(Sale.id == sale_id).first()
-    if not sale:
-        raise api_error(404, "sale_not_found")
-
-    details = db.query(SaleDetail).filter(SaleDetail.sale_id == sale.id).all()
-    if not details:
-        raise api_error(404, "sale_details_not_found")
-
-    temp_dir = Path(os.getenv("TEMP") or tempfile.gettempdir())
-    file_path = temp_dir / f"venta_{sale.sale_number}.pdf"
-
-    c = canvas.Canvas(str(file_path), pagesize=letter)
-    width, height = letter
-    y = height - 50
-
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, y, f"Factura: {sale.sale_number}")
-    y -= 30
-
-    c.setFont("Helvetica", 12)
-    c.drawString(50, y, f"Fecha: {sale.created_at.strftime('%d/%m/%Y %H:%M')}")
-    y -= 20
-    c.drawString(50, y, f"Metodo de pago: {sale.payment_method}")
-    y -= 30
-
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(50, y, "Detalle:")
-    y -= 20
-
-    c.setFont("Helvetica", 11)
-    for detail in details:
-        product = db.query(Product).filter(Product.id_product == detail.product_id).first()
-        name = product.name if product else f"Producto #{detail.product_id}"
-        c.drawString(
-            50,
-            y,
-            f"{name} x{detail.quantity}  -  Unit: {detail.unit_price:,.2f}  -  Subtotal: {detail.subtotal:,.2f}",
-        )
-        y -= 18
-        if y < 120:
-            c.showPage()
-            c.setFont("Helvetica", 11)
-            y = height - 50
-
-    y -= 12
-    c.setFont("Helvetica", 12)
-    c.drawString(50, y, f"Subtotal: {sale.subtotal:,.2f}")
-    y -= 18
-    c.drawString(50, y, f"IVA: {sale.tax:,.2f}")
-    y -= 18
-    c.setFont("Helvetica-Bold", 13)
-    c.drawString(50, y, f"Total: {sale.total:,.2f}")
-
-    c.save()
-
-    return FileResponse(path=file_path, filename=file_path.name, media_type="application/pdf")
+# `GET /sales/pdf/{id}` se quitó (T-922, RN-86). Dibujaba con reportlab un
+# cuarto documento sin emisor, sin desglose por tarifa, sin el idioma del
+# documento y con sus rótulos escritos en español —contra RN-30—, y no llevaba
+# nada de lo que Hacienda pide imprimir. Para que dijera lo mismo que las
+# plantillas habría que haberlas escrito dos veces. El PDF sale de imprimir la
+# plantilla del POS, que se arma cada vez y no se guarda (RN-82).

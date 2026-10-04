@@ -3,10 +3,21 @@ import { api } from '$lib/server/api';
 import { requireSoporte } from '$lib/server/auth';
 import { formError, Validator } from '$lib/application/validation';
 import { locales } from '$lib/paraglide/runtime.js';
-import type { NewCompanyResult, Plan } from '$lib/domain/types';
+import type { NewCompanyResult, Plan, SupportCompany } from '$lib/domain/types';
 import { F } from '$lib/ui/fields';
 import { initialDocumentTexts } from '$lib/ui/documents';
-import { apiMessage, validationErrors } from '$lib/ui/messages';
+import { ID_TYPES } from '$lib/domain/settings';
+import { isBlankLocation, locationProblem, type LocationField } from '$lib/domain/location';
+
+/** El campo del formulario de cada parte de la ubicación. */
+const CAMPO_DE_UBICACION: Record<LocationField, string> = {
+	province: 'negocio_provincia',
+	canton: 'negocio_canton',
+	district: 'negocio_distrito',
+	neighborhood: 'negocio_barrio',
+	other_signs: 'negocio_otras_senas'
+};
+import { apiMessage, locationMessage, validationErrors } from '$lib/ui/messages';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -24,7 +35,10 @@ const DIAS_DE_PRUEBA = 30;
 export const load: PageServerLoad = async ({ locals, url }) => {
 	requireSoporte(locals, url.pathname);
 
-	const plans = await api<Plan[]>('/support/plans', { token: locals.token });
+	const [plans, companias] = await Promise.all([
+		api<Plan[]>('/support/plans', { token: locals.token }),
+		api<SupportCompany[]>('/support/companies', { token: locals.token })
+	]);
 
 	/*
 	 * La fecha que propone el formulario la calcula el **servidor**.
@@ -40,6 +54,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	return {
 		plans,
+		// Solo el par: es lo que hace falta para proponer la numeración (QA-04).
+		pares: companias.map(({ afiliado, compania }) => ({ afiliado, compania })),
 		estados: ESTADOS_AL_CREAR,
 		// La lista sale de Paraglide y no de una constante escrita a mano: es la de
 		// los catálogos que de verdad se compilaron, así que no puede quedar vieja.
@@ -60,6 +76,25 @@ export const actions: Actions = {
 			required: false,
 			max: 30
 		});
+		const tipoIdentificacion = v.oneOf(
+			'tipo_identificacion',
+			F.businessIdType(),
+			ID_TYPES.map((t) => t.code),
+			{ required: false }
+		);
+		// La ubicación del emisor (RF-73): opcional, pero a medias no.
+		const ubicacion = {
+			province: String(form.get('negocio_provincia') ?? ''),
+			canton: String(form.get('negocio_canton') ?? ''),
+			district: String(form.get('negocio_distrito') ?? ''),
+			neighborhood: String(form.get('negocio_barrio') ?? ''),
+			otherSigns: String(form.get('negocio_otras_senas') ?? '')
+		};
+		const conUbicacion = !isBlankLocation(ubicacion);
+		if (conUbicacion) {
+			const problema = locationProblem(ubicacion);
+			if (problema) v.add(CAMPO_DE_UBICACION[problema.field], locationMessage(problema));
+		}
 		// El par se puede dejar en blanco: lo calcula el backend, que es el único
 		// que puede hacerlo sin que dos altas a la vez elijan el mismo número.
 		const afiliado = v.integer('afiliado', F.affiliate(), { required: false, min: 1 });
@@ -94,6 +129,7 @@ export const actions: Actions = {
 				body: {
 					nombre,
 					identificacion: identificacion || null,
+					identification_type: tipoIdentificacion || null,
 					afiliado: afiliado || null,
 					compania: compania || null,
 					plan_id: planId,
@@ -113,7 +149,10 @@ export const actions: Actions = {
 					 * Van en el idioma **del documento** y no en el de la pantalla: es
 					 * texto que se imprime en la factura del cliente (RN-29).
 					 */
-					settings: { document: initialDocumentTexts(documentLocale) }
+					settings: {
+						document: initialDocumentTexts(documentLocale),
+						...(conUbicacion ? { business: { location: ubicacion } } : {})
+					}
 				}
 			});
 		} catch (error) {

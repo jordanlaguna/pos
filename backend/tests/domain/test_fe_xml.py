@@ -71,6 +71,13 @@ RECEPTOR = Parte(
     Identificacion("01", "115670987"),
     Ubicacion("1", "03", "01", "Curridabat, 200 m sur"),
 )
+#: El de una exportación (T-727): extranjero no domiciliado, con sus señas de
+#: afuera en lugar de la ubicación del país.
+RECEPTOR_EXTRANJERO = Parte(
+    "INTERMARKET CORPORATION",
+    Identificacion("05", "0"),
+    otras_senas_extranjero="1201 Brickell Ave, Miami, FL",
+)
 EXONERACION = Exoneracion(
     tipo_documento="08",
     numero_documento="LEY 7210 REGIMEN DE ZONAS FRANCAS",
@@ -1108,6 +1115,8 @@ class TestCadaTipoLLevaLoSuyo:
                 actividad_receptor="4741.0",
                 referencias=(Referencia("14", "2026-09-18T10:00:00-06:00", numero="1"),),
             )
+        if tipo == "09":
+            extra = dict(receptor=RECEPTOR_EXTRANJERO)
         with pytest.raises(ComprobanteInvalido) as e:
             construir(comprobante(tipo=tipo, lineas=(linea(**cambios),), **extra))
         assert (e.value.code, e.value.detail) == ("no_va_en_este_tipo", elemento)
@@ -1115,8 +1124,42 @@ class TestCadaTipoLLevaLoSuyo:
     def test_la_exportacion_no_tiene_balde_de_no_sujeto(self):
         """Si la línea desapareciera del resumen, `TotalVenta` no cuadraría."""
         with pytest.raises(ComprobanteInvalido) as e:
-            construir(comprobante(tipo="09", lineas=(linea(impuestos=(iva("01", "0"),)),)))
+            construir(
+                comprobante(
+                    tipo="09",
+                    receptor=RECEPTOR_EXTRANJERO,
+                    lineas=(linea(impuestos=(iva("01", "0"),)),),
+                )
+            )
         assert (e.value.code, e.value.detail) == ("no_va_en_este_tipo", "TotalNoSujeto")
+
+    def test_la_exportacion_exige_un_receptor_del_extranjero_con_sus_senas(self):
+        """RF-78, T-727: para cualquier origen, lo exige el armador y no quien
+        arma el dato. Un `01` no es exportación; un `05` sin señas, tampoco."""
+        with pytest.raises(ComprobanteInvalido) as e:
+            construir(comprobante(tipo="09"))
+        assert (e.value.code, e.value.detail) == ("receptor_no_extranjero", "01")
+        with pytest.raises(ComprobanteInvalido) as e:
+            construir(
+                comprobante(
+                    tipo="09",
+                    receptor=Parte("INTERMARKET CORPORATION", Identificacion("05", "0")),
+                )
+            )
+        assert e.value.code == "receptor_sin_senas_extranjeras"
+
+    def test_la_exportacion_exige_la_partida_de_cada_mercancia_y_no_de_los_servicios(self):
+        con_partida = linea(cabys=MERCANCIA, partida_arancelaria="010121000000")
+        sin_partida = linea(numero=2, cabys=MERCANCIA)
+        with pytest.raises(ComprobanteInvalido) as e:
+            construir(
+                comprobante(
+                    tipo="09", receptor=RECEPTOR_EXTRANJERO, lineas=(con_partida, sin_partida)
+                )
+            )
+        assert (e.value.code, e.value.detail) == ("linea_sin_partida", "2")
+        # Un servicio no la lleva, y una mercancía con ella sí pasa.
+        construir(comprobante(tipo="09", receptor=RECEPTOR_EXTRANJERO, lineas=(linea(), con_partida)))
 
     def test_la_exportacion_le_quita_la_ubicacion_al_receptor(self):
         raiz = arbol(
@@ -1141,6 +1184,7 @@ class TestCadaTipoLLevaLoSuyo:
         raiz = arbol(
             comprobante(
                 tipo="09",
+                receptor=RECEPTOR_EXTRANJERO,
                 lineas=(linea(impuestos=(iva("10", "0", monto_exportacion=Decimal("400")),)),),
             )
         )

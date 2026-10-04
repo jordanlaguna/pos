@@ -95,5 +95,7 @@
 	"cash_close_notes": "Closing notes (optional)",
 	"cash_close_notes_placeholder": "E.g., short from change given wrong",
 	"cash_closing_now": "Closing…",
-	"cash_closed_done": "Register closed."
+	"cash_closed_done": "Register closed.",
+	"cash_debit_notes_in_cash": "Debit notes in cash",
+	"cash_credit_notes": "Credit notes by amount"
 }

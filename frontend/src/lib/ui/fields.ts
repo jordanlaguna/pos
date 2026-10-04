@@ -18,6 +18,7 @@ import { m } from '$lib/paraglide/messages.js';
 const masculino = (text: string): FieldLabel => ({ text, concord: 'm' });
 const femenino = (text: string): FieldLabel => ({ text, concord: 'f' });
 const femeninoPlural = (text: string): FieldLabel => ({ text, concord: 'fp' });
+const masculinoPlural = (text: string): FieldLabel => ({ text, concord: 'mp' });
 
 export const F = {
 	// ------------------------------------------------------------------ plata
@@ -28,7 +29,6 @@ export const F = {
 	price: () => masculino(m.field_price()),
 	stock: () => masculino(m.field_stock()),
 	taxRate: () => femenino(m.field_tax_rate()),
-	taxName: () => masculino(m.field_tax_name()),
 	decimals: () => femenino(m.field_decimals()),
 
 	// ------------------------------------------------------------- catálogo
@@ -47,6 +47,8 @@ export const F = {
 	identification: () => femenino(m.field_identification()),
 	telephone: () => masculino(m.field_telephone()),
 	address: () => femenino(m.field_address()),
+	foreignAddress: () => femenino(m.field_foreign_address()),
+	tariffHeading: () => femenino(m.field_tariff_heading()),
 	email: () => masculino(m.field_email()),
 	password: () => femenino(m.field_password()),
 	role: () => masculino(m.field_role()),
@@ -106,6 +108,9 @@ export const F = {
 	affiliate: () => masculino(m.field_affiliate()),
 	companyNumber: () => masculino(m.field_company_number()),
 	plan: () => masculino(m.field_plan()),
+	company: () => femenino(m.field_company()),
+	terminal: () => femenino(m.field_terminal()),
+	lastSequence: () => masculino(m.field_last_sequence()),
 	companyState: () => masculino(m.field_company_state()),
 	expiresOn: () => femenino(m.field_expires_on()),
 
@@ -114,5 +119,40 @@ export const F = {
 	account: () => femenino(m.field_account()),
 	accountCode: () => masculino(m.field_account_code()),
 	accountKind: () => masculino(m.field_account_kind()),
-	entryDate: () => femenino(m.field_entry_date())
+	entryDate: () => femenino(m.field_entry_date()),
+
+	// ---------------------------------------------------------- planilla (F12)
+	employerNumber: () => masculino(m.field_employer_number()),
+	scheduleName: () => masculino(m.field_schedule_name()),
+	hoursPerDay: () => femeninoPlural(m.field_hours_per_day()),
+	workdaysPerWeek: () => masculinoPlural(m.field_workdays_per_week()),
+	firstCutDay: () => masculino(m.field_first_cut_day()),
+	cutWeekday: () => masculino(m.field_cut_weekday()),
+	seriesStart: () => masculino(m.field_series_start()),
+	positionName: () => masculino(m.field_position_name()),
+	ccssCode: () => masculino(m.field_ccss_code()),
+	insCode: () => masculino(m.field_ins_code()),
+	policyNumber: () => masculino(m.field_policy_number()),
+	rtRate: () => femenino(m.field_rt_rate()),
+	firstName: () => masculino(m.field_first_name()),
+	lastName1: () => masculino(m.field_last_name_1()),
+	hiredOn: () => femenino(m.field_hired_on()),
+	periodSalary: () => masculino(m.field_period_salary()),
+	validFrom: () => femenino(m.field_valid_from()),
+	startsOn: () => femenino(m.field_starts_on()),
+	endsOn: () => femenino(m.field_ends_on()),
+	hours: () => femeninoPlural(m.field_hours()),
+	days: () => masculinoPlural(m.field_days()),
+	totalAmount: () => masculino(m.field_total_amount()),
+	newSalary: () => masculino(m.field_new_salary()),
+	memo: () => femenino(m.field_memo()),
+	cutDate: () => femenino(m.field_cut_date()),
+	payDate: () => femenino(m.field_pay_date()),
+	year: () => masculino(m.field_year()),
+	month: () => masculino(m.field_month()),
+	terminatedOn: () => femenino(m.field_terminated_on()),
+	asOf: () => femenino(m.field_as_of()),
+	employee: () => masculino(m.field_employee()),
+	kind: () => masculino(m.field_kind()),
+	dependentChildren: () => masculinoPlural(m.field_dependent_children())
 };

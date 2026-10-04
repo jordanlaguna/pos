@@ -75,6 +75,12 @@ class Product(TenantMixin, Base):
     # índices y todavía no compara valores por omisión (T-919).
     unit_of_measure = Column(String(15), nullable=False, server_default="Unid")
 
+    # La partida arancelaria (F7, RF-78, T-727): lo que una mercancía necesita
+    # para salir en una factura de exportación. Doce dígitos exactos, como la
+    # define el XSD 4.4. NULL es «no tiene», y eso solo importa el día que se le
+    # venda a alguien del extranjero.
+    tariff_heading = Column(CHAR(12), nullable=True)
+
     created_at = Column(DateTime, nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
 

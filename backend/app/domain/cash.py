@@ -26,13 +26,18 @@ class CashCount:
     movements_in: Money
     movements_out: Money
     returns: Money
+    #: Las notas por monto (T-726). La ND entra solo si se cobró en efectivo; la
+    #: NC sale entera, como una devolución.
+    cash_debit_notes: Money = Money.zero()
+    credit_notes: Money = Money.zero()
 
 
 def expected_amount(count: CashCount) -> Money:
     """
     Lo que tiene que haber en la gaveta.
 
-    Apertura + ventas en efectivo + entradas − salidas − devoluciones.
+    Apertura + ventas en efectivo + ND en efectivo + entradas − salidas −
+    devoluciones − NC por monto.
 
     **Solo el efectivo cuenta.** Una venta con tarjeta o transferencia no pone
     un colón en la gaveta, así que sumarla haría que todo turno con datáfono
@@ -41,9 +46,11 @@ def expected_amount(count: CashCount) -> Money:
     return (
         count.opening
         + count.cash_sales
+        + count.cash_debit_notes
         + count.movements_in
         - count.movements_out
         - count.returns
+        - count.credit_notes
     )
 
 

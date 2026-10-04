@@ -175,7 +175,7 @@ class TestElModuloDelPlan:
         estado, cuerpo = sin_compras.call("POST", "/suppliers", {"name": "No debería entrar"})
         assert codigo((estado, cuerpo), 403) == "module_not_in_plan"
         # El módulo viaja como dato para que el POS arme la frase (RN-30).
-        assert cuerpo["detail"]["module"] == "purchases"
+        assert cuerpo["detail"]["module"] == "suppliers"
 
     def test_pero_la_lista_se_puede_leer(self, sin_compras: Api):
         # RN-50: apagar un módulo no borra nada, lo deja en solo lectura. Una

@@ -192,6 +192,10 @@
 					<option value="02">{m.suppliers_id_type_02()}</option>
 					<option value="03">{m.suppliers_id_type_03()}</option>
 					<option value="04">{m.suppliers_id_type_04()}</option>
+					<!-- Los dos de F7: el 06 es a quien se le emite la factura de compra
+					     (T-728); el 05, el proveedor del extranjero. -->
+					<option value="05">{m.suppliers_id_type_05()}</option>
+					<option value="06">{m.suppliers_id_type_06()}</option>
 				</select>
 			</div>
 			<Field

@@ -31,6 +31,7 @@ from app.domain.money import Money
 from app.infrastructure.clock import FixedClock
 from tests.application.fakes import (
     FakeCashRepository,
+    FakeNoteRepository,
     FakeReturnRepository,
     FakeSaleRepository,
     FakeStockEntryRepository,
@@ -58,6 +59,7 @@ def mundo():
         report=BuildSessionReport(
             sales=FakeSaleRepository(),
             returns=FakeReturnRepository(),
+            notes=FakeNoteRepository(),
             cash=caja,
             clock=reloj,
         ),

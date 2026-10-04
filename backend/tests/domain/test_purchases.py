@@ -11,6 +11,7 @@ import pytest
 from app.domain.errors import InvalidPayment, PaymentExceedsBalance
 from app.domain.money import Money
 from app.domain.purchases import (
+    credit_term_days,
     CASH,
     PAYMENT_METHODS,
     PurchaseLine,
@@ -212,3 +213,20 @@ class TestAntiguedad:
         # que la suscripción sin fecha, y a propósito: allá lo caro es vender
         # gratis, acá lo caro sería marcar de morosa a quien ya pagó.
         assert aging_bucket(None, self.HOY) == 0
+
+
+class TestElPlazoDelComprobante:
+    """T-728: la inversa de `due_date`, para el `PlazoCredito` de la FEC."""
+
+    def test_desde_la_fecha_del_documento(self):
+        assert credit_term_days(date(2026, 9, 10), date(2026, 9, 12), date(2026, 10, 10)) == 30
+
+    def test_sin_fecha_del_documento_desde_la_carga(self):
+        assert credit_term_days(None, date(2026, 9, 12), date(2026, 9, 27)) == 15
+
+    def test_nunca_menos_de_un_dia(self):
+        # Un plazo en cero diría contado en un comprobante que dice crédito.
+        assert credit_term_days(date(2026, 9, 10), date(2026, 9, 10), date(2026, 9, 10)) == 1
+
+    def test_sin_vencimiento_es_de_contado(self):
+        assert credit_term_days(date(2026, 9, 10), date(2026, 9, 12), None) is None

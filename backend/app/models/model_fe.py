@@ -21,10 +21,12 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     PrimaryKeyConstraint,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 
@@ -116,3 +118,101 @@ class FeSequence(TenantMixin, Base):
     )
     updated_at = Column(DateTime, nullable=True)
     updated_by = Column(Integer, nullable=True)
+
+
+class FeDocument(TenantMixin, Base):
+    """Un comprobante con su consecutivo y su clave (T-704, T-705, migración 018).
+
+    Cuelga de su origen —la venta, la devolución o la nota— y no es una columna
+    de ellas porque un origen puede tener más de uno: un rechazo se corrige con
+    otra clave, no reescribiendo esta.
+
+    La clave no se repite en la compañía y el consecutivo tampoco dentro del
+    ambiente. Uno de pruebas y uno de producción sí pueden coincidir: se numeran
+    aparte (RN-34).
+    """
+
+    __tablename__ = "fe_documents"
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "clave", name="uq_fe_documents_clave"),
+        UniqueConstraint(
+            "company_id", "environment", "consecutive", name="uq_fe_documents_consecutive"
+        ),
+        # La pregunta de todas las pantallas: «¿qué comprobante tiene esta venta?».
+        Index("idx_fe_documents_source", "source_type", "source_id"),
+        # La pregunta de la cola: «¿qué le toca ya a esta compañía?» (T-708).
+        Index("idx_fe_documents_queue", "company_id", "status", "next_attempt_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    #: 'sale', 'return', 'note' o 'purchase' (`number_document.SOURCE_*`).
+    source_type = Column(String(10), nullable=False)
+    source_id = Column(Integer, nullable=False)
+    document_type = Column(CHAR(2), nullable=False)
+    environment = Column(String(12), nullable=False)
+    branch_id = Column(Integer, ForeignKey("branches.id"), nullable=False)
+    terminal_id = Column(Integer, ForeignKey("terminals.id"), nullable=False)
+    #: `sequence_number` y no `sequence`, que en MariaDB es palabra reservada.
+    sequence_number = Column(BigInteger, nullable=False)
+    consecutive = Column(CHAR(20), nullable=False)
+    clave = Column(CHAR(50), nullable=False)
+    #: 1 normal, 2 contingencia, 3 sin internet (nota 3, inciso g).
+    situation = Column(CHAR(1), nullable=False)
+    #: La actividad con que se declaró, que puede no ser la configurada mañana.
+    economic_activity = Column(String(10), nullable=True)
+    #: La misma marca que su origen: la fecha de la clave sale de acá.
+    issued_at = Column(DateTime, nullable=False)
+
+    # ----------------------------------------------- el recorrido (T-707 a T-712)
+    #
+    # Lo que la cola escribe y la pantalla lee (`domain/fe_transmission.py`).
+    # Nace `numbered` con la fila; el resto lo pone cada paso. Migración 020.
+
+    #: numbered | signed | sent | accepted | rejected | retrying | stopped
+    status = Column(String(12), nullable=False, server_default=text("'numbered'"))
+    #: Fallas transitorias seguidas; vuelve a cero al avanzar.
+    failures = Column(Integer, nullable=False, server_default=text("0"))
+    #: Consultas del veredicto desde el envío.
+    polls = Column(Integer, nullable=False, server_default=text("0"))
+    first_failure_at = Column(DateTime, nullable=True)
+    last_attempt_at = Column(DateTime, nullable=True)
+    #: La última vez que Hacienda o su IdP no contestaron por este documento:
+    #: lo único que cuenta para la situación «sin internet» (RN-43). Las fallas
+    #: nuestras —Vault, el almacén— no lo tocan.
+    unreachable_at = Column(DateTime, nullable=True)
+    #: Cuándo le toca el próximo paso. Nulo cuando ya no se mueve solo.
+    next_attempt_at = Column(DateTime, nullable=True)
+    signed_at = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    #: Cuándo Hacienda aceptó o rechazó.
+    resolved_at = Column(DateTime, nullable=True)
+    #: Por qué se detuvo (`fe_transmission.STOP_*`), o el motivo de un rechazo.
+    stop_reason = Column(String(40), nullable=True)
+    #: Lo que dijo Hacienda o la excepción, crudo, para que lo lea una persona.
+    stop_detail = Column(String(500), nullable=True)
+    #: El `ind-estado` tal cual.
+    hacienda_status = Column(String(20), nullable=True)
+    #: Dónde quedó el XML firmado en el almacén (plan §7.3), y la respuesta.
+    xml_key = Column(String(200), nullable=True)
+    response_key = Column(String(200), nullable=True)
+
+
+class FeDocumentEvent(TenantMixin, Base):
+    """Un paso del recorrido de un comprobante, con su hora (T-721).
+
+    Es la bitácora que la pantalla enseña —firmado a tal hora, enviado, Hacienda
+    contestó— y lo que permite reconstruir qué pasó con un documento meses
+    después. Solo se agrega; nunca se edita.
+    """
+
+    __tablename__ = "fe_document_events"
+
+    __table_args__ = (Index("idx_fe_document_events_document", "document_id", "id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(Integer, ForeignKey("fe_documents.id"), nullable=False)
+    at = Column(DateTime, nullable=False)
+    #: `use_cases/fe_transmission.EVENT_*`.
+    event = Column(String(20), nullable=False)
+    detail = Column(String(500), nullable=True)

@@ -24,6 +24,11 @@ DecimalDeFormulario = Annotated[float | None, BeforeValidator(_vacio_es_nulo)]
 class ClientRegister(BaseModel):
     # client attributes
     identification: str
+    #: El tipo de Hacienda (T-617): '01' física, '02' jurídica, '03' DIMEX,
+    #: '04' NITE, y desde T-727 '05' extranjero no domiciliado —que recibe
+    #: factura de exportación— y '06' no contribuyente. Sin él se deduce de la
+    #: cédula; si tampoco así se sabe, el cliente no se guarda.
+    identification_type: str | None = None
     name: str
     last_name: str
     second_name: str
@@ -31,6 +36,9 @@ class ClientRegister(BaseModel):
     telephone: int | None = None
     address: str | None = None
     register_date: str | None = None
+    #: Las otras señas de un cliente del extranjero (RF-78, T-727): van en el
+    #: receptor de la factura de exportación en lugar de la ubicación del país.
+    foreign_address: str | None = None
 
     # --- F7: la exoneración del cliente (RF-67, RN-78) ----------------------
     #
@@ -48,6 +56,8 @@ class ClientRegister(BaseModel):
 
 class ClientUpdate(BaseModel):
     identification: str | None = None
+    #: Ausente o en blanco deja el que tenía.
+    identification_type: str | None = None
     name: str | None = None
     last_name: str | None = None
     second_name: str | None = None
@@ -55,6 +65,9 @@ class ClientUpdate(BaseModel):
     telephone: int | None = None
     address: str | None = None
     register_date: str | None = None
+    #: Las otras señas de un cliente del extranjero (RF-78, T-727): van en el
+    #: receptor de la factura de exportación en lugar de la ubicación del país.
+    foreign_address: str | None = None
 
     # --- F7: la exoneración del cliente (RF-67, RN-78) ----------------------
     #
@@ -73,6 +86,7 @@ class ClientUpdate(BaseModel):
 class ClientResponse(BaseModel):
     id_client: int
     identification: str
+    identification_type: str | None = None
     name: str
     last_name: str
     second_name: str
@@ -80,6 +94,9 @@ class ClientResponse(BaseModel):
     telephone: int | None = None
     address: str | None = None
     register_date: str | None = None
+    #: Las otras señas de un cliente del extranjero (RF-78, T-727): van en el
+    #: receptor de la factura de exportación en lugar de la ubicación del país.
+    foreign_address: str | None = None
 
     model_config = {
         "from_attributes": True
@@ -95,6 +112,9 @@ class ClientRegisterSuccess(BaseModel):
 class ClientUserInformation(BaseModel):
     id_client: int
     identification: str
+    #: Lo imprime el comprobante en el receptor: «Cédula física 108840287».
+    #: Nulo en un cliente que ni la migración 011 pudo clasificar.
+    identification_type: str | None = None
     name: str
     last_name: str
     second_name: str

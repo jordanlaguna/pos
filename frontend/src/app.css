@@ -33,8 +33,15 @@
 		--text: #0f172a;
 		--text-muted: #475569;
 		--text-subtle: #64748b;
+		/* La flecha de las listas desplegables, del color de --text-subtle (QA-06). */
+		--select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 		--accent: #0e7490;
 		--accent-text: #ffffff;
+		/*
+		 * El acento tenue, para el fondo de un ícono o de una tarjeta marcada. Se
+		 * deriva y no se escribe: así sigue al tema y al acento que elija el dueño.
+		 */
+		--accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
 		--positive: #15803d;
 		--positive-bg: #dcfce7;
 		--negative: #b91c1c;
@@ -69,6 +76,7 @@
 		--text: #f1f5f9;
 		--text-muted: #cbd5e1;
 		--text-subtle: #94a3b8;
+		--select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 		--accent: #22d3ee;
 		--accent-text: #083344;
 		--positive: #4ade80;
@@ -170,6 +178,32 @@
 	}
 	.input[aria-invalid='true'] {
 		border-color: var(--negative);
+	}
+
+	/*
+	 * Las listas desplegables, todas iguales (QA-06).
+	 *
+	 * La flecha la dibujaba cada navegador a su manera —en Chrome sobre Windows,
+	 * pegada al borde y de otro gris que el del texto—, y por eso una lista no se
+	 * veía de la misma familia que el campo de al lado. Se apaga la nativa y se
+	 * pone una propia con el color de `--text-subtle` de cada tema. El
+	 * desplegable abierto sigue siendo el del sistema, y sigue el tema por el
+	 * `color-scheme` de `:root`.
+	 *
+	 * Va sobre `select.input` y no solo en `Select.svelte`: así alcanza también a
+	 * las que se quedan nativas a propósito, como la del idioma.
+	 */
+	select.input {
+		appearance: none;
+		padding-right: 2.25rem;
+		background-image: var(--select-chevron);
+		background-repeat: no-repeat;
+		background-position: right 0.7rem center;
+		background-size: 1rem;
+		cursor: pointer;
+	}
+	select.input:disabled {
+		cursor: not-allowed;
 	}
 
 	.label {

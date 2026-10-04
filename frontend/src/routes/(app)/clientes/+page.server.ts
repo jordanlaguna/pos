@@ -1,3 +1,5 @@
+import { isForeign } from '$lib/domain/identification';
+import { FOREIGN_ADDRESS_MAX_LENGTH } from '$lib/domain/export';
 import { fail } from '@sveltejs/kit';
 import { api } from '$lib/server/api';
 import { requireUser } from '$lib/server/auth';
@@ -42,15 +44,32 @@ function readExemption(form: FormData) {
 }
 
 function readClient(v: Validator, form: FormData) {
+	// En blanco es «según la cédula»: lo deduce el servidor (T-617). No se valida
+	// contra la lista acá; el desplegable solo ofrece los seis y el servidor lo
+	// comprueba igual.
+	const tipo = String(form.get('identification_type') ?? '').trim();
+	const extranjero = isForeign(tipo);
 	return {
-		identification: v.digits('identification', F.identification(), { min: 9, max: 12 }),
+		// Un pasaporte no son dígitos (T-727): con «extranjero no domiciliado» la
+		// identificación es texto de hasta 20, que es lo que admite el XML; con los
+		// demás tipos, la cédula de siempre.
+		identification: extranjero
+			? v.text('identification', F.identification(), { min: 1, max: 20 })
+			: v.digits('identification', F.identification(), { min: 9, max: 12 }),
+		identification_type: tipo,
 		name: v.text('name', F.name(), { max: 100 }),
 		last_name: v.text('last_name', F.firstLastName(), { max: 100 }),
 		second_name: v.text('second_name', F.secondLastName(), { max: 100 }),
 		email: v.email('email', F.email()),
 		// El backend guarda el teléfono como entero, así que se manda numérico.
 		telephone: Number(v.digits('telephone', F.telephone(), { min: 8, max: 15 })),
-		address: v.text('address', F.address(), { max: 100 }),
+		// La del país no se le exige a quien vive afuera: lo suyo son las señas
+		// extranjeras, que la factura de exportación lleva en su lugar (RF-78).
+		address: v.text('address', F.address(), { required: !extranjero, max: 100 }),
+		foreign_address: v.text('foreign_address', F.foreignAddress(), {
+			required: extranjero,
+			max: FOREIGN_ADDRESS_MAX_LENGTH
+		}),
 		register_date: v.date('register_date', F.registerDate()),
 		...readExemption(form)
 	};
