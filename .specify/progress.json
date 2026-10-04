@@ -1810,6 +1810,54 @@
       "decision": "T-616 deja subir el último consecutivo de cada caja y tipo en el ambiente en uso; bajarlo o moverlo después de la primera emisión del sistema se rechaza (`sequence_cannot_go_down`, `sequence_in_use`).",
       "porque": "RN-38: bajarlo vuelve a emitir números usados, y una vez que el sistema emitió el contador es suyo.",
       "fecha": "2026-10-03"
+    },
+    {
+      "tema": "F15 es del módulo de inventario que ya existe",
+      "decision": "Kárdex, salidas, toma física, traslados, mínimo y lotes van bajo `inventory`; no nace bandera en `plans`.",
+      "porque": "Una compañía que puede entrar mercadería tiene que poder sacarla y contarla; vender el kárdex aparte dejaría a Comercio sin forma de registrar un faltante.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La existencia es una suma y el kárdex manda",
+      "decision": "`stock_levels` por sucursal más `products.stock` como suma mantenida con `UPDATE … stock + :delta`; todo cambio deja un movimiento con antes, después, costo y promedio después (RN-98); la ficha ya no edita la existencia.",
+      "porque": "La grilla de ventas no puede sumar por fila (RNF-3); una suma calculada en Python se pisa entre sucursales; sin el «antes» no hay cómo explicar un número.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Un solo escritor de existencias y un solo orden de candados",
+      "decision": "`adjust_stock` se va; entra `MoveStock`. Todo documento bloquea primero todos sus productos en orden de `id` (`lock(product_ids)`, el `lock_for_sale` renombrado) y después `MoveStock` toma `products` y `stock_levels` por línea. El costo se escribe antes que el stock.",
+      "porque": "Dos órdenes distintos —entre tablas o entre productos— son un abrazo mortal en la caja (500 sin código); hoy la entrada no bloquea nada y el promedio se calcula sobre un stock sin candado.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "El costo de cada movimiento del kárdex",
+      "decision": "Promedio del momento para lo que sale o se ajusta; costo de compra para lo que entra; el del documento revertido en devoluciones y anulaciones; cada movimiento guarda además el promedio después de él.",
+      "porque": "Es lo que ya hace la devolución (RN-63): reponer a lo que cuesta hoy inventaría utilidad. El promedio guardado es lo que permite valorar a una fecha pasada y poner monto a las diferencias con el libro (RN-103).",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La sesión elige su caja",
+      "decision": "`POST /auth/company` acepta `terminal_id` opcional, validado contra la compañía; `CompanyOption` trae las terminales; `token_de_sesion` conserva la terminal al reemitir; con una sola terminal nada cambia.",
+      "porque": "Hoy toda sesión queda en la primera sucursal activa: el local 2 vendería con `bid = 1` y descontaría del estante equivocado. Elegir entre las cajas propias no es elegir «desde afuera» (RN-14).",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Repartir existencias al migrar con dos sucursales",
+      "decision": "La migración 023 abre todo en la sucursal activa de menor código; se reparte con traslados, no con tomas; negativos a cero y listados.",
+      "porque": "El traslado no cambia el total ni asienta; dos tomas dejarían un sobrante y un faltante contabilizados de mercadería que nunca se movió.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Lotes sin tabla de saldos y sin columna en las líneas",
+      "decision": "El saldo de un lote es la suma de sus movimientos; el lote de una línea vendida sale del kárdex por `source_line`; FEFO automático en la venta; «sin lote» es un lote válido en salida, traslado y conteo; activable por compañía en `settings`.",
+      "porque": "Lo que no se usa no se paga; FEFO parte una línea en varios lotes y una columna no lo diría; preguntarle el lote al cajero es la fila más larga del súper.",
+      "fecha": "2026-10-03"
+    },
+    {
+      "tema": "La migración siembra cuentas y mapeos a quien ya tiene libro",
+      "decision": "La 023 inserta `6.3.01`, `4.9.02` y sus cinco mapeos en las compañías con contabilidad activa, saltando lo que exista. T-1508 (pendiente de confirmar) repara igual lo de planilla.",
+      "porque": "Ninguna migración anterior lo hizo: las compañías activadas antes de F12 tienen los eventos de planilla cayendo en «por clasificar».",
+      "fecha": "2026-10-03"
     }
   ],
   "invariantes_verificados": {
@@ -2023,6 +2071,22 @@
     }
   ],
   "sesiones": [
+    {
+      "fecha": "2026-10-03",
+      "titulo": "Levantar la máquina después del merge y diseñar F15 (T-1501)",
+      "hecho": [
+        "Merge de `origin/main` en `Antony` con conflicto en `progress.json` resuelto conservando las dos partes. La base viva no tenía las columnas de las migraciones 014, 015, 016 y parte de la 021 y 022 (la trampa de `create_all` que ya está en CLAUDE.md); se aplicaron y el modelo quedó igual a la base.",
+        "`/configuracion` respondía 500 en Vite: `qrcode-generator` llegó en `package.json` con el merge y `node_modules` no lo tenía. `npm install` y reiniciar `vite dev`, que cachea la resolución fallida. Todas las pantallas del administrador en 200.",
+        "T-1501: spec §4, §5.10 (RN-98 a RN-105), RF-87 a RF-94, glosario y §10; plan §15 (§15.1 a §15.8) y tres riesgos en §10; task.md con las siete tareas precisadas y T-1508 nueva. Cinco pasadas de `spec-reviewer` y `plan-reviewer`.",
+        "Lo que las revisiones cambiaron del primer borrador: F15 es del módulo `inventory` existente; la sesión elige su terminal (nada en el diseño funcionaba sin eso); las reversiones van al costo del documento revertido, no al promedio; el kárdex guarda el promedio después de cada movimiento; un solo orden de candados por documento y por línea; la migración con guardas antes del DDL e idempotente; `company_id` también en los detalles; `terminal_not_found` ya existía; el reparto al migrar es con traslados."
+      ],
+      "lo_que_ensena": [
+        "Un diseño de inventario por sucursal no vale nada si la sesión no sabe en qué sucursal está. `sucursal_y_terminal` lo tenía anotado en su docstring desde F6 y nadie lo había leído con esa pregunta.",
+        "El `unit_cost` de un movimiento no es el promedio: en una entrada es el de la compra y en una reversión el histórico. Valorar a una fecha pasada con él da un número distinto al valorado de ese día. Hay que guardar el promedio aparte.",
+        "Las cinco pasadas de revisión no fueron de estilo: cada una encontró una ruta que no existe, un candado que se abraza o una guarda que corre después de lo que debía proteger. Conviene pasar el plan por el revisor antes de escribir una línea de código, no después.",
+        "Un `vite dev` que arrancó con un módulo ausente sigue respondiendo 500 después del `npm install`: hay que reiniciarlo. Y un `npm run dev &` dentro de un comando que termina sobrevive en Windows, así que el segundo arranque cae al 5174 y hay dos sirviendo lo mismo."
+      ]
+    },
     {
       "fecha": "2026-08-15",
       "titulo": "Migración completa de WinForms a SvelteKit",

@@ -5662,38 +5662,93 @@ necesita el mínimo por producto de F15.
 empaque y despacho, producción y las tiendas en línea: son de otro tipo de
 negocio.
 
-- [ ] **T-1501** Requisitos al spec y diseño al plan, con sus revisores.
+- [x] **T-1501** Requisitos al spec y diseño al plan, con sus revisores.
+      Escrito el 2026-10-03: spec §5.10 (RN-98 a RN-105), RF-87 a RF-94 y
+      plan §15 (§15.1 a §15.8). Cinco pasadas de cada revisor; lo que cambió
+      por ellas está en `progress.json`, sesión 78.
 
       **Verificación:** `spec-reviewer` y `plan-reviewer` sin observaciones.
-- [ ] **T-1502** Salidas con motivo y kárdex (puntos 1 y 2): cada cambio de
-      stock deja un movimiento con antes y después.
+      **Hecha el 2026-10-03.**
+- [ ] **T-1502** El kárdex y las salidas con motivo (puntos 1 y 2; RN-98,
+      RN-99, RN-105; RF-87, RF-88, RF-94; plan §15.1 a §15.3). Migración 023 con `stock_movements`,
+      `stock_levels`, `stock_reasons`, `stock_exits` y la apertura de lo que
+      había; `domain/inventory.py` con `move`; `MoveStock` reemplaza a
+      `adjust_stock` en los cuatro casos de uso que lo llaman;
+      `RegisterStockExit` y `CancelStockExit` con su asiento; el alta y la
+      edición de productos pasan a `RegisterProduct` y `UpdateProduct` (con
+      caracterización antes), la ficha pierde el campo de existencia (RF-94)
+      y `PUT /products/update_product/{id}` responde `stock_not_editable`,
+      `DELETE` de un producto con kárdex responde `product_has_movements`; `/inventario/kardex/[id]`, `/inventario/salidas`
+      y `/inventario/motivos`; el simulado.
 
       **Verificación:** una venta, una devolución, una entrada y una merma
-      aparecen en el kárdex del producto y la existencia final es la suma.
-- [ ] **T-1503** Toma física (punto 3).
+      aparecen en el kárdex del producto con antes y después, la existencia
+      final es la suma, y `products.stock` coincide con `stock_levels` en toda
+      la batería. Editar la existencia desde la ficha ya no es posible.
+- [ ] **T-1503** Toma física (punto 3; RN-100; RF-89). `stock_counts` y sus líneas
+      con `system_qty` al contar; abrir, contar, aplicar y descartar; el
+      asiento de la diferencia; `/inventario/toma-fisica`.
 
       **Verificación:** contar 8 donde el sistema dice 10 deja un ajuste de −2
-      con su motivo y en el kárdex.
-- [ ] **T-1504** Mínimo por producto y bajo mínimo (punto 4).
+      con el motivo «toma física» en el kárdex; vender una unidad entre contar
+      y aplicar no cambia el ajuste; abrir una toma de una subcategoría con
+      otra abierta de su raíz responde con código.
+- [ ] **T-1504** Mínimo por producto y bajo mínimo (punto 4; RN-101; RF-90).
+      `products.min_stock`, el mínimo general en `settings` y
+      `LOW_STOCK_THRESHOLD` fuera del `.env`; el reporte y el aviso del panel.
 
       **Verificación:** el reporte lista los que están por debajo de su propio
-      mínimo.
-- [ ] **T-1505** Existencias por sucursal y traslados (punto 5).
+      mínimo y, sin mínimo propio, del general; el `.env` del POS ya no tiene
+      el umbral.
+- [ ] **T-1505** Existencias por sucursal y traslados (punto 5; RN-102,
+      RN-105; RF-91; plan §15.3). **Primero la caja de la sesión**:
+      `terminal_id` opcional en `POST /auth/company`, validado contra la
+      compañía (`terminal_not_found`, que ya existe), `token_de_sesion`
+      conservando la terminal al cambiar de idioma, `CompanyOption` con sus terminales y la pantalla `/compania` con la
+      lista cuando hay más de una y «Cambiar de caja» en el menú; el
+      cajero de una compañía con una sola terminal sigue entrando directo.
+      Después: `SaleRequest` y `ReturnRequest` ganan `branch_id` desde el
+      `bid`, la venta descuenta de la sucursal de su terminal, la entrada
+      elige sucursal, `TransferStock` y `/inventario/traslados`; la lista de
+      inventario desglosa por sucursal cuando hay más de una; el simulado
+      gana una segunda sucursal con su terminal.
 
-      **Verificación:** vender en la sucursal 2 no baja la existencia de la 1, y
-      un traslado mueve las dos.
-- [ ] **T-1506** Valorado y rotación (punto 6).
+      **Verificación:** una sesión abierta en la terminal de la sucursal 2
+      vende y no baja la existencia de la 1, un traslado mueve las dos y el
+      valorado total no cambia; una compañía migrada con dos sucursales
+      reparte con traslados y no le queda ningún ajuste en el kárdex; con una
+      sola terminal el login no pregunta nada.
+- [ ] **T-1506** Valorado y rotación (punto 6; RN-103; RF-92). Las dos consultas, el
+      saldo contable al lado del valorado, y los dos reportes en `/dashboard`.
 
       **Verificación:** el valorado suma existencia por costo promedio y
-      cuadra con el saldo de inventario de la contabilidad.
+      cuadra con el saldo de inventario de la contabilidad cuando la apertura
+      se hizo con el valorado del día y no hubo reversiones a costo histórico
+      ni productos sin costo; con una devolución después de que el promedio
+      cambió, el reporte nombra la causa y el monto de la diferencia.
 
 - [ ] **T-1507** Marca, y lote y vencimiento por línea de entrada y de salida
-      (punto 7). Lote y vencimiento **se activan por compañía**: quien no los
-      usa no los ve.
+      (punto 7; RN-104; RF-93). `brands`, `stock_lots`, `allocate_lots` en la venta,
+      el interruptor en `/configuracion`, `/inventario/marcas` y el reporte de
+      lo que vence. Lote y vencimiento **se activan por compañía**: quien no
+      los usa no los ve.
 
       **Verificación:** con lote activado, una entrada con lote y vencimiento
-      aparece en el kárdex y en el reporte de lo que vence; sin activarlo, la
+      aparece en el kárdex y en el reporte de lo que vence, una venta
+      descuenta del lote que vence primero, y una toma física cuenta por
+      lote y puede anotar un sobrante en un lote nuevo; sin activarlo, la
       pantalla no los pide.
+- [ ] **T-1508** Sembrar en las compañías que ya tenían contabilidad activa las
+      cuentas y los mapeos que se agregaron a la plantilla **después** de que
+      activaran (los de planilla, F12), con la misma forma que la migración
+      023 usa para los de inventario: lo que ya existe se salta. **Surgió en
+      la revisión del plan el 2026-10-03** —ninguna migración lo hizo y esos
+      eventos hoy caen en «por clasificar»—; falta confirmarlo con el usuario
+      antes de construirlo. Es una corrección de F11/F12 sin RN propio: RN-59
+      («por clasificar») es lo que sostiene mientras tanto.
+
+      **Verificación:** una compañía activada antes de F12 paga una planilla y
+      el asiento no toca «por clasificar».
 
 **Decidido con el usuario el 2026-10-03:** entran los siete puntos, con las
 existencias por sucursal (punto 5) y con lote y vencimiento activables por

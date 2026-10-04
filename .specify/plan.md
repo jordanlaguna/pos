@@ -1882,7 +1882,7 @@ la cadena adentro; convertirlas después, no.
 | **F12** Planilla | Empleados, puestos, jornadas con cortes, acciones de personal, tasas con vigencia, corridas congeladas, aguinaldo, vacaciones, liquidación, archivos para la CCSS y el INS, importación desde Excel y asiento de la corrida | Una corrida de dos empleados se paga, una incapacidad que cruza la quincena se parte sola, se cambia una tasa con vigencia futura y la boleta reimpresa da lo mismo |
 | **F13** Proveedores — alcance decidido, va segunda | La ficha completa, los gastos por concepto, notas, adelantos, pagos a varias facturas, estado de cuenta y el buzón de comprobantes recibidos (task.md, F13) | Sus seis tareas de construcción verificadas (T-1302 a T-1306) |
 | **F14** Compras a fondo — alcance decidido, va tercera | Costos adicionales al costo, descuento por línea, unidades con factor, moneda, orden de compra, reabastecimiento (task.md, F14) | T-1402 a T-1406 verificadas; la proporcionalidad (T-1407) espera al contador |
-| **F15** Inventario — alcance decidido, va primera | Salidas con motivo, kárdex, toma física, mínimo por producto, existencias por sucursal, valorado y rotación (task.md, F15) | T-1502 a T-1507 verificadas, con marca, lote y vencimiento |
+| **F15** Inventario — diseñada el 2026-10-03 (§15), va primera | Kárdex, salidas con motivo, toma física, mínimo por producto, existencias por sucursal con traslados, valorado y rotación, marca, lote y vencimiento | T-1502 a T-1507 verificadas; `products.stock` igual a la suma de `stock_levels` en toda la batería |
 
 **F1 fue primero y no era opcional.** Todo lo que sigue toca dinero, existencias o
 aislamiento entre compañías, y sin pruebas que fijen el comportamiento actual no
@@ -1978,6 +1978,9 @@ tareas cerradas, no.
 | El formato del archivo de la CCSS no se conoce hasta leer la especificación | T-1211 empieza por leer el material oficial, como T-702 con los XSD; el archivo sale de un adaptador con prueba contra un ejemplo real |
 | Cerrar un periodo por error, sin poder reabrir | La confirmación muestra el resumen del periodo y el saldo de «por clasificar» antes de cerrar; lo que quede mal se ajusta en el siguiente, que es lo que un contador hace de todos modos |
 | `sales.payment_method` es texto libre y el mapeo necesita un conjunto cerrado | T-1104 lo cierra a un catálogo de valores antes de mapear; un valor desconocido va a «por clasificar», no rompe la venta |
+| **`products.stock` y `stock_levels` se separan** (F15): dos verdades para la misma existencia | Las escribe un solo servicio, `MoveStock`, en la misma transacción y con `UPDATE … stock + :delta` —no una suma en Python, que dos sucursales se pisan—; una prueba de integración las compara después de cada caso de uso que mueve existencias; soporte puede recalcular los niveles desde el kárdex (§15.1) |
+| **La migración de F15 pone toda la existencia en la primera sucursal** y la cadena ya tenía dos | RN-105: es apertura, no historia. Se reparte **con traslados** (no con tomas, que dejarían un sobrante y un faltante asentados); hasta entonces la segunda sucursal solo vende lo que un traslado le haya pasado y `insufficient_stock` lo dice. T-1505 lo verifica |
+| **FEFO vende un lote que ya no está físicamente** porque alguien sacó mercadería sin registrarla | Es el mismo riesgo que hoy con la existencia total, acotado al lote; la toma física por lote lo corrige y la salida con motivo es la forma correcta de sacarlo |
 
 ---
 
@@ -3224,3 +3227,809 @@ encabezado con la póliza y el mes, y por empleado su identificación, nombre,
 nacimiento, género, estado civil, nacionalidad, salario, días, horas, si
 ingresó o salió en el mes y el código de ocupación del INS. Por eso el
 empleado lleva esos datos (RN-72) y el puesto sus dos códigos (RN-95).
+
+
+---
+
+## 15. Inventario (F15)
+
+> Spec §5.10 (RN-98 a RN-105) y RF-87 a RF-94. Va primera de las tres fases
+> que quedan (§9): el kárdex y el mínimo por producto los consumen F13 y F14.
+> Todo es del módulo `inventory` que ya existe (§11): no hay bandera nueva en
+> `plans`.
+
+### 15.1 La existencia deja de ser una columna y pasa a ser una suma
+
+Hoy `products.stock` es la única verdad y cinco sitios la escriben:
+`adjust_stock` desde la venta, la devolución, la entrada y su anulación —un
+solo método del puerto, que es lo que hace posible esta fase— y
+`crud_product.py`, que la escribe a dedo al crear y al editar. F15 pone **el
+kárdex** debajo de ese método: cada `adjust_stock` pasa a ser un movimiento en
+`stock_movements` con la existencia de antes y de después, por sucursal, y la
+columna de la ficha pasa a ser **la suma de las sucursales**, mantenida en la
+misma transacción.
+
+Se conserva `products.stock` en vez de borrarla por tres razones: la leen la
+grilla de ventas (RNF-3: 5 000 productos en menos de 100 ms, y un `SUM` por
+fila no cabe ahí), el reporte de bajo mínimo y el simulado; su significado no
+cambia —sigue siendo «cuánto hay»—, solo deja de ser la fuente; y una prueba
+de integración la compara contra la suma de `stock_levels` después de cada
+caso de uso que mueve existencias, así que si alguna vez se separan se sabe en
+`pytest`, no en el local del cliente.
+
+**Cómo se mantiene la suma sin que dos sucursales se pisen.** La suma **no se
+calcula en Python**: `MoveStock` hace `UPDATE products SET stock = stock +
+:delta`, que es atómico en la fila y suma bien aunque dos sucursales vendan el
+mismo producto a la vez. Leer los niveles, sumar y escribir sería el error
+clásico de `REPEATABLE READ`: la segunda transacción no ve lo que la primera
+acaba de confirmar y escribe una suma vieja. La prueba de integración de
+§15.7 es secuencial y no lo cazaría; por eso la regla va escrita acá y en el
+docstring del método.
+
+La existencia por sucursal vive en `stock_levels` y **no** se deriva del
+kárdex en cada lectura: sumar movimientos para saber si hay una unidad es lo
+que la venta hace cinco mil veces al día. El kárdex es la bitácora; el nivel
+es la caché que la bitácora mantiene, y las dos se escriben en la misma
+transacción. Si discrepan manda el kárdex (RN-98) y hay una herramienta de
+soporte que recalcula los niveles —y la suma de `products.stock`— desde él.
+
+**Los candados, en un solo orden para todos los caminos.** Hoy solo la venta
+bloquea: `lock_for_sale` toma las filas de `products` en orden de `id` para el
+retrato que congela en la línea (RN-63) y para que dos cajas no vendan la
+última unidad; la entrada y su anulación leen con `get` y escriben sin
+candado, y el promedio ponderado se calcula sobre un `stock` que nadie
+protegió. Con F15 habría dos filas que bloquear —`products` y `stock_levels`—
+y si cada camino las tomara en un orden distinto, una venta y una entrada del
+mismo producto se abrazarían (`DeadlockError`, que ningún `DomainError`
+atrapa: 500 en la caja). Y el mismo abrazo aparece **entre productos** de dos
+documentos con varias líneas: una entrada [B, A] que bloquea B y una venta
+[A, B] que bloquea A se esperan la una a la otra. Por eso la regla tiene dos
+mitades. **Primero, todo caso de uso que mueve existencias bloquea todos los
+productos de su documento, en orden de `id`, antes de tocar ninguno**:
+`ProductRepository.lock(product_ids)`, plural, que **es `lock_for_sale`
+renombrado**: ordena por `id`, hace `FOR UPDATE` y devuelve los retratos, para
+la venta como hoy y para la entrada, su anulación, la salida, el traslado y la
+toma, que lo llaman al empezar —y de ahí sacan `stock` y `cost`, sin el `get`
+por línea que hoy hace la entrada— y recién después recorren sus líneas. Un
+solo método: dos nombres para el mismo candado es lo que `test_ports.py`
+tendría que vigilar por partida doble.
+**Segundo, `MoveStock` toma los candados de cada línea siempre en el mismo
+orden**: la fila de `products` (`FOR UPDATE`, que no hace nada si la
+transacción ya la tiene) y después la de `stock_levels`. **La fila del nivel nace con el candado**: `INSERT … ON
+DUPLICATE KEY UPDATE quantity = quantity` y después `SELECT … FOR UPDATE`, de
+modo que dos primeras entradas simultáneas al mismo (producto, sucursal) no
+mueren en `uq_stock_levels` sino que una espera a la otra. Como `lock` toma
+`products` en el mismo orden que `MoveStock`, los dos caminos son uno. De paso cierra la carrera que el
+promedio tenía desde F10, **con una condición que pasa a ser regla**:
+`RegisterStockEntry` calcula `weighted_average_cost` y escribe
+`products.cost` **después** del candado y **antes** de mover el stock —hoy lo
+hace en ese orden por un comentario; desde F15 es lo que hace que el kárdex
+guarde el promedio correcto, porque `MoveStock` lee `avg_cost_after` de
+`products.cost` bajo ese mismo candado—.
+
+### 15.2 Modelo de datos
+
+Once tablas nuevas y dos columnas en `products`. **Todas llevan `company_id`**, las de
+detalle también: `TenantMixin` las filtra, `company_dump.py` exporta e importa
+por esa columna y `test_tenancy.py` las exige. Los estados van en inglés,
+como los de planilla (`'applied' | 'voided'`, `'open' | 'applied' |
+'discarded'`); `stock_entries` conserva los suyos en español porque ya
+existen (§3.9), y la salida **no** los copia: espejar la tabla no obliga a
+espejar su deuda.
+
+```sql
+-- 023-inventario.sql
+--
+-- Idempotente, como la 019: todo CREATE lleva IF NOT EXISTS, las columnas van
+-- por `ventasys_add_column` (013) y los INSERT de datos se protegen con NOT
+-- EXISTS. Hace falta porque la guarda de abajo puede detenerla a medias y
+-- MySQL confirma el DDL solo: volver a correrla tiene que ser seguro.
+
+-- ---------------------------------------------------------------- guardas
+-- Van ANTES de cualquier DDL: si fallan, no se creó ninguna tabla (queda
+-- el procedimiento, que el DROP IF EXISTS de arriba limpia la próxima vez).
+DROP PROCEDURE IF EXISTS ventasys_check_inventory;
+DELIMITER //
+CREATE PROCEDURE ventasys_check_inventory()
+BEGIN
+    DECLARE sin_admin INT;
+    DECLARE sin_sucursal INT;
+    -- Toda compañía con existencias necesita un administrador activo y
+    -- aceptado para firmar la apertura. Hoy una compañía cuyo único admin es
+    -- una invitación pendiente es legal (`last_admin` no mira `aceptada_el`);
+    -- si la hay, la salida es aceptar la invitación o correr bootstrap, y
+    -- volver a aplicar: la migración es idempotente para eso.
+    SELECT COUNT(*) INTO sin_admin
+      FROM (SELECT DISTINCT company_id FROM products WHERE stock > 0) p
+     WHERE NOT EXISTS (SELECT 1 FROM user_companies uc
+                        WHERE uc.company_id = p.company_id AND uc.rol = 'admin'
+                          AND uc.activa = 1 AND uc.aceptada_el IS NOT NULL);
+    IF sin_admin > 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'companies without an active admin: run bootstrap first';
+    END IF;
+    -- Y toda compañía con existencias necesita una sucursal activa adonde
+    -- ponerlas; si no, `products.stock` nacería distinto de la suma de niveles.
+    SELECT COUNT(*) INTO sin_sucursal
+      FROM (SELECT DISTINCT company_id FROM products WHERE stock > 0) p
+     WHERE NOT EXISTS (SELECT 1 FROM branches b WHERE b.company_id = p.company_id AND b.activa = 1);
+    IF sin_sucursal > 0 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'companies with stock and no active branch';
+    END IF;
+END //
+DELIMITER ;
+CALL ventasys_check_inventory();
+DROP PROCEDURE ventasys_check_inventory;
+
+-- Lo que no puede ser apertura, listado ANTES de tocarlo (RN-105): se cuenta
+-- a mano después de migrar.
+SELECT company_id, id_product, name, stock AS negative_stock
+  FROM products WHERE stock < 0;
+
+-- -------------------------------------------------------------- esquema
+
+-- Marca, lote y vencimiento (RN-104). Van primero: los referencian los demás.
+CREATE TABLE IF NOT EXISTS brands (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT         NOT NULL,
+    name       VARCHAR(80) NOT NULL,
+    is_active  TINYINT(1)  NOT NULL DEFAULT 1,
+    UNIQUE KEY uq_brands_name (company_id, name),
+    CONSTRAINT fk_brands_company FOREIGN KEY (company_id) REFERENCES companies (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_lots (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT         NOT NULL,
+    product_id INT         NOT NULL,
+    code       VARCHAR(40) NOT NULL,
+    expires_at DATE        NULL,
+    created_at DATETIME    NOT NULL,
+    UNIQUE KEY uq_stock_lots (product_id, code),
+    INDEX idx_stock_lots_expiry (company_id, expires_at),
+    CONSTRAINT fk_lots_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_lots_product FOREIGN KEY (product_id) REFERENCES products (id_product)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- `ventasys_add_column` como en la 013 y la 016 (se vuelve a declarar y se
+-- borra al final); la foránea con la misma guarda sobre TABLE_CONSTRAINTS.
+CALL ventasys_add_column('products', 'min_stock', 'INT NULL');   -- NULL: usa el general de Configuración (RN-101)
+CALL ventasys_add_column('products', 'brand_id',  'INT NULL');
+CALL ventasys_add_constraint('products', 'fk_products_brand',
+     'FOREIGN KEY (brand_id) REFERENCES brands (id)');
+
+-- El kárdex (RN-98). Una fila por variación, nunca se edita ni se borra: la
+-- anulación de una entrada es otro movimiento, con signo contrario.
+CREATE TABLE IF NOT EXISTS stock_movements (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    company_id   INT           NOT NULL,
+    product_id   INT           NOT NULL,
+    branch_id    INT           NOT NULL,
+    kind         VARCHAR(16)   NOT NULL,   -- 'opening' | 'sale' | 'sale_void' | 'return' | 'entry' | 'entry_void'
+                                           -- | 'exit' | 'exit_void' | 'count' | 'transfer_out' | 'transfer_in'
+    quantity     INT           NOT NULL,   -- con signo: negativo baja
+    before_qty   INT           NOT NULL,   -- en ESTA sucursal
+    after_qty    INT           NOT NULL,
+    unit_cost      DECIMAL(12,2) NOT NULL DEFAULT 0,   -- con el que se valoró (RN-98)
+    avg_cost_after DECIMAL(12,2) NOT NULL DEFAULT 0,   -- el promedio del producto DESPUÉS de este movimiento (RN-98, RN-103)
+    lot_id       INT           NULL,       -- RN-104; NULL es «sin lote»
+    source_type  VARCHAR(16)   NOT NULL,   -- 'sale' | 'return' | 'stock_entry' | 'stock_exit' | 'stock_count' | 'stock_transfer' | 'product'
+    source_id    INT           NOT NULL,
+    source_line  INT           NULL,       -- la línea del documento: una línea con lotes deja varios movimientos
+    user_id      INT           NOT NULL,
+    moved_at     DATETIME      NOT NULL,   -- la pone el servidor
+    INDEX idx_stock_movements_product (company_id, product_id, moved_at),
+    INDEX idx_stock_movements_branch  (company_id, branch_id, moved_at),
+    INDEX idx_stock_movements_source  (source_type, source_id),
+    -- La venta con lotes pregunta «cuánto hay de cada lote de ESTE producto en
+    -- ESTA sucursal»; un índice solo por lote no la sirve.
+    INDEX idx_stock_movements_lot     (company_id, product_id, branch_id, lot_id),
+    CONSTRAINT fk_sm_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_sm_product FOREIGN KEY (product_id) REFERENCES products (id_product),
+    CONSTRAINT fk_sm_branch  FOREIGN KEY (branch_id)  REFERENCES branches (id),
+    CONSTRAINT fk_sm_lot     FOREIGN KEY (lot_id)     REFERENCES stock_lots (id),
+    CONSTRAINT fk_sm_user    FOREIGN KEY (user_id)    REFERENCES users (id_user)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- La existencia por sucursal (RN-102): la caché que el kárdex mantiene.
+CREATE TABLE IF NOT EXISTS stock_levels (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT NOT NULL,
+    product_id INT NOT NULL,
+    branch_id  INT NOT NULL,
+    quantity   INT NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_stock_levels (product_id, branch_id),
+    INDEX idx_stock_levels_branch (company_id, branch_id),
+    CONSTRAINT fk_sl_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_sl_product FOREIGN KEY (product_id) REFERENCES products (id_product),
+    CONSTRAINT fk_sl_branch  FOREIGN KEY (branch_id)  REFERENCES branches (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- Los motivos de salida (RN-99). Catálogo de la compañía, como las categorías:
+-- se desactivan, no se borran, porque las salidas viejas los referencian.
+CREATE TABLE IF NOT EXISTS stock_reasons (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT          NOT NULL,
+    code       VARCHAR(20)  NOT NULL,   -- 'shrinkage' | 'damage' | 'expired' | 'internal_use' | 'sample' | 'count' | libre
+    name       VARCHAR(80)  NOT NULL,   -- lo escribe la compañía; los sembrados llegan con el nombre de la plantilla, como las cuentas (§13.8)
+    is_system  TINYINT(1)   NOT NULL DEFAULT 0,   -- 'count' lo usa la toma física y no se desactiva (RN-100)
+    is_active  TINYINT(1)   NOT NULL DEFAULT 1,
+    UNIQUE KEY uq_stock_reasons_code (company_id, code),
+    CONSTRAINT fk_sr_company FOREIGN KEY (company_id) REFERENCES companies (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- La salida (RN-99). Espejo de stock_entries, sin proveedor ni impuesto.
+CREATE TABLE IF NOT EXISTS stock_exits (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    company_id    INT           NOT NULL,
+    branch_id     INT           NOT NULL,
+    reason_id     INT           NOT NULL,
+    user_id       INT           NOT NULL,
+    created_at    DATETIME      NOT NULL,
+    notes         VARCHAR(255)  NULL,
+    status        VARCHAR(20)   NOT NULL DEFAULT 'applied',   -- 'applied' | 'voided'
+    total_cost    DECIMAL(12,2) NOT NULL DEFAULT 0,
+    voided_at     DATETIME      NULL,
+    void_reason   VARCHAR(255)  NULL,
+    INDEX idx_stock_exits_branch (company_id, branch_id, created_at),
+    CONSTRAINT fk_sx_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_sx_branch  FOREIGN KEY (branch_id)  REFERENCES branches (id),
+    CONSTRAINT fk_sx_reason  FOREIGN KEY (reason_id)  REFERENCES stock_reasons (id),
+    CONSTRAINT fk_sx_user    FOREIGN KEY (user_id)    REFERENCES users (id_user)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_exit_details (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    company_id INT           NOT NULL,
+    exit_id    INT           NOT NULL,
+    product_id INT           NOT NULL,
+    quantity   INT           NOT NULL,
+    unit_cost  DECIMAL(12,2) NOT NULL DEFAULT 0,   -- el promedio al salir (RN-99)
+    lot_id     INT           NULL,                 -- NULL es «sin lote», elegido a propósito (RN-104)
+    INDEX idx_stock_exit_details_exit (exit_id),
+    CONSTRAINT fk_sxd_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_sxd_exit    FOREIGN KEY (exit_id)    REFERENCES stock_exits (id),
+    CONSTRAINT fk_sxd_product FOREIGN KEY (product_id) REFERENCES products (id_product),
+    CONSTRAINT fk_sxd_lot     FOREIGN KEY (lot_id)     REFERENCES stock_lots (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- El traslado (RN-102). Sin estado: no se anula, se hace otro al revés.
+CREATE TABLE IF NOT EXISTS stock_transfers (
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    company_id     INT          NOT NULL,
+    from_branch_id INT          NOT NULL,
+    to_branch_id   INT          NOT NULL,
+    user_id        INT          NOT NULL,
+    created_at     DATETIME     NOT NULL,
+    notes          VARCHAR(255) NULL,
+    INDEX idx_stock_transfers_company (company_id, created_at),
+    CONSTRAINT fk_st_company FOREIGN KEY (company_id)     REFERENCES companies (id),
+    CONSTRAINT fk_st_from    FOREIGN KEY (from_branch_id) REFERENCES branches (id),
+    CONSTRAINT fk_st_to      FOREIGN KEY (to_branch_id)   REFERENCES branches (id),
+    CONSTRAINT fk_st_user    FOREIGN KEY (user_id)        REFERENCES users (id_user)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_transfer_details (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    company_id  INT NOT NULL,
+    transfer_id INT NOT NULL,
+    product_id  INT NOT NULL,
+    quantity    INT NOT NULL,
+    lot_id      INT NULL,
+    INDEX idx_stock_transfer_details_transfer (transfer_id),
+    CONSTRAINT fk_std_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
+    CONSTRAINT fk_std_transfer FOREIGN KEY (transfer_id) REFERENCES stock_transfers (id),
+    CONSTRAINT fk_std_product  FOREIGN KEY (product_id)  REFERENCES products (id_product),
+    CONSTRAINT fk_std_lot      FOREIGN KEY (lot_id)      REFERENCES stock_lots (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- La toma física (RN-100).
+CREATE TABLE IF NOT EXISTS stock_counts (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    company_id  INT          NOT NULL,
+    branch_id   INT          NOT NULL,
+    category_id INT          NULL,         -- NULL: toda la sucursal; una raíz incluye sus hijas (RN-100)
+    status      VARCHAR(20)  NOT NULL DEFAULT 'open',   -- 'open' | 'applied' | 'discarded'
+    opened_by   INT          NOT NULL,
+    opened_at   DATETIME     NOT NULL,
+    closed_by   INT          NULL,
+    closed_at   DATETIME     NULL,
+    notes       VARCHAR(255) NULL,
+    INDEX idx_stock_counts_branch (company_id, branch_id, status),
+    CONSTRAINT fk_sc_company  FOREIGN KEY (company_id)  REFERENCES companies (id),
+    CONSTRAINT fk_sc_branch   FOREIGN KEY (branch_id)   REFERENCES branches (id),
+    CONSTRAINT fk_sc_category FOREIGN KEY (category_id) REFERENCES categories (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+CREATE TABLE IF NOT EXISTS stock_count_lines (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    company_id  INT      NOT NULL,
+    count_id    INT      NOT NULL,
+    product_id  INT      NOT NULL,
+    lot_id      INT      NULL,
+    -- En MySQL dos NULL no chocan en un UNIQUE, y «sin lote» es NULL: la
+    -- columna generada vuelve 0 ese caso para que la clave sí lo cuide
+    -- (mismo truco que `parent_key` en la 005).
+    lot_key     INT AS (IFNULL(lot_id, 0)) STORED NOT NULL,
+    system_qty  INT      NOT NULL,   -- lo que decía el sistema AL CONTAR (RN-100)
+    counted_qty INT      NOT NULL,
+    counted_at  DATETIME NOT NULL,
+    counted_by  INT      NOT NULL,
+    UNIQUE KEY uq_stock_count_lines (count_id, product_id, lot_key),
+    CONSTRAINT fk_scl_company FOREIGN KEY (company_id) REFERENCES companies (id),
+    CONSTRAINT fk_scl_count   FOREIGN KEY (count_id)   REFERENCES stock_counts (id),
+    CONSTRAINT fk_scl_product FOREIGN KEY (product_id) REFERENCES products (id_product),
+    CONSTRAINT fk_scl_lot     FOREIGN KEY (lot_id)     REFERENCES stock_lots (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
+
+-- ------------------------------------------------------------------ datos
+
+-- La existencia que había se reparte a la sucursal ACTIVA DE MENOR CÓDIGO
+-- —la misma que `sucursal_y_terminal` le da hoy a toda sesión— como apertura
+-- con la fecha de la migración. Un producto en cero no deja fila: el kárdex
+-- empieza cuando algo pasa.
+INSERT INTO stock_levels (company_id, product_id, branch_id, quantity)
+SELECT p.company_id, p.id_product, b.id, p.stock
+FROM products p
+JOIN branches b ON b.company_id = p.company_id
+WHERE b.id = (SELECT id FROM branches
+               WHERE company_id = p.company_id AND activa = 1
+               ORDER BY codigo, id LIMIT 1)
+  AND p.stock > 0
+  AND NOT EXISTS (SELECT 1 FROM stock_levels l WHERE l.product_id = p.id_product);
+
+INSERT INTO stock_movements (company_id, product_id, branch_id, kind, quantity, before_qty, after_qty,
+                             unit_cost, avg_cost_after, source_type, source_id, user_id, moved_at)
+SELECT l.company_id, l.product_id, l.branch_id, 'opening', l.quantity, 0, l.quantity,
+       p.cost, p.cost, 'product', p.id_product,
+       (SELECT MIN(user_id) FROM user_companies
+         WHERE company_id = l.company_id AND rol = 'admin' AND activa = 1 AND aceptada_el IS NOT NULL),
+       NOW()
+FROM stock_levels l JOIN products p ON p.id_product = l.product_id
+WHERE NOT EXISTS (SELECT 1 FROM stock_movements m
+                   WHERE m.kind = 'opening' AND m.source_type = 'product' AND m.source_id = p.id_product);
+
+UPDATE products SET stock = 0 WHERE stock < 0;
+
+-- Los motivos de uso común, por compañía, como la plantilla de cuentas.
+INSERT INTO stock_reasons (company_id, code, name, is_system)
+SELECT c.id, r.code, r.name, r.is_system
+FROM companies c
+JOIN (SELECT 'shrinkage' code, 'Merma' name, 0 is_system
+      UNION ALL SELECT 'damage',       'Daño',            0
+      UNION ALL SELECT 'expired',      'Vencido',         0
+      UNION ALL SELECT 'internal_use', 'Consumo interno', 0
+      UNION ALL SELECT 'sample',       'Muestra',         0
+      UNION ALL SELECT 'count',        'Toma física',     1) r
+WHERE NOT EXISTS (SELECT 1 FROM stock_reasons x WHERE x.company_id = c.id AND x.code = r.code);
+
+-- El mínimo general nace con el 10 que el POS usaba (RN-101). `settings.data`
+-- es JSON en TEXT; una compañía sin fila no tiene qué actualizar y la cubre
+-- el respaldo del lector (abajo).
+UPDATE settings
+   SET data = JSON_SET(CAST(data AS JSON), '$.inventory', JSON_OBJECT('lots_enabled', FALSE, 'min_stock', 10))
+ WHERE JSON_EXTRACT(CAST(data AS JSON), '$.inventory') IS NULL;
+
+-- Las dos cuentas y los cinco mapeos, para las compañías que ya activaron la
+-- contabilidad. Lo que ya exista se salta: la plantilla manda solo en lo que
+-- falta. (Ninguna migración anterior lo hizo; planilla lo sembró en
+-- ActivateAccounting y las compañías ya activas se quedaron sin sus cuentas,
+-- T-1508 las repara con esta misma forma.)
+INSERT INTO accounts (company_id, code, name, kind, is_system, is_active)
+SELECT a.company_id, t.code, t.name, t.kind, 1, 1
+FROM (SELECT DISTINCT company_id FROM accounts) a
+JOIN (SELECT '6.3.01' code, 'Mermas y ajustes de inventario' name, 'expense' kind
+      UNION ALL SELECT '4.9.02', 'Sobrantes de inventario', 'income') t
+WHERE NOT EXISTS (SELECT 1 FROM accounts x WHERE x.company_id = a.company_id AND x.code = t.code);
+
+INSERT INTO account_mappings (company_id, event, role, account_id)
+SELECT a.company_id, m.event, m.role, a.id
+FROM (SELECT 'stock_exit'  event, 'shrinkage' role, '6.3.01' code
+      UNION ALL SELECT 'stock_exit',  'inventory', '1.2.01'
+      UNION ALL SELECT 'stock_count', 'shrinkage', '6.3.01'
+      UNION ALL SELECT 'stock_count', 'overage',   '4.9.02'
+      UNION ALL SELECT 'stock_count', 'inventory', '1.2.01') m
+JOIN accounts a ON a.code = m.code
+WHERE NOT EXISTS (SELECT 1 FROM account_mappings x
+                   WHERE x.company_id = a.company_id AND x.event = m.event AND x.role = m.role);
+
+DROP PROCEDURE ventasys_add_column;
+DROP PROCEDURE ventasys_add_constraint;
+```
+
+Las declaraciones de `ventasys_add_column` (copiada de la 013) y de
+`ventasys_add_constraint` van al principio del archivo, después de las
+guardas. La segunda es la misma idea con tres cosas fijas: firma `(IN tabla
+VARCHAR(64), IN nombre VARCHAR(64), IN definicion TEXT)`; guarda sobre
+`information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE()
+AND TABLE_NAME = tabla AND CONSTRAINT_NAME = nombre` —sin el `= DATABASE()`
+vería la foránea de `posdb_test` en la misma instancia y se la saltaría en
+`posdb`—; y cuerpo `CONCAT('ALTER TABLE ', tabla, ' ADD CONSTRAINT ', nombre,
+' ', definicion)` con `PREPARE`, `EXECUTE` y `DEALLOCATE`, precedida de su
+`DROP PROCEDURE IF EXISTS`. En MySQL 8 el nombre de una foránea es único por
+esquema, no por tabla: `fk_products_brand` no choca con nada.
+
+Las columnas de `accounts` (`company_id, code, name, kind, is_system,
+is_active`) y de `account_mappings` (`company_id, event, role, account_id`)
+son las del modelo; `ActivateAccounting` siembra con `parent_id` nulo, así
+que una compañía migrada y una recién activada quedan iguales.
+
+**El lote de una línea vendida no se guarda en la línea.** `sale_details`,
+`return_details` y `stock_entry_details` no ganan `lot_id`: una línea de 5
+puede haber salido 3 del lote A y 2 del B (FEFO la parte), y una columna no
+lo diría. Lo dice el kárdex: cada movimiento lleva `source_type`, `source_id`
+y `source_line`, así que `KardexReader.of_source(...)` devuelve los lotes de
+cada línea con su cantidad y en su orden, y es lo que la devolución y la
+anulación de una entrada leen para revertir **en orden inverso** (RN-104).
+
+Los lotes **no tienen tabla de saldos**: la existencia de un lote en una
+sucursal es la suma de sus movimientos por (producto, sucursal, lote), que
+`idx_stock_movements_lot` sirve, y se consulta solo al vender con lotes
+activos, al contar y en el reporte de lo que vence. Una compañía sin lotes
+nunca paga esa suma. Si alguna vez cuesta, se materializa como
+`stock_levels`; empezar por la caché sería optimizar lo que la mayoría no usa.
+
+La bandera de lotes y el mínimo general **van en `settings`** (`data.inventory
+= {lots_enabled, min_stock}`), no en `plans`: no son algo que se vende sino
+algo que cada negocio decide, y la configuración ya viaja al POS en cada
+carga. **El lector tiene respaldo**: `SettingsRepository` gana
+`lots_enabled()` —falso si no está— y `min_stock()` —10 si no está—, así una
+compañía sin fila en `settings` conserva el aviso que tenía.
+`LOW_STOCK_THRESHOLD` del `.env` del POS **desaparece**, y con él el
+`LOW_STOCK = 10` escrito en la lista de inventario: eran iguales para todas
+las compañías, que es exactamente lo que una constante no puede ser en un
+producto multiempresa.
+
+### 15.3 La sesión elige su caja
+
+Hoy `sucursal_y_terminal` le da a toda sesión la primera sucursal activa de la
+compañía y su primera terminal, y su propio docstring dice que está «preparado
+para cuando el POS pregunte en qué caja se está abriendo». Ese día es F15:
+sin él, la caja del local 2 vende con `bid = 1` y descuenta del estante
+equivocado, y el punto 5 de la fase no tiene cómo ejecutarse.
+
+- **El segundo paso del login gana la terminal.** `POST /auth/company`
+  (`elegir_compania`, el que hoy recibe `company_id`) acepta además
+  `terminal_id`, opcional. Sin
+  él, el servidor hace lo de hoy. Con él, comprueba que la terminal sea **de
+  esa compañía y esté activa** (`terminal_not_found`, el mismo «no está» de
+  RNF-1) y emite el token con su `bid` y `tid`. Elegir entre las cajas
+  propias no es elegir «desde afuera» (RN-14): lo que el cliente no puede es
+  inventarse una, y eso lo sigue impidiendo el servidor. `terminal_not_found`
+  ya existe (T-608) y es el «no» que corresponde.
+- **La terminal sobrevive a los demás tokens.** `token_de_sesion` hoy
+  recalcula `sucursal_y_terminal` en cada emisión, y `/auth/locale` lo llama:
+  tal como está, cambiar de idioma devolvería a la cajera a la caja 1 sin
+  aviso. Pasa a recibir la terminal —la elegida en el login, o la del token
+  vigente cuando se reemite— y `sucursal_y_terminal` queda solo como el valor
+  por omisión cuando nadie eligió.
+- **La pantalla de selección de compañía** lista las terminales activas de la
+  compañía elegida cuando hay más de una, en el mismo paso; con una sola no
+  pregunta nada. **De dónde las lee**: el token de tránsito no tiene `cid` y
+  `/offices/terminals` exige administrador, así que ninguna de las dos sirve.
+  `CompanyOption` —lo que ya devuelve el primer paso del login por cada
+  membresía— gana `terminals: [{id, codigo, nombre, branch_id}]`, solo las
+  activas. Las lee una `terminales_de(db, company_id)` nueva en
+  `crud_membership.py`, junto a `sucursal_y_terminal` y con su misma consulta
+  `sin_filtro` —ahí viven las consultas de antes de que exista compañía—, y la
+  llama `_opcion` desde `auth_routes.py` en sus tres usos. No nace ruta nueva. Cambiar de caja es emitir un token nuevo desde el menú de la
+  sesión, como el idioma (§8.3), con la diferencia de arriba: el idioma
+  conserva la caja y la caja conserva el idioma.
+- **El cajero con una sola compañía**, que hoy entra directo, pasa por la
+  selección **solo si** su compañía tiene más de una terminal activa: es el
+  mismo `if` que ya decide si ve la pantalla de compañías.
+- El simulado gana una segunda sucursal con su terminal en la primera
+  compañía; es lo que permite probar «vender en la 2 no baja la 1» de punta a
+  punta sin dar de alta nada.
+
+Lo que **no** se hace ahora: atar una terminal a un dispositivo (una cookie o
+un certificado por caja) para que el cajero no pueda ni elegir. Es lo que un
+súper grande va a pedir y no lo que pide una cadena de dos locales; queda
+anotado en «No entra» cuando aparezca el caso.
+
+### 15.4 Dominio y aplicación
+
+`domain/inventory.py`, puro, con su tabla de casos:
+
+| Función | Regla | Casos que la prueban |
+|---|---|---|
+| `move(before, delta)` | RN-98: devuelve `(before, after)`; `after < 0` lanza `InsufficientStock` | 10 − 3 → (10, 7); 2 − 3 → error; 0 + 5 → (0, 5); delta 0 → `InvalidQuantity` |
+| `count_difference(system_qty, counted_qty)` | RN-100: con signo | 10 contadas 8 → −2; 10 y 12 → +2; 10 y 10 → 0, no deja movimiento; negativo contado → `InvalidQuantity` |
+| `scopes_overlap(open_count, new_count, tree)` | RN-100: misma sucursal y (alguna es entera, o una categoría es la otra o su ascendiente) | entera vs. categoría → sí; raíz vs. su hija → sí; dos hojas distintas → no; A vs. A → sí; otra sucursal → no |
+| `allocate_lots(lots, quantity)` | RN-104: primero el que vence primero, «sin lote» de último; lo que no alcanza lanza `InsufficientStock` | tres lotes con vencimientos distintos; uno sin vencimiento; vencido se consume igual; cantidad mayor que la suma |
+| `reverse_allocation(taken, quantity)` | RN-104: devuelve en orden inverso al que salió, también parcial | 3 de A + 2 de B, devolver 2 → 2 de B; devolver 4 → 2 de B + 2 de A; más de lo que salió → `InvalidQuantity` |
+| `valuation(levels, costs)` | RN-103: Σ existencia × costo, a 2 decimales, con la parte «sin costo» aparte | dos sucursales; costo 0 suma 0 y cuenta como «sin costo»; existencia 0 |
+| `rotation(cogs, opening_value, closing_value)` | RN-103: `cogs / ((opening + closing) / 2)`; promedio 0 → `None` | 1 200 sobre (400 + 800) → 2; sin inventario → `None` |
+| `below_minimum(total, min_stock, default_min)` | RN-101: `min_stock` si lo hay, si no el general; `total <= mínimo`; sin ninguno, nunca | 5 con mínimo 10 → sí; 10 con 10 → sí; 5 con nulo y general 3 → no; nulo y nulo → no |
+| `check_transfer(from_branch, to_branch, lines)` | RN-102: sucursales distintas, al menos una línea, cantidades positivas | iguales → `SameBranch`; vacío → `EmptyTransfer` |
+| `expiring(lots, today, days)` | RN-104: lo que vence hasta `today + days`, con lo vencido primero | 30 días; vencido ayer; sin vencimiento no aparece |
+| `check_count_scope(count, product, tree)` | RN-100: contar un producto fuera de la categoría de la toma (o de sus hijas) es error | hoja distinta → `OutsideScope`; hija de la raíz de la toma → pasa; toma entera acepta todo |
+
+Puertos nuevos, nueve: `StockLevelRepository` (`lock(product_id, branch_id)`
+—el `INSERT … ON DUPLICATE KEY` más `FOR UPDATE` de §15.1—, `set`,
+`levels_of(product_id)`, `levels_in(branch_id)`, `add_to_total(product_id,
+delta)` para el `UPDATE … stock + :delta`), `KardexWriter` (`record(movement)`;
+tiene su `NullKardex` para las pruebas que no miran el inventario, como el
+`Ledger` tiene `NullLedger`), `KardexReader` (`of_product`, `of_source`,
+`lot_balances`, `value_at(date)`, `cogs_between(from, to)`),
+`StockReasonRepository`, `StockExitRepository`, `StockTransferRepository`,
+`StockCountRepository`, `BrandRepository`, `LotRepository`. Dos que cambian:
+`ProductRepository` pierde `adjust_stock` y `lock_for_sale` pasa a llamarse `lock(product_ids)` —mismo contrato: ordena, bloquea y devuelve los retratos—;
+`SettingsRepository` gana `lots_enabled()` y `min_stock()`.
+
+`adjust_stock` lo reemplaza un servicio de aplicación, **`MoveStock`**, que
+toma los dos candados en el orden de §15.1, calcula antes y después con
+`move`, escribe el nivel, el movimiento —con `avg_cost_after` leído de
+`products.cost` bajo el candado— y el `UPDATE` atómico de `products.stock`, y
+devuelve el movimiento. Los cuatro casos de uso que hoy
+llaman `adjust_stock` —`RegisterSale`, `RegisterReturn`, `RegisterStockEntry`,
+`CancelStockEntry`— pasan a llamar `MoveStock` con su `kind`, su sucursal, su
+origen y su línea. **Tres cosas sí cambian en ellos**: `SaleRequest`,
+`ReturnRequest` y `EntryRequest` ganan `branch_id`, que el router llena desde
+el `bid` de la sesión —hoy lo pone el adaptador desde `sucursal_actual()`, y
+la aplicación no puede leer ese `ContextVar`; es como `user_id`, que el router
+ya llena—; `RegisterReturn` con `annul=True` escribe `kind='sale_void'` en
+vez de `'return'`, porque RN-98 pide que la anulación de una factura se vea
+como anulación; y `CancelStockEntry` revierte en **`stock_entries.branch_id`**
+—la sucursal a la que entró, que desde RN-102 puede no ser la de la sesión—,
+no en el `bid` del token; `CancelStockExit` igual, con `stock_exits.branch_id`.
+La regla de la venta sigue siendo la de la venta.
+
+**El alta y la edición de productos salen de `crud_product.py` y entran a la
+aplicación**: `RegisterProduct` y `UpdateProduct`, con su prueba al 100 %
+como manda RNF-6. No es un capricho de capas: es que el alta ahora **mueve
+existencias** —el stock inicial del formulario se convierte en un `opening`
+en la sucursal de la terminal de la sesión (`bid` del token), con costo 0 y
+sin asiento, porque el costo no se conoce hasta la primera compra (RN-54)— y
+ninguna existencia se mueve fuera de un caso de uso. Si la compañía no tiene
+sucursal activa (`sucursal_y_terminal` devuelve `None`), el alta con stock
+responde `branch_not_found`; sin stock, entra igual. `UpdateProduct`
+**rechaza** `stock` con `stock_not_editable` (RN-98): la pantalla ya no lo
+manda, y si alguien lo manda por el API la respuesta le dice por dónde sí. El
+resto de `crud_product.py` —barcode repetido, categoría, tarifa, CABYS— se
+muda tal cual, con sus pruebas de caracterización primero, como en F1. Las
+rutas no cambian de nombre: siguen siendo `/products/add_product` y
+`/products/update_product/{id_product}`.
+
+Casos de uso nuevos, ocho, más `DeleteProduct` que se muda:
+
+- `RegisterStockExit`: valida el motivo (existe, está activo, no es `count`,
+  que es de la toma), construye las líneas con el costo promedio **del
+  momento**, mueve cada una con `MoveStock(kind='exit')`, guarda la salida y
+  pide al libro `record_stock_exit` —débito a mermas, crédito a inventario,
+  por `total_cost`— si la contabilidad está activa. Con lotes activos **cada
+  línea tiene que decir su lote, y «sin lote» es una respuesta**: el cuerpo
+  distingue `lot_id` ausente (`lot_required`) de `lot_id: null` (sin lote,
+  válido), porque lo que entró sin lote tiene que poder vencerse y salir.
+  Con lotes apagados, un `lot_id` con valor responde `lots_disabled`. Sin
+  líneas, `empty_exit`, como `empty_entry` tiene la entrada.
+- `CancelStockExit`: motivo obligatorio **siempre** con el
+  `void_reason_required` que ya existe —a diferencia de `CancelStockEntry`,
+  que solo lo exige a las compras; acá toda salida nació con motivo y se va
+  con motivo (RN-99)—, bitácora, repone con `kind='exit_void'` **al costo de
+  la salida** (RN-98) leyendo las líneas de la salida, y pide al libro el
+  asiento inverso por ese valor. No recalcula el promedio.
+- `TransferStock`: `check_transfer` (`same_branch`, `empty_transfer`), y por
+  línea un `transfer_out` en origen y un `transfer_in` en destino con el
+  mismo costo, en una transacción. Sin asiento: el inventario total no cambió.
+  Con lotes, la misma regla de la salida: lote por línea, «sin lote» válido.
+- `OpenStockCount` / `RecordCountLine` / `ApplyStockCount` / `DiscardStockCount`:
+  abrir comprueba con `scopes_overlap` que no haya otra abierta que comparta
+  productos (`count_already_open`); contar guarda `system_qty` leído **en ese
+  momento** bajo el candado del nivel y reemplaza la línea si ya se contó el
+  (producto, lote), que `uq_stock_count_lines` sostiene; aplicar recorre las
+  líneas, calcula la diferencia y mueve con `kind='count'` y el motivo de
+  sistema `count`, deja **un** asiento por la suma de las diferencias
+  valoradas —gasto si es negativa, sobrante si es positiva— y cierra la toma;
+  descartar solo cambia el estado. Aplicar sin líneas es `count_has_no_lines`.
+  Aplicar y descartar quedan en bitácora.
+- `RebuildStockLevels`: la herramienta de soporte de §15.1. Recorre el kárdex
+  de una compañía y reescribe `stock_levels` y `products.stock` con la suma;
+  queda en bitácora con cuántas filas cambiaron. **Es la excepción escrita al
+  «solo lectura» de soporte (RN-32)**: el token de soporte no lleva `cid` y el
+  filtro le falla cerrado, así que la ruta fija la compañía con
+  `tenancy.compania(cid)` —lo que ya hace el `fe_worker` con cada compañía de su
+  turno, sin petición y con `cid` fijo— por el
+  tiempo de la petición, y lo anota. Sin esa línea quien lo implemente topa
+  con `SinCompania` y desactiva el filtro a mano, que es lo que no puede
+  pasar.
+- `DeleteProduct` también se muda: hoy borrar solo se impide con ventas; desde
+  F15 un producto que alguna vez tuvo existencia tiene filas en el kárdex y en
+  los niveles, y `db.delete` moriría en la foránea con un 500. Responde
+  `product_has_movements` y la pantalla manda a poner existencia cero y
+  desactivar.
+
+**Con lotes activos**, `RegisterSale` llama `allocate_lots` por línea con los
+saldos de `KardexReader.lot_balances` y deja un movimiento **por lote**, con
+`source_line`; `RegisterReturn` lee con `of_source` lo que salió de la línea
+que devuelve y repone con `reverse_allocation`, en la sucursal de
+`returns.branch_id` —la de la terminal donde se devuelve—, no en la de la
+venta; `CancelStockEntry` hace lo mismo con los lotes que su entrada creó.
+Sin lotes, un movimiento por línea como hoy.
+
+**El costo de ventas de un periodo y el valorado a una fecha pasada** —lo que
+la rotación necesita— salen del kárdex, no del libro: `cogs_between` es
+Σ `sale` − Σ `return` − Σ `sale_void`, cada uno por su `unit_cost` (las dos
+reversiones reponen mercadería y restan igual, RN-98); y `value_at` toma por
+(producto, sucursal) el último movimiento anterior a la fecha y multiplica su
+`after_qty` por **`avg_cost_after` del último movimiento del producto** en
+cualquier sucursal antes de esa fecha —el promedio vigente entonces, no el
+`unit_cost` del movimiento, que en una entrada o una reversión no es el
+promedio (RN-103)—, con dos consultas con ventana (`ROW_NUMBER() OVER
+(PARTITION BY product_id, branch_id ORDER BY moved_at DESC, id DESC)` y otra
+por producto) sobre `idx_stock_movements_product`, no N consultas. La misma
+columna da el **monto** de la segunda causa de diferencia de RN-103: por cada
+reversión, `quantity × (avg_cost_after − unit_cost)`. Del libro no, porque la
+rotación tiene que existir sin contabilidad y porque 5.1.01 arrastra las
+compras anuladas.
+
+### 15.5 API y pantallas
+
+```
+POST /auth/company                                         gana `terminal_id` opcional (§15.3)
+GET  /inventory/kardex?product_id=&branch_id=&from=&to=   RF-87, paginado
+GET  /inventory/kardex?source_type=&source_id=             RF-87: desde la venta, la devolución, la entrada o la salida
+GET  /inventory/levels?product_id= | ?branch_id=           existencias por sucursal
+GET  /inventory/reasons · POST · PUT /{id}                 admin, módulo inventory
+GET  /inventory/exits · POST /inventory/exits              admin, módulo inventory
+POST /inventory/exits/{id}/cancel                          admin · {reason}
+GET  /inventory/transfers · POST /inventory/transfers      admin, módulo inventory
+GET  /inventory/counts · POST /inventory/counts            admin, módulo inventory
+PUT  /inventory/counts/{id}/lines                          contar; cajero o admin
+POST /inventory/counts/{id}/apply · /discard               admin
+GET  /brands · POST · PUT /{id}                            admin, módulo inventory
+GET  /inventory/lots?product_id=                           saldos por lote y sucursal
+GET  /reports/low_stock                                    ya existe; pasa a RN-101 y deja de recibir `threshold`
+GET  /reports/inventory/valuation?branch_id=               RF-92, con el saldo contable y las tres causas de diferencia
+GET  /reports/inventory/rotation?from=&to=                 RF-92
+GET  /reports/inventory/expiring?days=                     RF-93
+POST /inventory/entry                                      gana `branch_id` y, por línea, `lot {code, expires_at}` opcional
+POST /products/add_product · PUT /products/update_product/{id_product}   pasan por RegisterProduct / UpdateProduct; `stock` en el PUT responde `stock_not_editable`
+DELETE /products/delete_product/{id_product}                 `product_has_movements` si tiene kárdex
+POST /support/companies/{id}/rebuild-stock-levels          soporte: RebuildStockLevels
+```
+
+Diecisiete rutas nuevas de negocio (veintidós pares método-ruta) más una de
+soporte, y seis que cambian. Las escrituras piden `require_module("inventory")`,
+que es el módulo que ya piden los productos y la entrada (§11). Las lecturas
+quedan libres (RN-50). Contar en una toma lo puede hacer un cajero: es quien
+está en el piso con el lector; abrir, aplicar y descartar, el administrador.
+En `test_aislamiento.py`: las seis rutas con `{id}` —`cancel`, `lines`,
+`apply`, `discard` y los dos `PUT`— van a `RUTAS_POR_ID` con su cuerpo; los
+cinco `GET` que devuelven filas con id (`reasons`, `exits`, `transfers`,
+`counts`, `brands`) a `LISTAS`; el kárdex, los niveles, los lotes y los tres
+reportes **a las dos cosas** que hoy tiene `/reports/low_stock`: una prueba en
+`TestLosReportesNoSuman` y una entrada en `FUERA_DE_LA_BATERIA` que la nombra,
+porque el guardián de cobertura solo mira las tres listas; y los `POST` que
+crean, más la de soporte, a `FUERA_DE_LA_BATERIA` con su razón escrita, como
+`/products/add_product`.
+
+En el POS, dentro de `/inventario`: la lista gana la columna de existencia
+**por sucursal** cuando hay más de una y el enlace al kárdex, y su contador y
+filtro de bajo mínimo pasan a RN-101; la ficha pierde el campo de existencia
+en edición (RF-94), gana marca y mínimo, y muestra el desglose. Nuevas:
+`/inventario/kardex/[id]`, `/inventario/salidas` (lista y registro con vista
+previa, como las entradas), `/inventario/traslados`, `/inventario/toma-fisica`
+y `/inventario/toma-fisica/[id]` (contar con el lector, ver diferencias,
+aplicar), `/inventario/motivos` y `/inventario/marcas`. Los cuatro reportes
+van en `/dashboard` con los demás y el aviso de bajo mínimo que ya está ahí
+pasa a usar RN-101. `/configuracion` gana «Inventario»: mínimo general y el
+interruptor de lotes y vencimiento. Con lotes apagados, ninguna pantalla pinta
+la columna ni el campo: lo decide un solo `$derived` del layout, no un `if`
+por pantalla. La pantalla de selección de compañía (`/compania`) gana la lista
+de terminales (§15.3) y el menú de la sesión, «Cambiar de caja».
+
+La entrada (`/inventario/entradas`) gana el selector de sucursal —solo visible
+con más de una, por omisión la de la terminal de la sesión— y, con lotes, lote
+y vencimiento por línea, opcionales; el lector de XML no los trae y quedan en
+blanco para llenar en la vista previa.
+
+### 15.6 Códigos de error
+
+| Código | Cuándo | Datos |
+|---|---|---|
+| `stock_not_editable` | `PUT /products/update_product/{id}` con `stock` | `product_id` |
+| `product_has_movements` | `DELETE /products/delete_product/{id}` de un producto con kárdex | `product_id`, cuántos movimientos |
+| `reason_not_found` · `reason_inactive` · `reason_is_system` | Salida con un motivo que no existe, apagado, o el de la toma | `reason_id` |
+| `reason_code_taken` | Dos motivos con el mismo código | `reason_code` —no `code`, que es el parámetro de `api_error` y ya hizo tropezar dos veces— |
+| `exit_not_found` · `exit_cancelled` · `empty_exit` | Anular lo que no está o ya se anuló; una salida sin líneas | `exit_id` / — |
+| `same_branch` · `empty_transfer` | Traslado de una sucursal a sí misma; sin líneas | `branch_id` / — |
+| `count_not_found` · `count_not_open` · `count_already_open` | La toma no existe, ya cerró, o hay otra abierta que comparte productos | `count_id` / `branch_id`, `category_id` de la abierta |
+| `count_outside_scope` | Contar un producto fuera de la categoría de la toma | `product_id`, `category_id` |
+| `count_has_no_lines` | Aplicar una toma sin contar nada | `count_id` |
+| `lot_required` · `lot_not_found` · `lots_disabled` | Lotes activos y la línea no dice su lote (ni «sin lote»); lote que no existe; lote con valor y lotes apagados | `product_id` / `lot_id` |
+| `brand_not_found` · `brand_name_taken` | La marca | `brand_id` / `name` |
+| `min_stock_negative` | Un mínimo bajo cero | `min_stock` |
+
+Veintidós códigos nuevos, cada uno en los cuatro lugares. Los que **no**
+nacen, a propósito: `insufficient_stock` ya existe y sirve igual para la
+salida, el traslado y el lote —es el mismo hecho—; `branch_not_found` también;
+`terminal_not_found` (T-608) es el de una terminal que no es de la compañía o
+está inactiva en el login (§15.3); y `void_reason_required` es el de anular
+una salida sin motivo, no un `exit_reason_required` nuevo.
+
+### 15.7 Decisiones
+
+| Tema | Qué se decidió | Por qué | Estado |
+|---|---|---|---|
+| Módulo | El `inventory` que ya existe; sin bandera nueva | Una compañía que puede entrar mercadería tiene que poder sacarla y contarla; vender el kárdex aparte dejaría a Comercio sin forma de registrar un faltante | tomada |
+| Dónde vive la existencia | `stock_levels` por sucursal + `products.stock` como suma mantenida con `UPDATE … stock + :delta` | La grilla de ventas no puede sumar por fila (RNF-3); la suma en Python se pisa entre sucursales; una prueba vigila que no se separen | tomada |
+| Candados | Todo documento bloquea primero todos sus productos en orden de `id`; después `MoveStock` toma `products` y `stock_levels` por línea; la fila del nivel nace con el candado; el costo se escribe antes que el stock | Dos órdenes distintos —entre tablas o entre productos— son un abrazo mortal en la caja; cierra además la carrera del promedio desde F10 | tomada |
+| El kárdex | Tabla propia, inmutable, con antes y después, la línea de origen y el promedio después del movimiento | Derivarlo de ventas y entradas no da el «antes»; editarlo lo invalida; la línea es lo que permite devolver por lote sin columnas nuevas; el promedio es lo que permite valorar a una fecha pasada y poner monto a las reversiones | tomada |
+| Costo de cada movimiento | El promedio del momento para lo que sale o se ajusta, el de la compra para lo que entra, y **el del documento revertido** en devoluciones y anulaciones | Es lo que ya hace la devolución (RN-63): devolver a lo que cuesta hoy inventaría utilidad; las reversiones son una causa nombrada de diferencia con el libro (RN-103) | tomada |
+| Costo promedio | Sigue siendo uno por producto, no por sucursal | Un traslado no puede cambiar el valor del inventario; la KB lo lleva por bodega y es la fuente de más de un descuadre | tomada |
+| La caja de la sesión | `terminal_id` opcional en `POST /auth/company`, validado contra la compañía; `token_de_sesion` la conserva al reemitir; con una sola terminal nada cambia | Sin esto el local 2 vende con `bid = 1`; elegir entre las cajas propias no es elegir «desde afuera» (RN-14); atarla al dispositivo es para cuando lo pida un cliente | tomada |
+| Historia anterior | No se reconstruye: apertura con la fecha de la migración en la sucursal activa de menor código (RN-105); negativos a cero y listados antes | Lo anterior no guardó antes y después; reconstruirlo sería inventar; una apertura negativa no es una apertura; una sucursal inactiva no es donde vende nadie | tomada |
+| Repartir al migrar con dos sucursales | Con traslados, no con tomas | El traslado no cambia el total ni asienta; dos tomas dejarían un sobrante y un faltante de mercadería que nunca se movió | tomada |
+| Sucursal de la venta y de la devolución | La del `bid` de la sesión, que la petición trae (`sales.branch_id`, `returns.branch_id`) | La aplicación no lee el `ContextVar`; la devolución repone donde se recibe | tomada |
+| Toma física | `system_qty` al contar, no al aplicar; bloqueo por productos compartidos, con la jerarquía de categorías | Lo vendido entre contar y aplicar ya está en el kárdex; una toma de la raíz y una de su hija cuentan lo mismo dos veces | tomada |
+| Traslado | Sin anulación, sin asiento | Deshacerlo es otro traslado; el total no cambió | tomada |
+| Lotes | Sin tabla de saldos ni columna en las líneas; opcionales en la entrada; en salida y traslado la línea dice su lote y «sin lote» es válido; FEFO en la venta; reversión en orden inverso | Lo que no se usa no se paga; el XML no trae lotes; lo que entró sin lote tiene que poder salir; preguntarle el lote al cajero es la fila más larga del súper | tomada |
+| Lotes vencidos | La venta los consume igual | Sacarlos es una salida con motivo «vencido», que deja gasto y kárdex; que la venta los salte escondería el vencido en la existencia | tomada |
+| Bandera de lotes y mínimo general | En `settings`, con respaldo en el lector (falso / 10) | No es algo que se vende; una compañía sin fila conserva el aviso que tenía | tomada |
+| Cuentas y mapeos para quien ya tiene libro | La migración los siembra saltando lo que exista | Ninguna migración anterior lo hizo y planilla dejó compañías con sus eventos cayendo en «por clasificar»; T-1508 las repara igual | tomada |
+| Rotación | Costo de ventas y valorado histórico desde el kárdex, no del libro; el histórico con `avg_cost_after` | Tiene que existir sin contabilidad, y 5.1.01 arrastra las compras anuladas; el `unit_cost` de una entrada o una reversión no es el promedio | tomada |
+| Migración | Guardas antes del DDL, DDL idempotente, datos con `NOT EXISTS` | La guarda puede detenerla y MySQL confirma el DDL solo: volver a correrla tiene que ser seguro, como la 019 | tomada |
+| Recalcular niveles desde soporte | Fija la compañía con `tenancy.compania(cid)` y lo anota en bitácora | Es la única escritura de soporte sobre datos de negocio (RN-32) y tiene que estar escrita como excepción, no descubierta | tomada |
+| Borrar un producto con kárdex | `product_has_movements`; se desactiva | La foránea lo impide de todos modos; mejor un código que un 500 | tomada |
+| `adjust_stock` y `crud_product` | Se van; entran `MoveStock`, `RegisterProduct` y `UpdateProduct` | Un solo sitio que escribe existencias, como `api_error` con los «no»; el alta mueve existencias y eso es un caso de uso | tomada |
+| Estados | En inglés, como planilla | La excepción de §3.9 es de lo que ya existe; una tabla nueva no la hereda | tomada |
+| Reservados, préstamos, consignación… | Fuera | Otro tipo de negocio (spec §4) | tomada |
+
+### 15.8 Costes medidos antes de empezar
+
+- `test_esquema.py`: once tablas nuevas, dos columnas y una columna generada
+  `STORED NOT NULL` (como `parent_key` en la 005), modelo y migración iguales.
+  **La prueba aprende una cuarta forma**: hoy lee `CREATE TABLE`, `ALTER
+  TABLE` y `CREATE INDEX`, y un `CALL ventasys_add_column(...)` le es
+  invisible —por eso las columnas de la 013 a la 016 no se comparan—; gana el
+  patrón `CALL\s+ventasys_add_column\('(\w+)',\s*'(\w+)',\s*'([^']*)'\)`
+  que alimenta `columnas`, y de paso empieza a vigilar esas cuatro.
+  La migración trae `INSERT`s, `UPDATE`s y dos guardas con `SIGNAL` que
+  `create_all` no corre: una prueba comprueba que una base nueva **sin**
+  productos arranca igual que una migrada, otra que sobre una base con
+  negativos los deja en cero y los lista antes, otra que sin administrador
+  activo y aceptado se detiene **sin haber creado ninguna tabla**, y otra que
+  correrla dos veces deja lo mismo que una.
+- `test_aislamiento.py`: diecisiete rutas nuevas más la de soporte, repartidas
+  como dice §15.5 (seis en `RUTAS_POR_ID`).
+- `test_error_codes.py`: veintidós códigos, cuatro lugares cada uno; `terminal_not_found` se reutiliza.
+- `test_ports.py`: nueve puertos nuevos, `lock_for_sale` → `lock(product_ids)` en `ProductRepository`, dos
+  métodos nuevos en `SettingsRepository`, `branch_id` en `SaleRequest`,
+  `ReturnRequest` y `EntryRequest`, y `adjust_stock` que desaparece —toda
+  prueba que lo simulaba cambia—.
+- `test_tenancy.py`: las once tablas con `company_id` y el filtro, detalles
+  incluidos.
+- `company_dump.py`: las once tablas **viajan**, en este orden: `brands` y
+  `stock_reasons` antes de `products`; `stock_lots` después de `products`;
+  `stock_levels`, `stock_exits`, `stock_exit_details`, `stock_transfers`,
+  `stock_transfer_details`, `stock_counts` y `stock_count_lines` después de
+  `stock_lots`, de `branches` y de `categories` —los detalles referencian el
+  lote, la salida al motivo y la toma a la categoría—; y `stock_movements` al
+  final porque referencia todo.
+- Cobertura: `domain/inventory.py` nace con su tabla de casos; `MoveStock`,
+  `RegisterProduct`, `UpdateProduct`, `DeleteProduct` y los ocho casos de uso
+  nuevos con la suya. Mover el CRUD de productos pide sus pruebas de caracterización antes.
+- La prueba de integración que compara `products.stock` con la suma de
+  `stock_levels` después de vender, devolver, anular, entrar, anular la
+  entrada, salir, anular la salida, trasladar y contar. Es secuencial: la
+  concurrencia la cubren el `UPDATE` atómico y el orden de los candados, no la
+  prueba (§15.1).
+- El login: `terminal_id` en `POST /auth/company`, `token_de_sesion` con la
+  terminal, la pantalla `/compania` con terminales, «Cambiar de caja», la
+  prueba de que un cajero de una compañía con una sola terminal sigue entrando
+  directo y la de que cambiar de idioma conserva la caja.
+- El simulado: diecisiete endpoints más el del login, una segunda sucursal con
+  su terminal en la primera compañía, motivos sembrados, una salida y una toma
+  aplicada en el seed; `SEED_VERSION` sube.
+- Catálogo `inventory.json` crece; nace `kardex.json` **y** se declara en
+  `project.inlang/settings.json`.
+- Los invariantes de `progress.json` que miran existencias se recalculan: la
+  venta 3×1450 y la entrada XML 79 800 deben dejar el mismo stock y, ahora,
+  un movimiento cada una.
+- `LOW_STOCK_THRESHOLD` sale de `config.ts`, de `.env.example`, de
+  `frontend/README.md`, del `dashboard/+page.server.ts` y del simulado, y `LOW_STOCK = 10` de la lista
+  de inventario; `/reports/low_stock` deja de recibir `threshold` y el POS
+  deja de mandarlo.
+- Las dos cuentas nuevas en la plantilla de `chart.py` y los cinco mapeos, con
+  los roles `STOCK_EXIT`, `STOCK_COUNT`, `SHRINKAGE` y `OVERAGE` en
+  `ledger.py`, más `post_stock_exit` y `post_stock_count` con sus casos.

@@ -177,6 +177,11 @@ una compañía no puede terminar en la factura de otra.
   quincenales, bisemanales y semanales, acciones de personal, corridas con las
   tasas congeladas, aguinaldo, vacaciones, liquidación, los archivos para la
   CCSS y el INS, y la importación desde Excel de quien viene de otro sistema.
+- **Inventario a fondo** (F15, dentro del módulo de inventario que ya existe):
+  el kárdex de cada producto,
+  salidas con motivo, toma física, mínimo por producto, existencias por
+  sucursal con traslados, inventario valorado y rotación, y marca, lote y
+  vencimiento para quien los necesita.
 - Lo ya construido: ventas, caja, devoluciones, inventario y entradas,
   clientes, usuarios, reportes, configuración, tres plantillas de documento.
 
@@ -189,7 +194,13 @@ una compañía no puede terminar en la factura de otra.
 - Cobro automático de la suscripción con pasarela de pagos.
 - Categorías de más de dos niveles.
 - Aplicación móvil.
-- Múltiples bodegas por compañía.
+- Más de una bodega **dentro de una misma sucursal**. La existencia se lleva
+  por sucursal (F15), que es el local físico; dos bodegas en el mismo local
+  son una sola existencia, y ningún prospecto ha pedido otra cosa.
+- De inventario, lo que el ERP de origen tiene y un comercio no usa:
+  apartados y reservas, préstamos, consignación, requisición, alisto, empaque y
+  despacho, producción y las tiendas en línea. Decidido el 2026-10-03 al
+  comparar F15 con la KB; cada uno vuelve cuando un cliente lo pida.
 - Devoluciones a proveedor y notas de crédito recibidas. F10 deja la compra
   con su documento, que es lo que una nota de crédito necesita referenciar.
 - Compras de servicios y gastos sin mercadería. Van como asiento manual en
@@ -761,6 +772,180 @@ y se dice por qué, y lo confirmado entra entero o no entra. Los saldos de
 apertura quedan marcados como importados, con su fecha, y el aguinaldo y la
 liquidación los suman como si fueran corridas pagadas.
 
+### 5.10 Inventario
+
+Hoy la existencia de un producto es **un número en su ficha** (`products.stock`).
+Lo suben las entradas y las devoluciones, lo bajan las ventas, y cualquier
+administrador lo puede escribir a mano desde el formulario. Sirve para un local
+con una sola existencia y nada que explicar; deja de servir en cuanto el dueño
+pregunta **por qué** un producto tiene lo que tiene, **dónde** está la
+mercadería cuando hay dos locales, o qué pasó con las tres unidades que se
+dañaron y que hoy solo se pueden sacar vendiéndolas de mentira o editando el
+número. F15 responde esas tres preguntas y deja el inventario como lo lleva el
+ERP del que viene VentaSys (`task.md`, F15): con kárdex, con motivo y por
+sucursal.
+
+**Todo lo de F15 es del módulo de inventario que ya existe** (§2): el que
+traen Comercio, Comercio con compras y Completo, y el que ya piden los
+productos y las entradas. No nace un módulo nuevo: una compañía que hoy puede
+registrar una entrada mañana puede registrar una salida, contar y trasladar,
+sin cambiar de plan. Y la que no lo tiene —Restaurante— sigue como hoy: su
+venta descuenta existencias y, desde F15, deja su movimiento en el kárdex
+igual que todas; lo que no tiene son las pantallas y las escrituras del
+módulo (RN-49).
+
+**RN-98. Toda variación de existencia deja un movimiento en el kárdex**, con
+qué producto, en qué sucursal, cuánto (con signo), la existencia **antes y
+después**, el costo unitario con que se valoró, qué documento lo causó y
+quién. Los documentos que mueven existencias son la venta, la devolución, la
+entrada, la salida, la toma física, el traslado y la apertura; **la
+anulación** de una entrada o de una salida es un movimiento propio con signo
+contrario, que el kárdex muestra como anulación y no como edición de lo que
+anuló; la anulación de una factura es una devolución entera (F7) y el kárdex
+la muestra como **anulación**, no como devolución —para el costo de ventas
+las dos restan igual (RN-103)—. El costo del movimiento es el promedio del
+producto en ese momento para lo que sale o se ajusta, el de la compra para lo
+que entra (RN-54), el que el producto tenga para la apertura —cero si nunca se
+compró—, y en una reversión —devolución, anulación de factura, compra
+anulada, salida anulada— **el del documento que revierte**, como ya hace la
+devolución (RN-63): lo que salió a 100 vuelve a 100 aunque hoy el promedio
+sea 120, porque devolverlo a 120 inventaría utilidad. Cada movimiento
+conserva además **el promedio del producto después de él**: es lo que permite
+valorar el inventario a una fecha pasada (RN-103). La existencia de un producto en una sucursal es la suma de sus
+movimientos, y si alguna vez el número de la ficha no coincide con esa suma,
+**el que manda es el kárdex**. Por eso **la existencia deja de editarse a
+mano**: la ficha del producto la muestra, no la pide. La existencia con la que
+nace un producto es un movimiento de apertura, y un faltante se registra como
+salida o como toma física, con su motivo.
+
+**RN-99. Una salida baja existencias por un motivo** de un catálogo de la
+compañía —merma, daño, vencido, consumo interno, muestra, y los que el negocio
+agregue—. Una salida sin motivo no existe. Se valora **al costo promedio del
+producto en ese momento** y, con contabilidad activa, deja un asiento que saca
+ese costo del inventario y lo lleva al gasto. Una salida confirmada **no se
+edita**: se anula con motivo y bitácora, y la anulación repone las existencias
+**al costo de la salida** y deja el asiento inverso por ese mismo valor
+(RN-98). Es la misma regla que ya rige para la entrada (RN-57) vista en la
+otra dirección.
+
+**RN-100. La toma física cuenta y después ajusta.** Se abre por sucursal,
+entera o acotada a una categoría —una categoría raíz incluye sus
+subcategorías (RN-5)—; cada línea guarda **lo que decía el sistema en el
+momento de contar** y lo que se contó, y la diferencia es entre esos dos. Lo
+que se venda entre contar y aplicar no la contamina: ya quedó en el kárdex por
+su lado. Al aplicar, cada diferencia se convierte en un ajuste —negativo o
+positivo— con el motivo «toma física», que es **un motivo del sistema**: viene
+con la compañía y no se desactiva. Con contabilidad activa, la suma de las
+diferencias valoradas al costo promedio deja un asiento: al gasto si es
+negativa, como una salida, y a un ingreso por sobrante si es positiva. La toma
+aplicada queda cerrada e inmutable; una toma abierta se puede descartar sin
+tocar nada. En una sucursal no pueden coexistir dos tomas abiertas **que
+compartan productos**: una toma de toda la sucursal bloquea cualquier otra,
+una de una categoría raíz bloquea las de sus subcategorías y viceversa, y dos
+de subcategorías distintas no se estorban. La segunda contaría contra lo que
+la primera va a cambiar. Con lotes activos (RN-104) se cuenta por producto
+**y lote**, y «sin lote» cuenta como un lote más; un sobrante puede anotarse
+en un lote que no estaba en esa sucursal o en uno nuevo con su vencimiento,
+porque lo que se cuenta es lo que hay en el estante, no lo que el sistema
+esperaba.
+
+**RN-101. El mínimo es por producto, con uno general de respaldo.** Cada
+producto puede decir cuánto es poco para él; el que no lo dice usa el mínimo
+general de la compañía, que pasa a vivir en Configuración (hoy es una variable
+de entorno del POS, igual para todas las compañías, con valor 10, y la lista
+de inventario tiene ese mismo 10 escrito aparte para su contador y su filtro).
+Al migrar, el mínimo general de cada compañía **nace con ese 10**, para que el
+aviso que hoy existe no se apague sin que nadie lo haya decidido. Un producto
+está **bajo mínimo** cuando su existencia **total** —la suma de sus
+sucursales— es igual o menor que su mínimo, como hoy; el reporte, el aviso del
+panel y la lista de inventario lo dicen con la misma regla, y el reporte
+desglosa por sucursal. Un producto sin mínimo propio ni general nunca está
+bajo mínimo.
+
+**RN-102. La existencia se lleva por sucursal, y la sesión sabe en cuál
+está.** Hoy toda sesión queda en la primera sucursal activa de la compañía,
+porque todas tienen una. Desde F15, **una sesión se abre en una terminal**:
+con una sola terminal activa, la de siempre, sin preguntar; con varias, el
+POS pregunta en cuál se está abriendo —después de elegir la compañía, en el
+mismo paso— y el servidor comprueba que sea de esa compañía y esté activa
+antes de emitir la sesión. Elegir entre las cajas propias no es elegir «desde
+afuera» (RN-14): lo que el cliente no puede es inventarse una. Cambiar de caja
+es abrir sesión de nuevo, como cambiar de idioma. Cada movimiento pertenece a
+una sucursal: la venta descuenta de la sucursal de la terminal de la sesión,
+la devolución repone en la sucursal de la terminal donde se devuelve —no en la
+que vendió—, y la entrada entra a la que se le diga, por omisión la de la
+terminal de la sesión; la terminal que RN-14 le pide a la entrada sigue
+siendo la de la sesión, que dice quién la hizo y desde dónde, aunque la
+mercadería haya entrado a otro local. Un **traslado** es una salida en una
+sucursal y una entrada en otra **en el mismo acto y al mismo costo**: no
+cambia la existencia total ni el valor del inventario, no lleva motivo ni
+asiento, y no se anula: se deshace con otro traslado al revés, que es lo que
+pasó de verdad. El costo promedio sigue siendo **uno por producto** (RN-54),
+no uno por sucursal: la misma mercadería no cuesta distinto por estar en otro
+local, y un costo por sucursal haría que un traslado cambiara el valor del
+inventario sin que nada hubiera pasado. La compañía que tiene una sola
+sucursal no ve nada de esto: una sola existencia y una sola caja, como hoy.
+
+**RN-103. El inventario valorado es existencia por costo promedio**, sumado
+por producto y por sucursal, a la fecha de hoy. Con contabilidad activa, el
+reporte lo pone al lado del saldo de la cuenta de inventario y muestra la
+diferencia. Los dos números coinciden cuando la contabilidad se abrió con el
+valorado de ese día, porque lo que entra se suma al costo de su compra en los
+dos lados (RN-54) y lo que sale se resta al promedio en los dos lados; se
+separan por tres causas, y el reporte las nombra con su monto: productos con
+movimientos a costo cero —los anteriores a su primera compra—, **reversiones
+a costo histórico** —devoluciones, compras anuladas y salidas anuladas
+(RN-98), cuando el promedio cambió entre el documento y su reversión— y
+asientos manuales sobre la cuenta de inventario. **El valorado a una fecha
+pasada** es la existencia que había a esa fecha por el promedio que el
+producto tenía a esa fecha, que el kárdex conserva en cada movimiento
+(RN-98); así el valorado de un día da lo mismo consultado ese día o como
+«inicio» un mes después. La **rotación** de un periodo es el costo de ventas
+del periodo entre el inventario promedio del periodo: el costo de ventas sale
+**del kárdex** —lo vendido menos lo devuelto y lo anulado, al costo de cada
+movimiento—, no del libro, para que exista sin contabilidad y no arrastre las
+compras anuladas; el inventario promedio es **la media del valorado al inicio
+y al final** del periodo. Por producto y en total, dice
+cuántas veces se vendió lo que había. Sin inventario en los dos extremos no
+hay rotación que mostrar.
+
+**RN-104. Marca, lote y vencimiento son para quien los necesita.** La marca
+es un catálogo de marcas de producto de la compañía, opcional en la ficha —no
+es la marca de §10, que es la identidad visual del negocio—. Lote y
+vencimiento se **activan por compañía** en Configuración; apagados, ninguna
+pantalla los pide ni los muestra, y un lote que llegue por el API se rechaza.
+Activados, cada línea de entrada **puede** llevar su lote y su vencimiento
+—el campo es opcional por línea, porque la farmacia tiene productos sin lote y
+el XML del proveedor no lo trae—, y lo que entra sin lote es «sin lote», que
+existe como un lote más: se puede sacar, trasladar y contar. La salida y el
+traslado **dicen de qué lote** sale cada línea, y «sin lote» es una respuesta
+válida; la venta descuenta sola **del lote que vence primero**, sin
+preguntarle nada al cajero, y «sin lote» se vende de último; una línea vendida
+puede haber salido de varios lotes, y la devolución los repone **en orden
+inverso al que salieron** —lo último que se tomó es lo primero que vuelve—,
+también si es parcial. Un lote puede estar en cualquier sucursal: lo lleva
+ahí la entrada, el traslado, la devolución o la toma física (RN-100). Un lote
+vencido se vende igual que uno vigente: sacarlo
+del inventario es una salida con el motivo «vencido», que deja gasto y kárdex,
+y que la venta lo saltara escondería el vencido dentro de la existencia. El
+kárdex muestra el lote de cada movimiento y hay un reporte de lo que vence en
+los próximos días. Activarlo no inventa lotes para lo que ya existe.
+
+**RN-105. El kárdex empieza el día que se instala.** La migración reparte la
+existencia que cada producto tenía a **la sucursal activa de menor código**
+—la misma que hoy usa toda sesión— como un movimiento de apertura con la fecha
+de la migración; no reconstruye la historia desde las ventas y las entradas
+anteriores, porque esa historia no guardaba la existencia de antes y de
+después y cualquier reconstrucción sería una adivinanza. Una existencia
+**negativa** —que hoy puede existir, porque nada le pone piso— no puede ser
+una apertura: queda en cero, y la migración lista esos productos para que se
+cuenten. Una compañía con más de una sucursal al migrar reparte lo que la
+migración puso todo en la primera **con traslados** hacia las demás: es la
+operación que no cambia el total ni el valor (RN-102), y por eso no deja
+sobrantes ni faltantes de mercadería que nunca se movió. La toma física es
+para después, cuando lo que hay en cada local ya se contó contra lo que el
+sistema dice que hay ahí.
+
 ### Lo que Hacienda exige del contenido del comprobante
 
 Cada una está citada, con su página del anexo v4.4 y el ejemplo que la
@@ -1191,6 +1376,45 @@ Son los campos sin los cuales hay negocios enteros que no se pueden facturar.
   descargable: puestos, empleados con su contrato y saldos de apertura.
   RN-97.
 
+### Inventario
+
+- **RF-87** El kárdex de un producto: sus movimientos por sucursal y por
+  periodo, con tipo, cantidad, existencia antes y después, costo, documento
+  de origen y quién. Desde la ficha del producto y desde la venta, la
+  devolución, la entrada o la salida que lo causó. RN-98.
+- **RF-88** Motivos de salida de la compañía —se dan de alta, se editan y se
+  desactivan, no se borran; nacen sembrados los cinco de RN-99, y «toma
+  física» es del sistema y no se desactiva— y salidas con motivo, con vista previa
+  antes de confirmar (§8, regla 6) y anulación con motivo y bitácora. RN-99,
+  RN-100.
+- **RF-89** Toma física: abrir por sucursal, entera o por categoría; contar
+  —por código de barras o por búsqueda, y por lote cuando los lotes están
+  activos, anotando un sobrante en un lote que no estaba en esa sucursal o en
+  uno nuevo con su vencimiento—; ver las diferencias; aplicar o descartar. La aplicada se consulta con lo que decía el sistema, lo contado
+  y el ajuste que dejó. RN-100.
+- **RF-90** Mínimo por producto en la ficha y mínimo general en Configuración;
+  el reporte de bajo mínimo con la existencia total y por sucursal, y el
+  aviso del panel y el contador y filtro de la lista de inventario que ya
+  existen pasan a usar los dos. RN-101.
+- **RF-91** Existencias por sucursal: al entrar, elegir la terminal cuando la
+  compañía tiene más de una activa, y cambiar de caja desde la sesión; la
+  ficha y la lista de inventario muestran la existencia por local cuando hay
+  más de uno; la entrada elige a cuál entra; el traslado entre sucursales con
+  vista previa. RN-102.
+- **RF-92** Reportes de inventario valorado —a la fecha de hoy, por producto
+  y por sucursal, con el saldo contable al lado y las causas de la diferencia
+  cuando la contabilidad está activa— y de rotación por periodo; el valorado a
+  una fecha pasada existe por dentro para la rotación, no como consulta
+  propia. RN-103.
+- **RF-93** Marcas de la compañía y la marca en la ficha del producto; lote y
+  vencimiento activables en Configuración, pedidos en la entrada, la salida y
+  el traslado, mostrados en el kárdex, y el reporte de lo que vence en los
+  próximos días. RN-104.
+- **RF-94** La existencia deja de ser un campo del formulario del producto: la
+  ficha la muestra con su desglose por sucursal y un enlace al kárdex, y la
+  existencia inicial de un producto nuevo entra como movimiento de apertura.
+  RN-98.
+
 ---
 
 ## 7. Requisitos no funcionales
@@ -1262,7 +1486,14 @@ Y tres que se adoptaron el 2026-08-16, con el mismo rango:
 | **Soporte** | Rol sin compañía que administra la plataforma. |
 | **Entrar como** | Que soporte tome la vista de una compañía, con bitácora. |
 | **BFF** | El servidor de SvelteKit, que habla con FastAPI. El navegador nunca lo hace. |
-| **Módulo** | Compras, contabilidad o planilla: lo que un plan incluye o no. Se aplica en el servidor. |
+| **Módulo** | Cada sección del POS —ventas, caja, inventario, compras, contabilidad, planilla…—: lo que un plan incluye o no. Se aplica en el servidor (§2). |
+| **Kárdex** | La bitácora de existencias de un producto: cada movimiento con antes, después, costo, documento y quién (RN-98). |
+| **Salida** | Mercadería que deja el inventario sin venderse, con un motivo: merma, daño, vencido, consumo interno, muestra o los que la compañía agregue (RN-99). |
+| **Motivo** | Por qué salió la mercadería. Catálogo de la compañía; «toma física» es del sistema. |
+| **Toma física** | Contar lo que hay y ajustar la diferencia contra lo que decía el sistema al contar (RN-100). |
+| **Traslado** | Mover mercadería de una sucursal a otra, al mismo costo y sin asiento (RN-102). |
+| **Lote** | Una partida de un producto con su vencimiento. Solo para quien lo activa (RN-104). |
+| **Marca (de producto)** | Catálogo de la compañía para clasificar su catálogo por fabricante (RN-104). Distinta de la marca del negocio —logo y color— de Configuración. |
 | **Proveedor** | A quién se le compra. Con identificación de Hacienda, porque su factura la lleva. |
 | **Cuenta por pagar** | El saldo de una compra a crédito: total menos abonos. |
 | **Asiento** | Un movimiento contable: líneas al débito y al crédito que suman igual. |
@@ -1287,11 +1518,13 @@ Y tres que se adoptaron el 2026-08-16, con el mismo rango:
 **Construido y verificado** (single-tenant): ventas con ventas en espera, caja
 con arqueo, devoluciones con reposición, inventario, entradas por manual/Excel/
 XML de Hacienda, clientes, usuarios, reportes, configuración con moneda,
-impuesto, marca y tres plantillas de documento.
+marca del negocio y tres plantillas de documento (la tasa general de impuesto
+se quitó el 2026-10-03, RN-9).
 
-**Por construir**: lo marcado **RF-22 a RF-26 y RF-29 a RF-38** (F6 y F7), y
-los tres módulos por plan, **RF-39 a RF-64** (F10 a F12) y la ampliación de
-planilla, **RF-82 a RF-86**. De RF-1 a RF-21 y
+**Por construir**: lo que queda abierto de F6 y F7 (`task.md`), de planilla
+**RF-55 a RF-64 y RF-82 a RF-86** (F12, en curso), y el inventario a fondo,
+**RF-87 a RF-94** (F15). Compras y contabilidad, **RF-39 a RF-54**, están
+construidos (F10 y F11, 2026-09). De RF-1 a RF-21 y
 RF-27 y RF-28 ya están construidos —F2 a F5 y F8—; el detalle de qué cerró
 cada fase está en `progress.json`.
 
@@ -1299,8 +1532,9 @@ Compras salió de «no entra todavía» el 2026-09-11, no porque cambiara de
 prioridad sino porque es **prerrequisito de contabilidad**: el débito fiscal
 del IVA ya existe desde F5 y el crédito fiscal sale de las compras.
 
-El **orden de ejecución** es F10 → F11 → F6 → F7 → F12, que no es el de los
-números; está argumentado en [plan.md §9](plan.md). Emitir es obligatorio y
+El **orden de ejecución** fue F10 → F11 → F6 → F7 → F12, que no es el de los
+números, y sigue con **F15 → F13 → F14**; está argumentado en
+[plan.md §9](plan.md). Emitir es obligatorio y
 por eso mismo todos los prospectos ya lo resolvieron antes de conocernos:
 gana ventas lo que nadie está obligado a tener.
 
