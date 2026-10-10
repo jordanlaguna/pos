@@ -108,8 +108,9 @@ def get_sales_by_rate(
 
 @router.get("/low_stock", response_model=list[LowStockProduct])
 def get_low_stock(
-    threshold: int = 10,
     db: Session = Depends(get_db),
     admin: Sesion = Depends(require_admin),
 ):
-    return crud_report.low_stock(db, threshold)
+    """Lo que está bajo mínimo (RN-101). Ya no recibe `threshold`: el umbral
+    es el de cada producto y, sin él, el general de Configuración."""
+    return crud_report.low_stock(db)

@@ -26,7 +26,10 @@ from .fe_tax_codes import check_code, rate_for
 #: producto una vez sería una puerta de una sola dirección. En el resto de las
 #: columnas la regla contraria es la correcta —`name=None` pondría el nombre en
 #: NULL y la columna no lo admite—, y por eso la lista es corta y explícita.
-CLEARABLE: frozenset[str] = frozenset({"cabys_code", "tax_rate", "tax_code", "tariff_heading"})
+# `min_stock` también (RN-101): vaciarlo es volver al general de la compañía.
+CLEARABLE: frozenset[str] = frozenset(
+    {"cabys_code", "tax_rate", "tax_code", "tariff_heading", "min_stock"}
+)
 
 
 def resolve_tax(tax_code: object, tax_rate: float | None) -> tuple[str | None, float | None]:

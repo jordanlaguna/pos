@@ -140,6 +140,33 @@ describe('mergeSettings: reglas de cada tipo de campo', () => {
 	});
 });
 
+describe('el inventario en la configuración (RN-101, T-1504)', () => {
+	it('sin sección, el mínimo general es el 10 de siempre y sin lotes', () => {
+		expect(mergeSettings({}).inventory).toEqual({ minStock: 10, lotsEnabled: false });
+	});
+
+	it('lee lo que sembró la migración y lo que escribe la pantalla', () => {
+		expect(mergeSettings({ inventory: { min_stock: 4, lots_enabled: true } }).inventory).toEqual({
+			minStock: 4,
+			lotsEnabled: true
+		});
+		expect(mergeSettings({ inventory: { minStock: 7 } }).inventory.minStock).toBe(7);
+		// Manda la clave nueva si está, como en todo `legacy()`.
+		expect(mergeSettings({ inventory: { minStock: 7, min_stock: 4 } }).inventory.minStock).toBe(7);
+	});
+
+	it('el nulo guardado a propósito queda nulo: es «sin general»', () => {
+		expect(mergeSettings({ inventory: { minStock: null } }).inventory.minStock).toBeNull();
+	});
+
+	it('lo inválido cae al de fábrica', () => {
+		expect(mergeSettings({ inventory: { minStock: -1 } }).inventory.minStock).toBe(10);
+		expect(mergeSettings({ inventory: { minStock: 2.5 } }).inventory.minStock).toBe(10);
+		expect(mergeSettings({ inventory: { minStock: 'muchos' } }).inventory.minStock).toBe(10);
+		expect(mergeSettings({ inventory: { minStock: '12' } }).inventory.minStock).toBe(12);
+	});
+});
+
 describe('los comprobantes que emite el negocio (RN-88)', () => {
 	it('una compañía que nunca tocó la lista nace con los cuatro de fábrica', () => {
 		expect(mergeSettings({}).eInvoicing.documentTypes).toEqual(['04', '01', '03', '02']);

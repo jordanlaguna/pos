@@ -117,5 +117,6 @@
   "field_quantity": "La cantidad",
   "field_reason_code": "El código del motivo",
   "field_stock_reason": "El motivo de salida",
-  "field_exit": "La salida"
+  "field_exit": "La salida",
+  "field_min_stock": "El mínimo de existencia"
 }

@@ -26,7 +26,7 @@ from app.application.use_cases.move_stock import MoveStock
 from app.domain.categories import check_can_hold_products
 from app.domain.errors import BarcodeTaken, CategoryNeedsSubcategory, DomainError
 from app.domain.fe_export import check_tariff_heading
-from app.domain.inventory import OPENING
+from app.domain.inventory import OPENING, check_min_stock
 from app.domain.money import Money
 from app.domain.product import clean_changes, resolve_tax
 
@@ -107,6 +107,8 @@ class ProductRequest:
     tax_code: str | None = None
     unit_of_measure: str | None = None
     tariff_heading: str | None = None
+    #: Cuánto es poco para ESTE producto (RN-101). Nulo usa el general.
+    min_stock: int | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,7 @@ class RegisterProduct:
         _categoria_para_colgar(self._categories, request.category_id)
         tax_code, tax_rate = resolve_tax(request.tax_code, request.tax_rate)
         partida = check_tariff_heading(request.tariff_heading)
+        minimo = check_min_stock(request.min_stock)
         if request.stock and request.branch_id is None:
             raise BranchRequired()
 
@@ -169,6 +172,7 @@ class RegisterProduct:
                 tax_code=tax_code,
                 unit_of_measure=request.unit_of_measure,
                 tariff_heading=partida,
+                min_stock=minimo,
             )
             if request.stock:
                 self._stock(
@@ -226,6 +230,8 @@ class UpdateProduct:
             cambios["tax_code"], cambios["tax_rate"] = resolve_tax(cambios["tax_code"], None)
         if "tariff_heading" in cambios:
             cambios["tariff_heading"] = check_tariff_heading(cambios["tariff_heading"])
+        if "min_stock" in cambios:
+            cambios["min_stock"] = check_min_stock(cambios["min_stock"])
 
         with self._uow:
             self._products.update(product_id, cambios)

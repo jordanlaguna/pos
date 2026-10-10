@@ -98,5 +98,9 @@
   "inventory_stock_readonly_hint": "O estoque se movimenta com uma entrada, uma saída ou um inventário físico, não pela ficha.",
   "inventory_exits": "Saídas",
   "inventory_kardex_of": "Kardex de {product}",
-  "inventory_counts": "Inventário físico"
+  "inventory_counts": "Inventário físico",
+  "inventory_label_min_stock": "Mínimo",
+  "inventory_min_stock_hint": "Em branco usa o geral das Configurações ({general}).",
+  "inventory_min_stock_hint_none": "Em branco não avisa: a empresa não tem mínimo geral.",
+  "inventory_low_stock_hint": "No seu mínimo ou abaixo"
 }

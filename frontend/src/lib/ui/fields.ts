@@ -28,6 +28,7 @@ export const F = {
 	openingAmount: () => masculino(m.field_opening_amount()),
 	price: () => masculino(m.field_price()),
 	stock: () => masculino(m.field_stock()),
+	minStock: () => masculino(m.field_min_stock()),
 	taxRate: () => femenino(m.field_tax_rate()),
 	decimals: () => femenino(m.field_decimals()),
 

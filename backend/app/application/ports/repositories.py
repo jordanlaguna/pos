@@ -136,6 +136,7 @@ class ProductRepository(Protocol):
         tax_code: str | None = None,
         unit_of_measure: str | None = None,
         tariff_heading: str | None = None,
+        min_stock: int | None = None,
     ) -> int:
         """Da de alta un producto **sin existencias** y devuelve su id.
 
@@ -450,6 +451,15 @@ class SettingsRepository(Protocol):
 
         Nunca vacío ni sin algo con qué vender: lo garantiza
         `fe_document_type.enabled_types`, que es por donde tiene que pasar.
+        """
+        ...
+
+    def min_stock(self) -> int | None:
+        """El mínimo general de existencia (RN-101).
+
+        Lo usa todo producto sin mínimo propio. **10 si nadie lo configuró**,
+        que es el aviso que había antes de F15; nulo si alguien lo quitó a
+        propósito, y entonces solo avisan los productos con mínimo propio.
         """
         ...
 

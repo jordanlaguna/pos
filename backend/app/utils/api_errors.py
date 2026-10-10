@@ -193,6 +193,8 @@ CODES: frozenset[str] = frozenset(
         # se borra, se desactiva. `movements` dice cuántas filas lo sostienen.
         "stock_not_editable",
         "product_has_movements",
+        # RN-101: el mínimo propio es un entero de cero para arriba o nulo.
+        "min_stock_negative",
         # El kárdex se lee por producto o por documento; sin ninguno de los dos
         # no hay qué listar, y una lista vacía diría «nunca se movió».
         "kardex_filter_required",

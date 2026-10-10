@@ -98,5 +98,9 @@
   "inventory_stock_readonly_hint": "Stock is moved with an entry, an exit or a stock count, not from the product form.",
   "inventory_exits": "Exits",
   "inventory_kardex_of": "Stock ledger of {product}",
-  "inventory_counts": "Stock count"
+  "inventory_counts": "Stock count",
+  "inventory_label_min_stock": "Minimum",
+  "inventory_min_stock_hint": "Blank uses the general one from Settings ({general}).",
+  "inventory_min_stock_hint_none": "Blank never warns: the company has no general minimum.",
+  "inventory_low_stock_hint": "At their minimum or below"
 }

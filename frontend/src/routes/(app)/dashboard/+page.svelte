@@ -278,7 +278,11 @@
 			<div>
 				<h2 class="text-sm font-bold text-[var(--text)]">{m.reports_stock_alerts()}</h2>
 				<p class="mt-0.5 text-xs text-[var(--text-subtle)]">
-					{m.reports_stock_threshold({ threshold: data.lowStockThreshold })}
+					{#if data.lowStockThreshold === null}
+						{m.reports_stock_threshold_own()}
+					{:else}
+						{m.reports_stock_threshold({ threshold: data.lowStockThreshold })}
+					{/if}
 				</p>
 			</div>
 			<a
@@ -297,6 +301,7 @@
 							<th scope="col">{m.reports_col_product()}</th>
 							<th scope="col">{m.reports_col_barcode()}</th>
 							<th scope="col" class="num">{m.reports_col_stock()}</th>
+							<th scope="col" class="num">{m.reports_col_minimum()}</th>
 							<th scope="col">{m.reports_col_status()}</th>
 						</tr>
 					</thead>
@@ -305,7 +310,18 @@
 							<tr>
 								<td class="font-medium text-[var(--text)]">{product.name}</td>
 								<td class="font-mono text-xs">{product.barcode}</td>
-								<td class="num tabular-nums">{product.stock}</td>
+								<td class="num tabular-nums">
+									{product.stock}
+									<!-- Por sucursal solo cuando hay más de una (RF-90). -->
+									{#if product.branches.length > 1}
+										<span class="block text-xs font-normal text-[var(--text-subtle)]">
+											{product.branches
+												.map((b) => m.reports_stock_by_branch({ name: b.name, quantity: b.quantity }))
+												.join(' · ')}
+										</span>
+									{/if}
+								</td>
+								<td class="num tabular-nums text-[var(--text-muted)]">{product.threshold ?? ''}</td>
 								<td>
 									{#if product.stock <= 0}
 										<span class="badge bg-[var(--negative-bg)] text-[var(--negative)]">

@@ -339,6 +339,7 @@ export const API_CODES = [
 	// F15 (RN-98): la existencia se mueve, no se edita; y con kárdex no se borra.
 	'stock_not_editable',
 	'product_has_movements',
+	'min_stock_negative',
 	'kardex_filter_required',
 	// las salidas con motivo (RN-99)
 	'reason_not_found',
@@ -962,6 +963,8 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_stock_not_editable();
 		case 'product_has_movements':
 			return m.api_product_has_movements({ movements: numero(d.movements) });
+		case 'min_stock_negative':
+			return m.api_min_stock_negative();
 		case 'kardex_filter_required':
 			return m.api_kardex_filter_required();
 		case 'reason_not_found':

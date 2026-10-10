@@ -27,7 +27,6 @@ import {
 	totalDe,
 	trialBalance
 } from './ledger';
-import { LOW_STOCK_THRESHOLD } from '../config';
 import {
 	COMPANIA_DEMO,
 	getDb,
@@ -68,6 +67,7 @@ import { isBlankLocation, locationProblem, normalizeLocation } from '$lib/domain
 import { mergeSettings } from '$lib/domain/settings';
 import type { MockFeDocument } from './db';
 import { motivosDeFabrica } from './db';
+import { belowMinimum } from '$lib/domain/inventory';
 import { postStockCount, postStockExit } from './ledger';
 import type {
 	StockCount,
@@ -880,7 +880,31 @@ route('PUT', '/clients/update_client/:id', ({ params, body, companyId }) => {
 // ------------------------------------------------------------------ productos
 
 /** Columnas donde el nulo **es un valor**. Espejo de `crud_product.VACIABLES`. */
-const VACIABLES = new Set(['cabys_code', 'tax_rate', 'tax_code', 'tariff_heading']);
+const VACIABLES = new Set(['cabys_code', 'tax_rate', 'tax_code', 'tariff_heading', 'min_stock']);
+
+/** El mínimo propio saneado (RN-101): nulo si viene vacío, o 400. Espejo de `check_min_stock`. */
+function minimoPropio(valor: unknown): number | null {
+	if (valor == null || valor === '') return null;
+	const n = Number(valor);
+	if (!Number.isInteger(n) || n < 0) fail(400, 'min_stock_negative', { min_stock: String(valor) });
+	return n;
+}
+
+/**
+ * El mínimo general de la compañía (RN-101), como `get_min_stock` en el
+ * backend: `minStock` si está, si no `min_stock`; sin sección ni clave, 10;
+ * nulo es «sin general».
+ */
+function minimoGeneral(companyId: number): number | null {
+	const data = settingsRow(companyId).data as { inventory?: Record<string, unknown> };
+	const seccion = data?.inventory;
+	if (!seccion || typeof seccion !== 'object') return 10;
+	const valor =
+		'minStock' in seccion ? seccion.minStock : 'min_stock' in seccion ? seccion.min_stock : 10;
+	if (valor === null) return null;
+	const n = Number(valor);
+	return Number.isInteger(n) && n >= 0 ? n : 10;
+}
 
 /** La partida saneada (T-727), nula si viene vacía, o 400. Espejo de `crud_product`. */
 function partidaArancelaria(valor: unknown): string | null {
@@ -962,7 +986,9 @@ route('POST', '/products/add_product', ({ body, companyId, userId }) => {
 				: null,
 		tax_code: body?.tax_code ? codigoYTarifa(body.tax_code)[0] : null,
 		unit_of_measure: String(body?.unit_of_measure ?? 'Unid'),
-		tariff_heading: partidaArancelaria(body?.tariff_heading)
+		tariff_heading: partidaArancelaria(body?.tariff_heading),
+		// F15: el mínimo propio (RN-101); nulo usa el general.
+		min_stock: minimoPropio(body?.min_stock)
 	});
 	// La existencia inicial es un movimiento de apertura en el kárdex (RN-98),
 	// a costo cero: no se conoce hasta la primera compra.
@@ -1021,6 +1047,7 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 		else if (key === 'tax_code')
 			product.tax_code = value === '' || value == null ? null : String(value);
 		else if (key === 'tariff_heading') product.tariff_heading = partidaArancelaria(value);
+		else if (key === 'min_stock') product.min_stock = minimoPropio(value);
 		else if (key in product) (product as any)[key] = value;
 	}
 	persist();
@@ -2693,17 +2720,26 @@ route('GET', '/reports/by_payment_method', ({ query, companyId }) => {
 	return [...totals.values()].sort((a, b) => b.total - a.total);
 });
 
-route('GET', '/reports/low_stock', ({ query, companyId }) => {
-	const threshold = Number(query.get('threshold') ?? LOW_STOCK_THRESHOLD);
+route('GET', '/reports/low_stock', ({ companyId, userId }) => {
+	exigirAdmin(userId, companyId);
+	// Sin umbral (RN-101): el propio de cada producto y, sin él, el general.
+	const general = minimoGeneral(companyId);
+	const sucursal = getDb(companyId).branches?.[0];
 	return getDb(companyId)
-		.products.filter((p) => p.stock <= threshold)
-		.sort((a, b) => a.stock - b.stock)
+		.products.filter((p) => belowMinimum(p.stock, p.min_stock, general))
+		.sort((a, b) => a.stock - b.stock || a.id_product - b.id_product)
 		.map<LowStockProduct>((p) => ({
 			id_product: p.id_product,
 			name: p.name,
 			barcode: p.barcode,
 			stock: p.stock,
-			category_id: p.category_id
+			category_id: p.category_id,
+			min_stock: p.min_stock ?? null,
+			threshold: p.min_stock ?? general,
+			// Una sola sucursal hasta T-1505: toda la existencia está ahí.
+			branches: sucursal
+				? [{ branch_id: sucursal.id, name: sucursal.nombre, quantity: p.stock }]
+				: []
 		}));
 });
 

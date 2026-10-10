@@ -562,5 +562,6 @@
 	"api_document_not_resolved": "A Hacienda ainda não respondeu: não há resposta para baixar.",
 	"api_document_file_missing": "O arquivo não está no repositório de documentos. Avise o suporte: a lei obriga a conservá-lo.",
 	"api_storage_unavailable": "O repositório de documentos não responde. Tente de novo em alguns minutos.",
-	"api_production_gate_locked": "Para passar à produção a Hacienda exige ter visto aceitos em testes uma fatura, um tíquete e uma nota de crédito. Falta: {missing}."
+	"api_production_gate_locked": "Para passar à produção a Hacienda exige ter visto aceitos em testes uma fatura, um tíquete e uma nota de crédito. Falta: {missing}.",
+	"api_min_stock_negative": "O estoque mínimo é um número inteiro de zero para cima; em branco usa o geral."
 }

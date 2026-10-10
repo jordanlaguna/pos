@@ -392,6 +392,11 @@ export interface Product {
 	 */
 	tariff_heading?: string | null;
 
+	// --- F15: cuánto es poco para este producto (RN-101) ---------------------
+
+	/** El mínimo propio. Nulo o ausente usa el general de Configuración. */
+	min_stock?: number | null;
+
 	// --- F7: el código de tarifa de Hacienda (RN-76) -------------------------
 
 	/**
@@ -1335,12 +1340,25 @@ export interface PaymentBreakdown {
 	total: number;
 }
 
+/** Cuánto hay de un producto en una sucursal (RF-90). */
+export interface LowStockBranch {
+	branch_id: number;
+	name: string;
+	quantity: number;
+}
+
 export interface LowStockProduct {
 	id_product: number;
 	name: string;
 	barcode: string;
+	/** La existencia total, la suma de las sucursales. */
 	stock: number;
 	category_id: number;
+	/** El mínimo propio (RN-101); nulo usa el general. */
+	min_stock: number | null;
+	/** El que se aplicó: el propio o el general. */
+	threshold: number | null;
+	branches: LowStockBranch[];
 }
 
 export interface DashboardData {

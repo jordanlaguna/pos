@@ -38,14 +38,26 @@ class PaymentBreakdown(BaseModel):
     total: float
 
 
+class LowStockBranch(BaseModel):
+    """Cuánto hay de un producto en una sucursal (RF-90)."""
+
+    branch_id: int
+    name: str
+    quantity: int
+
+
 class LowStockProduct(BaseModel):
     id_product: int
     name: str
     barcode: str | None = None
+    #: La existencia total, la suma de las sucursales.
     stock: int
     category_id: int
-
-    model_config = {"from_attributes": True}
+    #: El mínimo propio (RN-101); nulo usa el general.
+    min_stock: int | None = None
+    #: El que se aplicó: el propio o el general.
+    threshold: int | None = None
+    branches: list[LowStockBranch] = []
 
 
 class SalesRateLine(BaseModel):

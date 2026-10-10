@@ -46,6 +46,8 @@ class FakeProduct:
     #: Dónde cuelga (RN-6). La 1 por omisión: la categoría de todas las pruebas
     #: que no son de categorías.
     category_id: int = 1
+    #: El mínimo propio (RN-101). Nulo por omisión: usa el general.
+    min_stock: int | None = None
     #: Si alguna venta lo nombra (T-1502): lo dice la prueba, no una venta de verdad.
     sold: bool = False
 
@@ -95,6 +97,7 @@ class FakeProductRepository:
         tax_code=None,
         unit_of_measure=None,
         tariff_heading=None,
+        min_stock=None,
     ) -> int:
         nuevo = FakeProduct(
             self._siguiente,
@@ -107,6 +110,7 @@ class FakeProductRepository:
             unit_of_measure=unit_of_measure,
             tariff_heading=tariff_heading,
             category_id=category_id,
+            min_stock=min_stock,
         )
         self.productos[self._siguiente] = nuevo
         self.codigos[barcode] = self._siguiente
@@ -733,19 +737,28 @@ class FakeSettingsRepository:
     """La configuración que lee la venta, sin tabla `settings` de por medio."""
 
     def __init__(
-        self, *, einvoicing: bool = False, document_types: frozenset[str] | None = None
+        self,
+        *,
+        einvoicing: bool = False,
+        document_types: frozenset[str] | None = None,
+        min_stock: int | None = 10,
     ) -> None:
         # Apagada por omisión: es lo que tiene toda compañía hasta que el dueño
         # la activa, y lo que describen las pruebas anteriores a RN-85.
         self._einvoicing = einvoicing
         # Los de fábrica por omisión (RN-88), que es con lo que nace toda compañía.
         self._document_types = document_types if document_types is not None else DEFAULT_ENABLED
+        # El 10 de siempre (RN-101), como una compañía que no abrió Configuración.
+        self._min_stock = min_stock
 
     def einvoicing_enabled(self) -> bool:
         return self._einvoicing
 
     def document_types(self) -> frozenset[str]:
         return self._document_types
+
+    def min_stock(self) -> int | None:
+        return self._min_stock
 
 
 class FakeUnitOfWork:

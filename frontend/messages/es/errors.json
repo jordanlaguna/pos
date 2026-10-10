@@ -562,5 +562,6 @@
 	"api_document_not_resolved": "Hacienda todavía no contestó: no hay respuesta que bajar.",
 	"api_document_file_missing": "El archivo no está en el almacén de comprobantes. Avise a soporte: es un documento que la ley obliga a conservar.",
 	"api_storage_unavailable": "El almacén de comprobantes no responde. Vuelva a intentarlo en unos minutos.",
-	"api_production_gate_locked": "Para pasar a producción Hacienda exige haber visto aceptados en pruebas una factura, un tiquete y una nota de crédito. Falta: {missing}."
+	"api_production_gate_locked": "Para pasar a producción Hacienda exige haber visto aceptados en pruebas una factura, un tiquete y una nota de crédito. Falta: {missing}.",
+	"api_min_stock_negative": "El mínimo de existencia es un número entero de cero para arriba; en blanco usa el general."
 }

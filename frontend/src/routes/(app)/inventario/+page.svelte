@@ -30,13 +30,17 @@
 	} from '$lib/domain/taxCodes';
 	import { taxCodeLabel } from '$lib/ui/taxCodes';
 	import { formatDateTime, formatInt } from '$lib/ui/format';
+	import { belowMinimum } from '$lib/domain/inventory';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Product } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	const LOW_STOCK = 10;
+	/** Bajo mínimo (RN-101): el propio del producto o, sin él, el general. */
+	function bajoMinimo(p: Product): boolean {
+		return belowMinimum(p.stock, p.min_stock, data.defaultMinStock);
+	}
 
 	let search = $state('');
 	let categoryFilter = $state<number | 'todas'>('todas');
@@ -52,6 +56,7 @@
 	let fDescription = $state('');
 	let fPrice = $state('');
 	let fStock = $state('');
+	let fMinStock = $state('');
 	let fBarcode = $state('');
 	// La categoría son dos campos: la raíz y —si la raíz tiene rama— la
 	// subcategoría. Lo que viaja al servidor es uno solo, `category_id`.
@@ -170,7 +175,7 @@
 			categoryFilter === 'todas' ? null : withDescendants(data.categories, categoryFilter);
 		return data.products.filter((p) => {
 			if (alcance && !alcance.includes(p.category_id)) return false;
-			if (onlyLowStock && p.stock > LOW_STOCK) return false;
+			if (onlyLowStock && !bajoMinimo(p)) return false;
 			if (!term) return true;
 			return (
 				p.name.toLowerCase().includes(term) ||
@@ -183,7 +188,7 @@
 	const inventoryValue = $derived(
 		data.products.reduce((acc, p) => acc + Number(p.price) * p.stock, 0)
 	);
-	const lowStockCount = $derived(data.products.filter((p) => p.stock <= LOW_STOCK).length);
+	const lowStockCount = $derived(data.products.filter(bajoMinimo).length);
 
 	function openCreate() {
 		editing = null;
@@ -191,6 +196,7 @@
 		fDescription = '';
 		fPrice = '';
 		fStock = '';
+		fMinStock = '';
 		fBarcode = '';
 		// Un producto nuevo nace sin clasificar y con la tarifa en blanco: en
 		// blanco ES la configurada (RN-9), y dejarla así es lo que hace que el
@@ -207,6 +213,7 @@
 		fDescription = product.description;
 		fPrice = String(product.price);
 		fStock = String(product.stock);
+		fMinStock = product.min_stock == null ? '' : String(product.min_stock);
 		fBarcode = product.barcode;
 		limpiarCabys();
 		fCabys = product.cabys_code ?? '';
@@ -458,6 +465,7 @@
 		>
 			{formatInt(lowStockCount)}
 		</p>
+		<p class="mt-0.5 text-xs text-[var(--text-subtle)]">{m.inventory_low_stock_hint()}</p>
 	</div>
 </div>
 
@@ -555,11 +563,13 @@
 							<span
 								class="badge tabular-nums {product.stock <= 0
 									? 'bg-[var(--negative-bg)] text-[var(--negative)]'
-									: product.stock <= LOW_STOCK
+									: bajoMinimo(product)
 										? 'bg-[var(--warning-bg)] text-[var(--warning)]'
 										: 'bg-[var(--surface-sunken)] text-[var(--text-muted)]'}"
+								data-testid="stock-badge"
+								data-low={bajoMinimo(product)}
 							>
-								{#if product.stock <= LOW_STOCK}
+								{#if bajoMinimo(product)}
 									<Icon name="alert" size={11} />
 								{/if}
 								{product.stock}
@@ -682,6 +692,18 @@
 				error={form?.errors?.stock}
 			/>
 		{/if}
+
+		<!-- El mínimo propio (RN-101). En blanco usa el general de Configuración. -->
+		<Field
+			label={m.inventory_label_min_stock()}
+			name="min_stock"
+			bind:value={fMinStock}
+			inputmode="numeric"
+			error={form?.errors?.min_stock}
+			hint={data.defaultMinStock === null
+				? m.inventory_min_stock_hint_none()
+				: m.inventory_min_stock_hint({ general: data.defaultMinStock })}
+		/>
 
 		<div class="sm:col-span-2">
 			<Field

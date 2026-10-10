@@ -24,6 +24,7 @@ from .errors import (
     InvalidQuantity,
     InvalidStockMovementKind,
     InvalidStockSource,
+    MinStockNegative,
     OutsideCountScope,
     ReasonInactive,
     ReasonIsSystem,
@@ -299,3 +300,39 @@ def count_difference(system_qty: int, counted_qty: int) -> int:
     """
     check_counted_quantity(counted_qty)
     return counted_qty - system_qty
+
+
+# ---------------------------------------------------------------------------
+# El mínimo (RN-101)
+# ---------------------------------------------------------------------------
+
+
+def check_min_stock(value: object) -> int | None:
+    """El mínimo de un producto: un entero de cero para arriba, o nulo.
+
+    Nulo no es «sin mínimo» sino «usa el general de la compañía»; lo que no sea
+    eso ni un entero sin signo es un error del formulario, no un dato.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise MinStockNegative(value)
+    return value
+
+
+def below_minimum(total: int, min_stock: int | None, default_min: int | None) -> bool:
+    """Si un producto está bajo mínimo (RN-101).
+
+    Manda el mínimo propio; sin él, el general de la compañía; sin ninguno de
+    los dos, nunca. Se compara la existencia **total** —la suma de las
+    sucursales— y el mínimo cuenta: con 10 y mínimo 10 ya está bajo.
+
+        5 con mínimo 10            → sí
+        10 con mínimo 10           → sí
+        5 sin mínimo y general 3   → no
+        5 sin mínimo y sin general → no
+    """
+    minimo = min_stock if min_stock is not None else default_min
+    if minimo is None:
+        return False
+    return total <= minimo

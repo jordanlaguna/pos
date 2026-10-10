@@ -252,5 +252,10 @@
   "settings_other_signs_hint": "Indique como chegar: rua, número ou pontos de referência próximos. Mínimo de cinco caracteres.",
   "settings_choose": "Selecione…",
   "settings_production_gate_ready": "Uma fatura, um tíquete e uma nota de crédito já foram aceitos em testes: dá para passar à produção.",
-  "settings_production_gate_missing": "Antes de passar à produção a Hacienda exige ver aceitos em testes uma fatura, um tíquete e uma nota de crédito. Falta: {missing}."
+  "settings_production_gate_missing": "Antes de passar à produção a Hacienda exige ver aceitos em testes uma fatura, um tíquete e uma nota de crédito. Falta: {missing}.",
+  "settings_tab_inventory": "Estoque",
+  "settings_inventory": "Estoque",
+  "settings_inventory_hint": "O que o painel e a lista de estoque avisam. Cada produto pode ter seu próprio mínimo na ficha; o geral é para os que não dizem.",
+  "settings_min_stock": "Estoque mínimo geral",
+  "settings_min_stock_hint": "Um produto sem mínimo próprio avisa quando tem esta quantidade ou menos. Em branco, só avisam os que têm o seu."
 }

@@ -27,7 +27,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// (RN-9), no la del sistema: la ficha la propone y quien clasifica decide.
 	// Se lee acá y no del estado de módulo de `money.ts` porque en un `load`
 	// todavía no corrió el layout que lo fija.
-	return { products, categories, defaultTaxRate: stored.settings.tax.rate };
+	return {
+		products,
+		categories,
+		defaultTaxRate: stored.settings.tax.rate,
+		// El mínimo general (RN-101): con él la lista decide qué está bajo y la
+		// ficha dice qué pasa si se deja el propio en blanco.
+		defaultMinStock: stored.settings.inventory.minStock
+	};
 };
 
 /**
@@ -80,7 +87,13 @@ function readProduct(v: Validator, form: FormData, { withStock }: { withStock: b
 				required: false,
 				min: TARIFF_HEADING_LENGTH,
 				max: TARIFF_HEADING_LENGTH
-			}) || null
+			}) || null,
+		// El mínimo propio (RN-101). En blanco es nulo, y nulo **es** el valor:
+		// usa el general. Por eso se manda siempre, también al editar.
+		min_stock:
+			String(form.get('min_stock') ?? '').trim() === ''
+				? null
+				: v.integer('min_stock', F.minStock(), { min: 0 })
 	};
 }
 

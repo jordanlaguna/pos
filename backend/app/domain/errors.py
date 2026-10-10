@@ -523,6 +523,15 @@ class StockNotEditable(DomainError):
         self.product_id = product_id
 
 
+class MinStockNegative(DomainError):
+    """Un mínimo de existencia que no es un entero de cero para arriba (RN-101).
+    Nulo sí vale: es «usa el general»."""
+
+    def __init__(self, value: object) -> None:
+        super().__init__(f"mínimo de existencia no válido: {value!r}")
+        self.value = value
+
+
 class OutsideCountScope(DomainError):
     """Se contó un producto que no está en lo que la toma cubre (RN-100): la
     toma es de una categoría —y sus hijas— y el producto cuelga de otra."""

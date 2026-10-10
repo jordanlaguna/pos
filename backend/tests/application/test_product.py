@@ -26,7 +26,13 @@ from app.application.use_cases.product import (
     RegisterProduct,
     UpdateProduct,
 )
-from app.domain.errors import BarcodeTaken, InsufficientStock, InvalidTariffHeading, StockNotEditable
+from app.domain.errors import (
+    BarcodeTaken,
+    InsufficientStock,
+    InvalidTariffHeading,
+    MinStockNegative,
+    StockNotEditable,
+)
 from app.domain.fe_tax_codes import InvalidTaxCode
 from app.domain.inventory import OPENING
 from app.domain.money import Money
@@ -188,6 +194,20 @@ class TestDarDeAlta:
         assert (error.value.name, error.value.children) == ("Bebidas", 2)
 
 
+    def test_nace_sin_minimo_propio_o_con_el_que_diga(self, mundo):
+        alta, _, _, catalogo, _, _ = mundo
+        sin = alta(peticion()).id_product
+        con = alta(peticion(barcode="7441029001071", min_stock=5)).id_product
+        assert catalogo.get(sin).min_stock is None
+        assert catalogo.get(con).min_stock == 5
+
+    def test_un_minimo_negativo_no_entra(self, mundo):
+        alta, _, _, catalogo, _, uow = mundo
+        with pytest.raises(MinStockNegative):
+            alta(peticion(min_stock=-1))
+        assert not uow.committed and len(catalogo.productos) == 1
+
+
 class TestEditar:
     def test_escribe_solo_lo_que_vino(self, mundo):
         _, editar, _, catalogo, _, uow = mundo
@@ -238,6 +258,20 @@ class TestEditar:
         _, editar, _, catalogo, _, _ = mundo
         editar(1, {"tax_code": ""})
         assert catalogo.cambios == [(1, {"tax_code": None})]
+
+    def test_el_minimo_se_pone_y_se_quita(self, mundo):
+        _, editar, _, catalogo, _, _ = mundo
+        editar(1, {"min_stock": 4})
+        assert catalogo.get(1).min_stock == 4
+        # Nulo es un valor, no «no lo mandé»: vuelve al general (RN-101).
+        editar(1, {"min_stock": None})
+        assert catalogo.get(1).min_stock is None
+
+    def test_un_minimo_negativo_no_se_guarda(self, mundo):
+        _, editar, _, catalogo, _, _ = mundo
+        with pytest.raises(MinStockNegative):
+            editar(1, {"min_stock": -3})
+        assert catalogo.get(1).min_stock is None
 
     def test_la_partida_se_sanea_y_vacia_la_quita(self, mundo):
         _, editar, _, catalogo, _, _ = mundo

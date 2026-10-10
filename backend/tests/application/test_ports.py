@@ -105,7 +105,7 @@ PUERTOS = [
     (repositories.NoteRepository, {"adjustments", "add", "in_window"}),
     # Desde F7: si la compañía factura electrónicamente, que es lo que decide si
     # la venta lleva tipo de comprobante (RN-85).
-    (repositories.SettingsRepository, {"einvoicing_enabled", "document_types"}),
+    (repositories.SettingsRepository, {"einvoicing_enabled", "document_types", "min_stock"}),
     # F7: el receptor de la venta tiene que ser de la compañía, y desde T-727
     # la venta necesita saber quién es ante Hacienda: al del extranjero se le
     # exporta. Una sola pregunta, que devuelve eso.

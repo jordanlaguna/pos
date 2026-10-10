@@ -231,6 +231,12 @@ export const actions: Actions = {
 		const codigo = v.text('moneda_codigo', F.currencyCode(), { max: 8 });
 		const simbolo = v.text('moneda_simbolo', F.currencySymbol(), { max: 5 });
 		const decimales = v.integer('moneda_decimales', F.decimals(), { min: 0, max: 4 });
+		// El mínimo general (RN-101). En blanco es nulo, y nulo es un valor: «sin
+		// general», solo avisan los productos con mínimo propio.
+		const minimoGeneral =
+			String(form.get('inventario_minimo') ?? '').trim() === ''
+				? null
+				: v.integer('inventario_minimo', F.minStock(), { min: 0, max: 1_000_000 });
 
 		const plantilla = v.oneOf('documento_plantilla', F.documentTemplate(), [
 			'tiquete',
@@ -332,6 +338,8 @@ export const actions: Actions = {
 				notas
 			},
 			appearance: { accentColor: colorAcento },
+			// Los lotes no se tocan desde acá todavía (T-1507): se conserva lo guardado.
+			inventory: { minStock: minimoGeneral, lotsEnabled: stored.inventory.lotsEnabled },
 			eInvoicing: {
 				// La emisión todavía no está implementada; ver la nota de la pantalla.
 				// Se guarda la intención, no se activa nada.

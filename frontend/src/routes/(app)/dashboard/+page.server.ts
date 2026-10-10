@@ -1,6 +1,6 @@
 import { apiSafe } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth';
-import { LOW_STOCK_THRESHOLD } from '$lib/server/config';
+import { loadSettings } from '$lib/server/settings';
 import { toDateInput } from '$lib/ui/format';
 import type {
 	LowStockProduct,
@@ -23,7 +23,7 @@ function defaultRange() {
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	requireAdmin(locals, url.pathname);
+	const admin = requireAdmin(locals, url.pathname);
 	const token = locals.token;
 
 	const fallback = defaultRange();
@@ -36,7 +36,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const query = { from, to };
 
-	const [summary, topProducts, salesByDay, byPaymentMethod, lowStock, purchases] =
+	const [summary, topProducts, salesByDay, byPaymentMethod, lowStock, purchases, stored] =
 		await Promise.all([
 			apiSafe<ReportSummary | null>('/reports/summary', null, { token, query }),
 			apiSafe<TopProduct[]>('/reports/top_products', [], {
@@ -45,15 +45,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			}),
 			apiSafe<SalesByDay[]>('/reports/sales_by_day', [], { token, query }),
 			apiSafe<PaymentBreakdown[]>('/reports/by_payment_method', [], { token, query }),
-			apiSafe<LowStockProduct[]>('/reports/low_stock', [], {
-				token,
-				query: { threshold: LOW_STOCK_THRESHOLD }
-			}),
+			// Sin umbral: el backend aplica el mínimo de cada producto y, sin él,
+			// el general de Configuración (RN-101).
+			apiSafe<LowStockProduct[]>('/reports/low_stock', [], { token }),
 			// El crédito fiscal del periodo (RF-45). Va con los demás reportes y no
 			// bajo /compras porque quien lo mira está conciliando impuestos, no
 			// revisando lo que compró. `apiSafe` porque un backend sin F10 no tiene
 			// la ruta y el tablero tiene que abrir igual.
-			apiSafe<PurchasesReport | null>('/reports/purchases', null, { token, query })
+			apiSafe<PurchasesReport | null>('/reports/purchases', null, { token, query }),
+			loadSettings(token, admin.company_id)
 		]);
 
 	return {
@@ -64,7 +64,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		byPaymentMethod,
 		lowStock,
 		purchases,
-		lowStockThreshold: LOW_STOCK_THRESHOLD,
+		/** El mínimo general (RN-101), para decir con qué regla se avisa. */
+		lowStockThreshold: stored.settings.inventory.minStock,
 		/** Sin summary el backend no tiene el patch de reportes aplicado. */
 		reportsAvailable: summary !== null
 	};

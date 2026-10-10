@@ -33,6 +33,11 @@ class ProductRegister(BaseModel):
     # cliente del extranjero; vacía es «no tiene».
     tariff_heading: str | None = None
 
+    # --- F15: cuánto es poco para este producto (RN-101) ---------------------
+    #
+    # Nulo usa el mínimo general de Configuración.
+    min_stock: int | None = None
+
 class ProductUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
@@ -60,6 +65,9 @@ class ProductUpdate(BaseModel):
 
     # --- F7: la partida arancelaria (RF-78, T-727). Vacía la quita. ---------
     tariff_heading: str | None = None
+
+    # --- F15: el mínimo propio (RN-101). Nulo lo quita y vuelve al general. --
+    min_stock: int | None = None
 
 class ProductResponse(BaseModel):
     id_product: int
@@ -89,6 +97,9 @@ class ProductResponse(BaseModel):
 
     # --- F7: la partida arancelaria (RF-78, T-727) ---------------------------
     tariff_heading: str | None = None
+
+    # --- F15: el mínimo propio (RN-101); nulo usa el general -----------------
+    min_stock: int | None = None
 
     # --- F10: lo que cuesta, no lo que vale (RN-54) -------------------------
     #

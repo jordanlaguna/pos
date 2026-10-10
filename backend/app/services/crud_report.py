@@ -20,6 +20,10 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.domain.inventory import below_minimum
+from app.infrastructure.persistence.sqlalchemy_repositories import SqlAlchemySettingsRepository
+from app.models.model_company import Branch
+from app.models.model_inventory import StockLevel
 from app.models.model_note import SaleNote
 from app.models.model_product import Product
 from app.models.model_return import Return, ReturnDetail
@@ -351,10 +355,51 @@ def sales_by_rate(db: Session, date_from: str | None, date_to: str | None) -> di
     }
 
 
-def low_stock(db: Session, threshold: int = 10) -> list[Product]:
-    return (
+def low_stock(db: Session) -> list[dict]:
+    """Lo que está bajo mínimo (RN-101), con su existencia por sucursal.
+
+    La regla es la del dominio y se aplica sobre la existencia **total**: el
+    mínimo propio si lo hay, si no el general de Configuración, y sin ninguno
+    de los dos nada avisa. El filtro se hace acá y no en SQL para que la
+    pantalla, el panel y este reporte digan lo mismo por la misma función.
+    """
+    general = SqlAlchemySettingsRepository(db).min_stock()
+    productos = (
         db.query(Product)
-        .filter(Product.company_id == compania_actual(), Product.stock <= threshold)
-        .order_by(Product.stock.asc())
+        .filter(Product.company_id == compania_actual())
+        .order_by(Product.stock.asc(), Product.id_product.asc())
         .all()
     )
+    bajos = [p for p in productos if below_minimum(p.stock, p.min_stock, general)]
+    if not bajos:
+        return []
+
+    sucursales = {b.id: b.nombre for b in db.query(Branch).all()}
+    por_producto: dict[int, list[dict]] = {}
+    niveles = (
+        db.query(StockLevel)
+        .filter(StockLevel.product_id.in_([p.id_product for p in bajos]))
+        .order_by(StockLevel.branch_id.asc())
+        .all()
+    )
+    for nivel in niveles:
+        por_producto.setdefault(nivel.product_id, []).append(
+            {
+                "branch_id": nivel.branch_id,
+                "name": sucursales.get(nivel.branch_id, f"#{nivel.branch_id}"),
+                "quantity": nivel.quantity,
+            }
+        )
+    return [
+        {
+            "id_product": p.id_product,
+            "name": p.name,
+            "barcode": p.barcode,
+            "stock": p.stock,
+            "category_id": p.category_id,
+            "min_stock": p.min_stock,
+            "threshold": p.min_stock if p.min_stock is not None else general,
+            "branches": por_producto.get(p.id_product, []),
+        }
+        for p in bajos
+    ]

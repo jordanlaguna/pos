@@ -179,6 +179,7 @@ class SqlAlchemyProductRepository:
         tax_code: str | None = None,
         unit_of_measure: str | None = None,
         tariff_heading: str | None = None,
+        min_stock: int | None = None,
     ) -> int:
         fila = Product(
             name=name,
@@ -192,6 +193,7 @@ class SqlAlchemyProductRepository:
             tax_rate=tax_rate,
             tax_code=tax_code,
             tariff_heading=tariff_heading,
+            min_stock=min_stock,
             # `unit_of_measure` tiene valor por omisión en la base; mandar None
             # lo dejaría en NULL y la columna es NOT NULL.
             **({"unit_of_measure": unit_of_measure} if unit_of_measure else {}),
@@ -810,6 +812,11 @@ class SqlAlchemySettingsRepository:
         from app.services.crud_settings import get_document_types
 
         return get_document_types(self._db)
+
+    def min_stock(self) -> int | None:
+        from app.services.crud_settings import get_min_stock
+
+        return get_min_stock(self._db)
 
 
 @dataclass(frozen=True)

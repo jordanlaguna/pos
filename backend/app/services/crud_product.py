@@ -24,6 +24,7 @@ from app.domain.errors import (
     BarcodeTaken,
     InsufficientStock,
     InvalidTariffHeading,
+    MinStockNegative,
     StockNotEditable,
 )
 from app.domain.fe_tax_codes import InvalidTaxCode, suggested_code
@@ -84,6 +85,7 @@ def create_product(db: Session, product: ProductRegister, *, user_id: int):
         tax_code=product.tax_code,
         unit_of_measure=product.unit_of_measure,
         tariff_heading=product.tariff_heading,
+        min_stock=product.min_stock,
     )
 
     try:
@@ -96,6 +98,8 @@ def create_product(db: Session, product: ProductRegister, *, user_id: int):
         raise api_error(400, "invalid_tax_code", tax_code=str(e.value)) from None
     except InvalidTariffHeading as e:
         raise api_error(400, "invalid_tariff_heading", tariff_heading=str(e.value)) from None
+    except MinStockNegative as e:
+        raise api_error(400, "min_stock_negative", min_stock=str(e.value)) from None
     except BranchRequired:
         raise api_error(404, "branch_not_found") from None
     except InsufficientStock as e:
@@ -155,6 +159,8 @@ def update_product_information(db: Session, id_product: int, product_data: dict)
         raise api_error(400, "invalid_tax_code", tax_code=str(e.value)) from None
     except InvalidTariffHeading as e:
         raise api_error(400, "invalid_tariff_heading", tariff_heading=str(e.value)) from None
+    except MinStockNegative as e:
+        raise api_error(400, "min_stock_negative", min_stock=str(e.value)) from None
 
     return {"message": "product_updated", "id_product": id_product}
 

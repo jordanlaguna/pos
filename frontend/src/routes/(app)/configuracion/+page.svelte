@@ -42,18 +42,22 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	type Seccion = 'negocio' | 'moneda' | 'documentos' | 'electronica' | 'sucursales';
+	type Seccion = 'negocio' | 'moneda' | 'inventario' | 'documentos' | 'electronica' | 'sucursales';
 	let submitting = $state(false);
 
 	/**
-	 * Las cinco pestañas. Solo el identificador y el icono: el rótulo se pide al
+	 * Las seis pestañas. Solo el identificador y el icono: el rótulo se pide al
 	 * catálogo al pintar, porque una constante de módulo con el texto adentro se
 	 * evalúa una vez por proceso y todas las peticiones verían el idioma de la
 	 * primera (defecto 17).
 	 */
-	const SECCIONES: { id: Seccion; icon: 'idcard' | 'wallet' | 'receipt' | 'bolt' | 'home' }[] = [
+	const SECCIONES: {
+		id: Seccion;
+		icon: 'idcard' | 'wallet' | 'box' | 'receipt' | 'bolt' | 'home';
+	}[] = [
 		{ id: 'negocio', icon: 'idcard' },
 		{ id: 'moneda', icon: 'wallet' },
+		{ id: 'inventario', icon: 'box' },
 		{ id: 'documentos', icon: 'receipt' },
 		{ id: 'electronica', icon: 'bolt' },
 		{ id: 'sucursales', icon: 'home' }
@@ -65,6 +69,8 @@
 				return m.settings_tab_business();
 			case 'moneda':
 				return m.settings_tab_currency();
+			case 'inventario':
+				return m.settings_tab_inventory();
 			case 'documentos':
 				return m.settings_tab_documents();
 			case 'electronica':
@@ -112,6 +118,10 @@
 	let currency = $state({ ...inicial.currency });
 	let document = $state({ ...inicial.document });
 	let colorAcento = $state(inicial.appearance.accentColor);
+	// El mínimo general (RN-101): en blanco es «sin general».
+	let minimoGeneral = $state(
+		inicial.inventory.minStock === null ? '' : String(inicial.inventory.minStock)
+	);
 	let eInvoicing = $state({ ...inicial.eInvoicing });
 
 	/*
@@ -136,7 +146,11 @@
 		tax: { ...VAT },
 		document,
 		appearance: { accentColor: colorAcento },
-		eInvoicing
+		eInvoicing,
+		inventory: {
+			minStock: minimoGeneral.trim() === '' ? null : Number(minimoGeneral),
+			lotsEnabled: inicial.inventory.lotsEnabled
+		}
 	});
 
 	/*
@@ -759,6 +773,26 @@
 	</div>
 
 	<!-- --------------------------------------------------------- documentos -->
+	<!-- ----------------------------------------------------- inventario -->
+	<div style:display={seccion === 'inventario' ? '' : 'none'}>
+		<div class="card p-5 lg:max-w-2xl">
+			<h2 class="mb-1 text-sm font-bold text-[var(--text)]">{m.settings_inventory()}</h2>
+			<p class="mb-4 text-xs text-[var(--text-subtle)]">{m.settings_inventory_hint()}</p>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<Field
+					label={m.settings_min_stock()}
+					name="inventario_minimo"
+					type="number"
+					min="0"
+					max="1000000"
+					bind:value={minimoGeneral}
+					error={form?.errors?.inventario_minimo}
+					hint={m.settings_min_stock_hint()}
+				/>
+			</div>
+		</div>
+	</div>
+
 	<div style:display={seccion === 'documentos' ? '' : 'none'}>
 		<div class="grid gap-4 lg:grid-cols-5">
 			<div class="space-y-4 lg:col-span-2">

@@ -32,7 +32,7 @@
 	"reports_units_short": "{units} units sold",
 	"reports_payment_share": "{count} sales · {percent} % of the total",
 	"reports_stock_alerts": "Inventory alerts",
-	"reports_stock_threshold": "Products with {threshold} units or fewer",
+	"reports_stock_threshold": "Products at their minimum or below; without one of their own, {threshold} units or fewer",
 	"reports_go_to_inventory": "Go to inventory",
 	"reports_col_product": "Product",
 	"reports_col_barcode": "Barcode",
@@ -41,7 +41,7 @@
 	"reports_out_of_stock": "Sold out",
 	"reports_low_stock": "Low stock",
 	"reports_inventory_ok": "The whole inventory is in order",
-	"reports_inventory_ok_hint": "No product is below the threshold.",
+	"reports_inventory_ok_hint": "No product is at its minimum or below.",
 	"$comentario_graficos": "The charts. The axis label and the equivalent table header are the same data seen two ways: anyone using a screen reader arrives through the table.",
 	"chart_show_chart": "Chart",
 	"chart_show_table": "Table",
@@ -61,5 +61,8 @@
 	"reports_col_base": "Base",
 	"reports_col_tax": "Tax",
 	"reports_rate_percent": "{rate}%",
-	"reports_net_includes_notes": "Includes notes: +{debit} / −{credit}"
+	"reports_net_includes_notes": "Includes notes: +{debit} / −{credit}",
+	"reports_stock_threshold_own": "Products at their own minimum or below; the company has no general minimum",
+	"reports_col_minimum": "Minimum",
+	"reports_stock_by_branch": "{name}: {quantity}"
 }

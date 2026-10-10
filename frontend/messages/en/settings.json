@@ -252,5 +252,10 @@
   "settings_other_signs_hint": "Describe how to get there: street, number or nearby landmarks. At least five characters.",
   "settings_choose": "Select…",
   "settings_production_gate_ready": "An invoice, a ticket and a credit note have been accepted in the sandbox: production can be enabled.",
-  "settings_production_gate_missing": "Before moving to production, Hacienda requires an invoice, a ticket and a credit note accepted in the sandbox. Missing: {missing}."
+  "settings_production_gate_missing": "Before moving to production, Hacienda requires an invoice, a ticket and a credit note accepted in the sandbox. Missing: {missing}.",
+  "settings_tab_inventory": "Inventory",
+  "settings_inventory": "Inventory",
+  "settings_inventory_hint": "What the dashboard and the inventory list warn about. Each product may have its own minimum on its card; the general one is for those that do not say.",
+  "settings_min_stock": "General minimum stock",
+  "settings_min_stock_hint": "A product without its own minimum warns when it has this quantity or less. Blank, only those with their own warn."
 }

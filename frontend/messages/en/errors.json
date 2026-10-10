@@ -562,5 +562,6 @@
 	"api_document_not_resolved": "Hacienda has not answered yet: there is no response to download.",
 	"api_document_file_missing": "The file is not in the document store. Contact support: the law requires keeping it.",
 	"api_storage_unavailable": "The document store is not responding. Try again in a few minutes.",
-	"api_production_gate_locked": "To move to production, Hacienda requires an invoice, a ticket and a credit note accepted in the sandbox. Missing: {missing}."
+	"api_production_gate_locked": "To move to production, Hacienda requires an invoice, a ticket and a credit note accepted in the sandbox. Missing: {missing}.",
+	"api_min_stock_negative": "The minimum stock is a whole number of zero or more; blank uses the general one."
 }

@@ -5759,13 +5759,30 @@ negocio.
       verificación, más el cajero que cuenta pero no abre, la raíz que cuenta a
       sus hijas, el sobrante al ingreso y el faltante al gasto;
       `tests/e2e/toma-fisica.spec.ts` hace el primero contra el simulado.
-- [ ] **T-1504** Mínimo por producto y bajo mínimo (punto 4; RN-101; RF-90).
+- [x] **T-1504** Mínimo por producto y bajo mínimo (punto 4; RN-101; RF-90).
       `products.min_stock`, el mínimo general en `settings` y
       `LOW_STOCK_THRESHOLD` fuera del `.env`; el reporte y el aviso del panel.
 
       **Verificación:** el reporte lista los que están por debajo de su propio
       mínimo y, sin mínimo propio, del general; el `.env` del POS ya no tiene
       el umbral.
+
+      **Hecha el 2026-10-10.** `below_minimum` y `check_min_stock` en
+      `domain/inventory.py` (y `belowMinimum` en `$lib/domain/inventory.ts`,
+      la misma regla para la lista y el panel); `min_stock` entra en
+      `RegisterProduct` y `UpdateProduct` como vaciable —nulo es «usa el
+      general»— con el código `min_stock_negative`; `SettingsRepository.min_stock()`
+      lee `data.inventory` (`minStock` como lo escribe Configuración o
+      `min_stock` como lo sembró la migración; sin sección, 10; nulo es «sin
+      general»); `GET /reports/low_stock` deja de recibir `threshold`, filtra
+      por la regla del dominio y trae el mínimo aplicado y la existencia por
+      sucursal. En el POS, la pestaña Inventario de Configuración con el
+      mínimo general, el campo en la ficha, el contador y el filtro de la
+      lista y las alertas del panel por RN-101; `LOW_STOCK_THRESHOLD` fuera de
+      `config.ts`, `.env.example` y el README. `tests/test_minimo.py` recorre
+      la verificación contra la pila con el general en 10, en 15 y en nulo;
+      `tests/e2e/minimo.spec.ts`, el propio sobre el general en la lista y el
+      panel.
 - [ ] **T-1505** Existencias por sucursal y traslados (punto 5; RN-102,
       RN-105; RF-91; plan §15.3). **Primero la caja de la sesión**:
       `terminal_id` opcional en `POST /auth/company`, validado contra la

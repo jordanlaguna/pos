@@ -3328,6 +3328,21 @@
       "lo_que_ensena": [
         "`SessionUser` dice `role`, no `rol`. La pantalla de la toma compiló y sirvió con `user.rol` —Vite no verifica tipos—, `isAdmin` quedó en falso y la prueba de punta a punta falló buscando el botón de aplicar: el único síntoma a tiempo fue el único error de `npm run check`, que corrió después. El `check` va antes de la de punta a punta, no en paralelo."
       ]
+    },
+    {
+      "fecha": "2026-10-10",
+      "titulo": "T-1504 cerrada: el mínimo por producto y el general",
+      "hecho": [
+        "La regla (RN-101) en el dominio de los dos lados: `below_minimum(total, min_stock, default_min)` en `domain/inventory.py` y `belowMinimum` en `$lib/domain/inventory.ts` —el propio si lo hay, si no el general, sin ninguno nunca, y el mínimo cuenta como bajo—; `check_min_stock` para la ficha, con `MinStockNegative` y el código `min_stock_negative` en los cuatro lugares.",
+        "La ficha: `min_stock` en `RegisterProduct` y `UpdateProduct`, vaciable como la tarifa —nulo es «usa el general»—, en los tres esquemas, el repositorio y el simulado. El general: `SettingsRepository.min_stock()` lee `data.inventory` aceptando `minStock` (como lo escribe Configuración) y `min_stock` (como lo sembró la migración 023); sin sección es el 10 de siempre y nulo es «sin general».",
+        "`GET /reports/low_stock` deja de recibir `threshold`: filtra con la regla del dominio sobre la existencia total y devuelve el mínimo aplicado y la existencia por sucursal (RF-90). `LOW_STOCK_THRESHOLD` sale de `config.ts`, `.env.example`, el README, el panel y el simulado, y el `LOW_STOCK = 10` de la lista de inventario con él.",
+        "En el POS: la pestaña Inventario de Configuración con el mínimo general (en blanco es «sin general»), el campo en la ficha con la pista de qué pasa en blanco, el contador y el filtro de la lista y las alertas del panel por la misma función, con el mínimo aplicado como columna y el desglose por sucursal cuando hay más de una.",
+        "`tests/test_minimo.py` recorre la verificación de task.md contra la pila con el general en 10, en 15 y en nulo, más el negativo y el `threshold` que ya no cuenta; `tests/e2e/minimo.spec.ts`, el propio sobre el general en la lista y el panel.",
+        "Cifras: la batería entera del backend, 3 568 pruebas al 100 % contra la pila reconstruida (20 minutos); `npm run check` en 0 y 0; 1 013 pruebas del POS al 100 %; `minimo.spec.ts` y `configuracion.spec.ts` de punta a punta en verde, más las diez vecinas que tocan la ficha y el panel."
+      ],
+      "lo_que_ensena": [
+        "Una sección nueva de la configuración tiene que entrar en `mergeSettings` **antes** de que la pantalla la guarde: el POS manda el objeto entero en cada guardado, y una sección que el tipo `Settings` no conoce se pierde al primer clic en «Guardar» —así se habría borrado el `inventory` que sembró la migración, con los lotes adentro—. Por eso `lotsEnabled` viaja de ida y vuelta aunque todavía nadie lo edite."
+      ]
     }
   ],
   "$reparto": {

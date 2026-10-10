@@ -35,8 +35,9 @@ class TestLoQueCambiaUnPutParcial:
     def test_y_la_cadena_vacia_tambien(self):
         assert clean_changes(1, {"tax_code": "", "name": ""}) == {"tax_code": None, "name": ""}
 
-    def test_son_cuatro(self):
-        assert CLEARABLE == {"cabys_code", "tax_rate", "tax_code", "tariff_heading"}
+    def test_son_cinco(self):
+        # El mínimo entró en F15 (RN-101): vaciarlo es volver al general.
+        assert CLEARABLE == {"cabys_code", "tax_rate", "tax_code", "tariff_heading", "min_stock"}
 
     def test_la_existencia_no_se_edita(self):
         with pytest.raises(StockNotEditable) as error:

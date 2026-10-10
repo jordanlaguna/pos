@@ -32,7 +32,7 @@
 	"reports_units_short": "{units} un vendidas",
 	"reports_payment_share": "{count} vendas · {percent} % do total",
 	"reports_stock_alerts": "Alertas de estoque",
-	"reports_stock_threshold": "Produtos com {threshold} unidades ou menos",
+	"reports_stock_threshold": "Produtos no seu mínimo ou abaixo; sem mínimo próprio, {threshold} unidades ou menos",
 	"reports_go_to_inventory": "Ir para o estoque",
 	"reports_col_product": "Produto",
 	"reports_col_barcode": "Código",
@@ -41,7 +41,7 @@
 	"reports_out_of_stock": "Esgotado",
 	"reports_low_stock": "Estoque baixo",
 	"reports_inventory_ok": "Todo o estoque está em ordem",
-	"reports_inventory_ok_hint": "Nenhum produto está abaixo do limite.",
+	"reports_inventory_ok_hint": "Nenhum produto está no seu mínimo nem abaixo.",
 	"$comentario_graficos": "Os gráficos. O rótulo do eixo e o cabeçalho da tabela equivalente são os mesmos dados vistos de duas formas: quem usa leitor de tela chega pela tabela.",
 	"chart_show_chart": "Gráfico",
 	"chart_show_table": "Tabela",
@@ -61,5 +61,8 @@
 	"reports_col_base": "Base",
 	"reports_col_tax": "Imposto",
 	"reports_rate_percent": "{rate} %",
-	"reports_net_includes_notes": "Inclui notas: +{debit} / −{credit}"
+	"reports_net_includes_notes": "Inclui notas: +{debit} / −{credit}",
+	"reports_stock_threshold_own": "Produtos no seu próprio mínimo ou abaixo; a empresa não tem mínimo geral",
+	"reports_col_minimum": "Mínimo",
+	"reports_stock_by_branch": "{name}: {quantity}"
 }

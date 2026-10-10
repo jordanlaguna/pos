@@ -98,5 +98,9 @@
   "inventory_stock_readonly_hint": "La existencia se mueve con una entrada, una salida o una toma física, no desde la ficha.",
   "inventory_exits": "Salidas",
   "inventory_kardex_of": "Kárdex de {product}",
-  "inventory_counts": "Toma física"
+  "inventory_counts": "Toma física",
+  "inventory_label_min_stock": "Mínimo",
+  "inventory_min_stock_hint": "En blanco usa el general de Configuración ({general}).",
+  "inventory_min_stock_hint_none": "En blanco no avisa: la compañía no tiene mínimo general.",
+  "inventory_low_stock_hint": "En su mínimo o por debajo"
 }

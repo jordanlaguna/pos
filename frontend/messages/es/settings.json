@@ -252,5 +252,10 @@
   "settings_other_signs_hint": "Indique cómo llegar: calle, número o puntos de referencia cercanos. Mínimo cinco caracteres.",
   "settings_choose": "Seleccione…",
   "settings_production_gate_ready": "Ya se vieron aceptados en pruebas una factura, un tiquete y una nota de crédito: se puede pasar a producción.",
-  "settings_production_gate_missing": "Antes de pasar a producción Hacienda exige ver aceptados en pruebas una factura, un tiquete y una nota de crédito. Falta: {missing}."
+  "settings_production_gate_missing": "Antes de pasar a producción Hacienda exige ver aceptados en pruebas una factura, un tiquete y una nota de crédito. Falta: {missing}.",
+  "settings_tab_inventory": "Inventario",
+  "settings_inventory": "Inventario",
+  "settings_inventory_hint": "Lo que avisa el panel y la lista de inventario. Cada producto puede tener su propio mínimo en la ficha; el general es para los que no lo dicen.",
+  "settings_min_stock": "Mínimo general de existencia",
+  "settings_min_stock_hint": "Un producto sin mínimo propio avisa cuando tiene esta cantidad o menos. En blanco, solo avisan los que tienen el suyo."
 }

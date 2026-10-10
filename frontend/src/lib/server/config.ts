@@ -34,6 +34,3 @@ export const SESSION_COOKIE = 'ventasys_session';
  * navegador tiene nada que hacer con él.
  */
 export const SUPPORT_COOKIE = 'ventasys_support';
-
-/** Umbral de stock bajo para las alertas del dashboard. */
-export const LOW_STOCK_THRESHOLD = Number(env.LOW_STOCK_THRESHOLD ?? 10);

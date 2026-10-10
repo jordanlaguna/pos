@@ -133,6 +133,18 @@ export interface EInvoiceSettings {
 	documentTypes: string[];
 }
 
+/** El inventario a fondo (F15). */
+export interface InventorySettings {
+	/**
+	 * El mínimo general de existencia (RN-101): lo usa todo producto sin mínimo
+	 * propio. **Nulo es «sin general»**, y entonces solo avisan los que tienen el
+	 * suyo; no es lo mismo que ausente, que cae al 10 de fábrica.
+	 */
+	minStock: number | null;
+	/** Si la compañía lleva lotes y vencimientos (RN-104, T-1507). */
+	lotsEnabled: boolean;
+}
+
 export interface Settings {
 	business: BusinessSettings;
 	currency: CurrencySettings;
@@ -140,6 +152,7 @@ export interface Settings {
 	document: DocumentSettings;
 	appearance: AppearanceSettings;
 	eInvoicing: EInvoiceSettings;
+	inventory: InventorySettings;
 }
 
 /** Logo del negocio, tal como lo guarda el backend. */
@@ -280,7 +293,10 @@ export const DEFAULT_SETTINGS: Settings = {
 		environment: 'sandbox',
 		economicActivity: '',
 		documentTypes: [...DEFAULT_ENABLED]
-	}
+	},
+	// El 10 que tenía el aviso del panel cuando era una variable de entorno
+	// igual para todas las compañías (RN-101): nadie lo pierde al migrar.
+	inventory: { minStock: 10, lotsEnabled: false }
 };
 
 /**
@@ -318,6 +334,19 @@ function optional(value: unknown, fallback: string, max = 500): string {
 
 function bool(value: unknown, fallback: boolean): boolean {
 	return typeof value === 'boolean' ? value : fallback;
+}
+
+/**
+ * Un entero dentro de un rango, **o nulo si se guardó nulo a propósito**.
+ *
+ * Es `num` para los campos donde el vacío es una decisión: quitar el mínimo
+ * general (RN-101) no es olvidarlo, y no puede volver al de fábrica solo. Lo
+ * ausente o lo inválido sí cae al de fábrica, como en todos los demás.
+ */
+function nullableInt(value: unknown, fallback: number | null, min: number, max: number): number | null {
+	if (value === null) return null;
+	const n = num(value, Number.NaN, min, max);
+	return Number.isInteger(n) ? n : fallback;
 }
 
 /**
@@ -410,6 +439,7 @@ export function mergeSettings(raw: unknown): Settings {
 	const doc = obj(legacy(source, 'document', 'documento'));
 	const appearance = obj(legacy(source, 'appearance', 'apariencia'));
 	const eInvoicing = obj(legacy(source, 'eInvoicing', 'electronica'));
+	const inventory = obj(legacy(source, 'inventory', 'inventario'));
 
 	const width = num(
 		legacy(doc, 'receiptWidth', 'ancho_tiquete'),
@@ -493,6 +523,17 @@ export function mergeSettings(raw: unknown): Settings {
 			// El mismo saneo que el servidor (RN-88): lo que la pantalla muestra
 			// encendido es lo que el backend deja emitir.
 			documentTypes: enabledTypes(eInvoicing.documentTypes)
+		},
+		inventory: {
+			// `min_stock` es como lo sembró la migración 023; `minStock`, como lo
+			// escribe esta pantalla. El backend lee las dos igual (`get_min_stock`).
+			minStock: nullableInt(
+				legacy(inventory, 'minStock', 'min_stock'),
+				d.inventory.minStock,
+				0,
+				1_000_000
+			),
+			lotsEnabled: bool(legacy(inventory, 'lotsEnabled', 'lots_enabled'), d.inventory.lotsEnabled)
 		}
 	};
 }

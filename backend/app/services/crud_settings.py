@@ -309,6 +309,38 @@ def get_document_types(db: Session) -> frozenset[str]:
     return enabled_types(seccion.get("documentTypes") if seccion else None)
 
 
+#: El mínimo general con el que nace toda compañía (RN-101): el 10 que tenía
+#: el aviso del panel cuando era una variable de entorno igual para todas.
+DEFAULT_MIN_STOCK = 10
+
+
+def get_min_stock(db: Session) -> int | None:
+    """El mínimo general de existencia (RN-101).
+
+    Vive en `data.inventory`: la migración 023 lo sembró como `min_stock` y la
+    pantalla de Configuración lo escribe como `minStock`, con la misma regla de
+    `legacy()` del POS —manda la clave nueva si **está**—. Sin sección o sin
+    clave es 10, para que una compañía que nunca abrió Configuración conserve
+    el aviso que tenía; nulo es «lo quitaron a propósito»; lo que no sea un
+    entero sin signo se lee como el de fábrica.
+    """
+    data = _parse(_row(db).data)
+    seccion = data.get("inventory")
+    if not isinstance(seccion, dict):
+        return DEFAULT_MIN_STOCK
+    if "minStock" in seccion:
+        valor = seccion["minStock"]
+    elif "min_stock" in seccion:
+        valor = seccion["min_stock"]
+    else:
+        return DEFAULT_MIN_STOCK
+    if valor is None:
+        return None
+    if isinstance(valor, bool) or not isinstance(valor, int) or valor < 0:
+        return DEFAULT_MIN_STOCK
+    return valor
+
+
 def _seccion_electronica(db: Session) -> dict | None:
     """La sección de factura electrónica, venga con el nombre que venga.
 

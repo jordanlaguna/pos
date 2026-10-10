@@ -117,5 +117,6 @@
   "field_quantity": "The quantity",
   "field_reason_code": "The reason code",
   "field_stock_reason": "The exit reason",
-  "field_exit": "The exit"
+  "field_exit": "The exit",
+  "field_min_stock": "The minimum stock"
 }

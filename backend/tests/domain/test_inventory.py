@@ -13,19 +13,22 @@ from app.domain.errors import (
     InvalidQuantity,
     InvalidStockMovementKind,
     InvalidStockSource,
+    MinStockNegative,
     ReasonInactive,
     ReasonIsSystem,
 )
 from app.domain.inventory import (
     COUNT_REASON,
     DEFAULT_REASONS,
+    ExitLine,
     KINDS,
+    Movement,
     SALE,
     SOURCE_TYPES,
-    ExitLine,
-    Movement,
+    below_minimum,
     check_exit_reason,
     check_kind,
+    check_min_stock,
     check_reason_deactivatable,
     check_source_type,
     exit_total,
@@ -258,3 +261,46 @@ class TestDosTomasALaVez:
 
     def test_otra_sucursal_nunca(self):
         assert not scopes_overlap(CountScope(1), CountScope(2), ARBOL)
+
+
+# ---------------------------------------------------------------------------
+# El mínimo (RN-101)
+# ---------------------------------------------------------------------------
+
+
+class TestBajoMinimo:
+    """Los cuatro casos de la tabla del plan (§15.2), más el borde."""
+
+    def test_con_minimo_propio_manda_el_propio(self):
+        assert below_minimum(5, 10, 3) is True
+        assert below_minimum(5, 2, 10) is False
+
+    def test_el_minimo_cuenta_como_bajo(self):
+        assert below_minimum(10, 10, None) is True
+        assert below_minimum(11, 10, None) is False
+
+    def test_sin_propio_manda_el_general(self):
+        assert below_minimum(5, None, 3) is False
+        assert below_minimum(3, None, 3) is True
+
+    def test_sin_ninguno_nunca(self):
+        assert below_minimum(0, None, None) is False
+
+    def test_cero_es_un_minimo_que_solo_avisa_agotado(self):
+        assert below_minimum(1, 0, 10) is False
+        assert below_minimum(0, 0, 10) is True
+
+
+class TestElMinimoDeLaFicha:
+    def test_nulo_es_usar_el_general(self):
+        assert check_min_stock(None) is None
+
+    @pytest.mark.parametrize("valor", [0, 1, 250])
+    def test_un_entero_sin_signo_pasa(self, valor):
+        assert check_min_stock(valor) == valor
+
+    @pytest.mark.parametrize("valor", [-1, 2.5, "10", True])
+    def test_lo_demas_no(self, valor):
+        with pytest.raises(MinStockNegative) as e:
+            check_min_stock(valor)
+        assert e.value.value == valor

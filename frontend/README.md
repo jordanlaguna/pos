@@ -53,7 +53,6 @@ arranca igual, pero las secciones que dependen de endpoints que no existen
 | `API_BASE_URL` | `http://localhost:8000` | URL del FastAPI. Con Docker, puerto **8001**. |
 | `POS_MOCK` | — | `1` activa el backend simulado. |
 | `API_TIMEOUT_MS` | `8000` | Corte por petición. Un backend colgado no congela la caja. |
-| `LOW_STOCK_THRESHOLD` | `10` | Umbral de las alertas de inventario. |
 | `POS_INSECURE_COOKIE` | — | `1` permite la cookie de sesión sin HTTPS en producción. |
 | `ORIGIN` | — | **Obligatoria en producción.** URL pública del POS. |
 | `PORT` | `3000` | Puerto en el que escucha el build de producción. |
