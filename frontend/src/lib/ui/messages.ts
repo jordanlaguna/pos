@@ -340,6 +340,15 @@ export const API_CODES = [
 	'stock_not_editable',
 	'product_has_movements',
 	'kardex_filter_required',
+	// las salidas con motivo (RN-99)
+	'reason_not_found',
+	'reason_inactive',
+	'reason_is_system',
+	'reason_code_taken',
+	'exit_not_found',
+	'exit_cancelled',
+	'empty_exit',
+	'invalid_exit_line',
 	'category_name_taken',
 	'invalid_tax_code',
 	// categorías de dos niveles (F4)
@@ -949,6 +958,22 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_product_has_movements({ movements: numero(d.movements) });
 		case 'kardex_filter_required':
 			return m.api_kardex_filter_required();
+		case 'reason_not_found':
+			return m.api_reason_not_found();
+		case 'reason_inactive':
+			return m.api_reason_inactive();
+		case 'reason_is_system':
+			return m.api_reason_is_system();
+		case 'reason_code_taken':
+			return m.api_reason_code_taken({ reason_code: texto(d.reason_code) });
+		case 'exit_not_found':
+			return m.api_exit_not_found();
+		case 'exit_cancelled':
+			return m.api_exit_cancelled();
+		case 'empty_exit':
+			return m.api_empty_exit();
+		case 'invalid_exit_line':
+			return m.api_invalid_exit_line({ line: numero(d.line) });
 		case 'category_name_taken':
 			return m.api_category_name_taken({ name: texto(d.name) });
 		case 'invalid_tax_code':

@@ -38,6 +38,7 @@ from app.domain.ledger import (
     ReturnDocument,
     SoldDocument,
     SoldLine,
+    StockExitDocument,
     SupplierPaymentRef,
 )
 from app.domain.errors import DomainError
@@ -110,6 +111,13 @@ class Ledger(JournalWriter, Protocol):
         """
         ...
 
+    #: La salida con motivo y su anulación (F15, RN-99). Llega el costo total
+    #: ya sumado al promedio con que salió cada línea; la anulación lo repone
+    #: por ese mismo valor, no por el promedio de hoy (RN-98).
+    def record_stock_exit(self, exit: StockExitDocument, cost: Money) -> None: ...
+
+    def record_stock_exit_void(self, exit: StockExitDocument, cost: Money) -> None: ...
+
 
 class NullLedger:
     """El libro apagado: no hace nada, y hacerlo no cuesta nada.
@@ -155,4 +163,10 @@ class NullLedger:
         return None
 
     def record_payroll(self, payroll: PaidPayroll) -> int | None:
+        return None
+
+    def record_stock_exit(self, exit: StockExitDocument, cost: Money) -> None:
+        return None
+
+    def record_stock_exit_void(self, exit: StockExitDocument, cost: Money) -> None:
         return None

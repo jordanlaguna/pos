@@ -93,6 +93,11 @@ CASH_MOVEMENT = "cash_movement"
 PURCHASE = "purchase"
 SUPPLIER_PAYMENT = "supplier_payment"
 PAYROLL = "payroll"
+#: Inventario (F15). La salida con motivo saca el costo del inventario y lo
+#: lleva al gasto (RN-99); la toma física deja gasto o sobrante por la suma de
+#: sus diferencias (RN-100, T-1503).
+STOCK_EXIT = "stock_exit"
+STOCK_COUNT = "stock_count"
 
 EVENTS: tuple[str, ...] = (
     SALE,
@@ -102,6 +107,8 @@ EVENTS: tuple[str, ...] = (
     PURCHASE,
     SUPPLIER_PAYMENT,
     PAYROLL,
+    STOCK_EXIT,
+    STOCK_COUNT,
 )
 
 # De qué tabla salió el asiento. **No son los mismos nombres que los eventos** y
@@ -118,6 +125,8 @@ SOURCE_CASH_MOVEMENT = "cash_movement"
 SOURCE_STOCK_ENTRY = "stock_entry"
 SOURCE_SUPPLIER_PAYMENT = "supplier_payment"
 SOURCE_PAYROLL_RUN = "payroll_run"
+SOURCE_STOCK_EXIT = "stock_exit"
+SOURCE_STOCK_COUNT = "stock_count"
 
 # Los papeles que una cuenta puede jugar dentro de un evento.
 CASH = "cash"
@@ -132,6 +141,10 @@ PAYABLES = "payables"
 CASH_OVER = "cash_over"
 CASH_SHORT = "cash_short"
 SALES_RETURNS = "sales_returns"
+#: Los dos del inventario (F15): el gasto por lo que salió sin venderse —merma,
+#: daño, vencido— y el ingreso por lo que una toma física encontró de más.
+SHRINKAGE = "shrinkage"
+OVERAGE = "overage"
 #: Los papeles de la planilla (F12, RN-75): el gasto de salarios y el de cargas
 #: patronales contra lo que se le debe a cada quien —la CCSS, Hacienda, los
 #: terceros de las otras deducciones y el propio empleado—. Vivían en `chart.py`
@@ -751,6 +764,56 @@ def post_supplier_payment(
         lineas,
         source_type=SOURCE_SUPPLIER_PAYMENT,
         source_id=pay.id,
+    )
+
+
+@dataclass(frozen=True)
+class StockExitDocument:
+    """Una salida con motivo (RN-99), vista desde el libro: cuál y cuándo."""
+
+    id: int
+    date: date
+
+
+def post_stock_exit(
+    exit: StockExitDocument, cost: Money, mapping: AccountMap, *, reversal: bool = False
+) -> JournalEntry | None:
+    """La salida con motivo: el costo deja el inventario y se va al gasto.
+
+        D  Mermas y ajustes de inventario   3 000,00
+           C  Inventario                               3 000,00
+
+    Por el costo promedio con que salió cada línea, que es como se valoró la
+    salida (RN-99). Con `reversal` es la anulación: el mismo asiento al revés,
+    **por el mismo valor** —el de la salida, no el promedio de hoy—, que es lo
+    que repone el inventario a lo que se le quitó (RN-98). Va como asiento de
+    **ajuste** y no automático: un evento deja un asiento automático y solo
+    uno (la llave única del origen lleva `kind`), y anular no edita el suyo
+    sino que escribe el que lo revierte, como el resto del libro. Una salida
+    sin costo —productos que nunca se compraron— no deja asiento: no hay plata
+    que mover, y un asiento en cero no cuadra con nada.
+    """
+    if not cost.is_positive:
+        return None
+    gasto = mapping.account_for(STOCK_EXIT, SHRINKAGE)
+    inventario = mapping.account_for(STOCK_EXIT, INVENTORY)
+    if reversal:
+        asiento = [
+            Line.debit_of(inventario, cost, memo=INVENTORY),
+            Line.credit_of(gasto, cost, memo=SHRINKAGE),
+        ]
+    else:
+        asiento = [
+            Line.debit_of(gasto, cost, memo=SHRINKAGE),
+            Line.credit_of(inventario, cost, memo=INVENTORY),
+        ]
+    return _entry(
+        ADJUSTMENT if reversal else AUTO,
+        exit.date,
+        STOCK_EXIT,
+        asiento,
+        source_type=SOURCE_STOCK_EXIT,
+        source_id=exit.id,
     )
 
 

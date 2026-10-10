@@ -12,7 +12,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from app.domain.inventory import Movement
+from app.domain.inventory import ExitLine, Movement
+from app.domain.money import Money
 
 
 class StockLevelRepository(Protocol):
@@ -76,6 +77,69 @@ class KardexReader(Protocol):
         por lote en orden inverso (RN-104), y lo que enlaza la venta con su
         kárdex en pantalla.
         """
+        ...
+
+    def count_for(self, product_id: int) -> int:
+        """Cuántas filas tiene un producto. Con alguna, no se borra: se desactiva."""
+        ...
+
+
+class ReasonSnapshot(Protocol):
+    """Lo que la salida necesita saber de su motivo (RN-99)."""
+
+    id: int
+    code: str
+    name: str
+    is_system: bool
+    is_active: bool
+
+
+class StockReasonRepository(Protocol):
+    def get(self, reason_id: int) -> ReasonSnapshot | None:
+        """El motivo con ese id **en esta compañía**, o nulo."""
+        ...
+
+
+class ExitLineSnapshot(Protocol):
+    """Una línea de una salida ya guardada, para revertirla al anular."""
+
+    product_id: int
+    quantity: int
+    #: El promedio al salir (RN-99): es a lo que se repone.
+    unit_cost: Money
+    lot_id: int | None
+
+
+class ExitSnapshot(Protocol):
+    id: int
+    branch_id: int
+    reason_id: int
+    #: 'applied' | 'voided'
+    status: str
+    total_cost: Money
+
+
+class StockExitRepository(Protocol):
+    def get(self, exit_id: int) -> ExitSnapshot | None: ...
+
+    def add(
+        self,
+        *,
+        branch_id: int,
+        reason_id: int,
+        user_id: int,
+        notes: str | None,
+        total_cost: Money,
+        created_at: datetime,
+        lines: list[ExitLine],
+    ) -> int:
+        """Guarda la salida con sus líneas y devuelve su identificador."""
+        ...
+
+    def lines_of(self, exit_id: int) -> list[ExitLineSnapshot]: ...
+
+    def mark_voided(self, exit_id: int, *, voided_at: datetime, reason: str) -> None:
+        """Una salida no se edita: se anula con motivo (RN-99)."""
         ...
 
 

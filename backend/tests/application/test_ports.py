@@ -49,8 +49,15 @@ PUERTOS = [
             "update_cost",
             "barcode_taken",
             "create",
+            # T-1502: la ficha pasa a la aplicación, y con ella editar, borrar y
+            # preguntar si ya se vendió.
+            "update",
+            "delete",
+            "has_sales",
         },
     ),
+    # T-1502: dónde se cuelga un producto (RN-6). Una sola pregunta.
+    (repositories.CategoryRepository, {"get"}),
     # F15: el inventario (T-1502). Tres puertos por tres razones de cambio:
     # dónde está cada cosa, anotar lo que pasó, y leerlo.
     (
@@ -58,7 +65,11 @@ PUERTOS = [
         {"lock", "set", "levels_of", "levels_in", "add_to_total"},
     ),
     (inventory.KardexWriter, {"record"}),
-    (inventory.KardexReader, {"of_product", "of_source"}),
+    (inventory.KardexReader, {"of_product", "of_source", "count_for"}),
+    # Las salidas con motivo (RN-99): el motivo se consulta, la salida se
+    # guarda, se lee para revertirla y se marca anulada; no se edita nunca.
+    (inventory.StockReasonRepository, {"get"}),
+    (inventory.StockExitRepository, {"get", "add", "lines_of", "mark_voided"}),
     (repositories.SupplierRepository, {"get"}),
     (
         repositories.StockEntryRepository,
@@ -208,6 +219,10 @@ PUERTOS = [
     (repositories.ProductSnapshot, set()),
     (repositories.SupplierSnapshot, set()),
     (repositories.ClientSnapshot, set()),
+    (repositories.CategorySnapshot, set()),
+    (inventory.ReasonSnapshot, set()),
+    (inventory.ExitSnapshot, set()),
+    (inventory.ExitLineSnapshot, set()),
     (payroll.ScheduleSnapshot, set()),
     (payroll.EmployeeSnapshot, set()),
     (payroll.ContractSnapshot, set()),
@@ -262,6 +277,18 @@ def test_ProductSnapshot_dice_que_necesita_la_venta_de_un_producto():
         # Desde T-727: la partida arancelaria, que la factura de exportación
         # exige en cada mercancía.
         "tariff_heading",
+        # Desde T-1502: dónde cuelga, para que la ficha sepa si lo movieron.
+        "category_id",
+    }
+
+
+def test_CategorySnapshot_dice_lo_que_la_ficha_necesita_para_colgar():
+    # RN-6: que exista, que esté activa y cuántas hijas activas tiene.
+    assert set(get_type_hints(repositories.CategorySnapshot)) == {
+        "id",
+        "name",
+        "is_active",
+        "active_children",
     }
 
 

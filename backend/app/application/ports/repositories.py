@@ -56,6 +56,26 @@ class ProductSnapshot(Protocol):
     #: solo es un problema el día que se le venda a alguien del extranjero.
     tariff_heading: str | None
 
+    #: Dónde cuelga (RN-6). La edición de la ficha pregunta si cambió, y solo
+    #: entonces vuelve a comprobar la categoría (T-1502).
+    category_id: int
+
+
+class CategorySnapshot(Protocol):
+    """Lo que la ficha necesita saber de una categoría para colgar un producto."""
+
+    id: int
+    name: str
+    is_active: bool
+    #: Las hijas en circulación (RN-6): con alguna, la raíz ya no recibe productos.
+    active_children: int
+
+
+class CategoryRepository(Protocol):
+    def get(self, category_id: int) -> CategorySnapshot | None:
+        """La categoría con ese id **en esta compañía**, o nulo."""
+        ...
+
 
 class ProductRepository(Protocol):
     def get(self, product_id: int) -> ProductSnapshot | None: ...
@@ -90,8 +110,8 @@ class ProductRepository(Protocol):
         """
         ...
 
-    def barcode_taken(self, barcode: str) -> bool:
-        """Si ya hay un producto con ese código."""
+    def barcode_taken(self, barcode: str, *, except_product_id: int | None = None) -> bool:
+        """Si ya hay un producto con ese código. Al editar se excluye a sí mismo."""
         ...
 
     def create(
@@ -103,13 +123,30 @@ class ProductRepository(Protocol):
         barcode: str,
         category_id: int,
         created_at: datetime,
+        cabys_code: str | None = None,
+        tax_rate: float | None = None,
+        tax_code: str | None = None,
+        unit_of_measure: str | None = None,
+        tariff_heading: str | None = None,
     ) -> int:
         """Da de alta un producto **sin existencias** y devuelve su id.
 
         Sin existencias a propósito: las pone la entrada de mercadería que lo
-        está creando, en el mismo movimiento y por la misma vía que las de
-        cualquier otro producto.
+        está creando —o la apertura de la ficha (RF-94)—, en el mismo
+        movimiento y por la misma vía que las de cualquier otro producto. Lo
+        de clasificación (RN-9, RN-76, T-727) llega ya resuelto por el dominio;
+        `unit_of_measure` en nulo deja el valor por omisión de la base.
         """
+        ...
+
+    def update(self, product_id: int, changes: dict) -> None:
+        """Escribe los cambios que `domain/product.clean_changes` dejó pasar."""
+        ...
+
+    def delete(self, product_id: int) -> None: ...
+
+    def has_sales(self, product_id: int) -> bool:
+        """Si alguna venta lo nombra: borrarlo dejaría facturas apuntando a nada."""
         ...
 
 

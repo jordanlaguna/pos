@@ -5696,13 +5696,24 @@ negocio.
       `stock_not_editable` en el PUT y `product_has_movements` en el DELETE,
       con la ficha del POS mostrando la existencia sin editarla;
       `tests/test_inventario.py`, que compara `products.stock` con la suma de
-      `stock_levels` después de cada documento. **Falta:** las salidas con
-      motivo (`RegisterStockExit`, `CancelStockExit`, su asiento y
-      `/inventario/salidas`), el catálogo de motivos, mover el alta y la
-      edición de productos a `RegisterProduct` y `UpdateProduct` (hoy la
-      apertura sale de `crud_product.py` pasando por `MoveStock`), las
-      pantallas `/inventario/kardex/[id]` y `/inventario/motivos`, y el
-      simulado de los dos `GET` nuevos.
+      `stock_levels` después de cada documento.
+
+      **Avance del 2026-10-10 (segundo tramo, el backend entero).** Las
+      salidas con motivo: `domain/inventory.py` con los motivos de fábrica,
+      `check_exit_reason` y `ExitLine`; `RegisterStockExit` y
+      `CancelStockExit` con `post_stock_exit` en el libro y las cuentas
+      `6.3.01` y `4.9.02` con sus cinco mapeos en `chart.py`; los motivos se
+      siembran al nacer la compañía (`crud_company._motivos`); rutas
+      `/inventory/reasons` (GET, POST, PUT) y `/inventory/exits` (GET, POST,
+      `/{id}/cancel`); ocho códigos nuevos en los cuatro lugares;
+      `tests/test_salidas.py` contra la pila, con el asiento y su inverso. Y
+      la ficha en casos de uso: `domain/product.py` (el código manda sobre la
+      tarifa, qué vacía un PUT parcial, `stock` no se edita),
+      `RegisterProduct`, `UpdateProduct` y `DeleteProduct` con
+      `CategoryRepository`; `crud_product.py` queda de adaptador. **Falta
+      solo el POS:** `/inventario/kardex/[id]`, `/inventario/salidas`,
+      `/inventario/motivos`, y el simulado de los dos `GET` de lectura y de
+      las seis rutas de motivos y salidas.
 - [ ] **T-1503** Toma física (punto 3; RN-100; RF-89). `stock_counts` y sus líneas
       con `system_qty` al contar; abrir, contar, aplicar y descartar; el
       asiento de la diferencia; `/inventario/toma-fisica`.

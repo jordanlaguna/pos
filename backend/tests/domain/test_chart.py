@@ -113,7 +113,7 @@ class TestElMapeo:
 
         assert usadas <= de_sistema
 
-    def test_los_eventos_son_los_siete(self):
+    def test_los_eventos_son_los_nueve(self):
         assert {evento for evento, _ in default_mapping()} == {
             "sale",
             "return",
@@ -122,6 +122,9 @@ class TestElMapeo:
             "purchase",
             "supplier_payment",
             "payroll",
+            # F15: la salida con motivo (RN-99) y la toma física (RN-100).
+            "stock_exit",
+            "stock_count",
         }
 
 
@@ -189,6 +192,21 @@ class TestNingunPapelSeQuedaSinCuenta:
         )
 
         assert sin_clasificar(asiento) == []
+
+    @pytest.mark.parametrize("reversal", [False, True])
+    def test_la_salida_con_motivo_y_su_anulacion(self, reversal):
+        from app.domain.ledger import StockExitDocument, post_stock_exit
+
+        asiento = post_stock_exit(
+            StockExitDocument(id=1, date=HOY), Money(3000), mapeo_sembrado(), reversal=reversal
+        )
+
+        assert sin_clasificar(asiento) == []
+        # Y en las dos cuentas nuevas de la plantilla, no en cualquiera.
+        assert {linea.account_id for linea in asiento.lines} == {
+            cuentas()["6.3.01"],
+            cuentas()["1.2.01"],
+        }
 
 
 class TestQueSeLePuedeHacerAUnaCuenta:

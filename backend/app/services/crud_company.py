@@ -26,9 +26,11 @@ from datetime import date, datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.domain.inventory import DEFAULT_REASONS
 from app.domain.limits import SIN_LIMITE, hay_lugar
 from app.domain.modules import MODULES
 from app.models.model_company import Branch, Company, Plan, Terminal, UserCompany
+from app.models.model_inventory import StockReason
 from app.models.model_person import Person
 from app.models.model_settings import Settings
 from app.models.model_user import User
@@ -420,6 +422,29 @@ def _membresia(
     return not aceptada
 
 
+def _motivos(db: Session, company: Company) -> None:
+    """Los motivos de salida con los que nace toda compañía (F15, RN-99).
+
+    Como la plantilla de cuentas: son datos de la compañía, que los renombra y
+    agrega los suyos. Solo entra lo que falta, para que el alta siga siendo
+    repetible; a las compañías anteriores a F15 se los puso la migración 023
+    con esta misma lista.
+    """
+    existentes = {
+        fila.code
+        for fila in sin_filtro(
+            db.query(StockReason).filter(StockReason.company_id == company.id)
+        ).all()
+    }
+    for codigo, nombre, de_sistema in DEFAULT_REASONS:
+        if codigo not in existentes:
+            db.add(
+                StockReason(
+                    company_id=company.id, code=codigo, name=nombre, is_system=de_sistema
+                )
+            )
+
+
 def dar_de_alta(db: Session, datos: DatosDeAlta, plan: Plan) -> Alta:
     """Las seis filas, en una sola transacción. **No hace commit.**
 
@@ -436,6 +461,7 @@ def dar_de_alta(db: Session, datos: DatosDeAlta, plan: Plan) -> Alta:
     company, company_nueva = _compania(db, datos, plan)
     sucursal, terminal = _sucursal_y_terminal(db, company)
     _configuracion(db, company, datos.settings)
+    _motivos(db, company)
     user, usuario_nuevo = _persona_y_usuario(db, datos)
     pendiente = _membresia(
         db,

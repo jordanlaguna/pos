@@ -11,10 +11,21 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
-from app.schemas.schemas_inventory import StockLevelOut, StockMovementOut
+from app.schemas.schemas_inventory import (
+    ExitCancel,
+    ExitCancelSuccess,
+    StockExitCreate,
+    StockExitOut,
+    StockExitSuccess,
+    StockLevelOut,
+    StockMovementOut,
+    StockReasonCreate,
+    StockReasonOut,
+    StockReasonUpdate,
+)
 from app.services import crud_inventory
 from app.utils.api_errors import api_error
-from app.utils.auth_dependency import Sesion, get_current_user
+from app.utils.auth_dependency import Sesion, get_current_user, require_admin, require_module
 
 router = APIRouter()
 
@@ -74,3 +85,79 @@ def get_levels(
     if product_id is None and branch_id is None:
         raise api_error(400, "kardex_filter_required")
     return crud_inventory.niveles(db, product_id=product_id, branch_id=branch_id)
+
+
+# ------------------------------------------------------ los motivos (RN-99)
+#
+# Son del administrador, como las categorías: el cajero no da salidas.
+
+
+@router.get("/reasons", response_model=list[StockReasonOut])
+def list_reasons(
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    return crud_inventory.reasons(db)
+
+
+@router.post("/reasons", response_model=StockReasonOut)
+def create_reason(
+    payload: StockReasonCreate,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
+):
+    return crud_inventory.create_reason(db, payload)
+
+
+@router.put("/reasons/{reason_id}", response_model=StockReasonOut)
+def update_reason(
+    reason_id: int,
+    payload: StockReasonUpdate,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
+):
+    """Se renombra y se apaga; no se borra. El de la toma no se apaga (RN-100)."""
+    return crud_inventory.update_reason(db, reason_id, payload)
+
+
+# ------------------------------------------------------ las salidas (RN-99)
+
+
+@router.get("/exits", response_model=list[StockExitOut])
+def list_exits(
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    return crud_inventory.exits(db, limit)
+
+
+@router.post("/exits", response_model=StockExitSuccess)
+def create_exit(
+    payload: StockExitCreate,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
+):
+    """Mercadería que deja el inventario sin venderse, con motivo (RN-99)."""
+    return crud_inventory.create_exit(db, payload, user_id=admin.user.id_user)
+
+
+@router.post("/exits/{exit_id}/cancel", response_model=ExitCancelSuccess)
+def cancel_exit(
+    exit_id: int,
+    payload: ExitCancel,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
+):
+    """Una salida no se edita: se anula con motivo y bitácora (RN-99)."""
+    return crud_inventory.cancel_exit(
+        db,
+        exit_id,
+        user_id=admin.user.id_user,
+        company_id=admin.company_id,
+        reason=payload.reason,
+    )

@@ -39,6 +39,7 @@ from .ledger import (
     COGS,
     COUNTERPART,
     INVENTORY,
+    OVERAGE,
     PAYABLES,
     PAYROLL,
     PURCHASE,
@@ -46,6 +47,9 @@ from .ledger import (
     RETURN,
     SALE,
     SALES_RETURNS,
+    SHRINKAGE,
+    STOCK_COUNT,
+    STOCK_EXIT,
     SUPPLIER_PAYMENT,
     UNCLASSIFIED,
     VAT_CREDIT,
@@ -116,6 +120,9 @@ CHART: tuple[AccountTemplate, ...] = (
     AccountTemplate("4.1.05", "Ventas exentas", "income"),
     AccountTemplate("4.2.01", "Devoluciones sobre ventas", "income"),
     AccountTemplate("4.9.01", "Sobrantes de caja", "income"),
+    # Lo que una toma física encuentra de más (F15, RN-100). Las dos del
+    # inventario las siembra también la migración 023 en quien ya tenía libro.
+    AccountTemplate("4.9.02", "Sobrantes de inventario", "income"),
     # -------------------------------------------------------------- costo
     AccountTemplate("5.1.01", "Costo de ventas", "cost"),
     # ------------------------------------------------------------- gastos
@@ -123,6 +130,9 @@ CHART: tuple[AccountTemplate, ...] = (
     AccountTemplate("6.1.02", "Cargas sociales patronales", "expense"),
     AccountTemplate("6.1.03", "Aguinaldo", "expense"),
     AccountTemplate("6.2.01", "Comisiones de tarjetas", "expense", is_system=False),
+    # Lo que sale del inventario sin venderse —merma, daño, vencido— y lo que una
+    # toma física encuentra de menos (F15, RN-99, RN-100).
+    AccountTemplate("6.3.01", "Mermas y ajustes de inventario", "expense"),
     AccountTemplate("6.9.01", "Faltantes de caja", "expense"),
     AccountTemplate("6.9.02", "Gastos generales", "expense", is_system=False),
 )
@@ -172,6 +182,13 @@ def default_mapping() -> dict[tuple[str, str], str]:
         (PAYROLL, SOCIAL_SECURITY_PAYABLE): "2.1.04",
         (PAYROLL, SALARIES_PAYABLE): "2.1.05",
         (PAYROLL, OTHER_DEDUCTIONS_PAYABLE): "2.1.06",
+        # ------------------------------------------------- el inventario (F15)
+        (STOCK_EXIT, SHRINKAGE): "6.3.01",
+        (STOCK_EXIT, INVENTORY): "1.2.01",
+        # La toma física (T-1503): el faltante al gasto, el sobrante al ingreso.
+        (STOCK_COUNT, SHRINKAGE): "6.3.01",
+        (STOCK_COUNT, OVERAGE): "4.9.02",
+        (STOCK_COUNT, INVENTORY): "1.2.01",
     }
     # Una cuenta de ingresos por tarifa. Se generan del mismo sitio del que sale
     # el papel (`sales_role`), para que no puedan discrepar: escritas a mano, un

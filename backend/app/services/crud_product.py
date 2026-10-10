@@ -1,128 +1,115 @@
-from sqlalchemy import func
+"""La ficha del producto — adaptador.
+
+Desde T-1502 las reglas están en `app/domain/product.py` y el paso a paso en
+`app/application/use_cases/product.py`. Acá queda la traducción a HTTP, en
+código y datos, nunca en frases (RN-30), y las lecturas del catálogo.
+"""
+
 from sqlalchemy.orm import Session
 
-from app.domain.errors import InsufficientStock, InvalidTariffHeading
-from app.domain.fe_export import check_tariff_heading
-from app.domain.fe_tax_codes import InvalidTaxCode, check_code, rate_for, suggested_code
-from app.domain.inventory import OPENING
+from app.application.use_cases.product import (
+    BranchRequired,
+    CategoryCannotHoldProducts,
+    CategoryInactive,
+    CategoryNotFound,
+    DeleteProduct,
+    ProductHasMovements,
+    ProductHasSales,
+    ProductNotFound,
+    ProductRequest,
+    RegisterProduct,
+    UpdateProduct,
+)
+from app.domain.errors import (
+    BarcodeTaken,
+    InsufficientStock,
+    InvalidTariffHeading,
+    StockNotEditable,
+)
+from app.domain.fe_tax_codes import InvalidTaxCode, suggested_code
 from app.domain.money import Money
 from app.domain.tax import TaxRate
 from app.infrastructure.clock import SystemClock
+from app.infrastructure.persistence.sqlalchemy_inventory import SqlAlchemyKardex
+from app.infrastructure.persistence.sqlalchemy_repositories import (
+    SqlAlchemyCategoryRepository,
+    SqlAlchemyProductRepository,
+    SqlAlchemyUnitOfWork,
+)
 from app.models.model_categories import Category
-from app.models.model_inventory import StockMovement
 from app.models.model_product import Product
-from app.models.model_sale_details import SaleDetail
 from app.schemas.schemas_product import ProdcutRegisterSuccess, ProductRegister
 from app.services import crud_inventory
-from app.services.crud_categories import check_category_for_product
 from app.utils.api_errors import api_error
 from app.utils.tenancy import current_branch
 
 
-def codigo_y_tarifa(codigo: object) -> tuple[str, float]:
-    """El código limpio y el porcentaje que le toca, o 400 (RN-76).
-
-    **El código manda sobre la tarifa y no al revés.** Guardar los dos y dejar
-    que cada uno venga por su lado es cómo se desincronizan: quedaría un
-    producto que dice tarifa general y cobra 4 %, y el comprobante saldría con
-    los dos datos peleados. De un código sale siempre un porcentaje; del
-    porcentaje no siempre sale un código.
-
-    Los dos salen de la misma llamada para que la validación ocurra una sola
-    vez: con dos llamadas, la que valida y la que convierte pueden quedar en
-    distinto orden y el «no» del dominio se escapa como un 500.
-    """
-    try:
-        return check_code(codigo), float(rate_for(codigo).value)
-    except InvalidTaxCode:
-        raise api_error(400, "invalid_tax_code", tax_code=str(codigo)) from None
-
-
-def partida_arancelaria(valor: object) -> str | None:
-    """La partida saneada (T-727), nula si viene vacía, o el «no» con su código."""
-    try:
-        return check_tariff_heading(valor)
-    except InvalidTariffHeading:
-        raise api_error(400, "invalid_tariff_heading", tariff_heading=str(valor)) from None
+def _categoria_a_http(e):
+    """Los tres «no» de RN-6, con el nombre de la categoría para la frase."""
+    if isinstance(e, CategoryNotFound):
+        return api_error(404, "category_not_found", category_id=e.category_id)
+    if isinstance(e, CategoryInactive):
+        return api_error(400, "category_inactive", category_id=e.category_id, name=e.name)
+    return api_error(
+        400,
+        "category_needs_subcategory",
+        category_id=e.category_id,
+        name=e.name,
+        children=e.children,
+    )
 
 
 def create_product(db: Session, product: ProductRegister, *, user_id: int):
-    # RN-6: el producto va en la hoja del árbol. Con la categoría convertida en
-    # raíz de una rama, colgarle un producto lo dejaría fuera de la grilla de
-    # ventas —que en una raíz con hijas muestra fichas, no productos—.
-    check_category_for_product(db, product.category_id)
-
-    # La existencia inicial es un movimiento de apertura (F15, RF-94, RN-98) y
-    # va a la sucursal de la sesión. Sin sucursal no hay dónde ponerla: se dice
-    # antes de crear nada, y sin existencia el producto entra igual.
-    if product.stock and current_branch.get() is None:
-        raise api_error(404, "branch_not_found")
-
-    # Con código de Hacienda la tarifa sale de él; sin código, de lo que mande
-    # el POS (RN-76).
-    codigo, tarifa = (
-        codigo_y_tarifa(product.tax_code) if product.tax_code else (None, product.tax_rate)
+    caso = RegisterProduct(
+        products=SqlAlchemyProductRepository(db),
+        categories=SqlAlchemyCategoryRepository(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+        # La existencia inicial es una apertura del kárdex (RF-94).
+        stock=crud_inventory.mover(db),
     )
-
-    db_product = Product(
+    peticion = ProductRequest(
         name=product.name,
         description=product.description,
-        price=product.price,
-        # Nace en cero y la apertura de abajo le pone lo suyo, por la misma vía
-        # que cualquier otro movimiento: desde F15 nadie escribe `stock` a mano.
-        stock=0,
+        price=Money(product.price),
         barcode=product.barcode,
         category_id=product.category_id,
         created_at=product.created_at,
-        # F5: la tarifa del producto (RN-9). En nulo significa «la configurada
-        # del negocio», que es lo que aplica mientras nadie lo clasifique. La
-        # ficha propone la configurada al crear, y eso pasa en el POS: acá se
-        # guarda lo que venga, incluido el nulo.
+        user_id=user_id,
+        # Dónde se abre: la sucursal de la sesión, si la compañía tiene una.
+        branch_id=current_branch.get(),
+        stock=product.stock,
         cabys_code=product.cabys_code,
-        tax_rate=tarifa,
-        tax_code=codigo,
-        # La partida arancelaria (T-727), saneada o nula.
-        tariff_heading=partida_arancelaria(product.tariff_heading),
-        # `unit_of_measure` tiene valor por omisión en la base; mandar None lo
-        # dejaría en NULL y la columna es NOT NULL.
-        **({"unit_of_measure": product.unit_of_measure} if product.unit_of_measure else {}),
+        tax_rate=product.tax_rate,
+        tax_code=product.tax_code,
+        unit_of_measure=product.unit_of_measure,
+        tariff_heading=product.tariff_heading,
     )
-    db.add(db_product)
-    # `flush` y no `commit`: el id sin cerrar la transacción, para que la
-    # apertura entre con la ficha o no entre ninguna de las dos.
-    db.flush()
 
-    if product.stock:
-        try:
-            crud_inventory.mover(db)(
-                product_id=db_product.id_product,
-                branch_id=current_branch.get(),
-                delta=product.stock,
-                kind=OPENING,
-                # A costo cero: no se conoce hasta la primera compra (RN-54).
-                unit_cost=Money.zero(),
-                source_type="product",
-                source_id=db_product.id_product,
-                user_id=user_id,
-                moved_at=SystemClock().now(),
-            )
-        except InsufficientStock as e:
-            # Una existencia inicial negativa: lo que no hay no se abre.
-            db.rollback()
-            raise api_error(
-                400,
-                "insufficient_stock",
-                product_id=e.product_id,
-                product=product.name,
-                available=e.available,
-                requested=e.requested,
-            ) from None
-    db.commit()
-    db.refresh(db_product)
+    try:
+        hecho = caso(peticion)
+    except BarcodeTaken as e:
+        raise api_error(400, "barcode_taken", barcode=e.barcode) from None
+    except (CategoryNotFound, CategoryInactive, CategoryCannotHoldProducts) as e:
+        raise _categoria_a_http(e) from None
+    except InvalidTaxCode as e:
+        raise api_error(400, "invalid_tax_code", tax_code=str(e.value)) from None
+    except InvalidTariffHeading as e:
+        raise api_error(400, "invalid_tariff_heading", tariff_heading=str(e.value)) from None
+    except BranchRequired:
+        raise api_error(404, "branch_not_found") from None
+    except InsufficientStock as e:
+        # Una existencia inicial negativa: lo que no hay no se abre.
+        raise api_error(
+            400,
+            "insufficient_stock",
+            product_id=e.product_id,
+            product=product.name,
+            available=e.available,
+            requested=e.requested,
+        ) from None
 
-    return ProdcutRegisterSuccess(
-        message="product_registered", id_product=db_product.id_product
-    )
+    return ProdcutRegisterSuccess(message="product_registered", id_product=hecho.id_product)
 
 
 def get_all_products(db: Session):
@@ -147,87 +134,29 @@ def get_product_by_barcode(db: Session, term: str) -> Product | None:
     return db.query(Product).filter(Product.name == term).first()
 
 
-#: Columnas donde el nulo **es un valor**, no «no lo mandé» (F5, RN-9).
-#:
-#: `tax_rate` en nulo significa «la tasa configurada del negocio»: es lo que
-#: tienen los productos que nadie ha clasificado y lo que la migración 006 dejó
-#: a propósito, para no congelar en el 13 % un catálogo que nadie tocó. Sin esta
-#: lista, clasificar un producto una vez sería una puerta de una sola dirección:
-#: el bucle de abajo saltaría el nulo y no habría manera de volver a heredar.
-#:
-#: En el resto de las columnas la regla contraria es la correcta —`name=None`
-#: pondría el nombre en NULL y la columna no lo admite—, y por eso la lista es
-#: corta y explícita en vez de al revés.
-VACIABLES = {"cabys_code", "tax_rate", "tax_code", "tariff_heading"}
-
-
 def update_product_information(db: Session, id_product: int, product_data: dict):
-    db_product = db.query(Product).filter(Product.id_product == id_product).first()
-    if not db_product:
+    caso = UpdateProduct(
+        products=SqlAlchemyProductRepository(db),
+        categories=SqlAlchemyCategoryRepository(db),
+        uow=SqlAlchemyUnitOfWork(db),
+    )
+    try:
+        caso(id_product, product_data)
+    except ProductNotFound:
+        # El router responde el 404: es el contrato que ya tenía.
         return None
+    except StockNotEditable as e:
+        raise api_error(400, "stock_not_editable", product_id=e.product_id) from None
+    except BarcodeTaken as e:
+        raise api_error(400, "barcode_taken", barcode=e.barcode) from None
+    except (CategoryNotFound, CategoryInactive, CategoryCannotHoldProducts) as e:
+        raise _categoria_a_http(e) from None
+    except InvalidTaxCode as e:
+        raise api_error(400, "invalid_tax_code", tax_code=str(e.value)) from None
+    except InvalidTariffHeading as e:
+        raise api_error(400, "invalid_tariff_heading", tariff_heading=str(e.value)) from None
 
-    # La existencia ya no se edita desde la ficha (F15, RN-98): se mueve con
-    # una entrada, una salida o una toma física, que dejan su fila en el kárdex.
-    # Un cliente viejo que la mande recibe el código que le dice por dónde sí.
-    if product_data.get("stock") is not None:
-        raise api_error(400, "stock_not_editable", product_id=id_product)
-
-    # Un código de barras repetido rompe el escaneo: dos productos distintos
-    # responderían al mismo pitido del lector.
-    new_barcode = product_data.get("barcode")
-    if new_barcode:
-        clash = (
-            db.query(Product)
-            .filter(Product.barcode == new_barcode, Product.id_product != id_product)
-            .first()
-        )
-        if clash:
-            raise api_error(400, "barcode_taken", barcode=new_barcode)
-
-    # Mover un producto de categoría pasa por la misma regla que crearlo
-    # (RN-6). Solo si de verdad cambia: revalidar la que ya tiene haría que un
-    # cambio de precio fallara por una categoría que se desactivó después.
-    nueva_categoria = product_data.get("category_id")
-    if nueva_categoria is not None and nueva_categoria != db_product.category_id:
-        check_category_for_product(db, nueva_categoria)
-
-    # El código de Hacienda manda sobre la tarifa (RN-76): si viene, la reescribe
-    # aunque el formulario haya mandado otra. Vaciarlo **no** toca la tarifa —el
-    # producto sigue cobrando lo que cobraba, solo deja de estar clasificado—.
-    if product_data.get("tax_code"):
-        codigo, tarifa = codigo_y_tarifa(product_data["tax_code"])
-        product_data = {**product_data, "tax_code": codigo, "tax_rate": tarifa}
-
-    # La partida se sanea antes del bucle (T-727): doce dígitos o nada, y la
-    # vacía es «ya no tiene», como el resto de `VACIABLES`.
-    if "tariff_heading" in product_data:
-        product_data = {
-            **product_data,
-            "tariff_heading": partida_arancelaria(product_data["tariff_heading"]),
-        }
-
-    for key, value in product_data.items():
-        if not hasattr(db_product, key):
-            continue
-        # En casi todo el formulario un nulo significa «no mandé este campo»
-        # —eso es lo que hace que un PUT parcial no borre el resto— y por eso se
-        # salta. En `VACIABLES` no: ahí el nulo **es** el valor.
-        if value is None and key not in VACIABLES:
-            continue
-        # Y la cadena vacía en uno de esos **es el nulo**, no un valor: un
-        # `tax_code` de `''` no es un código sin clasificar, es un código
-        # imposible. Guardarlo así deja una fila que no es ni lo uno ni lo otro.
-        if value == "" and key in VACIABLES:
-            value = None
-        setattr(db_product, key, value)
-
-    db.commit()
-    db.refresh(db_product)
-
-    return {
-        "message": "product_updated",
-        "id_product": db_product.id_product,
-    }
+    return {"message": "product_updated", "id_product": id_product}
 
 
 def assign_cabys(db: Session, product_ids: list[int], cabys_code: str, tax_rate: float) -> int:
@@ -271,29 +200,20 @@ def assign_cabys(db: Session, product_ids: list[int], cabys_code: str, tax_rate:
 
 
 def delete_product(db: Session, id_product: int):
-    db_product = db.query(Product).filter(Product.id_product == id_product).first()
-    if not db_product:
-        return None
-
-    # Borrar un producto ya vendido dejaría facturas apuntando a la nada y
-    # rompería los reportes históricos. Para retirarlo de la venta, poné stock 0.
-    sold = db.query(SaleDetail).filter(SaleDetail.product_id == id_product).first()
-    if sold:
-        raise api_error(400, "product_has_sales")
-
-    # Y uno con kárdex tampoco (F15): la foránea lo impediría de todos modos,
-    # con un 500. Mejor un código que diga cuántas filas lo sostienen. Se
-    # cuenta con `func.count`, que sí pasa por el filtro de compañía.
-    movimientos = (
-        db.query(func.count(StockMovement.id))
-        .filter(StockMovement.product_id == id_product)
-        .scalar()
+    caso = DeleteProduct(
+        products=SqlAlchemyProductRepository(db),
+        kardex=SqlAlchemyKardex(db),
+        uow=SqlAlchemyUnitOfWork(db),
     )
-    if movimientos:
+    try:
+        caso(id_product)
+    except ProductNotFound:
+        return None
+    except ProductHasSales:
+        # Para retirarlo de la venta se deja en cero, no se borra.
+        raise api_error(400, "product_has_sales") from None
+    except ProductHasMovements as e:
         raise api_error(
-            400, "product_has_movements", product_id=id_product, movements=movimientos
-        )
-
-    db.delete(db_product)
-    db.commit()
+            400, "product_has_movements", product_id=e.product_id, movements=e.movements
+        ) from None
     return {"message": "product_deleted", "id_product": id_product}

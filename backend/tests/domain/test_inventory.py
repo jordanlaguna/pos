@@ -6,19 +6,30 @@ from datetime import datetime
 
 import pytest
 
+from dataclasses import dataclass
+
 from app.domain.errors import (
     InsufficientStock,
     InvalidQuantity,
     InvalidStockMovementKind,
     InvalidStockSource,
+    ReasonInactive,
+    ReasonIsSystem,
 )
 from app.domain.inventory import (
+    COUNT_REASON,
+    DEFAULT_REASONS,
     KINDS,
     SALE,
     SOURCE_TYPES,
+    ExitLine,
     Movement,
+    check_exit_reason,
     check_kind,
+    check_reason_deactivatable,
     check_source_type,
+    exit_total,
+    exit_units,
     move,
 )
 from app.domain.money import Money
@@ -101,3 +112,60 @@ class TestMovement:
     def test_rechaza_un_origen_que_no_existe(self):
         with pytest.raises(InvalidStockSource):
             movimiento(source_type="ventas")
+
+
+# ------------------------------------------------------------- la salida
+
+
+@dataclass
+class Motivo:
+    id: int
+    is_active: bool = True
+    is_system: bool = False
+
+
+class TestElMotivo:
+    def test_toda_compania_nace_con_seis_y_solo_el_de_la_toma_es_del_sistema(self):
+        assert len(DEFAULT_REASONS) == 6
+        del_sistema = [codigo for codigo, _, es in DEFAULT_REASONS if es]
+        assert del_sistema == [COUNT_REASON]
+        assert len({codigo for codigo, _, _ in DEFAULT_REASONS}) == 6
+
+    def test_uno_activo_de_la_compania_sirve(self):
+        check_exit_reason(Motivo(1))
+
+    def test_uno_apagado_no(self):
+        with pytest.raises(ReasonInactive) as error:
+            check_exit_reason(Motivo(3, is_active=False))
+        assert error.value.reason_id == 3
+
+    def test_el_de_la_toma_no_se_elige_en_una_salida(self):
+        with pytest.raises(ReasonIsSystem):
+            check_exit_reason(Motivo(4, is_system=True))
+
+    def test_el_de_la_toma_tampoco_se_desactiva(self):
+        check_reason_deactivatable(1, is_system=False)
+        with pytest.raises(ReasonIsSystem) as error:
+            check_reason_deactivatable(4, is_system=True)
+        assert error.value.reason_id == 4
+
+
+class TestLaLineaDeSalida:
+    def test_vale_lo_que_sale_por_lo_que_cuesta(self):
+        linea = ExitLine(ARROZ, 3, Money(900))
+        assert linea.subtotal == Money(2700)
+        assert linea.lot_id is None
+
+    def test_el_total_y_las_unidades_suman_las_lineas(self):
+        lineas = [ExitLine(ARROZ, 3, Money(900)), ExitLine(2, 1, Money.zero())]
+        assert exit_total(lineas) == Money(2700)
+        assert exit_units(lineas) == 4
+
+    @pytest.mark.parametrize("cantidad", [0, -1, True, 1.5])
+    def test_una_cantidad_sin_sentido(self, cantidad):
+        with pytest.raises(InvalidQuantity):
+            ExitLine(ARROZ, cantidad, Money(900))
+
+    def test_un_costo_negativo_tampoco(self):
+        with pytest.raises(InvalidQuantity):
+            ExitLine(ARROZ, 1, Money(-1))

@@ -3283,6 +3283,22 @@
         "`docker compose up --build` no altera tablas: la base de pruebas siguió con `products` sin `min_stock` hasta aplicar la 023 a mano, como dice CLAUDE.md. Y el guion que corre dentro del contenedor —`company_dump.py`— necesita otro `--build` después de editarlo.",
         "Un guion que edita en bloque las baterías tiene que listar lo que tocó: cubrió 26 de 27 constructores y el que se le escapó era el único escrito en una línea."
       ]
+    },
+    {
+      "fecha": "2026-10-10",
+      "titulo": "T-1502, segundo tramo: las salidas con motivo, su asiento y la ficha en casos de uso",
+      "hecho": [
+        "Las salidas (RN-99): `domain/inventory.py` gana los seis motivos de fábrica, `check_exit_reason`, `check_reason_deactivatable` y `ExitLine`; `RegisterStockExit` valora cada línea al promedio del momento y `CancelStockExit` repone al costo de la salida, los dos por `MoveStock` y con bitácora; `StockReasonRepository` y `StockExitRepository` con sus adaptadores.",
+        "El libro: `post_stock_exit` (débito a 6.3.01, crédito a 1.2.01) con las dos cuentas y los cinco mapeos nuevos en `chart.py`, `record_stock_exit` y `record_stock_exit_void` en el puerto `Ledger`. La anulación va como asiento de **ajuste**: la llave única del origen lleva `kind`, y el primer intento como automático dio 500 en la pila.",
+        "Los motivos nacen con la compañía (`crud_company._motivos`, mismo criterio que la 023) y se administran por `/inventory/reasons` (GET, POST, PUT); las salidas por `/inventory/exits` (GET, POST, `/{id}/cancel`). Ocho códigos nuevos en los cuatro lugares; `test_aislamiento.py` con un motivo y una salida por mundo.",
+        "La ficha pasa a la aplicación: `domain/product.py` (el código manda sobre la tarifa, qué vacía un PUT parcial, `stock` no se edita), `RegisterProduct` —con la apertura por `MoveStock`—, `UpdateProduct` y `DeleteProduct`, y el puerto `CategoryRepository` para RN-6. `crud_product.py` queda de adaptador; la caracterización son las pruebas HTTP de productos, categorías y CABYS que ya existían, y pasaron sin tocarlas.",
+        "`tests/test_salidas.py` contra la pila: motivos, salida, anulación y los dos asientos con una compañía propia con libro; `tests/application/test_stock_exit.py` y `test_product.py`; `tests/domain/test_product.py`.",
+        "Cifras: 3 468 pruebas del backend con cobertura 100 % (17 minutos la batería entera), `npm run check` en 0 y 0, 994 del POS."
+      ],
+      "lo_que_ensena": [
+        "Un evento deja un asiento automático y solo uno: lo dice el modelo de `journal_entries` en su docstring, y aun así la reversión de la salida nació como automático. Lo que lo cazó fue la prueba HTTP contra MySQL, no las de dominio, que no saben de llaves únicas. La reversión de cualquier cosa va como ajuste.",
+        "El guardián de `.count()` lee el texto de la sentencia, comentarios incluidos: un comentario que dice «`.count()` no pasa por el filtro» lo tumba igual que el código."
+      ]
     }
   ],
   "$reparto": {

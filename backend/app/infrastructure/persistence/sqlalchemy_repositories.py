@@ -53,6 +53,8 @@ class ProductData:
     #: La partida arancelaria (T-727): se congela en la línea de una factura de
     #: exportación y decide, antes de cobrar, si la mercancía puede exportarse.
     tariff_heading: str | None = None
+    #: Dónde cuelga (RN-6, T-1502).
+    category_id: int = 0
 
 
 def _a_producto(fila: Product) -> ProductData:
@@ -69,7 +71,42 @@ def _a_producto(fila: Product) -> ProductData:
         cabys_code=fila.cabys_code,
         unit_of_measure=fila.unit_of_measure,
         tariff_heading=fila.tariff_heading,
+        category_id=fila.category_id,
     )
+
+
+@dataclass(frozen=True)
+class CategoryData:
+    """Una categoría vista desde la ficha. Cumple `CategorySnapshot`."""
+
+    id: int
+    name: str
+    is_active: bool
+    active_children: int
+
+
+class SqlAlchemyCategoryRepository:
+    """Cumple `CategoryRepository`. El filtro por compañía lo pone la sesión."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def get(self, category_id: int) -> CategoryData | None:
+        from app.models.model_categories import Category
+
+        fila = self._db.query(Category).filter(Category.id == category_id).first()
+        if fila is None:
+            return None
+        # Las hijas **activas** (RN-6): una raíz a la que le desactivaron su
+        # única subcategoría vuelve a ser una hoja y vuelve a recibir productos.
+        activas = (
+            self._db.query(func.count(Category.id))
+            .filter(Category.parent_id == category_id, Category.is_active.is_(True))
+            .scalar()
+        )
+        return CategoryData(
+            id=fila.id, name=fila.name, is_active=bool(fila.is_active), active_children=activas
+        )
 
 
 class SqlAlchemyProductRepository:
@@ -117,10 +154,11 @@ class SqlAlchemyProductRepository:
         if fila is not None:
             fila.cost = cost.amount
 
-    def barcode_taken(self, barcode: str) -> bool:
-        return (
-            self._db.query(Product).filter(Product.barcode == barcode).first() is not None
-        )
+    def barcode_taken(self, barcode: str, *, except_product_id: int | None = None) -> bool:
+        consulta = self._db.query(Product).filter(Product.barcode == barcode)
+        if except_product_id is not None:
+            consulta = consulta.filter(Product.id_product != except_product_id)
+        return consulta.first() is not None
 
     def create(
         self,
@@ -131,6 +169,11 @@ class SqlAlchemyProductRepository:
         barcode: str,
         category_id: int,
         created_at: datetime,
+        cabys_code: str | None = None,
+        tax_rate: float | None = None,
+        tax_code: str | None = None,
+        unit_of_measure: str | None = None,
+        tariff_heading: str | None = None,
     ) -> int:
         fila = Product(
             name=name,
@@ -140,12 +183,37 @@ class SqlAlchemyProductRepository:
             barcode=barcode,
             created_at=created_at,
             category_id=category_id,
+            cabys_code=cabys_code,
+            tax_rate=tax_rate,
+            tax_code=tax_code,
+            tariff_heading=tariff_heading,
+            # `unit_of_measure` tiene valor por omisión en la base; mandar None
+            # lo dejaría en NULL y la columna es NOT NULL.
+            **({"unit_of_measure": unit_of_measure} if unit_of_measure else {}),
         )
         self._db.add(fila)
         # flush para tener el id sin cerrar la transacción: si algo falla más
         # adelante, el producto tampoco queda creado.
         self._db.flush()
         return fila.id_product
+
+    def update(self, product_id: int, changes: dict) -> None:
+        fila = self._db.query(Product).filter(Product.id_product == product_id).first()
+        for clave, valor in changes.items():
+            # Lo que no es columna no se escribe: el esquema del PUT puede traer
+            # más de lo que la fila tiene, y un atributo inventado no es un cambio.
+            if hasattr(fila, clave):
+                setattr(fila, clave, valor)
+
+    def delete(self, product_id: int) -> None:
+        fila = self._db.query(Product).filter(Product.id_product == product_id).first()
+        self._db.delete(fila)
+
+    def has_sales(self, product_id: int) -> bool:
+        return (
+            self._db.query(SaleDetail).filter(SaleDetail.product_id == product_id).first()
+            is not None
+        )
 
 
 @dataclass(frozen=True)

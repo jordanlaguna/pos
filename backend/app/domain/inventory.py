@@ -23,6 +23,8 @@ from .errors import (
     InvalidQuantity,
     InvalidStockMovementKind,
     InvalidStockSource,
+    ReasonInactive,
+    ReasonIsSystem,
 )
 from .money import Money
 
@@ -147,3 +149,75 @@ def move(product_id: int, before: int, delta: int) -> tuple[int, int]:
     if after < 0:
         raise InsufficientStock(product_id, before, -delta)
     return before, after
+
+
+# ------------------------------------------------------ la salida (RN-99)
+#
+# Mercadería que deja el inventario sin venderse, con un motivo de un catálogo
+# de la compañía. Una salida sin motivo no existe.
+
+#: El motivo del sistema que usa la toma física (RN-100): viene con la
+#: compañía, no se desactiva y no se elige en una salida —lo pone la toma—.
+COUNT_REASON = "count"
+
+#: Los motivos con los que nace toda compañía: (código, nombre, de sistema).
+#: Los nombres son **datos de la compañía**, como las cuentas de la plantilla:
+#: los escribe y los cambia ella, y por eso no pasan por los catálogos del POS.
+DEFAULT_REASONS: tuple[tuple[str, str, bool], ...] = (
+    ("shrinkage", "Merma", False),
+    ("damage", "Daño", False),
+    ("expired", "Vencido", False),
+    ("internal_use", "Consumo interno", False),
+    ("sample", "Muestra", False),
+    (COUNT_REASON, "Toma física", True),
+)
+
+
+def check_exit_reason(reason) -> None:
+    """Si con ese motivo se puede dar una salida (RN-99, RN-100).
+
+    `reason` trae `id`, `is_active` e `is_system`. Un motivo apagado no vale, y
+    el de la toma física tampoco: ese lo pone la toma al aplicar sus diferencias.
+    """
+    if not reason.is_active:
+        raise ReasonInactive(reason.id)
+    if reason.is_system:
+        raise ReasonIsSystem(reason.id)
+
+
+def check_reason_deactivatable(reason_id: int, *, is_system: bool) -> None:
+    """El motivo del sistema no se desactiva (RN-100): la toma lo necesita."""
+    if is_system:
+        raise ReasonIsSystem(reason_id)
+
+
+@dataclass(frozen=True)
+class ExitLine:
+    """Un producto que sale, valorado **al promedio del momento** (RN-99)."""
+
+    product_id: int
+    quantity: int
+    unit_cost: Money
+    #: RN-104; nulo es «sin lote», elegido a propósito.
+    lot_id: int | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.quantity, bool) or not isinstance(self.quantity, int):
+            raise InvalidQuantity(self.quantity)
+        if self.quantity <= 0:
+            raise InvalidQuantity(self.quantity)
+        if self.unit_cost.is_negative:
+            raise InvalidQuantity(self.unit_cost)
+
+    @property
+    def subtotal(self) -> Money:
+        return self.unit_cost * self.quantity
+
+
+def exit_total(lines: list[ExitLine]) -> Money:
+    """Lo que sale del inventario, en plata: es lo que el asiento lleva al gasto."""
+    return Money.sum(line.subtotal for line in lines)
+
+
+def exit_units(lines: list[ExitLine]) -> int:
+    return sum(line.quantity for line in lines)

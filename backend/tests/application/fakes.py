@@ -43,6 +43,11 @@ class FakeProduct:
     #: La partida arancelaria (T-727). Vacía por omisión: un producto que nadie
     #: pensó exportar.
     tariff_heading: str | None = None
+    #: Dónde cuelga (RN-6). La 1 por omisión: la categoría de todas las pruebas
+    #: que no son de categorías.
+    category_id: int = 1
+    #: Si alguna venta lo nombra (T-1502): lo dice la prueba, no una venta de verdad.
+    sold: bool = False
 
 
 class FakeProductRepository:
@@ -52,6 +57,9 @@ class FakeProductRepository:
         # Códigos de barras ya tomados y productos creados por una entrada.
         self.codigos: dict[str, int] = {}
         self.creados: list[tuple] = []
+        #: Lo que la ficha escribió y borró (T-1502).
+        self.cambios: list[tuple[int, dict]] = []
+        self.borrados: list[int] = []
         self._siguiente = max(self.productos, default=0) + 1
 
     def get(self, product_id: int) -> FakeProduct | None:
@@ -69,16 +77,74 @@ class FakeProductRepository:
     def update_cost(self, product_id: int, cost: Money) -> None:
         self.productos[product_id].cost = cost
 
-    def barcode_taken(self, barcode: str) -> bool:
-        return barcode in self.codigos
+    def barcode_taken(self, barcode: str, *, except_product_id: int | None = None) -> bool:
+        dueno = self.codigos.get(barcode)
+        return dueno is not None and dueno != except_product_id
 
-    def create(self, *, name, description, price, barcode, category_id, created_at) -> int:
-        nuevo = FakeProduct(self._siguiente, name, price, stock=0)
+    def create(
+        self,
+        *,
+        name,
+        description,
+        price,
+        barcode,
+        category_id,
+        created_at,
+        cabys_code=None,
+        tax_rate=None,
+        tax_code=None,
+        unit_of_measure=None,
+        tariff_heading=None,
+    ) -> int:
+        nuevo = FakeProduct(
+            self._siguiente,
+            name,
+            price,
+            stock=0,
+            tax_rate=tax_rate,
+            tax_code=tax_code,
+            cabys_code=cabys_code,
+            unit_of_measure=unit_of_measure,
+            tariff_heading=tariff_heading,
+            category_id=category_id,
+        )
         self.productos[self._siguiente] = nuevo
         self.codigos[barcode] = self._siguiente
         self.creados.append((name, barcode, price, category_id, created_at))
         self._siguiente += 1
         return nuevo.id_product
+
+    def update(self, product_id: int, changes: dict) -> None:
+        self.cambios.append((product_id, dict(changes)))
+        producto = self.productos[product_id]
+        for clave, valor in changes.items():
+            if hasattr(producto, clave):
+                setattr(producto, clave, valor)
+
+    def delete(self, product_id: int) -> None:
+        self.borrados.append(product_id)
+        del self.productos[product_id]
+
+    def has_sales(self, product_id: int) -> bool:
+        return self.productos[product_id].sold
+
+
+@dataclass
+class FakeCategory:
+    """Una categoría vista desde la ficha (RN-6). Hoja activa por omisión."""
+
+    id: int
+    name: str
+    is_active: bool = True
+    active_children: int = 0
+
+
+class FakeCategoryRepository:
+    def __init__(self, categorias: list[FakeCategory] | None = None) -> None:
+        self.categorias = {c.id: c for c in (categorias or [FakeCategory(1, "General")])}
+
+    def get(self, category_id: int) -> FakeCategory | None:
+        return self.categorias.get(category_id)
 
 
 #: La sucursal de todas las pruebas que no son de sucursales (F15).
@@ -150,6 +216,68 @@ class FakeKardex:
         return [
             m for m in self.movimientos if m.source_type == source_type and m.source_id == source_id
         ]
+
+    def count_for(self, product_id: int) -> int:
+        return sum(1 for m in self.movimientos if m.product_id == product_id)
+
+
+@dataclass
+class FakeReason:
+    """Un motivo de salida (RN-99). Activo y de la compañía por omisión."""
+
+    id: int
+    code: str
+    name: str
+    is_system: bool = False
+    is_active: bool = True
+
+
+class FakeStockReasonRepository:
+    def __init__(self, motivos: list[FakeReason] | None = None) -> None:
+        self.motivos = {m.id: m for m in (motivos or [])}
+
+    def get(self, reason_id: int) -> FakeReason | None:
+        return self.motivos.get(reason_id)
+
+
+@dataclass
+class FilaDeSalida:
+    id: int
+    branch_id: int
+    reason_id: int
+    user_id: int
+    notes: str | None
+    total_cost: Money
+    created_at: datetime
+    lines: list
+    status: str = "applied"
+    voided_at: datetime | None = None
+    void_reason: str | None = None
+
+
+class FakeStockExitRepository:
+    def __init__(self) -> None:
+        self.salidas: list[FilaDeSalida] = []
+        self._siguiente = 1
+
+    def get(self, exit_id: int) -> FilaDeSalida | None:
+        return next((s for s in self.salidas if s.id == exit_id), None)
+
+    def add(self, **datos) -> int:
+        salida = FilaDeSalida(id=self._siguiente, **datos)
+        self._siguiente += 1
+        self.salidas.append(salida)
+        return salida.id
+
+    def lines_of(self, exit_id: int) -> list:
+        salida = self.get(exit_id)
+        return salida.lines if salida else []
+
+    def mark_voided(self, exit_id: int, *, voided_at: datetime, reason: str) -> None:
+        salida = self.get(exit_id)
+        salida.status = "voided"
+        salida.voided_at = voided_at
+        salida.void_reason = reason
 
 
 def mover(productos: FakeProductRepository, kardex: FakeKardex | None = None):

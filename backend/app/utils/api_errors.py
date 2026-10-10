@@ -196,6 +196,18 @@ CODES: frozenset[str] = frozenset(
         # El kárdex se lee por producto o por documento; sin ninguno de los dos
         # no hay qué listar, y una lista vacía diría «nunca se movió».
         "kardex_filter_required",
+        # Las salidas con motivo (RN-99) y su catálogo. `reason_code` y no
+        # `code`, que es el parámetro de `api_error` y ya hizo tropezar dos
+        # veces. `reason_is_system` sirve para las dos cosas que no se le hacen
+        # al motivo de la toma: elegirlo en una salida y desactivarlo.
+        "reason_not_found",
+        "reason_inactive",
+        "reason_is_system",
+        "reason_code_taken",
+        "exit_not_found",
+        "exit_cancelled",
+        "empty_exit",
+        "invalid_exit_line",
         "category_name_taken",
         # `tax_code` es el código que llegó. Los válidos son los once de la nota
         # 8.1 del anexo de Hacienda, y no se corrigen solos: un `"8"` puede ser
@@ -556,6 +568,9 @@ DONE: frozenset[str] = frozenset(
         "return_registered",
         "entry_registered",
         "entry_cancelled",
+        # F15: la salida con motivo y su anulación.
+        "exit_registered",
+        "exit_voided",
         "payment_registered",
         "role_updated",
     }

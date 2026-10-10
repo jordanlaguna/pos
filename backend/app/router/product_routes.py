@@ -40,10 +40,8 @@ def register_product(
     admin: Sesion = Depends(require_admin),
     _modulo: Sesion = Depends(require_module("inventory")),
 ):
-    existing = db.query(Product).filter(Product.barcode == product.barcode).first()
-    if existing:
-        raise api_error(400, "barcode_taken", barcode=product.barcode)
-    # Quién abre la existencia inicial: queda en el kárdex (F15).
+    # El código repetido, la categoría y la tarifa los comprueba el caso de uso
+    # (T-1502); quién abre la existencia inicial queda en el kárdex (F15).
     return crud_product.create_product(db=db, product=product, user_id=admin.user.id_user)
 
 

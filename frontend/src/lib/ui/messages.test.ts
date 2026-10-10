@@ -225,6 +225,8 @@ describe('apiMessage', () => {
 		entry_line_without_product: { line: 4 },
 		entry_cannot_cancel: { product: 'Arroz 1 kg', available: 1, added: 3 },
 		product_has_movements: { product_id: 7, movements: 3 },
+		reason_code_taken: { reason_code: 'merma' },
+		invalid_exit_line: { line: 2 },
 		category_name_taken: { name: 'Congelados' },
 		invalid_role: { role: 'jefe' },
 		invalid_tax_brackets: { reason: 'gap', index: 1 },

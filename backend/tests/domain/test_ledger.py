@@ -77,6 +77,7 @@ from app.domain.ledger import (
     sales_role,
 )
 from app.domain.ledger import METHOD_ROLES
+from app.domain.ledger import SHRINKAGE, STOCK_EXIT, StockExitDocument, post_stock_exit
 from app.domain.money import Money
 from app.domain.sale import PAYMENT_METHODS
 from app.domain.tax import TaxRate
@@ -122,6 +123,8 @@ CUENTAS = {
     (PAYROLL, SOCIAL_SECURITY_PAYABLE): 214,
     (PAYROLL, SALARIES_PAYABLE): 215,
     (PAYROLL, OTHER_DEDUCTIONS_PAYABLE): 216,
+    (STOCK_EXIT, SHRINKAGE): 631,
+    (STOCK_EXIT, INVENTORY): 121,
 }
 
 MAPEO = AccountMap(accounts=CUENTAS, unclassified=POR_CLASIFICAR)
@@ -883,3 +886,41 @@ class TestLaPlanilla:
         asiento = post_payroll(planilla(), VACIO)
         assert set(debitos(asiento)) == {POR_CLASIFICAR}
         assert asiento.debits == Money(760980)
+
+
+# ------------------------------------------------------ la salida (F15)
+
+
+class TestLaSalidaConMotivo:
+    """RN-99: el costo deja el inventario y se va al gasto."""
+
+    def test_el_asiento_del_plan(self):
+        asiento = post_stock_exit(StockExitDocument(id=5, date=HOY), Money(3000), MAPEO)
+
+        assert debitos(asiento) == {631: Money(3000)}
+        assert creditos(asiento) == {121: Money(3000)}
+        assert (asiento.source_type, asiento.source_id, asiento.description) == (
+            "stock_exit", 5, STOCK_EXIT,
+        )
+        assert asiento.kind == "auto"
+        assert [linea.memo for linea in asiento.lines] == [SHRINKAGE, INVENTORY]
+
+    def test_la_anulacion_es_el_mismo_asiento_al_reves(self):
+        asiento = post_stock_exit(
+            StockExitDocument(id=5, date=HOY), Money(3000), MAPEO, reversal=True
+        )
+
+        assert debitos(asiento) == {121: Money(3000)}
+        assert creditos(asiento) == {631: Money(3000)}
+        assert asiento.source_id == 5
+        # De ajuste y no automático: un evento deja un automático y solo uno.
+        assert asiento.kind == "adjustment"
+
+    def test_una_salida_sin_costo_no_deja_asiento(self):
+        # Productos que nunca se compraron: no hay plata que mover.
+        assert post_stock_exit(StockExitDocument(id=6, date=HOY), Money.zero(), MAPEO) is None
+
+    def test_sin_mapeo_cae_en_por_clasificar_y_balancea(self):
+        asiento = post_stock_exit(StockExitDocument(id=7, date=HOY), Money(100), VACIO)
+        assert debitos(asiento) == {POR_CLASIFICAR: Money(100)}
+        assert creditos(asiento) == {POR_CLASIFICAR: Money(100)}

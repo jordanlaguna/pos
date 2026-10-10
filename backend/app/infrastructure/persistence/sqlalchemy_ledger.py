@@ -45,6 +45,7 @@ from app.domain.ledger import (
     SOURCE_NOTE,
     SoldDocument,
     SoldLine,
+    StockExitDocument,
     SupplierPaymentRef,
     assert_open,
     post_cash_close,
@@ -53,6 +54,7 @@ from app.domain.ledger import (
     post_purchase,
     post_return,
     post_sale,
+    post_stock_exit,
     post_supplier_payment,
 )
 from app.domain.errors import PeriodClosed
@@ -110,6 +112,12 @@ class SqlAlchemyLedger:
         """La corrida pagada (RN-75). Devuelve el id del asiento, que la
         corrida guarda para que la pantalla pueda ir de la boleta al libro."""
         return self.post(post_payroll(payroll, self._cuentas()))
+
+    def record_stock_exit(self, exit: StockExitDocument, cost: Money) -> None:
+        self.post(post_stock_exit(exit, cost, self._cuentas()))
+
+    def record_stock_exit_void(self, exit: StockExitDocument, cost: Money) -> None:
+        self.post(post_stock_exit(exit, cost, self._cuentas(), reversal=True))
 
     # ------------------------------------------------------------- escribir
 

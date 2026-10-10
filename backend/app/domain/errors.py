@@ -514,6 +514,36 @@ class InvalidStockSource(DomainError):
         self.source_type = source_type
 
 
+class StockNotEditable(DomainError):
+    """La existencia ya no se escribe desde la ficha (F15, RN-98): se mueve con
+    una entrada, una salida o una toma física, que dejan su fila en el kárdex."""
+
+    def __init__(self, product_id: int) -> None:
+        super().__init__(f"la existencia del producto {product_id} no se edita desde la ficha")
+        self.product_id = product_id
+
+
+class ReasonInactive(DomainError):
+    """Se quiso dar salida con un motivo desactivado (RN-99).
+
+    No se reactiva solo: desactivarlo fue una decisión, y una salida con un
+    motivo que ya nadie usa suele ser un motivo mal elegido en la lista.
+    """
+
+    def __init__(self, reason_id: int) -> None:
+        super().__init__(f"el motivo {reason_id} está desactivado")
+        self.reason_id = reason_id
+
+
+class ReasonIsSystem(DomainError):
+    """El motivo de la toma física es del sistema (RN-100): no se elige en una
+    salida —lo pone la toma— ni se desactiva."""
+
+    def __init__(self, reason_id: int) -> None:
+        super().__init__(f"el motivo {reason_id} es del sistema")
+        self.reason_id = reason_id
+
+
 class InvalidMovement(DomainError):
     """Un movimiento de caja mal formado: tipo desconocido, monto o motivo."""
 

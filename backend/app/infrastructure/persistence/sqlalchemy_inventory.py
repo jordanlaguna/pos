@@ -7,15 +7,22 @@ candado** y que la suma de la ficha se mantenga **en la base**, no en Python.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import update
+from sqlalchemy import func, update
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.orm import Session
 
-from app.domain.inventory import Movement
+from app.domain.inventory import ExitLine, Movement
 from app.domain.money import Money
-from app.models.model_inventory import StockLevel, StockMovement
+from app.models.model_inventory import (
+    StockExit,
+    StockExitDetail,
+    StockLevel,
+    StockMovement,
+    StockReason,
+)
 from app.models.model_product import Product
 from app.utils.tenancy import compania_actual
 
@@ -159,3 +166,142 @@ class SqlAlchemyKardex:
             .all()
         )
         return [_a_movimiento(fila) for fila in filas]
+
+    def count_for(self, product_id: int) -> int:
+        # Con `func.count`, que sí pasa por el filtro de compañía (test_tenancy).
+        return (
+            self._db.query(func.count(StockMovement.id))
+            .filter(StockMovement.product_id == product_id)
+            .scalar()
+        )
+
+
+# ----------------------------------------------------- las salidas (RN-99)
+
+
+@dataclass(frozen=True)
+class ReasonData:
+    """Un motivo visto desde la salida. Cumple `ReasonSnapshot`."""
+
+    id: int
+    code: str
+    name: str
+    is_system: bool
+    is_active: bool
+
+
+class SqlAlchemyStockReasonRepository:
+    """Cumple `StockReasonRepository`. El filtro por compañía lo pone la sesión."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def get(self, reason_id: int) -> ReasonData | None:
+        fila = self._db.query(StockReason).filter(StockReason.id == reason_id).first()
+        if fila is None:
+            return None
+        return ReasonData(
+            id=fila.id,
+            code=fila.code,
+            name=fila.name,
+            is_system=bool(fila.is_system),
+            is_active=bool(fila.is_active),
+        )
+
+
+@dataclass(frozen=True)
+class ExitData:
+    """Una salida guardada. Cumple `ExitSnapshot`."""
+
+    id: int
+    branch_id: int
+    reason_id: int
+    status: str
+    total_cost: Money
+
+
+@dataclass(frozen=True)
+class ExitLineData:
+    """Una línea guardada. Cumple `ExitLineSnapshot`."""
+
+    product_id: int
+    quantity: int
+    unit_cost: Money
+    lot_id: int | None
+
+
+class SqlAlchemyStockExitRepository:
+    """Cumple `StockExitRepository`."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def get(self, exit_id: int) -> ExitData | None:
+        fila = self._db.query(StockExit).filter(StockExit.id == exit_id).first()
+        if fila is None:
+            return None
+        return ExitData(
+            id=fila.id,
+            branch_id=fila.branch_id,
+            reason_id=fila.reason_id,
+            status=fila.status,
+            total_cost=Money(fila.total_cost),
+        )
+
+    def add(
+        self,
+        *,
+        branch_id: int,
+        reason_id: int,
+        user_id: int,
+        notes: str | None,
+        total_cost: Money,
+        created_at: datetime,
+        lines: list[ExitLine],
+    ) -> int:
+        salida = StockExit(
+            branch_id=branch_id,
+            reason_id=reason_id,
+            user_id=user_id,
+            created_at=created_at,
+            notes=notes,
+            status="applied",
+            total_cost=total_cost.amount,
+        )
+        self._db.add(salida)
+        # `flush` y no `commit`: el id sin cerrar la transacción, como la venta.
+        self._db.flush()
+        for linea in lines:
+            self._db.add(
+                StockExitDetail(
+                    exit_id=salida.id,
+                    product_id=linea.product_id,
+                    quantity=linea.quantity,
+                    unit_cost=linea.unit_cost.amount,
+                    lot_id=linea.lot_id,
+                )
+            )
+        return salida.id
+
+    def lines_of(self, exit_id: int) -> list[ExitLineData]:
+        filas = (
+            self._db.query(StockExitDetail)
+            .filter(StockExitDetail.exit_id == exit_id)
+            .order_by(StockExitDetail.id)
+            .all()
+        )
+        return [
+            ExitLineData(
+                product_id=fila.product_id,
+                quantity=fila.quantity,
+                unit_cost=Money(fila.unit_cost),
+                lot_id=fila.lot_id,
+            )
+            for fila in filas
+        ]
+
+    def mark_voided(self, exit_id: int, *, voided_at: datetime, reason: str) -> None:
+        salida = self._db.query(StockExit).filter(StockExit.id == exit_id).one()
+        salida.status = "voided"
+        salida.voided_at = voided_at
+        salida.void_reason = reason

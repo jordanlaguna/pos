@@ -167,6 +167,23 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         },
     )
 
+    # F15: un motivo propio y una salida con él, que es lo que alimenta
+    # `/inventory/reasons`, `/inventory/exits` y sus rutas con id.
+    motivo = cliente.ok(
+        "POST",
+        "/inventory/reasons",
+        {"code": f"aisl_{marca}", "name": f"Motivo {etiqueta}"},
+    )
+    salida = cliente.ok(
+        "POST",
+        "/inventory/exits",
+        {
+            "reason_id": motivo["id"],
+            "notes": "prueba de aislamiento",
+            "lines": [{"id_product": producto["id_product"], "quantity": 1}],
+        },
+    )
+
     return {
         "categoria_id": categoria["id"],
         "producto": producto,
@@ -175,6 +192,8 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         "devolucion_id": devolucion["id_return"],
         "entrada_id": entrada["id_entry"],
         "compra_id": compra["id_entry"],
+        "motivo_id": motivo["id"],
+        "salida_id": salida["id_exit"],
         "proveedor_id": proveedor["id"],
         "company_id": cliente.company_id,  # type: ignore[attr-defined]
         "user_id": cliente.user_id,  # type: ignore[attr-defined]
@@ -210,6 +229,10 @@ RUTAS_POR_ID = [
     ("PUT", "/categories/update_category/{categoria_id}", {"name": "Secuestrada"}),
     ("DELETE", "/categories/delete_category/{categoria_id}", None),
     ("PUT", "/suppliers/{proveedor_id}", {"name": "Secuestrado", "payment_terms_days": 0}),
+    # F15: renombrar el motivo ajeno y anular la salida ajena, que le repondría
+    # mercadería al inventario de otro negocio.
+    ("PUT", "/inventory/reasons/{motivo_id}", {"name": "Secuestrado"}),
+    ("POST", "/inventory/exits/{salida_id}/cancel", {"reason": "ajena"}),
     # Abonarle a la compra de otra compañía: sin el filtro, le bajaría el saldo
     # a una factura que no es suya y, si fuera en efectivo, le sacaría la plata
     # a su caja.
@@ -239,6 +262,8 @@ class TestNoSeVeLoDeLaOtraCompania:
             user_id=mundo_b["user_id"],
             categoria_id=mundo_b["categoria_id"],
             proveedor_id=mundo_b["proveedor_id"],
+            motivo_id=mundo_b["motivo_id"],
+            salida_id=mundo_b["salida_id"],
         )
         estado, respuesta = api.call(metodo, ruta, cuerpo)
 
@@ -337,6 +362,8 @@ LISTAS = [
     ("/sales/sales_list", "id_sale", "venta_id"),
     ("/returns/returns_list", "id_return", "devolucion_id"),
     ("/inventory/entries", "id", "entrada_id"),
+    ("/inventory/reasons", "id", "motivo_id"),
+    ("/inventory/exits", "id", "salida_id"),
     ("/categories/categories_list", "id", "categoria_id"),
     ("/suppliers", "id", "proveedor_id"),
 ]
@@ -874,6 +901,8 @@ def test_ninguna_ruta_de_negocio_quedo_sin_probar():
         "/categories/delete_category/{categoria_id}": "/categories/delete_category/{category_id}",
         "/suppliers/{proveedor_id}": "/suppliers/{supplier_id}",
         "/purchases/{entrada_id}/payments": "/purchases/{entry_id}/payments",
+        "/inventory/reasons/{motivo_id}": "/inventory/reasons/{reason_id}",
+        "/inventory/exits/{salida_id}/cancel": "/inventory/exits/{exit_id}/cancel",
     }
     cubiertas = {equivalencias.get(r, r) for r in cubiertas}
 
