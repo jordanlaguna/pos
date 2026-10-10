@@ -62,6 +62,11 @@ export const F = {
 	user: () => masculino(m.field_user()),
 	sale: () => femenino(m.field_sale()),
 	entry: () => femenino(m.field_entry()),
+	// F15: las salidas con motivo y su catálogo.
+	exit: () => femenino(m.field_exit()),
+	quantity: () => femenino(m.field_quantity()),
+	stockReason: () => masculino(m.field_stock_reason()),
+	reasonCode: () => masculino(m.field_reason_code()),
 
 	// ------------------------------------------------------------ conjuntos
 	paymentMethod: () => masculino(m.field_payment_method()),

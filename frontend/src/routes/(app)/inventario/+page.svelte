@@ -405,6 +405,10 @@
 			<Icon name="download" size={15} />
 			{m.inventory_entries()}
 		</a>
+		<a href="/inventario/salidas" class="btn btn-ghost">
+			<Icon name="minus" size={15} />
+			{m.inventory_exits()}
+		</a>
 		<a href="/inventario/categorias" class="btn btn-ghost">
 			<Icon name="tag" size={15} />
 			{m.inventory_categories()}
@@ -559,6 +563,14 @@
 						</td>
 						<td>
 							<div class="flex justify-end gap-1">
+								<!-- El kárdex (F15, RF-87): por qué el producto tiene lo que tiene. -->
+								<a
+									href="/inventario/kardex/{product.id_product}"
+									class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"
+									aria-label={m.inventory_kardex_of({ product: product.name })}
+								>
+									<Icon name="clock" size={15} />
+								</a>
 								<button
 									type="button"
 									class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"

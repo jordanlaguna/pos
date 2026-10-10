@@ -113,5 +113,9 @@
 	"field_as_of": "balance date",
 	"field_employee": "employee",
 	"field_kind": "type",
-	"field_dependent_children": "dependent children"
+	"field_dependent_children": "dependent children",
+  "field_quantity": "The quantity",
+  "field_reason_code": "The reason code",
+  "field_stock_reason": "The exit reason",
+  "field_exit": "The exit"
 }

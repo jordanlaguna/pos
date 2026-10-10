@@ -3299,6 +3299,20 @@
         "Un evento deja un asiento automático y solo uno: lo dice el modelo de `journal_entries` en su docstring, y aun así la reversión de la salida nació como automático. Lo que lo cazó fue la prueba HTTP contra MySQL, no las de dominio, que no saben de llaves únicas. La reversión de cualquier cosa va como ajuste.",
         "El guardián de `.count()` lee el texto de la sentencia, comentarios incluidos: un comentario que dice «`.count()` no pasa por el filtro» lo tumba igual que el código."
       ]
+    },
+    {
+      "fecha": "2026-10-10",
+      "titulo": "T-1502 cerrada: el kárdex, las salidas y los motivos en el POS",
+      "hecho": [
+        "Las pantallas: `/inventario/kardex/[id]` con el enlace desde cada fila del inventario, existencia por sucursal y promedio; `/inventario/salidas` con su lista, su detalle, su anulación con motivo y el registro en `/salidas/nueva` (motivo, búsqueda de producto, cantidades y vista previa al promedio de hoy); `/inventario/motivos` para agregar, renombrar y apagar, con el de la toma marcado como del sistema.",
+        "Los catálogos `kardex.json` y `exits.json` en los tres idiomas, declarados en `project.inlang/settings.json`; cuatro campos nuevos en `fields.json` y dos claves en `inventory.json`.",
+        "El simulado: `moverStock`, el único escritor de existencias con su fila en el kárdex, en la venta, la devolución, la entrada, su anulación y el alta de producto; las nueve rutas nuevas con los mismos códigos que el backend; los motivos de fábrica y una apertura por producto con existencia en la semilla (`SEED_VERSION` 19); y `postStockExit` en su libro, con las dos cuentas y los cinco mapeos.",
+        "`tests/e2e/salidas.spec.ts`: un producto propio, un motivo propio, una salida de 3, el kárdex con la salida y la apertura, y la anulación que devuelve la existencia a 10.",
+        "Cifras: `npm run check` en 0 y 0, 994 pruebas del POS y las 97 de punta a punta en verde (11 minutos la batería entera)."
+      ],
+      "lo_que_ensena": [
+        "La trampa de la hidratación muerde también en un `<select bind:value>`: la prueba eligió el motivo antes de que Svelte enganchara la página y al hidratar volvió al vacío, con el botón de confirmar deshabilitado y sin ningún error. El valor se lee del DOM al montar y al cambiar, como dice CLAUDE.md para `Select`."
+      ]
     }
   ],
   "$reparto": {

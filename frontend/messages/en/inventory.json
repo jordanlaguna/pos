@@ -95,5 +95,7 @@
   "inventory_tax_code_11": "0 % without credit entitlement",
   "inventory_label_tariff_heading": "Tariff heading",
   "inventory_tariff_heading_hint": "12 digits. Only needed to sell to a foreign customer, with an export invoice.",
-  "inventory_stock_readonly_hint": "Stock is moved with an entry, an exit or a stock count, not from the product form."
+  "inventory_stock_readonly_hint": "Stock is moved with an entry, an exit or a stock count, not from the product form.",
+  "inventory_exits": "Exits",
+  "inventory_kardex_of": "Stock ledger of {product}"
 }

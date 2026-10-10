@@ -113,5 +113,9 @@
 	"field_as_of": "data dos saldos",
 	"field_employee": "funcionário",
 	"field_kind": "tipo",
-	"field_dependent_children": "filhos dependentes"
+	"field_dependent_children": "filhos dependentes",
+  "field_quantity": "A quantidade",
+  "field_reason_code": "O código do motivo",
+  "field_stock_reason": "O motivo de saída",
+  "field_exit": "A saída"
 }

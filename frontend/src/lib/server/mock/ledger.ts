@@ -63,11 +63,15 @@ export const CHART: Plantilla[] = [
 	{ code: '4.1.05', name: 'Ventas exentas', kind: 'income' },
 	{ code: '4.2.01', name: 'Devoluciones sobre ventas', kind: 'income' },
 	{ code: '4.9.01', name: 'Sobrantes de caja', kind: 'income' },
+	// F15: lo que una toma física encuentra de más (RN-100).
+	{ code: '4.9.02', name: 'Sobrantes de inventario', kind: 'income' },
 	{ code: '5.1.01', name: 'Costo de ventas', kind: 'cost' },
 	{ code: '6.1.01', name: 'Salarios', kind: 'expense' },
 	{ code: '6.1.02', name: 'Cargas sociales patronales', kind: 'expense' },
 	{ code: '6.1.03', name: 'Aguinaldo', kind: 'expense' },
 	{ code: '6.2.01', name: 'Comisiones de tarjetas', kind: 'expense', is_system: false },
+	// F15: lo que sale sin venderse y lo que una toma encuentra de menos (RN-99).
+	{ code: '6.3.01', name: 'Mermas y ajustes de inventario', kind: 'expense' },
 	{ code: '6.9.01', name: 'Faltantes de caja', kind: 'expense' },
 	{ code: '6.9.02', name: 'Gastos generales', kind: 'expense', is_system: false }
 ];
@@ -124,6 +128,13 @@ export function defaultMapping(): Record<string, string> {
 		'supplier_payment|payables': '2.1.01',
 		'supplier_payment|cash': '1.1.01',
 		'supplier_payment|bank': '1.1.02',
+		// F15: la salida con motivo (RN-99) y la toma física (RN-100), como
+		// `chart.default_mapping` en el backend.
+		'stock_exit|shrinkage': '6.3.01',
+		'stock_exit|inventory': '1.2.01',
+		'stock_count|shrinkage': '6.3.01',
+		'stock_count|overage': '4.9.02',
+		'stock_count|inventory': '1.2.01',
 		'payroll|salaries': '6.1.01',
 		'payroll|employer_contributions': '6.1.02',
 		'payroll|income_tax_payable': '2.1.03',
@@ -554,6 +565,41 @@ export function postPurchase(
 			lines: asiento,
 			source_type: 'stock_entry',
 			source_id: compra.id
+		},
+		userId
+	);
+}
+
+/**
+ * La salida con motivo (F15, RN-99): el costo deja el inventario y se va al
+ * gasto. Con `reversal` es la anulación, al revés y **por el mismo valor**, y
+ * como asiento de ajuste: un evento deja un automático y solo uno. Sin costo no
+ * hay asiento. Es `post_stock_exit` del backend, línea por línea.
+ */
+export function postStockExit(
+	companyId: number,
+	salida: { id: number; date: string },
+	costo: number,
+	userId: number,
+	reversal = false
+): JournalEntry | null {
+	if (costo <= 0) return null;
+	const cuenta = mapeoVigente(getDb(companyId));
+	const gasto = cuenta('stock_exit', 'shrinkage');
+	const inventario = cuenta('stock_exit', 'inventory');
+	const asiento = reversal
+		? [debito(inventario, costo, { memo: 'inventory' }), credito(gasto, costo, { memo: 'shrinkage' })]
+		: [debito(gasto, costo, { memo: 'shrinkage' }), credito(inventario, costo, { memo: 'inventory' })];
+
+	return postEntry(
+		companyId,
+		{
+			kind: reversal ? 'adjustment' : 'auto',
+			entry_date: salida.date,
+			description: 'stock_exit',
+			lines: asiento,
+			source_type: 'stock_exit',
+			source_id: salida.id
 		},
 		userId
 	);

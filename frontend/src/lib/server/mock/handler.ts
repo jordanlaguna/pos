@@ -67,6 +67,9 @@ import { CORRECTS_AMOUNT } from '$lib/domain/documents';
 import { isBlankLocation, locationProblem, normalizeLocation } from '$lib/domain/location';
 import { mergeSettings } from '$lib/domain/settings';
 import type { MockFeDocument } from './db';
+import { motivosDeFabrica } from './db';
+import { postStockExit } from './ledger';
+import type { StockExit, StockMovement, StockMovementKind, StockReason } from '$lib/domain/types';
 import { PAYROLL_SEED } from './payrollRates';
 import { rutasDePlanilla } from './payroll';
 import type { Account, JournalEntry } from '$lib/domain/types';
@@ -924,7 +927,7 @@ function codigoSugerido(tarifa: number): string | null {
 
 route('GET', '/products/products_list', ({ companyId }) => getDb(companyId).products);
 
-route('POST', '/products/add_product', ({ body, companyId }) => {
+route('POST', '/products/add_product', ({ body, companyId, userId }) => {
 	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const barcode = String(body?.barcode ?? '').trim();
@@ -937,7 +940,8 @@ route('POST', '/products/add_product', ({ body, companyId }) => {
 		name: String(body?.name ?? ''),
 		description: String(body?.description ?? ''),
 		price: round2(Number(body?.price ?? 0)),
-		stock: Math.trunc(Number(body?.stock ?? 0)),
+		// Nace en cero y la apertura de abajo le pone lo suyo (RF-94).
+		stock: 0,
 		barcode,
 		created_at: nowIso(),
 		category_id: Number(body?.category_id ?? 0),
@@ -953,6 +957,20 @@ route('POST', '/products/add_product', ({ body, companyId }) => {
 		unit_of_measure: String(body?.unit_of_measure ?? 'Unid'),
 		tariff_heading: partidaArancelaria(body?.tariff_heading)
 	});
+	// La existencia inicial es un movimiento de apertura en el kárdex (RN-98),
+	// a costo cero: no se conoce hasta la primera compra.
+	const inicial = Math.trunc(Number(body?.stock ?? 0));
+	if (inicial) {
+		moverStock(companyId, {
+			product: db.products.find((p) => p.id_product === id)!,
+			delta: inicial,
+			kind: 'opening',
+			unit_cost: 0,
+			source_type: 'product',
+			source_id: id,
+			user_id: userId
+		});
+	}
 	persist();
 	return { message: 'product_registered', id_product: id };
 });
@@ -1684,7 +1702,7 @@ function numeroDeVentaLibre(db: { sales: { sale_number: string }[] }): string {
 	return candidato;
 }
 
-route('POST', '/sales/add_sale', ({ body, companyId }) => {
+route('POST', '/sales/add_sale', ({ body, companyId, userId }) => {
 	exigirModulo(companyId, 'sales'); // QA-01
 	const db = getDb(companyId);
 	// T-706: sin número, lo pone el servidor con su reloj —`yyyyMMddHHmmss` y un
@@ -1888,10 +1906,19 @@ route('POST', '/sales/add_sale', ({ body, companyId }) => {
 			issued_at: venta.created_at
 		});
 	}
-	for (const item of items) {
-		const product = db.products.find((p) => p.id_product === item.id_product)!;
-		product.stock -= item.quantity;
-	}
+	// Cada línea deja su fila en el kárdex (RN-98), al promedio del momento.
+	items.forEach((item, i) =>
+		moverStock(companyId, {
+			product: db.products.find((p) => p.id_product === item.id_product)!,
+			delta: -item.quantity,
+			kind: 'sale',
+			unit_cost: Number(item.unit_cost ?? 0),
+			source_type: 'sale',
+			source_id: id,
+			source_line: i + 1,
+			user_id: userId
+		})
+	);
 
 	// El asiento, en el mismo paso que la venta (RN-59). Con contabilidad
 	// apagada no hace nada.
@@ -1957,7 +1984,7 @@ route('GET', '/returns/return/:id', ({ params, companyId }) => {
 	return returnResponse(found, companyId);
 });
 
-route('POST', '/returns/add_return', ({ body, companyId }) => {
+route('POST', '/returns/add_return', ({ body, companyId, userId }) => {
 	exigirModulo(companyId, body?.annul === true ? 'invoices' : 'returns'); // QA-01
 	const db = getDb(companyId);
 	const sale = db.sales.find((s) => s.id === Number(body?.sale_id));
@@ -2107,11 +2134,23 @@ route('POST', '/returns/add_return', ({ body, companyId }) => {
 		});
 	}
 
-	// El stock vuelve al inventario. Esto es lo que el sistema original nunca hacía.
-	for (const item of items) {
+	// El stock vuelve al inventario —lo que el sistema original nunca hacía— y
+	// deja su fila en el kárdex **al costo con que salió** (RN-98, RN-63); anular
+	// se ve como anulación, no como devolución.
+	items.forEach((item, i) => {
 		const product = db.products.find((p) => p.id_product === item.id_product);
-		if (product) product.stock += item.quantity;
-	}
+		if (!product) return;
+		moverStock(companyId, {
+			product,
+			delta: item.quantity,
+			kind: anular ? 'sale_void' : 'return',
+			unit_cost: Number(sale.items.find((s) => s.id_product === item.id_product)?.unit_cost ?? 0),
+			source_type: 'return',
+			source_id: id,
+			source_line: i + 1,
+			user_id: userId
+		});
+	});
 
 	// El inverso de la venta, con la tarifa y el costo **de su venta** (RN-12,
 	// RN-63): reponer al inventario por lo que cuesta hoy inventaría utilidad.
@@ -3021,7 +3060,7 @@ route('GET', '/inventory/entry/:id', ({ params, companyId }) => {
 	return entradaOut(companyId, found);
 });
 
-route('POST', '/inventory/entry', ({ body, companyId }) => {
+route('POST', '/inventory/entry', ({ body, companyId, userId }) => {
 	const db = getDb(companyId);
 	const requested = Array.isArray(body?.lines) ? body.lines : [];
 	if (!requested.length) fail(400, 'empty_entry');
@@ -3135,7 +3174,7 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	let impuestoTotal = 0;
 	let units = 0;
 
-	const lines = resolved.map(({ product, quantity, unitCost, taxRate, taxAmount }) => {
+	const lines = resolved.map(({ product, quantity, unitCost, taxRate, taxAmount }, indice) => {
 		const subtotal = round2(unitCost * quantity);
 		subtotalTotal = round2(subtotalTotal + subtotal);
 		impuestoTotal = round2(impuestoTotal + taxAmount);
@@ -3146,7 +3185,16 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 		// segundo promedio tiene que ver las existencias que dejó el primero
 		// (RN-54).
 		product.cost = promedioPonderado(product.stock, Number(product.cost ?? 0), quantity, unitCost);
-		product.stock += quantity;
+		moverStock(companyId, {
+			product,
+			delta: quantity,
+			kind: 'entry',
+			unit_cost: unitCost,
+			source_type: 'stock_entry',
+			source_id: id,
+			source_line: indice + 1,
+			user_id: userId
+		});
 
 		return {
 			id_product: product.id_product,
@@ -3249,7 +3297,7 @@ route('POST', '/inventory/entry', ({ body, companyId }) => {
 	};
 });
 
-route('POST', '/inventory/entry/:id/cancel', ({ params, body, companyId }) => {
+route('POST', '/inventory/entry/:id/cancel', ({ params, body, companyId, userId }) => {
 	exigirModulo(companyId, 'inventory'); // QA-01
 	const db = getDb(companyId);
 	const entry = db.stock_entries.find((e) => e.id === Number(params[0]));
@@ -3280,13 +3328,301 @@ route('POST', '/inventory/entry/:id/cancel', ({ params, body, companyId }) => {
 		}
 	}
 
-	for (const line of entry.lines) {
+	// La reversión es un movimiento propio con signo contrario (RN-98), al
+	// costo de la entrada; el promedio no se deshace.
+	entry.lines.forEach((line, i) => {
 		const product = db.products.find((p) => p.id_product === line.id_product);
-		if (product) product.stock -= line.quantity;
-	}
+		if (product)
+			moverStock(companyId, {
+				product,
+				delta: -line.quantity,
+				kind: 'entry_void',
+				unit_cost: Number(line.unit_cost ?? 0),
+				source_type: 'stock_entry',
+				source_id: entry.id,
+				source_line: i + 1,
+				user_id: userId
+			});
+	});
 	entry.status = 'anulada';
 	persist();
 	return { message: 'entry_cancelled', id_entry: entry.id };
+});
+
+
+// --------------------------------------------- F15: kárdex, motivos y salidas
+
+function movimientosDe(companyId: number): StockMovement[] {
+	const empresa = getEmpresa(companyId);
+	if (!empresa.stock_movements) empresa.stock_movements = [];
+	return empresa.stock_movements;
+}
+
+function motivosDe(companyId: number): StockReason[] {
+	const empresa = getEmpresa(companyId);
+	// Un archivo de antes de F15 no los trae: nacen los de fábrica, como en una
+	// compañía recién dada de alta.
+	if (!empresa.stock_reasons) empresa.stock_reasons = motivosDeFabrica();
+	return empresa.stock_reasons;
+}
+
+function salidasDe(companyId: number): StockExit[] {
+	const empresa = getEmpresa(companyId);
+	if (!empresa.stock_exits) empresa.stock_exits = [];
+	return empresa.stock_exits;
+}
+
+/** La sucursal de la sesión. El simulado tiene una por compañía hasta T-1505. */
+function sucursalDe(companyId: number): number {
+	return getDb(companyId).branches?.[0]?.id ?? 1;
+}
+
+/**
+ * El único escritor de existencias del simulado, como `MoveStock` en el backend
+ * (plan §15.1): mueve `stock` y deja la fila del kárdex con antes y después
+ * (RN-98). Lo que no hay no sale, con el mismo código que la venta.
+ */
+function moverStock(
+	companyId: number,
+	args: {
+		product: { id_product: number; name: string; stock: number; cost?: number };
+		delta: number;
+		kind: StockMovementKind;
+		unit_cost: number;
+		source_type: string;
+		source_id: number;
+		source_line?: number | null;
+		user_id: number | null;
+	}
+): StockMovement {
+	const { product, delta } = args;
+	const antes = product.stock;
+	const despues = antes + delta;
+	if (despues < 0) {
+		fail(400, 'insufficient_stock', {
+			product_id: product.id_product,
+			product: product.name,
+			available: antes,
+			requested: -delta
+		});
+	}
+	product.stock = despues;
+	const movimiento: StockMovement = {
+		id: nextId('stock_movements'),
+		product_id: product.id_product,
+		branch_id: sucursalDe(companyId),
+		kind: args.kind,
+		quantity: delta,
+		before_qty: antes,
+		after_qty: despues,
+		unit_cost: round2(args.unit_cost),
+		// El promedio del producto DESPUÉS del movimiento (RN-103): la entrada ya
+		// escribió el costo antes de llamar acá, como `RegisterStockEntry`.
+		avg_cost_after: round2(Number(product.cost ?? 0)),
+		lot_id: null,
+		source_type: args.source_type,
+		source_id: args.source_id,
+		source_line: args.source_line ?? null,
+		user_id: args.user_id ?? 0,
+		moved_at: nowIso()
+	};
+	movimientosDe(companyId).push(movimiento);
+	return movimiento;
+}
+
+route('GET', '/inventory/kardex', ({ query, companyId }) => {
+	const productId = query.get('product_id');
+	const sourceType = query.get('source_type');
+	const sourceId = query.get('source_id');
+	if (!productId && !(sourceType && sourceId)) fail(400, 'kardex_filter_required');
+
+	let filas = movimientosDe(companyId);
+	if (productId) filas = filas.filter((m) => m.product_id === Number(productId));
+	if (sourceType && sourceId)
+		filas = filas.filter((m) => m.source_type === sourceType && m.source_id === Number(sourceId));
+	const branchId = query.get('branch_id');
+	if (branchId) filas = filas.filter((m) => m.branch_id === Number(branchId));
+	// Por producto, del más reciente al más viejo; por documento, en el orden en
+	// que se anotó. Igual que `SqlAlchemyKardex`.
+	return productId
+		? [...filas].sort((a, b) => b.moved_at.localeCompare(a.moved_at) || b.id - a.id)
+		: [...filas].sort((a, b) => a.id - b.id);
+});
+
+route('GET', '/inventory/levels', ({ query, companyId }) => {
+	const productId = query.get('product_id');
+	const branchId = query.get('branch_id');
+	if (!productId && !branchId) fail(400, 'kardex_filter_required');
+
+	// El nivel es la suma de los movimientos por (producto, sucursal): el
+	// simulado no tiene caché que mantener, y así no puede separarse del kárdex.
+	const niveles = new Map<string, { product_id: number; branch_id: number; quantity: number }>();
+	for (const m of movimientosDe(companyId)) {
+		if (productId && m.product_id !== Number(productId)) continue;
+		if (branchId && m.branch_id !== Number(branchId)) continue;
+		const clave = `${m.product_id}|${m.branch_id}`;
+		const nivel = niveles.get(clave) ?? { product_id: m.product_id, branch_id: m.branch_id, quantity: 0 };
+		nivel.quantity += m.quantity;
+		niveles.set(clave, nivel);
+	}
+	return [...niveles.values()].sort(
+		(a, b) => a.product_id - b.product_id || a.branch_id - b.branch_id
+	);
+});
+
+route('GET', '/inventory/reasons', ({ companyId }) =>
+	[...motivosDe(companyId)].sort((a, b) => a.id - b.id)
+);
+
+route('POST', '/inventory/reasons', ({ body, companyId }) => {
+	exigirModulo(companyId, 'inventory');
+	const code = String(body?.code ?? '').trim();
+	const name = String(body?.name ?? '').trim();
+	if (motivosDe(companyId).some((m) => m.code === code))
+		fail(400, 'reason_code_taken', { reason_code: code });
+	const motivo: StockReason = { id: nextId('stock_reasons'), code, name, is_system: false, is_active: true };
+	motivosDe(companyId).push(motivo);
+	persist();
+	return motivo;
+});
+
+route('PUT', '/inventory/reasons/:id', ({ params, body, companyId }) => {
+	exigirModulo(companyId, 'inventory');
+	const id = Number(params[0]);
+	const motivo = motivosDe(companyId).find((m) => m.id === id);
+	if (!motivo) fail(404, 'reason_not_found', { reason_id: id });
+	// El de la toma física no se apaga (RN-100).
+	if (body?.is_active === false && motivo.is_system) fail(400, 'reason_is_system', { reason_id: id });
+	if (typeof body?.name === 'string' && body.name.trim()) motivo.name = body.name.trim();
+	if (typeof body?.is_active === 'boolean') motivo.is_active = body.is_active;
+	persist();
+	return motivo;
+});
+
+route('GET', '/inventory/exits', ({ companyId }) =>
+	[...salidasDe(companyId)].sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id)
+);
+
+route('POST', '/inventory/exits', ({ body, companyId, userId }) => {
+	exigirModulo(companyId, 'inventory');
+	const db = getDb(companyId);
+	const requested: any[] = Array.isArray(body?.lines) ? body.lines : [];
+	if (!requested.length) fail(400, 'empty_exit');
+	requested.forEach((l, i) => {
+		if (!Number(l?.id_product) || !(Number(l?.quantity) > 0)) fail(400, 'invalid_exit_line', { line: i + 1 });
+	});
+
+	// El motivo, antes de tocar nada: existe, está activo y no es el de la toma.
+	const reasonId = Number(body?.reason_id ?? 0);
+	const motivo = motivosDe(companyId).find((m) => m.id === reasonId);
+	if (!motivo) fail(404, 'reason_not_found', { reason_id: reasonId });
+	if (!motivo.is_active) fail(400, 'reason_inactive', { reason_id: reasonId });
+	if (motivo.is_system) fail(400, 'reason_is_system', { reason_id: reasonId });
+
+	// Al promedio del momento (RN-99); sin compras, a cero.
+	const lineas = requested.map((l) => {
+		const product = db.products.find((p) => p.id_product === Number(l.id_product));
+		if (!product) fail(404, 'product_not_found', { product_id: Number(l.id_product) });
+		const quantity = Math.trunc(Number(l.quantity));
+		const unitCost = round2(Number(product.cost ?? 0));
+		return { product, quantity, unit_cost: unitCost, subtotal: round2(unitCost * quantity) };
+	});
+	// Lo que no hay no sale, comprobado antes de mover nada: el simulado no
+	// tiene transacción que revertir a medias.
+	for (const l of lineas) {
+		if (l.product.stock < l.quantity)
+			fail(400, 'insufficient_stock', {
+				product_id: l.product.id_product,
+				product: l.product.name,
+				available: l.product.stock,
+				requested: l.quantity
+			});
+	}
+
+	const id = nextId('stock_exits');
+	const createdAt = nowIso();
+	lineas.forEach((l, i) =>
+		moverStock(companyId, {
+			product: l.product,
+			delta: -l.quantity,
+			kind: 'exit',
+			unit_cost: l.unit_cost,
+			source_type: 'stock_exit',
+			source_id: id,
+			source_line: i + 1,
+			user_id: userId
+		})
+	);
+	const total = round2(lineas.reduce((t, l) => t + l.subtotal, 0));
+	const salida: StockExit = {
+		id,
+		branch_id: sucursalDe(companyId),
+		reason_id: motivo.id,
+		reason_code: motivo.code,
+		reason_name: motivo.name,
+		user_id: userId ?? 0,
+		user_name: null,
+		created_at: createdAt,
+		notes: String(body?.notes ?? '').trim() || null,
+		status: 'applied',
+		total_cost: total,
+		items_count: lineas.reduce((t, l) => t + l.quantity, 0),
+		voided_at: null,
+		void_reason: null,
+		lines: lineas.map((l) => ({
+			id_product: l.product.id_product,
+			name: l.product.name,
+			quantity: l.quantity,
+			unit_cost: l.unit_cost,
+			subtotal: l.subtotal,
+			lot_id: null
+		}))
+	};
+	salidasDe(companyId).push(salida);
+
+	// Del inventario al gasto, con la salida (RN-59). Apagado, no hace nada.
+	asentar(companyId, () =>
+		postStockExit(companyId, { id, date: createdAt.slice(0, 10) }, total, userId ?? 0)
+	);
+	persist();
+	return { message: 'exit_registered', id_exit: id, units: salida.items_count, total_cost: total };
+});
+
+route('POST', '/inventory/exits/:id/cancel', ({ params, body, companyId, userId }) => {
+	exigirModulo(companyId, 'inventory');
+	const db = getDb(companyId);
+	const id = Number(params[0]);
+	const salida = salidasDe(companyId).find((s) => s.id === id);
+	if (!salida) fail(404, 'exit_not_found', { exit_id: id });
+	if (salida.status === 'voided') fail(400, 'exit_cancelled', { exit_id: id });
+	// El motivo es obligatorio siempre (RN-99): toda salida nació con motivo.
+	const motivo = String(body?.reason ?? '').trim();
+	if (!motivo) fail(400, 'void_reason_required');
+
+	// Repone al costo de la salida, no al promedio de hoy (RN-98).
+	salida.lines.forEach((l, i) => {
+		const product = db.products.find((p) => p.id_product === l.id_product);
+		if (product)
+			moverStock(companyId, {
+				product,
+				delta: l.quantity,
+				kind: 'exit_void',
+				unit_cost: l.unit_cost,
+				source_type: 'stock_exit',
+				source_id: id,
+				source_line: i + 1,
+				user_id: userId
+			});
+	});
+	const ahora = nowIso();
+	salida.status = 'voided';
+	salida.voided_at = ahora;
+	salida.void_reason = motivo;
+	asentar(companyId, () =>
+		postStockExit(companyId, { id, date: ahora.slice(0, 10) }, salida.total_cost, userId ?? 0, true)
+	);
+	persist();
+	return { message: 'exit_voided', id_exit: id, units_returned: salida.items_count };
 });
 
 // -------------------------------------------------------------- configuración

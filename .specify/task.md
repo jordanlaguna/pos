@@ -5669,7 +5669,7 @@ negocio.
 
       **Verificación:** `spec-reviewer` y `plan-reviewer` sin observaciones.
       **Hecha el 2026-10-03.**
-- [ ] **T-1502** El kárdex y las salidas con motivo (puntos 1 y 2; RN-98,
+- [x] **T-1502** El kárdex y las salidas con motivo (puntos 1 y 2; RN-98,
       RN-99, RN-105; RF-87, RF-88, RF-94; plan §15.1 a §15.3). Migración 023 con `stock_movements`,
       `stock_levels`, `stock_reasons`, `stock_exits` y la apertura de lo que
       había; `domain/inventory.py` con `move`; `MoveStock` reemplaza a
@@ -5710,10 +5710,27 @@ negocio.
       la ficha en casos de uso: `domain/product.py` (el código manda sobre la
       tarifa, qué vacía un PUT parcial, `stock` no se edita),
       `RegisterProduct`, `UpdateProduct` y `DeleteProduct` con
-      `CategoryRepository`; `crud_product.py` queda de adaptador. **Falta
-      solo el POS:** `/inventario/kardex/[id]`, `/inventario/salidas`,
-      `/inventario/motivos`, y el simulado de los dos `GET` de lectura y de
-      las seis rutas de motivos y salidas.
+      `CategoryRepository`; `crud_product.py` queda de adaptador.
+
+      **Avance del 2026-10-10 (tercer tramo, el POS).** Las pantallas
+      `/inventario/kardex/[id]` (con enlace desde cada fila del inventario),
+      `/inventario/salidas` con su registro en `/salidas/nueva` y su
+      anulación con motivo, y `/inventario/motivos`; los catálogos
+      `kardex.json` y `exits.json` en los tres idiomas, declarados en
+      `project.inlang/settings.json`. El simulado gana `moverStock` —el
+      único escritor de existencias, con su fila en el kárdex— en la venta,
+      la devolución, la entrada, su anulación y el alta de producto; las
+      nueve rutas nuevas; los motivos de fábrica y una apertura por producto
+      en la semilla (`SEED_VERSION` 19); y `postStockExit` en su libro.
+      `tests/e2e/salidas.spec.ts` recorre motivo, salida, kárdex y
+      anulación.
+
+      **Hecha el 2026-10-10**, en tres tramos: `tests/test_inventario.py`
+      compara `products.stock` con la suma de `stock_levels` después de
+      vender, devolver, entrar y anular; `tests/test_salidas.py` lo hace con
+      la salida y su anulación, con el asiento y su inverso; la ficha ya no
+      edita la existencia (`stock_not_editable`) ni borra un producto con
+      historia (`product_has_movements`).
 - [ ] **T-1503** Toma física (punto 3; RN-100; RF-89). `stock_counts` y sus líneas
       con `system_qty` al contar; abrir, contar, aplicar y descartar; el
       asiento de la diferencia; `/inventario/toma-fisica`.

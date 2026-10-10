@@ -1358,3 +1358,92 @@ export interface ApiFailure {
 	message: string;
 	fields?: Record<string, string>;
 }
+
+// ---------------------------------------------------------------------------
+// F15: el kárdex y las salidas con motivo (T-1502)
+// ---------------------------------------------------------------------------
+
+/** Los once tipos de movimiento del kárdex (RN-98), tal como los guarda el backend. */
+export type StockMovementKind =
+	| 'opening'
+	| 'sale'
+	| 'sale_void'
+	| 'return'
+	| 'entry'
+	| 'entry_void'
+	| 'exit'
+	| 'exit_void'
+	| 'count'
+	| 'transfer_out'
+	| 'transfer_in';
+
+/** Una fila del kárdex: nunca se edita ni se borra. */
+export interface StockMovement {
+	id: number;
+	product_id: number;
+	branch_id: number;
+	kind: StockMovementKind;
+	/** Con signo: negativo baja. */
+	quantity: number;
+	/** En ESTA sucursal, no el total del producto (RN-102). */
+	before_qty: number;
+	after_qty: number;
+	/** Con el que se valoró; cero es «sin costo» (RN-98). */
+	unit_cost: number;
+	/** El promedio del producto después de este movimiento (RN-103). */
+	avg_cost_after: number;
+	lot_id: number | null;
+	source_type: string;
+	source_id: number;
+	source_line: number | null;
+	user_id: number;
+	moved_at: string;
+}
+
+/** La existencia de un producto en una sucursal (RN-102). */
+export interface StockLevel {
+	product_id: number;
+	branch_id: number;
+	quantity: number;
+}
+
+/** Por qué sale la mercadería (RN-99). Se apaga, no se borra. */
+export interface StockReason {
+	id: number;
+	code: string;
+	name: string;
+	/** El de la toma física (RN-100): no se elige en una salida ni se apaga. */
+	is_system: boolean;
+	is_active: boolean;
+}
+
+export interface StockExitLine {
+	id_product: number;
+	name: string;
+	quantity: number;
+	/** El promedio al salir (RN-99). */
+	unit_cost: number;
+	subtotal: number;
+	lot_id: number | null;
+}
+
+export type StockExitStatus = 'applied' | 'voided';
+
+/** Una salida con motivo. No se edita: se anula con motivo y bitácora. */
+export interface StockExit {
+	id: number;
+	branch_id: number;
+	reason_id: number;
+	reason_code: string;
+	reason_name: string;
+	user_id: number;
+	user_name?: string | null;
+	created_at: string;
+	notes: string | null;
+	status: StockExitStatus;
+	total_cost: number;
+	items_count: number;
+	voided_at: string | null;
+	void_reason: string | null;
+	lines: StockExitLine[];
+}

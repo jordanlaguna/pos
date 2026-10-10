@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import type { StockExit, StockMovement, StockReason } from '$lib/domain/types';
 import { dirname, resolve } from 'node:path';
 import type { DocumentState, StopReason,
 	AmountNote,
@@ -232,6 +233,14 @@ export interface MockCompanyData {
 	 * objeto. Un archivo de antes de F12 no lo trae y nace vacío al tocarlo.
 	 */
 	payroll?: MockPayrollData;
+	/**
+	 * El inventario a fondo (F15, T-1502): los motivos de salida, las salidas
+	 * y el kárdex. Un archivo de antes de F15 no los trae; `SEED_VERSION` lo
+	 * resiembra, y las tres nacen al tocarlas por si acaso.
+	 */
+	stock_reasons?: StockReason[];
+	stock_exits?: StockExit[];
+	stock_movements?: StockMovement[];
 }
 
 /** Un empleado tal como se guarda; el contrato vigente se le pega al salir. */
@@ -578,7 +587,10 @@ const DB_PATH = resolve(
 // 17 (F12, T-1214): la compañía de demostración trae su planilla —dos
 // jornadas, dos puestos, una póliza y dos empleados con contrato— y los
 // contadores que siguen. Un archivo de la 16 no tiene nada de eso.
-const SEED_VERSION = 18;
+// 19 (F15, T-1502): los seis motivos de salida con los que nace toda compañía
+// y una apertura en el kárdex por cada producto con existencia. Un archivo de
+// la 18 tendría existencias sin movimiento que las explique.
+const SEED_VERSION = 19;
 
 /** La compañía del negocio de demostración. Es la que tiene datos. */
 export const COMPANIA_DEMO = 1;
@@ -666,7 +678,59 @@ export function getDb(companyId: number = COMPANIA_DEMO): MockDb {
 	return { ...state, ...getEmpresa(companyId) };
 }
 
-export function empresaVacia(): MockCompanyData {
+/**
+ * Los motivos de salida con los que nace toda compañía (F15, RN-99), como
+ * `crud_company._motivos` en el backend. Con `primerId` los ids van seguidos
+ * desde ahí —es lo que usa la semilla, que todavía no tiene contadores—; sin
+ * él los pide al contador, que es lo que hace una compañía creada en vivo.
+ */
+const MOTIVOS_DE_FABRICA: [string, string, boolean][] = [
+	['shrinkage', 'Merma', false],
+	['damage', 'Daño', false],
+	['expired', 'Vencido', false],
+	['internal_use', 'Consumo interno', false],
+	['sample', 'Muestra', false],
+	['count', 'Toma física', true]
+];
+
+export function motivosDeFabrica(primerId?: number): StockReason[] {
+	return MOTIVOS_DE_FABRICA.map(([code, name, is_system], i) => ({
+		id: primerId === undefined ? nextId('stock_reasons') : primerId + i,
+		code,
+		name,
+		is_system,
+		is_active: true
+	}));
+}
+
+/**
+ * La apertura del kárdex de cada producto con existencia (RN-105): es lo que
+ * la migración 023 hace con una base que ya tenía mercadería.
+ */
+function aperturasDe(products: Product[]): StockMovement[] {
+	let id = 0;
+	return products
+		.filter((p) => p.stock > 0)
+		.map((p) => ({
+			id: ++id,
+			product_id: p.id_product,
+			branch_id: 1,
+			kind: 'opening',
+			quantity: p.stock,
+			before_qty: 0,
+			after_qty: p.stock,
+			unit_cost: 0,
+			avg_cost_after: Number(p.cost ?? 0),
+			lot_id: null,
+			source_type: 'product',
+			source_id: p.id_product,
+			source_line: null,
+			user_id: 1,
+			moved_at: p.created_at
+		}));
+}
+
+export function empresaVacia(motivos: StockReason[] = motivosDeFabrica()): MockCompanyData {
 	return {
 		clients: [],
 		categories: [],
@@ -691,7 +755,12 @@ export function empresaVacia(): MockCompanyData {
 		// acordarse de dar.
 		branches: [{ id: 1, codigo: '001', nombre: 'Casa matriz', activa: true }],
 		terminals: [{ id: 1, branch_id: 1, codigo: '00001', nombre: 'Caja 1', activa: true }],
-		payroll: planillaVacia()
+		payroll: planillaVacia(),
+		// F15: los motivos de fábrica y nada en el kárdex, como una compañía
+		// recién dada de alta.
+		stock_reasons: motivos,
+		stock_exits: [],
+		stock_movements: []
 	};
 }
 
@@ -1179,9 +1248,14 @@ function seed(): MockRoot {
 				branches: [{ id: 1, codigo: '001', nombre: 'Casa matriz', activa: true }],
 				terminals: [
 					{ id: 1, branch_id: 1, codigo: '00001', nombre: 'Caja 1', activa: true }
-				]
+				],
+				// F15: los motivos del 1 al 6 y la apertura de cada producto con
+				// existencia, que es lo que explica el kárdex del demo.
+				stock_reasons: motivosDeFabrica(1),
+				stock_exits: [],
+				stock_movements: aperturasDe(products)
 			},
-			2: empresaVacia()
+			2: empresaVacia(motivosDeFabrica(7))
 		},
 		counters: {
 			persons: persons.length,
@@ -1212,7 +1286,12 @@ function seed(): MockRoot {
 			// En 1 porque `empresaVacia` siembra la sucursal y la caja con ese id;
 			// en 0, la primera que se cree desde la pantalla nacería repetida.
 			branches: 1,
-			terminals: 1
+			terminals: 1,
+			// F15: seis motivos por compañía sembrada, y una apertura por producto
+			// con existencia.
+			stock_reasons: 12,
+			stock_exits: 0,
+			stock_movements: products.filter((p) => p.stock > 0).length
 		}
 	};
 

@@ -95,5 +95,7 @@
   "inventory_tax_code_11": "0 % sin derecho a crédito",
   "inventory_label_tariff_heading": "Partida arancelaria",
   "inventory_tariff_heading_hint": "12 dígitos. Solo hace falta para venderle a un cliente del extranjero, con factura de exportación.",
-  "inventory_stock_readonly_hint": "La existencia se mueve con una entrada, una salida o una toma física, no desde la ficha."
+  "inventory_stock_readonly_hint": "La existencia se mueve con una entrada, una salida o una toma física, no desde la ficha.",
+  "inventory_exits": "Salidas",
+  "inventory_kardex_of": "Kárdex de {product}"
 }
