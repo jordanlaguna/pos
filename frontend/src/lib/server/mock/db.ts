@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import type { StockExit, StockMovement, StockReason } from '$lib/domain/types';
+import type { StockCount, StockExit, StockMovement, StockReason } from '$lib/domain/types';
 import { dirname, resolve } from 'node:path';
 import type { DocumentState, StopReason,
 	AmountNote,
@@ -241,6 +241,8 @@ export interface MockCompanyData {
 	stock_reasons?: StockReason[];
 	stock_exits?: StockExit[];
 	stock_movements?: StockMovement[];
+	/** Las tomas físicas (T-1503). Nacen al tocarlas, como las salidas. */
+	stock_counts?: StockCount[];
 }
 
 /** Un empleado tal como se guarda; el contrato vigente se le pega al salir. */
@@ -760,7 +762,8 @@ export function empresaVacia(motivos: StockReason[] = motivosDeFabrica()): MockC
 		// recién dada de alta.
 		stock_reasons: motivos,
 		stock_exits: [],
-		stock_movements: []
+		stock_movements: [],
+		stock_counts: []
 	};
 }
 
@@ -1253,7 +1256,8 @@ function seed(): MockRoot {
 				// existencia, que es lo que explica el kárdex del demo.
 				stock_reasons: motivosDeFabrica(1),
 				stock_exits: [],
-				stock_movements: aperturasDe(products)
+				stock_movements: aperturasDe(products),
+				stock_counts: []
 			},
 			2: empresaVacia(motivosDeFabrica(7))
 		},
@@ -1291,7 +1295,8 @@ function seed(): MockRoot {
 			// con existencia.
 			stock_reasons: 12,
 			stock_exits: 0,
-			stock_movements: products.filter((p) => p.stock > 0).length
+			stock_movements: products.filter((p) => p.stock > 0).length,
+			stock_counts: 0
 		}
 	};
 

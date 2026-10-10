@@ -184,6 +184,10 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         },
     )
 
+    # F15: una toma física abierta sobre la categoría propia, que no estorba
+    # a las de otras categorías ni de otras corridas (RN-100).
+    toma = cliente.ok("POST", "/inventory/counts", {"category_id": categoria["id"]})
+
     return {
         "categoria_id": categoria["id"],
         "producto": producto,
@@ -194,6 +198,7 @@ def _crear_mundo(cliente: Api, etiqueta: str) -> dict:
         "compra_id": compra["id_entry"],
         "motivo_id": motivo["id"],
         "salida_id": salida["id_exit"],
+        "toma_id": toma["id_count"],
         "proveedor_id": proveedor["id"],
         "company_id": cliente.company_id,  # type: ignore[attr-defined]
         "user_id": cliente.user_id,  # type: ignore[attr-defined]
@@ -233,6 +238,12 @@ RUTAS_POR_ID = [
     # mercadería al inventario de otro negocio.
     ("PUT", "/inventory/reasons/{motivo_id}", {"name": "Secuestrado"}),
     ("POST", "/inventory/exits/{salida_id}/cancel", {"reason": "ajena"}),
+    # La toma física ajena: verla, contarle, aplicarla —que movería existencias
+    # de otro negocio— y descartarla.
+    ("GET", "/inventory/counts/{toma_id}", None),
+    ("PUT", "/inventory/counts/{toma_id}/lines", {"id_product": 1, "counted_qty": 0}),
+    ("POST", "/inventory/counts/{toma_id}/apply", None),
+    ("POST", "/inventory/counts/{toma_id}/discard", None),
     # Abonarle a la compra de otra compañía: sin el filtro, le bajaría el saldo
     # a una factura que no es suya y, si fuera en efectivo, le sacaría la plata
     # a su caja.
@@ -264,6 +275,7 @@ class TestNoSeVeLoDeLaOtraCompania:
             proveedor_id=mundo_b["proveedor_id"],
             motivo_id=mundo_b["motivo_id"],
             salida_id=mundo_b["salida_id"],
+            toma_id=mundo_b["toma_id"],
         )
         estado, respuesta = api.call(metodo, ruta, cuerpo)
 
@@ -364,6 +376,7 @@ LISTAS = [
     ("/inventory/entries", "id", "entrada_id"),
     ("/inventory/reasons", "id", "motivo_id"),
     ("/inventory/exits", "id", "salida_id"),
+    ("/inventory/counts", "id", "toma_id"),
     ("/categories/categories_list", "id", "categoria_id"),
     ("/suppliers", "id", "proveedor_id"),
 ]
@@ -903,6 +916,10 @@ def test_ninguna_ruta_de_negocio_quedo_sin_probar():
         "/purchases/{entrada_id}/payments": "/purchases/{entry_id}/payments",
         "/inventory/reasons/{motivo_id}": "/inventory/reasons/{reason_id}",
         "/inventory/exits/{salida_id}/cancel": "/inventory/exits/{exit_id}/cancel",
+        "/inventory/counts/{toma_id}": "/inventory/counts/{count_id}",
+        "/inventory/counts/{toma_id}/lines": "/inventory/counts/{count_id}/lines",
+        "/inventory/counts/{toma_id}/apply": "/inventory/counts/{count_id}/apply",
+        "/inventory/counts/{toma_id}/discard": "/inventory/counts/{count_id}/discard",
     }
     cubiertas = {equivalencias.get(r, r) for r in cubiertas}
 

@@ -208,6 +208,14 @@ CODES: frozenset[str] = frozenset(
         "exit_cancelled",
         "empty_exit",
         "invalid_exit_line",
+        # La toma física (RN-100). `count_already_open` trae la sucursal y la
+        # categoría de la que ya está abierta; `count_outside_scope`, el
+        # producto y su categoría.
+        "count_not_found",
+        "count_not_open",
+        "count_already_open",
+        "count_outside_scope",
+        "count_has_no_lines",
         "category_name_taken",
         # `tax_code` es el código que llegó. Los válidos son los once de la nota
         # 8.1 del anexo de Hacienda, y no se corrigen solos: un `"8"` puede ser
@@ -568,9 +576,13 @@ DONE: frozenset[str] = frozenset(
         "return_registered",
         "entry_registered",
         "entry_cancelled",
-        # F15: la salida con motivo y su anulación.
+        # F15: la salida con motivo y su anulación, y la toma física.
         "exit_registered",
         "exit_voided",
+        "count_opened",
+        "count_line_recorded",
+        "count_applied",
+        "count_discarded",
         "payment_registered",
         "role_updated",
     }

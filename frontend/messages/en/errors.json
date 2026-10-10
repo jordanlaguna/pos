@@ -162,6 +162,11 @@
 	"api_exit_cancelled": "That exit is already voided.",
 	"api_empty_exit": "The exit has no lines.",
 	"api_invalid_exit_line": "Line {line} of the exit does not have a valid quantity.",
+	"api_count_not_found": "The stock count does not exist.",
+	"api_count_not_open": "That stock count is already closed ({status}).",
+	"api_count_already_open": "There is already an open stock count covering those products (#{count_id}). Apply or discard it first.",
+	"api_count_outside_scope": "Product {product_id} is not within what this stock count covers.",
+	"api_count_has_no_lines": "The stock count has nothing counted. Count at least one product or discard it.",
 	"api_category_name_taken": "There is already a category named {name}.",
 	"api_invalid_tax_code": "Tax rate code {tax_code} is not in the Hacienda catalogue.",
 

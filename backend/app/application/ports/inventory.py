@@ -143,6 +143,64 @@ class StockExitRepository(Protocol):
         ...
 
 
+class CountSnapshot(Protocol):
+    """Una toma física (RN-100): dónde, qué y en qué estado."""
+
+    id: int
+    branch_id: int
+    #: Nulo es toda la sucursal; una raíz incluye a sus hijas.
+    category_id: int | None
+    #: 'open' | 'applied' | 'discarded'
+    status: str
+
+
+class CountLineSnapshot(Protocol):
+    product_id: int
+    lot_id: int | None
+    #: Lo que decía el sistema AL CONTAR.
+    system_qty: int
+    counted_qty: int
+
+
+class StockCountRepository(Protocol):
+    def get(self, count_id: int) -> CountSnapshot | None: ...
+
+    def open_in_branch(self, branch_id: int) -> list[CountSnapshot]:
+        """Las abiertas de esa sucursal: con ellas se decide si cabe otra."""
+        ...
+
+    def add(
+        self,
+        *,
+        branch_id: int,
+        category_id: int | None,
+        opened_by: int,
+        opened_at: datetime,
+        notes: str | None,
+    ) -> int: ...
+
+    def lines_of(self, count_id: int) -> list[CountLineSnapshot]: ...
+
+    def record_line(
+        self,
+        count_id: int,
+        *,
+        product_id: int,
+        lot_id: int | None,
+        system_qty: int,
+        counted_qty: int,
+        counted_at: datetime,
+        counted_by: int,
+    ) -> None:
+        """Guarda lo contado. Si el (producto, lote) ya se contó, lo reemplaza:
+        volver a contar es corregir, no sumar."""
+        ...
+
+    def close(self, count_id: int, *, status: str, closed_by: int, closed_at: datetime) -> None:
+        """Aplicada o descartada: ninguna de las dos se vuelve a abrir."""
+        ...
+
+
 class NullKardex:
     """El kárdex que no anota nada.
 

@@ -108,6 +108,11 @@ class SqlAlchemyCategoryRepository:
             id=fila.id, name=fila.name, is_active=bool(fila.is_active), active_children=activas
         )
 
+    def tree(self) -> dict[int, int | None]:
+        from app.models.model_categories import Category
+
+        return {fila.id: fila.parent_id for fila in self._db.query(Category).all()}
+
 
 class SqlAlchemyProductRepository:
     def __init__(self, db: Session) -> None:

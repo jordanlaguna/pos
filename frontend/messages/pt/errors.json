@@ -162,6 +162,11 @@
 	"api_exit_cancelled": "Essa saída já está estornada.",
 	"api_empty_exit": "A saída não tem linhas.",
 	"api_invalid_exit_line": "A linha {line} da saída não tem uma quantidade válida.",
+	"api_count_not_found": "O inventário físico não existe.",
+	"api_count_not_open": "Esse inventário físico já está fechado ({status}).",
+	"api_count_already_open": "Já existe um inventário físico aberto que cobre esses produtos (o {count_id}). Aplique-o ou descarte-o primeiro.",
+	"api_count_outside_scope": "O produto {product_id} não está no que este inventário físico cobre.",
+	"api_count_has_no_lines": "O inventário físico não tem nada contado. Conte pelo menos um produto ou descarte-o.",
 	"api_category_name_taken": "Já existe uma categoria chamada {name}.",
 	"api_invalid_tax_code": "O código de tarifa {tax_code} não está no catálogo da Fazenda.",
 

@@ -56,8 +56,9 @@ PUERTOS = [
             "has_sales",
         },
     ),
-    # T-1502: dónde se cuelga un producto (RN-6). Una sola pregunta.
-    (repositories.CategoryRepository, {"get"}),
+    # T-1502: dónde se cuelga un producto (RN-6); T-1503: el árbol entero, para
+    # saber si un producto cae en el alcance de una toma (RN-100).
+    (repositories.CategoryRepository, {"get", "tree"}),
     # F15: el inventario (T-1502). Tres puertos por tres razones de cambio:
     # dónde está cada cosa, anotar lo que pasó, y leerlo.
     (
@@ -70,6 +71,12 @@ PUERTOS = [
     # guarda, se lee para revertirla y se marca anulada; no se edita nunca.
     (inventory.StockReasonRepository, {"get"}),
     (inventory.StockExitRepository, {"get", "add", "lines_of", "mark_voided"}),
+    # La toma física (RN-100): abrir, saber cuáles están abiertas en la
+    # sucursal, contar —reemplazando lo ya contado— y cerrar.
+    (
+        inventory.StockCountRepository,
+        {"get", "open_in_branch", "add", "lines_of", "record_line", "close"},
+    ),
     (repositories.SupplierRepository, {"get"}),
     (
         repositories.StockEntryRepository,
@@ -223,6 +230,8 @@ PUERTOS = [
     (inventory.ReasonSnapshot, set()),
     (inventory.ExitSnapshot, set()),
     (inventory.ExitLineSnapshot, set()),
+    (inventory.CountSnapshot, set()),
+    (inventory.CountLineSnapshot, set()),
     (payroll.ScheduleSnapshot, set()),
     (payroll.EmployeeSnapshot, set()),
     (payroll.ContractSnapshot, set()),

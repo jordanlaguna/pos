@@ -169,3 +169,92 @@ class TestLaLineaDeSalida:
     def test_un_costo_negativo_tampoco(self):
         with pytest.raises(InvalidQuantity):
             ExitLine(ARROZ, 1, Money(-1))
+
+
+# --------------------------------------------------------- la toma física
+
+from app.domain.inventory import (  # noqa: E402
+    COUNT_APPLIED,
+    COUNT_DISCARDED,
+    COUNT_OPEN,
+    CountScope,
+    check_count_scope,
+    check_counted_quantity,
+    count_difference,
+    scope_includes,
+    scopes_overlap,
+)
+from app.domain.errors import OutsideCountScope  # noqa: E402
+
+ABARROTES, BEBIDAS, CERVEZAS, VINOS, YAMAHA = 1, 2, 3, 4, 5
+#: Dos niveles (RN-5): Bebidas tiene a Cervezas y Vinos; las demás son raíces.
+ARBOL = {ABARROTES: None, BEBIDAS: None, CERVEZAS: BEBIDAS, VINOS: BEBIDAS, YAMAHA: None}
+
+
+class TestLaDiferencia:
+    def test_contar_de_menos_es_negativa(self):
+        assert count_difference(10, 8) == -2
+
+    def test_contar_de_mas_es_positiva(self):
+        assert count_difference(10, 12) == 2
+
+    def test_cuadrar_es_cero(self):
+        assert count_difference(10, 10) == 0
+
+    @pytest.mark.parametrize("contado", [-1, 1.5, True, "8"])
+    def test_lo_contado_es_un_entero_de_cero_para_arriba(self, contado):
+        with pytest.raises(InvalidQuantity):
+            count_difference(10, contado)
+        with pytest.raises(InvalidQuantity):
+            check_counted_quantity(contado)
+
+    def test_cero_contado_vale(self):
+        assert count_difference(3, 0) == -3
+
+    def test_los_estados_son_tres(self):
+        assert (COUNT_OPEN, COUNT_APPLIED, COUNT_DISCARDED) == ("open", "applied", "discarded")
+
+
+class TestElAlcance:
+    def test_toda_la_sucursal_incluye_todo(self):
+        assert scope_includes(CountScope(1), YAMAHA, ARBOL)
+
+    def test_una_categoria_se_incluye_a_si_misma_y_a_sus_hijas(self):
+        bebidas = CountScope(1, BEBIDAS)
+        assert scope_includes(bebidas, BEBIDAS, ARBOL)
+        assert scope_includes(bebidas, CERVEZAS, ARBOL)
+        assert not scope_includes(bebidas, YAMAHA, ARBOL)
+
+    def test_una_hija_no_incluye_a_su_madre_ni_a_su_hermana(self):
+        cervezas = CountScope(1, CERVEZAS)
+        assert not scope_includes(cervezas, BEBIDAS, ARBOL)
+        assert not scope_includes(cervezas, VINOS, ARBOL)
+
+    def test_contar_fuera_del_alcance_es_un_error(self):
+        check_count_scope(CountScope(1, BEBIDAS), 7, CERVEZAS, ARBOL)
+        with pytest.raises(OutsideCountScope) as error:
+            check_count_scope(CountScope(1, ABARROTES), 7, CERVEZAS, ARBOL)
+        assert (error.value.product_id, error.value.category_id, error.value.scope_category_id) == (
+            7, CERVEZAS, ABARROTES,
+        )
+
+
+class TestDosTomasALaVez:
+    def test_toda_la_sucursal_choca_con_cualquiera(self):
+        assert scopes_overlap(CountScope(1), CountScope(1, YAMAHA), ARBOL)
+        assert scopes_overlap(CountScope(1, YAMAHA), CountScope(1), ARBOL)
+        assert scopes_overlap(CountScope(1), CountScope(1), ARBOL)
+
+    def test_la_raiz_choca_con_su_hija_en_los_dos_sentidos(self):
+        assert scopes_overlap(CountScope(1, BEBIDAS), CountScope(1, CERVEZAS), ARBOL)
+        assert scopes_overlap(CountScope(1, CERVEZAS), CountScope(1, BEBIDAS), ARBOL)
+
+    def test_dos_hojas_distintas_no(self):
+        assert not scopes_overlap(CountScope(1, CERVEZAS), CountScope(1, VINOS), ARBOL)
+        assert not scopes_overlap(CountScope(1, ABARROTES), CountScope(1, YAMAHA), ARBOL)
+
+    def test_la_misma_categoria_si(self):
+        assert scopes_overlap(CountScope(1, ABARROTES), CountScope(1, ABARROTES), ARBOL)
+
+    def test_otra_sucursal_nunca(self):
+        assert not scopes_overlap(CountScope(1), CountScope(2), ARBOL)

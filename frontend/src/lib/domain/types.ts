@@ -1447,3 +1447,38 @@ export interface StockExit {
 	void_reason: string | null;
 	lines: StockExitLine[];
 }
+
+// ---------------------------------------------------------------------------
+// F15: la toma física (T-1503, RN-100)
+// ---------------------------------------------------------------------------
+
+export type StockCountStatus = 'open' | 'applied' | 'discarded';
+
+export interface StockCountLine {
+	id_product: number;
+	name: string;
+	lot_id: number | null;
+	/** Lo que decía el sistema AL CONTAR. */
+	system_qty: number;
+	counted_qty: number;
+	/** Contado menos sistema, con signo. */
+	difference: number;
+	counted_at: string;
+	counted_by: number;
+}
+
+/** Una toma física: de la sucursal entera o de una categoría con sus hijas. */
+export interface StockCount {
+	id: number;
+	branch_id: number;
+	category_id: number | null;
+	category_name: string | null;
+	status: StockCountStatus;
+	opened_by: number;
+	opened_at: string;
+	closed_by: number | null;
+	closed_at: string | null;
+	notes: string | null;
+	lines_count: number;
+	lines: StockCountLine[];
+}

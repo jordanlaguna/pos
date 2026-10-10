@@ -5731,7 +5731,7 @@ negocio.
       la salida y su anulación, con el asiento y su inverso; la ficha ya no
       edita la existencia (`stock_not_editable`) ni borra un producto con
       historia (`product_has_movements`).
-- [ ] **T-1503** Toma física (punto 3; RN-100; RF-89). `stock_counts` y sus líneas
+- [x] **T-1503** Toma física (punto 3; RN-100; RF-89). `stock_counts` y sus líneas
       con `system_qty` al contar; abrir, contar, aplicar y descartar; el
       asiento de la diferencia; `/inventario/toma-fisica`.
 
@@ -5739,6 +5739,26 @@ negocio.
       con el motivo «toma física» en el kárdex; vender una unidad entre contar
       y aplicar no cambia el ajuste; abrir una toma de una subcategoría con
       otra abierta de su raíz responde con código.
+
+      **Hecha el 2026-10-10.** El dominio: `CountScope`, `scope_includes`,
+      `scopes_overlap`, `check_count_scope` y `count_difference` en
+      `domain/inventory.py`; `post_stock_count` en `domain/ledger.py` con las
+      cuentas 6.3.01 y 4.9.02 y sus mapeos. Los casos de uso
+      `OpenStockCount`, `RecordCountLine`, `ApplyStockCount` y
+      `DiscardStockCount` (`application/use_cases/stock_count.py`) sobre el
+      puerto `StockCountRepository`; `system_qty` se lee bajo el candado del
+      nivel al contar, y aplicar mueve `count` por cada diferencia distinta de
+      cero al promedio del día, cierra y asienta la suma con signo. Las seis
+      rutas bajo `/inventory/counts` (contar la puede hacer un cajero; abrir,
+      aplicar y descartar son del administrador) con sus cinco códigos. En el
+      POS, `/inventario/toma-fisica` (lista y apertura por alcance) y
+      `/inventario/toma-fisica/[id]` (contar con búsqueda, diferencias con
+      signo, aplicar y descartar), el catálogo `counts.json` en tres idiomas y
+      el simulado con las seis rutas, el solapamiento de alcances y
+      `postStockCount`. `tests/test_tomas.py` recorre los tres puntos de la
+      verificación, más el cajero que cuenta pero no abre, la raíz que cuenta a
+      sus hijas, el sobrante al ingreso y el faltante al gasto;
+      `tests/e2e/toma-fisica.spec.ts` hace el primero contra el simulado.
 - [ ] **T-1504** Mínimo por producto y bajo mínimo (punto 4; RN-101; RF-90).
       `products.min_stock`, el mínimo general en `settings` y
       `LOW_STOCK_THRESHOLD` fuera del `.env`; el reporte y el aviso del panel.

@@ -817,6 +817,50 @@ def post_stock_exit(
     )
 
 
+@dataclass(frozen=True)
+class StockCountDocument:
+    """Una toma física aplicada (RN-100), vista desde el libro."""
+
+    id: int
+    date: date
+
+
+def post_stock_count(
+    count: StockCountDocument, difference: Money, mapping: AccountMap
+) -> JournalEntry | None:
+    """La toma física: **un** asiento por la suma de las diferencias valoradas.
+
+        faltante (difference < 0):
+        D  Mermas y ajustes de inventario   3 000,00
+           C  Inventario                               3 000,00
+
+        sobrante (difference > 0):
+        D  Inventario                       1 200,00
+           C  Sobrantes de inventario                  1 200,00
+
+    La suma, y no una línea por producto: lo que un contador quiere ver de una
+    toma es cuánto faltó o sobró en plata, y los productos están en el kárdex.
+    Una toma que cuadró en plata —o que no movió nada— no deja asiento.
+    """
+    if difference.is_zero:
+        return None
+    monto = Money(abs(difference.amount))
+    inventario = mapping.account_for(STOCK_COUNT, INVENTORY)
+    if difference.is_negative:
+        asiento = [
+            Line.debit_of(mapping.account_for(STOCK_COUNT, SHRINKAGE), monto, memo=SHRINKAGE),
+            Line.credit_of(inventario, monto, memo=INVENTORY),
+        ]
+    else:
+        asiento = [
+            Line.debit_of(inventario, monto, memo=INVENTORY),
+            Line.credit_of(mapping.account_for(STOCK_COUNT, OVERAGE), monto, memo=OVERAGE),
+        ]
+    return _entry(
+        AUTO, count.date, STOCK_COUNT, asiento, source_type=SOURCE_STOCK_COUNT, source_id=count.id
+    )
+
+
 def post_reclassification(
     *,
     source_entry_id: int,

@@ -605,6 +605,45 @@ export function postStockExit(
 	);
 }
 
+/**
+ * La toma aplicada: un asiento por la suma con signo de las diferencias
+ * valoradas. Faltante al gasto, sobrante al ingreso; cero, nada. Es
+ * `post_stock_count` del backend.
+ */
+export function postStockCount(
+	companyId: number,
+	toma: { id: number; date: string },
+	diferencia: number,
+	userId: number
+): JournalEntry | null {
+	if (diferencia === 0) return null;
+	const cuenta = mapeoVigente(getDb(companyId));
+	const inventario = cuenta('stock_count', 'inventory');
+	const monto = Math.abs(diferencia);
+	const asiento =
+		diferencia < 0
+			? [
+					debito(cuenta('stock_count', 'shrinkage'), monto, { memo: 'shrinkage' }),
+					credito(inventario, monto, { memo: 'inventory' })
+				]
+			: [
+					debito(inventario, monto, { memo: 'inventory' }),
+					credito(cuenta('stock_count', 'overage'), monto, { memo: 'overage' })
+				];
+	return postEntry(
+		companyId,
+		{
+			kind: 'auto',
+			entry_date: toma.date,
+			description: 'stock_count',
+			lines: asiento,
+			source_type: 'stock_count',
+			source_id: toma.id
+		},
+		userId
+	);
+}
+
 /** El abono: el pasivo contra de dónde salió la plata. */
 export function postSupplierPayment(
 	companyId: number,

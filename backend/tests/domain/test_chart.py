@@ -208,6 +208,18 @@ class TestNingunPapelSeQuedaSinCuenta:
             cuentas()["1.2.01"],
         }
 
+    @pytest.mark.parametrize("diferencia,contra", [(Money(-3000), "6.3.01"), (Money(1200), "4.9.02")])
+    def test_la_toma_fisica_con_faltante_y_con_sobrante(self, diferencia, contra):
+        from app.domain.ledger import StockCountDocument, post_stock_count
+
+        asiento = post_stock_count(StockCountDocument(id=1, date=HOY), diferencia, mapeo_sembrado())
+
+        assert sin_clasificar(asiento) == []
+        assert {linea.account_id for linea in asiento.lines} == {
+            cuentas()[contra],
+            cuentas()["1.2.01"],
+        }
+
 
 class TestQueSeLePuedeHacerAUnaCuenta:
     """RN-64, la regla que protege al mapeo de la buena voluntad de nadie."""

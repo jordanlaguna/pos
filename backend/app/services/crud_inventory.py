@@ -14,6 +14,19 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.application.use_cases.move_stock import MoveStock
+from app.application.use_cases.stock_count import (
+    ApplyStockCount,
+    CountAlreadyOpen,
+    CountCategoryNotFound,
+    CountHasNoLines,
+    CountNotFound,
+    CountNotOpen,
+    DiscardStockCount,
+    OpenCountRequest,
+    OpenStockCount,
+    ProductNotFoundInCount,
+    RecordCountLine,
+)
 from app.application.use_cases.stock_exit import (
     CancelStockExit,
     EmptyExit,
@@ -26,20 +39,35 @@ from app.application.use_cases.stock_exit import (
     RegisterStockExit,
     RequestedExitLine,
 )
-from app.domain.errors import InsufficientStock, InvalidQuantity, ReasonInactive, ReasonIsSystem
-from app.domain.inventory import Movement, check_reason_deactivatable
+from app.domain.errors import (
+    InsufficientStock,
+    InvalidQuantity,
+    OutsideCountScope,
+    ReasonInactive,
+    ReasonIsSystem,
+)
+from app.domain.inventory import Movement, check_reason_deactivatable, count_difference
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.sqlalchemy_inventory import (
     SqlAlchemyKardex,
+    SqlAlchemyStockCountRepository,
     SqlAlchemyStockExitRepository,
     SqlAlchemyStockLevelRepository,
     SqlAlchemyStockReasonRepository,
 )
 from app.infrastructure.persistence.sqlalchemy_repositories import (
+    SqlAlchemyCategoryRepository,
     SqlAlchemyProductRepository,
     SqlAlchemyUnitOfWork,
 )
-from app.models.model_inventory import StockExit, StockExitDetail, StockReason
+from app.models.model_categories import Category
+from app.models.model_inventory import (
+    StockCount,
+    StockCountLine,
+    StockExit,
+    StockExitDetail,
+    StockReason,
+)
 from app.models.model_person import Person
 from app.models.model_product import Product
 from app.models.model_user import User
@@ -347,3 +375,226 @@ def cancel_exit(
         "id_exit": exit_id,
         "units_returned": anulada.units_returned,
     }
+
+
+# -------------------------------------------------- la toma física (RN-100)
+
+
+def _nombres(db: Session, product_ids: list[int]) -> dict[int, str]:
+    if not product_ids:
+        return {}
+    return {
+        p.id_product: p.name
+        for p in db.query(Product).filter(Product.id_product.in_(product_ids)).all()
+    }
+
+
+def serialize_count(db: Session, toma: StockCount, *, with_lines: bool = True) -> dict:
+    lineas = (
+        db.query(StockCountLine)
+        .filter(StockCountLine.count_id == toma.id)
+        .order_by(StockCountLine.id)
+        .all()
+    )
+    nombres = _nombres(db, [l.product_id for l in lineas]) if with_lines else {}
+    categoria = (
+        db.query(Category).filter(Category.id == toma.category_id).first()
+        if toma.category_id is not None
+        else None
+    )
+    return {
+        "id": toma.id,
+        "branch_id": toma.branch_id,
+        "category_id": toma.category_id,
+        "category_name": categoria.name if categoria else None,
+        "status": toma.status,
+        "opened_by": toma.opened_by,
+        "opened_at": toma.opened_at,
+        "closed_by": toma.closed_by,
+        "closed_at": toma.closed_at,
+        "notes": toma.notes,
+        "lines_count": len(lineas),
+        "lines": [
+            {
+                "id_product": l.product_id,
+                "name": nombres.get(l.product_id, f"#{l.product_id}"),
+                "lot_id": l.lot_id,
+                "system_qty": l.system_qty,
+                "counted_qty": l.counted_qty,
+                "difference": count_difference(l.system_qty, l.counted_qty),
+                "counted_at": l.counted_at,
+                "counted_by": l.counted_by,
+            }
+            for l in lineas
+        ]
+        if with_lines
+        else [],
+    }
+
+
+def counts(db: Session, limit: int = 200) -> list[dict]:
+    filas = (
+        db.query(StockCount)
+        .order_by(StockCount.opened_at.desc(), StockCount.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [serialize_count(db, f, with_lines=False) for f in filas]
+
+
+def get_count(db: Session, count_id: int) -> dict:
+    fila = db.query(StockCount).filter(StockCount.id == count_id).first()
+    if fila is None:
+        raise api_error(404, "count_not_found", count_id=count_id)
+    return serialize_count(db, fila)
+
+
+def _tomas(db: Session) -> SqlAlchemyStockCountRepository:
+    return SqlAlchemyStockCountRepository(db)
+
+
+def open_count(db: Session, payload, *, user_id: int) -> dict:
+    caso = OpenStockCount(
+        categories=SqlAlchemyCategoryRepository(db),
+        counts=_tomas(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+    )
+    try:
+        abierta = caso(
+            OpenCountRequest(
+                branch_id=sucursal_actual(),
+                category_id=payload.category_id,
+                user_id=user_id,
+                notes=(payload.notes or "").strip() or None,
+            )
+        )
+    except CountCategoryNotFound as e:
+        raise api_error(404, "category_not_found", category_id=e.category_id) from None
+    except CountAlreadyOpen as e:
+        raise api_error(
+            409,
+            "count_already_open",
+            count_id=e.count_id,
+            branch_id=e.branch_id,
+            category_id=e.category_id,
+        ) from None
+    return {"message": "count_opened", "id_count": abierta.id_count}
+
+
+def _toma_a_http(e):
+    if isinstance(e, CountNotFound):
+        return api_error(404, "count_not_found", count_id=e.count_id)
+    return api_error(400, "count_not_open", count_id=e.count_id, status=e.status)
+
+
+def count_line(db: Session, count_id: int, payload, *, user_id: int) -> dict:
+    caso = RecordCountLine(
+        products=SqlAlchemyProductRepository(db),
+        categories=SqlAlchemyCategoryRepository(db),
+        counts=_tomas(db),
+        levels=SqlAlchemyStockLevelRepository(db),
+        uow=SqlAlchemyUnitOfWork(db),
+        clock=SystemClock(),
+    )
+    try:
+        contada = caso(
+            count_id,
+            product_id=payload.id_product,
+            counted_qty=payload.counted_qty,
+            user_id=user_id,
+            lot_id=payload.lot_id,
+        )
+    except (CountNotFound, CountNotOpen) as e:
+        raise _toma_a_http(e) from None
+    except ProductNotFoundInCount as e:
+        raise api_error(404, "product_not_found", product_id=e.product_id) from None
+    except OutsideCountScope as e:
+        raise api_error(
+            400,
+            "count_outside_scope",
+            product_id=e.product_id,
+            category_id=e.category_id,
+            scope_category_id=e.scope_category_id,
+        ) from None
+    except HTTPException:
+        raise
+    return {
+        "message": "count_line_recorded",
+        "id_product": contada.product_id,
+        "system_qty": contada.system_qty,
+        "counted_qty": contada.counted_qty,
+        "difference": contada.difference,
+    }
+
+
+def apply_count(db: Session, count_id: int, *, user_id: int, company_id: int) -> dict:
+    """Aplica la toma, con su bitácora en la misma transacción."""
+    productos = SqlAlchemyProductRepository(db)
+    uow = SqlAlchemyUnitOfWork(db)
+    caso = ApplyStockCount(
+        products=productos,
+        counts=_tomas(db),
+        uow=uow,
+        clock=SystemClock(),
+        stock=mover(db),
+        ledger=crud_accounting.libro(db, user_id=user_id),
+    )
+    try:
+        with uow:
+            aplicada = caso.apply(count_id, user_id=user_id)
+            crud_membership.registrar(
+                db,
+                user_id=user_id,
+                company_id=company_id,
+                accion="aplicar_toma",
+                detalle=f"toma {count_id}, {aplicada.adjustments} ajustes, "
+                f"{aplicada.difference_cost.as_float()}",
+                ip=None,
+            )
+            uow.commit()
+    except (CountNotFound, CountNotOpen) as e:
+        raise _toma_a_http(e) from None
+    except CountHasNoLines:
+        raise api_error(400, "count_has_no_lines", count_id=count_id) from None
+    except InsufficientStock as e:
+        # Se vendió más de lo que la toma iba a quitar: se vuelve a contar.
+        producto = productos.get(e.product_id)
+        raise api_error(
+            400,
+            "insufficient_stock",
+            product_id=e.product_id,
+            product=producto.name if producto else None,
+            available=e.available,
+            requested=e.requested,
+        ) from None
+    except HTTPException:
+        raise
+    return {
+        "message": "count_applied",
+        "id_count": count_id,
+        "adjustments": aplicada.adjustments,
+        "difference_cost": aplicada.difference_cost.as_float(),
+    }
+
+
+def discard_count(db: Session, count_id: int, *, user_id: int, company_id: int) -> dict:
+    uow = SqlAlchemyUnitOfWork(db)
+    caso = DiscardStockCount(counts=_tomas(db), uow=uow, clock=SystemClock())
+    try:
+        with uow:
+            caso.apply(count_id, user_id=user_id)
+            crud_membership.registrar(
+                db,
+                user_id=user_id,
+                company_id=company_id,
+                accion="descartar_toma",
+                detalle=f"toma {count_id}",
+                ip=None,
+            )
+            uow.commit()
+    except (CountNotFound, CountNotOpen) as e:
+        raise _toma_a_http(e) from None
+    except HTTPException:
+        raise
+    return {"message": "count_discarded", "id_count": count_id}

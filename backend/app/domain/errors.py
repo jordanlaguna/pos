@@ -523,6 +523,20 @@ class StockNotEditable(DomainError):
         self.product_id = product_id
 
 
+class OutsideCountScope(DomainError):
+    """Se contó un producto que no está en lo que la toma cubre (RN-100): la
+    toma es de una categoría —y sus hijas— y el producto cuelga de otra."""
+
+    def __init__(self, product_id: int, category_id: int, scope_category_id: int) -> None:
+        super().__init__(
+            f"el producto {product_id} (categoría {category_id}) no está en la toma "
+            f"de la categoría {scope_category_id}"
+        )
+        self.product_id = product_id
+        self.category_id = category_id
+        self.scope_category_id = scope_category_id
+
+
 class ReasonInactive(DomainError):
     """Se quiso dar salida con un motivo desactivado (RN-99).
 

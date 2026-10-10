@@ -131,12 +131,14 @@ class FakeProductRepository:
 
 @dataclass
 class FakeCategory:
-    """Una categoría vista desde la ficha (RN-6). Hoja activa por omisión."""
+    """Una categoría vista desde la ficha (RN-6). Hoja activa y raíz por omisión."""
 
     id: int
     name: str
     is_active: bool = True
     active_children: int = 0
+    #: La madre (RN-5): nula en las raíces. Lo usa la toma física (T-1503).
+    parent_id: int | None = None
 
 
 class FakeCategoryRepository:
@@ -145,6 +147,73 @@ class FakeCategoryRepository:
 
     def get(self, category_id: int) -> FakeCategory | None:
         return self.categorias.get(category_id)
+
+    def tree(self) -> dict[int, int | None]:
+        return {c.id: c.parent_id for c in self.categorias.values()}
+
+
+@dataclass
+class FilaDeToma:
+    id: int
+    branch_id: int
+    category_id: int | None
+    opened_by: int
+    opened_at: datetime
+    notes: str | None
+    status: str = "open"
+    closed_by: int | None = None
+    closed_at: datetime | None = None
+
+
+@dataclass
+class LineaContada:
+    product_id: int
+    lot_id: int | None
+    system_qty: int
+    counted_qty: int
+    counted_at: datetime
+    counted_by: int
+
+
+class FakeStockCountRepository:
+    """Las tomas y sus líneas, en memoria (T-1503)."""
+
+    def __init__(self) -> None:
+        self.tomas: list[FilaDeToma] = []
+        self.lineas: dict[int, list[LineaContada]] = {}
+        self._siguiente = 1
+
+    def get(self, count_id: int) -> FilaDeToma | None:
+        return next((t for t in self.tomas if t.id == count_id), None)
+
+    def open_in_branch(self, branch_id: int) -> list[FilaDeToma]:
+        return [t for t in self.tomas if t.branch_id == branch_id and t.status == "open"]
+
+    def add(self, **datos) -> int:
+        toma = FilaDeToma(id=self._siguiente, **datos)
+        self._siguiente += 1
+        self.tomas.append(toma)
+        self.lineas[toma.id] = []
+        return toma.id
+
+    def lines_of(self, count_id: int) -> list[LineaContada]:
+        return list(self.lineas.get(count_id, []))
+
+    def record_line(self, count_id: int, **datos) -> None:
+        lineas = self.lineas.setdefault(count_id, [])
+        nueva = LineaContada(**datos)
+        # Volver a contar el mismo (producto, lote) reemplaza, no suma.
+        for i, linea in enumerate(lineas):
+            if linea.product_id == nueva.product_id and linea.lot_id == nueva.lot_id:
+                lineas[i] = nueva
+                return
+        lineas.append(nueva)
+
+    def close(self, count_id: int, *, status: str, closed_by: int, closed_at: datetime) -> None:
+        toma = self.get(count_id)
+        toma.status = status
+        toma.closed_by = closed_by
+        toma.closed_at = closed_at
 
 
 #: La sucursal de todas las pruebas que no son de sucursales (F15).

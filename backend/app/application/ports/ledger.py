@@ -38,6 +38,7 @@ from app.domain.ledger import (
     ReturnDocument,
     SoldDocument,
     SoldLine,
+    StockCountDocument,
     StockExitDocument,
     SupplierPaymentRef,
 )
@@ -118,6 +119,10 @@ class Ledger(JournalWriter, Protocol):
 
     def record_stock_exit_void(self, exit: StockExitDocument, cost: Money) -> None: ...
 
+    #: La toma física (RN-100): la suma de las diferencias valoradas, con signo.
+    #: Negativa es faltante y va al gasto; positiva es sobrante y va al ingreso.
+    def record_stock_count(self, count: StockCountDocument, difference: Money) -> None: ...
+
 
 class NullLedger:
     """El libro apagado: no hace nada, y hacerlo no cuesta nada.
@@ -169,4 +174,7 @@ class NullLedger:
         return None
 
     def record_stock_exit_void(self, exit: StockExitDocument, cost: Money) -> None:
+        return None
+
+    def record_stock_count(self, count: StockCountDocument, difference: Money) -> None:
         return None

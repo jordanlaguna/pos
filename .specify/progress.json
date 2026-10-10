@@ -3313,6 +3313,21 @@
       "lo_que_ensena": [
         "La trampa de la hidratación muerde también en un `<select bind:value>`: la prueba eligió el motivo antes de que Svelte enganchara la página y al hidratar volvió al vacío, con el botón de confirmar deshabilitado y sin ningún error. El valor se lee del DOM al montar y al cambiar, como dice CLAUDE.md para `Select`."
       ]
+    },
+    {
+      "fecha": "2026-10-10",
+      "titulo": "T-1503 cerrada: la toma física de punta a punta",
+      "hecho": [
+        "El dominio de la toma (RN-100): `CountScope`, `scope_includes` y `scopes_overlap` sobre el árbol de dos niveles, `check_count_scope` y `count_difference` en `domain/inventory.py`; `post_stock_count` en `domain/ledger.py`, con las cuentas 6.3.01 (mermas y ajustes) y 4.9.02 (sobrantes) y sus tres mapeos en `chart.py`.",
+        "Los casos de uso `OpenStockCount`, `RecordCountLine`, `ApplyStockCount` y `DiscardStockCount` sobre el puerto `StockCountRepository`: `system_qty` se lee bajo el candado del nivel al contar, volver a contar reemplaza la línea, aplicar mueve `count` por cada diferencia distinta de cero al promedio del día y asienta la suma con signo (faltante al gasto, sobrante al ingreso; cero, sin asiento), descartar solo cambia el estado.",
+        "Las seis rutas bajo `/inventory/counts`: la lista y abrir, aplicar y descartar son del administrador; contar la puede hacer un cajero, que es quien está en el piso con el lector. Cinco códigos nuevos (`count_not_found`, `count_not_open`, `count_already_open` en 409 con la toma que choca, `count_outside_scope`, `count_has_no_lines`) en los cuatro lugares.",
+        "En el POS, `/inventario/toma-fisica` (lista, apertura por alcance: toda la sucursal o una categoría con sus hijas) y `/inventario/toma-fisica/[id]` (búsqueda por nombre o código, anotar, diferencias con signo, aplicar y descartar); `counts.json` en tres idiomas; el simulado con las seis rutas, el solapamiento de alcances y `postStockCount` en su libro.",
+        "`tests/test_tomas.py` recorre los tres puntos de la verificación de task.md —el ajuste de −2, la venta entre contar y aplicar que no lo cambia, la raíz y la hija que no conviven abiertas— y además el cajero que cuenta pero no abre, la raíz que cuenta a sus hijas, el producto fuera del alcance, el sobrante con signo positivo y el faltante al gasto contra el sobrante al ingreso. `tests/e2e/toma-fisica.spec.ts` hace el primero contra el simulado.",
+        "Cifras: la batería entera del backend, 3 544 pruebas al 100 % contra la pila reconstruida (18 minutos); `npm run check` en 0 y 0; 999 pruebas del POS; `toma-fisica.spec.ts` y `salidas.spec.ts` de punta a punta en verde."
+      ],
+      "lo_que_ensena": [
+        "`SessionUser` dice `role`, no `rol`. La pantalla de la toma compiló y sirvió con `user.rol` —Vite no verifica tipos—, `isAdmin` quedó en falso y la prueba de punta a punta falló buscando el botón de aplicar: el único síntoma a tiempo fue el único error de `npm run check`, que corrió después. El `check` va antes de la de punta a punta, no en paralelo."
+      ]
     }
   ],
   "$reparto": {

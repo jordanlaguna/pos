@@ -45,6 +45,7 @@ from app.domain.ledger import (
     SOURCE_NOTE,
     SoldDocument,
     SoldLine,
+    StockCountDocument,
     StockExitDocument,
     SupplierPaymentRef,
     assert_open,
@@ -54,6 +55,7 @@ from app.domain.ledger import (
     post_purchase,
     post_return,
     post_sale,
+    post_stock_count,
     post_stock_exit,
     post_supplier_payment,
 )
@@ -118,6 +120,9 @@ class SqlAlchemyLedger:
 
     def record_stock_exit_void(self, exit: StockExitDocument, cost: Money) -> None:
         self.post(post_stock_exit(exit, cost, self._cuentas(), reversal=True))
+
+    def record_stock_count(self, count: StockCountDocument, difference: Money) -> None:
+        self.post(post_stock_count(count, difference, self._cuentas()))
 
     # ------------------------------------------------------------- escribir
 

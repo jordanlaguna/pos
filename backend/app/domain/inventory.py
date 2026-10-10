@@ -15,6 +15,7 @@ orden es asunto de `MoveStock` (plan §15.1).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -23,6 +24,7 @@ from .errors import (
     InvalidQuantity,
     InvalidStockMovementKind,
     InvalidStockSource,
+    OutsideCountScope,
     ReasonInactive,
     ReasonIsSystem,
 )
@@ -221,3 +223,79 @@ def exit_total(lines: list[ExitLine]) -> Money:
 
 def exit_units(lines: list[ExitLine]) -> int:
     return sum(line.quantity for line in lines)
+
+
+# ------------------------------------------------ la toma física (RN-100)
+#
+# Contar lo que hay y ajustar la diferencia contra lo que decía el sistema **al
+# contar**. Lo que se venda entre contar y aplicar no la contamina: ya quedó en
+# el kárdex por su lado.
+
+COUNT_OPEN = "open"
+COUNT_APPLIED = "applied"
+COUNT_DISCARDED = "discarded"
+
+
+@dataclass(frozen=True)
+class CountScope:
+    """Qué cuenta una toma: una sucursal entera, o una categoría con sus hijas.
+
+    `category_id` en nulo es toda la sucursal. El árbol tiene dos niveles
+    (RN-5), así que «con sus hijas» es una sola pregunta: ¿su madre es esta?
+    """
+
+    branch_id: int
+    category_id: int | None = None
+
+
+def scope_includes(scope: CountScope, category_id: int, tree: Mapping[int, int | None]) -> bool:
+    """Si una categoría cae dentro del alcance: toda la sucursal, la misma, o su raíz.
+
+    `tree` es `{categoría: madre}`, con `None` en las raíces.
+    """
+    if scope.category_id is None:
+        return True
+    if category_id == scope.category_id:
+        return True
+    return tree.get(category_id) == scope.category_id
+
+
+def scopes_overlap(a: CountScope, b: CountScope, tree: Mapping[int, int | None]) -> bool:
+    """Si dos tomas contarían los mismos productos (RN-100).
+
+    En una sucursal no pueden coexistir dos abiertas que compartan productos:
+    una de toda la sucursal bloquea cualquier otra, una de una raíz bloquea las
+    de sus hijas y viceversa, y dos hijas distintas no se estorban. La segunda
+    contaría contra lo que la primera va a cambiar.
+    """
+    if a.branch_id != b.branch_id:
+        return False
+    if a.category_id is None or b.category_id is None:
+        return True
+    return scope_includes(a, b.category_id, tree) or scope_includes(b, a.category_id, tree)
+
+
+def check_count_scope(
+    scope: CountScope, product_id: int, category_id: int, tree: Mapping[int, int | None]
+) -> None:
+    """Contar un producto fuera de lo que la toma cubre es un error, no un dato."""
+    if not scope_includes(scope, category_id, tree):
+        raise OutsideCountScope(product_id, category_id, scope.category_id)
+
+
+def check_counted_quantity(counted_qty: object) -> None:
+    """Lo contado es un entero de cero para arriba: en el estante no hay medias
+    unidades ni cantidades negativas."""
+    if isinstance(counted_qty, bool) or not isinstance(counted_qty, int) or counted_qty < 0:
+        raise InvalidQuantity(counted_qty)
+
+
+def count_difference(system_qty: int, counted_qty: int) -> int:
+    """Lo contado menos lo que decía el sistema al contar, con signo (RN-100).
+
+        10 contadas 8  → −2    (faltante: sale como una salida)
+        10 contadas 12 → +2    (sobrante)
+        10 contadas 10 →  0    (no deja movimiento)
+    """
+    check_counted_quantity(counted_qty)
+    return counted_qty - system_qty

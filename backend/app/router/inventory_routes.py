@@ -12,8 +12,14 @@ from sqlalchemy.orm import Session
 
 from app.database.database import SessionLocal
 from app.schemas.schemas_inventory import (
+    CountAppliedSuccess,
+    CountLineInput,
+    CountLineSuccess,
     ExitCancel,
     ExitCancelSuccess,
+    StockCountCreate,
+    StockCountOut,
+    StockCountSuccess,
     StockExitCreate,
     StockExitOut,
     StockExitSuccess,
@@ -160,4 +166,78 @@ def cancel_exit(
         user_id=admin.user.id_user,
         company_id=admin.company_id,
         reason=payload.reason,
+    )
+
+
+# -------------------------------------------------- la toma física (RN-100)
+#
+# Abrir, aplicar y descartar son del administrador. **Contar lo puede hacer un
+# cajero**: es quien está en el piso con el lector.
+
+
+@router.get("/counts", response_model=list[StockCountOut])
+def list_counts(
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+):
+    return crud_inventory.counts(db, limit)
+
+
+@router.post("/counts", response_model=StockCountSuccess)
+def open_count(
+    payload: StockCountCreate,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
+):
+    """Abre una toma de la sucursal entera o de una categoría con sus hijas."""
+    return crud_inventory.open_count(db, payload, user_id=admin.user.id_user)
+
+
+@router.get("/counts/{count_id}", response_model=StockCountOut)
+def get_count(
+    count_id: int,
+    db: Session = Depends(get_db),
+    current: Sesion = Depends(get_current_user),
+):
+    """La toma con lo que decía el sistema, lo contado y la diferencia (RF-89)."""
+    return crud_inventory.get_count(db, count_id)
+
+
+@router.put("/counts/{count_id}/lines", response_model=CountLineSuccess)
+def count_line(
+    count_id: int,
+    payload: CountLineInput,
+    db: Session = Depends(get_db),
+    current: Sesion = Depends(get_current_user),
+    _modulo: Sesion = Depends(require_module("inventory")),
+):
+    """Contar un producto: lo que decía el sistema se lee en ese momento."""
+    return crud_inventory.count_line(db, count_id, payload, user_id=current.user.id_user)
+
+
+@router.post("/counts/{count_id}/apply", response_model=CountAppliedSuccess)
+def apply_count(
+    count_id: int,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
+):
+    """Cada diferencia pasa al kárdex y la suma al libro; la toma queda cerrada."""
+    return crud_inventory.apply_count(
+        db, count_id, user_id=admin.user.id_user, company_id=admin.company_id
+    )
+
+
+@router.post("/counts/{count_id}/discard", response_model=StockCountSuccess)
+def discard_count(
+    count_id: int,
+    db: Session = Depends(get_db),
+    admin: Sesion = Depends(require_admin),
+    _modulo: Sesion = Depends(require_module("inventory")),
+):
+    """Descartar una abierta no toca nada."""
+    return crud_inventory.discard_count(
+        db, count_id, user_id=admin.user.id_user, company_id=admin.company_id
     )

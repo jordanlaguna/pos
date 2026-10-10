@@ -68,8 +68,15 @@ import { isBlankLocation, locationProblem, normalizeLocation } from '$lib/domain
 import { mergeSettings } from '$lib/domain/settings';
 import type { MockFeDocument } from './db';
 import { motivosDeFabrica } from './db';
-import { postStockExit } from './ledger';
-import type { StockExit, StockMovement, StockMovementKind, StockReason } from '$lib/domain/types';
+import { postStockCount, postStockExit } from './ledger';
+import type {
+	StockCount,
+	StockCountLine,
+	StockExit,
+	StockMovement,
+	StockMovementKind,
+	StockReason
+} from '$lib/domain/types';
 import { PAYROLL_SEED } from './payrollRates';
 import { rutasDePlanilla } from './payroll';
 import type { Account, JournalEntry } from '$lib/domain/types';
@@ -3372,6 +3379,12 @@ function salidasDe(companyId: number): StockExit[] {
 	return empresa.stock_exits;
 }
 
+function tomasDe(companyId: number): StockCount[] {
+	const empresa = getEmpresa(companyId);
+	if (!empresa.stock_counts) empresa.stock_counts = [];
+	return empresa.stock_counts;
+}
+
 /** La sucursal de la sesión. El simulado tiene una por compañía hasta T-1505. */
 function sucursalDe(companyId: number): number {
 	return getDb(companyId).branches?.[0]?.id ?? 1;
@@ -3623,6 +3636,195 @@ route('POST', '/inventory/exits/:id/cancel', ({ params, body, companyId, userId 
 	);
 	persist();
 	return { message: 'exit_voided', id_exit: id, units_returned: salida.items_count };
+});
+
+// ------------------------------------------------------------ toma física
+
+/**
+ * Si el alcance incluye a la categoría: toda la sucursal, la misma, o la
+ * madre. Es `scope_includes` del dominio; el árbol tiene dos niveles (RN-5).
+ */
+function alcanceIncluye(
+	scopeCategoryId: number | null,
+	categoryId: number | null,
+	arbol: Map<number, number | null>
+): boolean {
+	if (scopeCategoryId === null) return true;
+	if (categoryId === null) return false;
+	return categoryId === scopeCategoryId || arbol.get(categoryId) === scopeCategoryId;
+}
+
+function arbolDe(companyId: number): Map<number, number | null> {
+	return new Map(getDb(companyId).categories.map((c) => [c.id, c.parent_id]));
+}
+
+/** Como la lista del backend: la toma sin sus líneas, pero con cuántas tiene. */
+function resumenDeToma(toma: StockCount): StockCount {
+	return { ...toma, lines_count: toma.lines.length, lines: [] };
+}
+
+function tomaDe(companyId: number, id: number): StockCount {
+	const toma = tomasDe(companyId).find((t) => t.id === id);
+	if (!toma) fail(404, 'count_not_found', { count_id: id });
+	return toma;
+}
+
+function tomaAbierta(companyId: number, id: number): StockCount {
+	const toma = tomaDe(companyId, id);
+	if (toma.status !== 'open') fail(400, 'count_not_open', { count_id: id, status: toma.status });
+	return toma;
+}
+
+route('GET', '/inventory/counts', ({ companyId, userId }) => {
+	exigirAdmin(userId, companyId);
+	return [...tomasDe(companyId)]
+		.sort((a, b) => b.opened_at.localeCompare(a.opened_at) || b.id - a.id)
+		.map(resumenDeToma);
+});
+
+route('POST', '/inventory/counts', ({ body, companyId, userId }) => {
+	exigirAdmin(userId, companyId);
+	exigirModulo(companyId, 'inventory');
+	const db = getDb(companyId);
+	const categoryId = body?.category_id == null ? null : Number(body.category_id);
+	const categoria = categoryId === null ? null : db.categories.find((c) => c.id === categoryId);
+	if (categoryId !== null && !categoria) fail(404, 'category_not_found', { category_id: categoryId });
+
+	// Dos tomas abiertas no pueden compartir productos (RN-100): toda la
+	// sucursal choca con cualquiera, y una categoría con su madre o sus hijas.
+	const branchId = sucursalDe(companyId);
+	const arbol = arbolDe(companyId);
+	const choca = tomasDe(companyId).find(
+		(t) =>
+			t.status === 'open' &&
+			t.branch_id === branchId &&
+			(t.category_id === null ||
+				categoryId === null ||
+				alcanceIncluye(t.category_id, categoryId, arbol) ||
+				alcanceIncluye(categoryId, t.category_id, arbol))
+	);
+	if (choca)
+		fail(409, 'count_already_open', {
+			count_id: choca.id,
+			branch_id: branchId,
+			category_id: choca.category_id
+		});
+
+	const toma: StockCount = {
+		id: nextId('stock_counts'),
+		branch_id: branchId,
+		category_id: categoryId,
+		category_name: categoria?.name ?? null,
+		status: 'open',
+		opened_by: userId ?? 0,
+		opened_at: nowIso(),
+		closed_by: null,
+		closed_at: null,
+		notes: String(body?.notes ?? '').trim() || null,
+		lines_count: 0,
+		lines: []
+	};
+	tomasDe(companyId).push(toma);
+	persist();
+	return { message: 'count_opened', id_count: toma.id };
+});
+
+route('GET', '/inventory/counts/:id', ({ params, companyId }) => {
+	const toma = tomaDe(companyId, Number(params[0]));
+	return { ...toma, lines_count: toma.lines.length };
+});
+
+route('PUT', '/inventory/counts/:id/lines', ({ params, body, companyId, userId }) => {
+	exigirModulo(companyId, 'inventory');
+	const toma = tomaAbierta(companyId, Number(params[0]));
+	const productId = Number(body?.id_product);
+	const counted = Number(body?.counted_qty);
+	if (!Number.isInteger(counted) || counted < 0) fail(422, 'invalid_request', { field: 'counted_qty' });
+	const product = getDb(companyId).products.find((p) => p.id_product === productId);
+	if (!product) fail(404, 'product_not_found', { product_id: productId });
+	const arbol = arbolDe(companyId);
+	if (!alcanceIncluye(toma.category_id, product.category_id, arbol))
+		fail(400, 'count_outside_scope', {
+			product_id: productId,
+			category_id: product.category_id,
+			scope_category_id: toma.category_id
+		});
+
+	// Lo que decía el sistema AL CONTAR, y volver a contar reemplaza la línea.
+	const lotId = body?.lot_id == null ? null : Number(body.lot_id);
+	const linea: StockCountLine = {
+		id_product: productId,
+		name: product.name,
+		lot_id: lotId,
+		system_qty: product.stock,
+		counted_qty: counted,
+		difference: counted - product.stock,
+		counted_at: nowIso(),
+		counted_by: userId ?? 0
+	};
+	const i = toma.lines.findIndex((l) => l.id_product === productId && l.lot_id === lotId);
+	if (i >= 0) toma.lines[i] = linea;
+	else toma.lines.push(linea);
+	toma.lines_count = toma.lines.length;
+	persist();
+	return {
+		message: 'count_line_recorded',
+		id_product: productId,
+		system_qty: linea.system_qty,
+		counted_qty: counted,
+		difference: linea.difference
+	};
+});
+
+route('POST', '/inventory/counts/:id/apply', ({ params, companyId, userId }) => {
+	exigirAdmin(userId, companyId);
+	exigirModulo(companyId, 'inventory');
+	const db = getDb(companyId);
+	const toma = tomaAbierta(companyId, Number(params[0]));
+	if (!toma.lines.length) fail(400, 'count_has_no_lines', { count_id: toma.id });
+
+	// Cada diferencia pasa al kárdex al promedio de hoy; lo que cuadró, no.
+	// Si se vendió más de lo que la toma iba a quitar, `moverStock` lo dice.
+	let ajustes = 0;
+	let diferencia = 0;
+	toma.lines.forEach((l, i) => {
+		if (l.difference === 0) return;
+		const product = db.products.find((p) => p.id_product === l.id_product);
+		if (!product) return;
+		const costo = round2(Number(product.cost ?? 0));
+		moverStock(companyId, {
+			product,
+			delta: l.difference,
+			kind: 'count',
+			unit_cost: costo,
+			source_type: 'stock_count',
+			source_id: toma.id,
+			source_line: i + 1,
+			user_id: userId
+		});
+		ajustes += 1;
+		diferencia = round2(diferencia + l.difference * costo);
+	});
+	const ahora = nowIso();
+	toma.status = 'applied';
+	toma.closed_by = userId ?? 0;
+	toma.closed_at = ahora;
+	asentar(companyId, () =>
+		postStockCount(companyId, { id: toma.id, date: ahora.slice(0, 10) }, diferencia, userId ?? 0)
+	);
+	persist();
+	return { message: 'count_applied', id_count: toma.id, adjustments: ajustes, difference_cost: diferencia };
+});
+
+route('POST', '/inventory/counts/:id/discard', ({ params, companyId, userId }) => {
+	exigirAdmin(userId, companyId);
+	exigirModulo(companyId, 'inventory');
+	const toma = tomaAbierta(companyId, Number(params[0]));
+	toma.status = 'discarded';
+	toma.closed_by = userId ?? 0;
+	toma.closed_at = nowIso();
+	persist();
+	return { message: 'count_discarded', id_count: toma.id };
 });
 
 // -------------------------------------------------------------- configuración

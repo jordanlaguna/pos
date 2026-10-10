@@ -97,5 +97,6 @@
   "inventory_tariff_heading_hint": "12 digits. Only needed to sell to a foreign customer, with an export invoice.",
   "inventory_stock_readonly_hint": "Stock is moved with an entry, an exit or a stock count, not from the product form.",
   "inventory_exits": "Exits",
-  "inventory_kardex_of": "Stock ledger of {product}"
+  "inventory_kardex_of": "Stock ledger of {product}",
+  "inventory_counts": "Stock count"
 }

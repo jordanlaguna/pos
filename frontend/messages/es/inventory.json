@@ -97,5 +97,6 @@
   "inventory_tariff_heading_hint": "12 dígitos. Solo hace falta para venderle a un cliente del extranjero, con factura de exportación.",
   "inventory_stock_readonly_hint": "La existencia se mueve con una entrada, una salida o una toma física, no desde la ficha.",
   "inventory_exits": "Salidas",
-  "inventory_kardex_of": "Kárdex de {product}"
+  "inventory_kardex_of": "Kárdex de {product}",
+  "inventory_counts": "Toma física"
 }

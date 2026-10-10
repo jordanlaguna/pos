@@ -120,3 +120,71 @@ class ExitCancelSuccess(BaseModel):
     message: str
     id_exit: int
     units_returned: int
+
+
+# ------------------------------------------------- la toma física (RN-100)
+
+
+class StockCountCreate(BaseModel):
+    #: Nulo es toda la sucursal; una raíz incluye a sus hijas.
+    category_id: int | None = None
+    notes: str | None = Field(default=None, max_length=255)
+
+
+class CountLineInput(BaseModel):
+    id_product: int
+    #: Lo que hay en el estante: de cero para arriba.
+    counted_qty: int = Field(ge=0)
+    #: RN-104; llega con T-1507.
+    lot_id: int | None = None
+
+
+class CountLineOut(BaseModel):
+    id_product: int
+    name: str
+    lot_id: int | None = None
+    #: Lo que decía el sistema AL CONTAR.
+    system_qty: int
+    counted_qty: int
+    #: Contado menos sistema, con signo.
+    difference: int
+    counted_at: datetime
+    counted_by: int
+
+
+class StockCountOut(BaseModel):
+    id: int
+    branch_id: int
+    category_id: int | None = None
+    category_name: str | None = None
+    #: 'open' | 'applied' | 'discarded'
+    status: str
+    opened_by: int
+    opened_at: datetime
+    closed_by: int | None = None
+    closed_at: datetime | None = None
+    notes: str | None = None
+    lines_count: int
+    lines: list[CountLineOut] = []
+
+
+class StockCountSuccess(BaseModel):
+    message: str
+    id_count: int
+
+
+class CountLineSuccess(BaseModel):
+    message: str
+    id_product: int
+    system_qty: int
+    counted_qty: int
+    difference: int
+
+
+class CountAppliedSuccess(BaseModel):
+    message: str
+    id_count: int
+    #: Cuántas líneas dejaron ajuste: las que cuadraron no.
+    adjustments: int
+    #: La suma de las diferencias valoradas, con signo.
+    difference_cost: float

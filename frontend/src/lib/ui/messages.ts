@@ -349,6 +349,12 @@ export const API_CODES = [
 	'exit_cancelled',
 	'empty_exit',
 	'invalid_exit_line',
+	// la toma física (RN-100)
+	'count_not_found',
+	'count_not_open',
+	'count_already_open',
+	'count_outside_scope',
+	'count_has_no_lines',
 	'category_name_taken',
 	'invalid_tax_code',
 	// categorías de dos niveles (F4)
@@ -974,6 +980,16 @@ function frase(code: ApiCode, d: Failure['data']): string {
 			return m.api_empty_exit();
 		case 'invalid_exit_line':
 			return m.api_invalid_exit_line({ line: numero(d.line) });
+		case 'count_not_found':
+			return m.api_count_not_found();
+		case 'count_not_open':
+			return m.api_count_not_open({ status: texto(d.status) });
+		case 'count_already_open':
+			return m.api_count_already_open({ count_id: numero(d.count_id) });
+		case 'count_outside_scope':
+			return m.api_count_outside_scope({ product_id: numero(d.product_id) });
+		case 'count_has_no_lines':
+			return m.api_count_has_no_lines();
 		case 'category_name_taken':
 			return m.api_category_name_taken({ name: texto(d.name) });
 		case 'invalid_tax_code':

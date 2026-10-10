@@ -409,6 +409,10 @@
 			<Icon name="minus" size={15} />
 			{m.inventory_exits()}
 		</a>
+		<a href="/inventario/toma-fisica" class="btn btn-ghost">
+			<Icon name="grid" size={15} />
+			{m.inventory_counts()}
+		</a>
 		<a href="/inventario/categorias" class="btn btn-ghost">
 			<Icon name="tag" size={15} />
 			{m.inventory_categories()}

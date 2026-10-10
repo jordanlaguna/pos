@@ -162,6 +162,11 @@
 	"api_exit_cancelled": "Esa salida ya está anulada.",
 	"api_empty_exit": "La salida no tiene líneas.",
 	"api_invalid_exit_line": "La línea {line} de la salida no tiene una cantidad válida.",
+	"api_count_not_found": "La toma física no existe.",
+	"api_count_not_open": "Esa toma física ya está cerrada ({status}).",
+	"api_count_already_open": "Ya hay una toma física abierta que cubre esos productos (la {count_id}). Aplíquela o descártela primero.",
+	"api_count_outside_scope": "El producto {product_id} no está en lo que cubre esta toma física.",
+	"api_count_has_no_lines": "La toma física no tiene nada contado. Cuente al menos un producto o descártela.",
 	"api_category_name_taken": "Ya hay una categoría llamada {name}.",
 	"api_invalid_tax_code": "El código de tarifa {tax_code} no está en el catálogo de Hacienda.",
 

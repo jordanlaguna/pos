@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from app.domain.inventory import ExitLine, Movement
 from app.domain.money import Money
 from app.models.model_inventory import (
+    StockCount,
+    StockCountLine,
     StockExit,
     StockExitDetail,
     StockLevel,
@@ -305,3 +307,127 @@ class SqlAlchemyStockExitRepository:
         salida.status = "voided"
         salida.voided_at = voided_at
         salida.void_reason = reason
+
+
+# -------------------------------------------------- la toma física (RN-100)
+
+
+@dataclass(frozen=True)
+class CountData:
+    """Una toma guardada. Cumple `CountSnapshot`."""
+
+    id: int
+    branch_id: int
+    category_id: int | None
+    status: str
+
+
+@dataclass(frozen=True)
+class CountLineData:
+    """Una línea contada. Cumple `CountLineSnapshot`."""
+
+    product_id: int
+    lot_id: int | None
+    system_qty: int
+    counted_qty: int
+
+
+def _a_toma(fila: StockCount) -> CountData:
+    return CountData(
+        id=fila.id, branch_id=fila.branch_id, category_id=fila.category_id, status=fila.status
+    )
+
+
+class SqlAlchemyStockCountRepository:
+    """Cumple `StockCountRepository`."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def get(self, count_id: int) -> CountData | None:
+        fila = self._db.query(StockCount).filter(StockCount.id == count_id).first()
+        return _a_toma(fila) if fila else None
+
+    def open_in_branch(self, branch_id: int) -> list[CountData]:
+        filas = (
+            self._db.query(StockCount)
+            .filter(StockCount.branch_id == branch_id, StockCount.status == "open")
+            .order_by(StockCount.id)
+            .all()
+        )
+        return [_a_toma(fila) for fila in filas]
+
+    def add(
+        self,
+        *,
+        branch_id: int,
+        category_id: int | None,
+        opened_by: int,
+        opened_at: datetime,
+        notes: str | None,
+    ) -> int:
+        toma = StockCount(
+            branch_id=branch_id,
+            category_id=category_id,
+            status="open",
+            opened_by=opened_by,
+            opened_at=opened_at,
+            notes=notes,
+        )
+        self._db.add(toma)
+        self._db.flush()
+        return toma.id
+
+    def lines_of(self, count_id: int) -> list[CountLineData]:
+        filas = (
+            self._db.query(StockCountLine)
+            .filter(StockCountLine.count_id == count_id)
+            .order_by(StockCountLine.id)
+            .all()
+        )
+        return [
+            CountLineData(
+                product_id=fila.product_id,
+                lot_id=fila.lot_id,
+                system_qty=fila.system_qty,
+                counted_qty=fila.counted_qty,
+            )
+            for fila in filas
+        ]
+
+    def record_line(
+        self,
+        count_id: int,
+        *,
+        product_id: int,
+        lot_id: int | None,
+        system_qty: int,
+        counted_qty: int,
+        counted_at: datetime,
+        counted_by: int,
+    ) -> None:
+        # Reemplaza si ya se contó el (producto, lote): es lo que `uq_stock_count_lines`
+        # sostiene, con `lot_key` para que «sin lote» cuente como un lote más.
+        consulta = self._db.query(StockCountLine).filter(
+            StockCountLine.count_id == count_id, StockCountLine.product_id == product_id
+        )
+        consulta = (
+            consulta.filter(StockCountLine.lot_id.is_(None))
+            if lot_id is None
+            else consulta.filter(StockCountLine.lot_id == lot_id)
+        )
+        fila = consulta.first()
+        if fila is None:
+            fila = StockCountLine(count_id=count_id, product_id=product_id, lot_id=lot_id)
+            self._db.add(fila)
+        fila.system_qty = system_qty
+        fila.counted_qty = counted_qty
+        fila.counted_at = counted_at
+        fila.counted_by = counted_by
+        self._db.flush()
+
+    def close(self, count_id: int, *, status: str, closed_by: int, closed_at: datetime) -> None:
+        toma = self._db.query(StockCount).filter(StockCount.id == count_id).one()
+        toma.status = status
+        toma.closed_by = closed_by
+        toma.closed_at = closed_at

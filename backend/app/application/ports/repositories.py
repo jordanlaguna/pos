@@ -76,6 +76,14 @@ class CategoryRepository(Protocol):
         """La categoría con ese id **en esta compañía**, o nulo."""
         ...
 
+    def tree(self) -> dict[int, int | None]:
+        """`{categoría: madre}` de toda la compañía, con nulo en las raíces.
+
+        Es lo que la toma física necesita para saber si un producto cae en su
+        alcance (RN-100): dos niveles, una sola pregunta.
+        """
+        ...
+
 
 class ProductRepository(Protocol):
     def get(self, product_id: int) -> ProductSnapshot | None: ...

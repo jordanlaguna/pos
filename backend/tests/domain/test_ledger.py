@@ -77,7 +77,7 @@ from app.domain.ledger import (
     sales_role,
 )
 from app.domain.ledger import METHOD_ROLES
-from app.domain.ledger import SHRINKAGE, STOCK_EXIT, StockExitDocument, post_stock_exit
+from app.domain.ledger import OVERAGE, SHRINKAGE, STOCK_COUNT, STOCK_EXIT, StockExitDocument, post_stock_exit
 from app.domain.money import Money
 from app.domain.sale import PAYMENT_METHODS
 from app.domain.tax import TaxRate
@@ -125,6 +125,9 @@ CUENTAS = {
     (PAYROLL, OTHER_DEDUCTIONS_PAYABLE): 216,
     (STOCK_EXIT, SHRINKAGE): 631,
     (STOCK_EXIT, INVENTORY): 121,
+    (STOCK_COUNT, SHRINKAGE): 631,
+    (STOCK_COUNT, INVENTORY): 121,
+    (STOCK_COUNT, OVERAGE): 492,
 }
 
 MAPEO = AccountMap(accounts=CUENTAS, unclassified=POR_CLASIFICAR)
@@ -922,5 +925,39 @@ class TestLaSalidaConMotivo:
 
     def test_sin_mapeo_cae_en_por_clasificar_y_balancea(self):
         asiento = post_stock_exit(StockExitDocument(id=7, date=HOY), Money(100), VACIO)
+        assert debitos(asiento) == {POR_CLASIFICAR: Money(100)}
+        assert creditos(asiento) == {POR_CLASIFICAR: Money(100)}
+
+
+class TestLaTomaFisica:
+    """RN-100: un asiento por la suma de las diferencias valoradas."""
+
+    def test_el_faltante_va_al_gasto(self):
+        from app.domain.ledger import OVERAGE, STOCK_COUNT, StockCountDocument, post_stock_count
+
+        asiento = post_stock_count(StockCountDocument(id=9, date=HOY), Money(-1200), MAPEO)
+        assert debitos(asiento) == {631: Money(1200)}
+        assert creditos(asiento) == {121: Money(1200)}
+        assert (asiento.source_type, asiento.source_id, asiento.description, asiento.kind) == (
+            "stock_count", 9, STOCK_COUNT, "auto",
+        )
+        assert OVERAGE not in [linea.memo for linea in asiento.lines]
+
+    def test_el_sobrante_va_al_ingreso(self):
+        from app.domain.ledger import StockCountDocument, post_stock_count
+
+        asiento = post_stock_count(StockCountDocument(id=9, date=HOY), Money(600), MAPEO)
+        assert debitos(asiento) == {121: Money(600)}
+        assert creditos(asiento) == {492: Money(600)}
+
+    def test_una_toma_que_cuadro_en_plata_no_deja_asiento(self):
+        from app.domain.ledger import StockCountDocument, post_stock_count
+
+        assert post_stock_count(StockCountDocument(id=9, date=HOY), Money.zero(), MAPEO) is None
+
+    def test_sin_mapeo_cae_en_por_clasificar(self):
+        from app.domain.ledger import StockCountDocument, post_stock_count
+
+        asiento = post_stock_count(StockCountDocument(id=9, date=HOY), Money(-100), VACIO)
         assert debitos(asiento) == {POR_CLASIFICAR: Money(100)}
         assert creditos(asiento) == {POR_CLASIFICAR: Money(100)}
