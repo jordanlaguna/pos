@@ -9,6 +9,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Supplier } from '$lib/domain/types';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -178,10 +179,9 @@
 
 			<div>
 				<label class="label" for="tipo-id">{m.suppliers_label_id_type()}</label>
-				<select
+				<Select
 					id="tipo-id"
 					name="identification_type"
-					class="input"
 					value={editando.identification_type ?? ''}
 				>
 					<!-- Sin identificación es un proveedor informal, no un error: el
@@ -196,7 +196,7 @@
 					     (T-728); el 05, el proveedor del extranjero. -->
 					<option value="05">{m.suppliers_id_type_05()}</option>
 					<option value="06">{m.suppliers_id_type_06()}</option>
-				</select>
+				</Select>
 			</div>
 			<Field
 				label={m.suppliers_label_identification()}

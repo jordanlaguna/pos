@@ -13,6 +13,7 @@
 		TrialBalance
 	} from '$lib/domain/types';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -47,11 +48,11 @@
 	<form method="GET" class="flex flex-wrap items-end gap-2">
 		<label class="text-xs text-[var(--text-subtle)]">
 			{m.accounting_tab_reports()}
-			<select name="report" class="input mt-1" value={data.reporte}>
+			<Select name="report" class="mt-1" value={data.reporte}>
 				{#each opciones as opcion (opcion.id)}
 					<option value={opcion.id}>{opcion.label}</option>
 				{/each}
-			</select>
+			</Select>
 		</label>
 		<label class="text-xs text-[var(--text-subtle)]">
 			{m.accounting_report_year()}
@@ -59,12 +60,12 @@
 		</label>
 		<label class="text-xs text-[var(--text-subtle)]">
 			{m.accounting_report_month()}
-			<select name="month" class="input mt-1 w-32" value={data.month ?? ''}>
+			<Select name="month" class="mt-1 w-32" value={data.month ?? ''}>
 				<option value="">{m.accounting_report_all_year()}</option>
 				{#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as mes (mes)}
 					<option value={mes}>{mes}</option>
 				{/each}
-			</select>
+			</Select>
 		</label>
 		<button type="submit" class="btn btn-ghost">{m.accounting_filter()}</button>
 	</form>

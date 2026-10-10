@@ -7,6 +7,7 @@
 	import { kindLabel } from '$lib/ui/accounting';
 	import { ACCOUNT_KINDS, type Account } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -96,11 +97,11 @@
 </div>
 		<div>
 	<label class="label" for="kind">{m.accounting_account_kind()}</label>
-<select id="kind" name="kind" class="input">
+<Select id="kind" name="kind">
 				{#each ACCOUNT_KINDS as tipo (tipo)}
 					<option value={tipo}>{kindLabel(tipo)}</option>
 				{/each}
-			</select>
+			</Select>
 	{#if form?.errors?.kind}
 		<p class="mt-1 text-xs text-[var(--negative)]">{form?.errors?.kind}</p>
 	{/if}

@@ -12,6 +12,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Person } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -134,10 +135,11 @@
 						<td>
 							<form method="POST" action="?/cambiarRol" use:enhance>
 								<input type="hidden" name="id_user" value={person.id_user} />
-								<select
+								<Select
 									name="role"
 									value={role}
-									class="input w-32 py-1 text-xs"
+									class="w-32"
+									selectClass="py-1 text-xs"
 									disabled={isMe}
 									title={isMe ? m.users_cannot_change_own_role() : m.users_change_role()}
 									onchange={(e) => e.currentTarget.form?.requestSubmit()}
@@ -145,7 +147,7 @@
 								>
 									<option value="admin">{m.role_admin()}</option>
 									<option value="cajero">{m.role_cashier()}</option>
-								</select>
+								</Select>
 							</form>
 						</td>
 						<td class="text-right">

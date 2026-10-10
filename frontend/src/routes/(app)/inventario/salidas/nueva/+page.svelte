@@ -9,6 +9,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Product } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -21,9 +22,10 @@
 	// persona eligió antes de que Svelte enganche la página se perdería al
 	// hidratar. El valor se lee del DOM, al montar y en cada cambio.
 	let reasonId = $state('');
-	let selectMotivo = $state<HTMLSelectElement | null>(null);
 	onMount(() => {
-		if (selectMotivo) reasonId = selectMotivo.value;
+		// Por el `id` y no por `bind:this`: el `<select>` vive dentro de `Select`.
+		const motivo = document.getElementById('motivo') as HTMLSelectElement | null;
+		if (motivo) reasonId = motivo.value;
 	});
 	let notes = $state('');
 	let lineas = $state<Linea[]>([]);
@@ -93,11 +95,9 @@
 		<div class="card grid gap-4 p-4 sm:grid-cols-2">
 			<label class="block" for="motivo">
 				<span class="label">{m.exit_reason_label()}</span>
-				<select
+				<Select
 					id="motivo"
 					name="reason_id"
-					class="input"
-					bind:this={selectMotivo}
 					onchange={(e) => (reasonId = e.currentTarget.value)}
 					required
 				>
@@ -105,7 +105,7 @@
 					{#each data.reasons as motivo (motivo.id)}
 						<option value={String(motivo.id)}>{motivo.name}</option>
 					{/each}
-				</select>
+				</Select>
 				{#if form?.errors?.reason_id}
 					<span class="mt-1 block text-xs text-[var(--negative)]">{form.errors.reason_id}</span>
 				{/if}

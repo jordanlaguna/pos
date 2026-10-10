@@ -8,6 +8,7 @@
 	import { formatDate } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -206,19 +207,19 @@
 			</div>
 			<div>
 				<label class="label" for="jornada-frequency">{m.payroll_settings_f_frequency()}</label>
-				<select id="jornada-frequency" name="frequency" class="input" bind:value={jornada.frequency}>
+				<Select id="jornada-frequency" name="frequency" bind:value={jornada.frequency}>
 					{#each FREQUENCIES as f (f)}
 						<option value={f}>{m.payroll_frequency({ frequency: f })}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			<div>
 				<label class="label" for="jornada-shift">{m.payroll_settings_f_shift()}</label>
-				<select id="jornada-shift" name="shift" class="input" bind:value={jornada.shift}>
+				<Select id="jornada-shift" name="shift" bind:value={jornada.shift}>
 					{#each SHIFTS as s (s)}
 						<option value={s}>{m.payroll_shift({ shift: s })}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			<Field label={m.payroll_settings_f_hours_per_day()} name="hours_per_day" value={String(jornada.hours_per_day)} inputmode="decimal" hint={m.payroll_settings_f_hours_hint()} />
 			<Field label={m.payroll_settings_f_workdays_per_week()} name="workdays_per_week" value={String(jornada.workdays_per_week)} inputmode="numeric" />
@@ -227,11 +228,11 @@
 			{:else if jornada.frequency === 'weekly'}
 				<div>
 					<label class="label" for="jornada-weekday">{m.payroll_settings_f_cut_weekday()}</label>
-					<select id="jornada-weekday" name="cut_weekday" class="input" value={String(jornada.cut_weekday ?? 4)}>
+					<Select id="jornada-weekday" name="cut_weekday" value={String(jornada.cut_weekday ?? 4)}>
 						{#each DIAS as d (d)}
 							<option value={d}>{m.payroll_weekday({ day: d })}</option>
 						{/each}
-					</select>
+					</Select>
 				</div>
 			{:else if jornada.frequency === 'biweekly'}
 				<Field label={m.payroll_settings_f_series_start()} name="series_start" type="date" value={jornada.series_start ?? ''} />

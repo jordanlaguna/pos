@@ -38,5 +38,7 @@
 	"$comentario_rol": "Os rótulos em minúscula são para quando o perfil aparece dentro de uma frase: «convidam você a entrar como operador de caixa».",
 	"role_admin_lower": "administrador",
 	"role_cashier_lower": "operador de caixa",
-	"nav_payroll": "Folha de pagamento"
+	"nav_payroll": "Folha de pagamento",
+	"nav_switch_terminal": "Trocar de caixa",
+	"nav_session_menu": "Menu da sessão"
 }

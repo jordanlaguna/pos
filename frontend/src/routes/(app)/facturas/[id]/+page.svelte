@@ -14,6 +14,7 @@
 	import { documentTypeLabel, paymentLabel } from '$lib/ui/messages';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -330,11 +331,11 @@
 		{#if tipoNota === DEBIT_NOTE}
 			<div>
 				<label class="label" for="note-payment">{m.invoice_note_payment()}</label>
-				<select id="note-payment" name="payment_method" class="input">
+				<Select id="note-payment" name="payment_method">
 					{#each PAYMENT_METHODS as metodo (metodo)}
 						<option value={metodo}>{paymentLabel(metodo)}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 		{/if}
 

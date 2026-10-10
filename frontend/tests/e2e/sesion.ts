@@ -94,10 +94,16 @@ export async function autenticar(page: Page, quien = ADMIN) {
 	await page.getByRole('button', { name: /^entrar$/i }).click();
 }
 
-/** Elige una compañía de la pantalla de selección, por parte de su nombre. */
+/**
+ * Elige una compañía de la pantalla de selección, por parte de su nombre.
+ *
+ * `.first()`: una compañía con varias cajas ofrece un botón por caja, cada uno
+ * con el nombre de la compañía en su rótulo (RN-102), y el primero es la caja
+ * de siempre.
+ */
 export async function elegirCompania(page: Page, nombre = CON_DATOS) {
 	await expect(page).toHaveURL(/\/compania/);
-	await page.getByRole('button', { name: new RegExp(nombre, 'i') }).click();
+	await page.getByRole('button', { name: new RegExp(nombre, 'i') }).first().click();
 	await expect(page).toHaveURL(/\/(ventas|dashboard)/);
 }
 
@@ -125,6 +131,16 @@ export async function entrarAVentas(page: Page, quien = ADMIN, compania = CON_DA
  * llega. El mismo selector vale en el POS y en el panel de soporte.
  */
 export async function salir(page: Page) {
-	await page.locator('form[action="/logout"] button').first().click();
+	// En el POS el botón vive dentro del menú de la sesión (T-933), que hay que
+	// abrir primero; en el panel de soporte sigue a la vista.
+	const menu = page.locator('[data-testid="session-menu"]').locator('visible=true');
+	if (await menu.count()) {
+		await clicHasta(menu.first(), () =>
+			expect(page.locator('form[action="/logout"] button').locator('visible=true').first()).toBeVisible({
+				timeout: 1000
+			})
+		);
+	}
+	await page.locator('form[action="/logout"] button').locator('visible=true').first().click();
 	await expect(page).toHaveURL(/\/login/);
 }

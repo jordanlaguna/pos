@@ -26,6 +26,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { cartMessage, documentTypeLabel, paymentLabel } from '$lib/ui/messages';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -826,12 +827,12 @@
 
 		<div>
 			<label class="label" for="client-select">{m.sales_client_optional()}</label>
-			<select
+			<Select
 				id="client-select"
 				name="client_id"
 				value={cart.clientId}
 				onchange={(e) => cart.setClient(e.currentTarget.value, esExtranjero(e.currentTarget.value))}
-				class="input"
+			
 			>
 				<option value="">{m.sales_client_walk_in()}</option>
 				{#each data.clients as client (client.id_client)}
@@ -847,7 +848,7 @@
 						{client.last_name} — {client.identification}
 					</option>
 				{/each}
-			</select>
+			</Select>
 		</div>
 
 		{#if einvoicing}

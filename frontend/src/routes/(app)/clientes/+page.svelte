@@ -23,6 +23,7 @@
 	import type { Client } from '$lib/domain/types';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -251,10 +252,9 @@
 		/>
 		<div>
 			<label class="label" for="id-type">{m.clients_label_id_type()}</label>
-			<select
+			<Select
 				id="id-type"
 				name="identification_type"
-				class="input"
 				bind:value={f.identification_type}
 				aria-describedby="id-type-hint"
 			>
@@ -266,7 +266,7 @@
 				{#each ID_TYPES as tipo (tipo.code)}
 					<option value={tipo.code}>{tipo.label}</option>
 				{/each}
-			</select>
+			</Select>
 			<p id="id-type-hint" class="mt-1 text-xs text-[var(--text-subtle)]">
 				{extranjero ? m.clients_foreign_id_hint() : m.clients_id_type_hint()}
 			</p>
@@ -357,12 +357,12 @@
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
 					<label class="label" for="exo-type">{m.clients_label_exo_type()}</label>
-					<select id="exo-type" name="exo_document_type" class="input" bind:value={f.exo_document_type}>
+					<Select id="exo-type" name="exo_document_type" bind:value={f.exo_document_type}>
 						<option value="">{m.clients_exemption_none()}</option>
 						{#each SELLABLE_EXEMPTION_TYPES as tipo (tipo.code)}
 							<option value={tipo.code}>{exemptionTypeLabel(tipo.code)}</option>
 						{/each}
-					</select>
+					</Select>
 				</div>
 
 				{#if f.exo_document_type}
@@ -375,12 +375,12 @@
 
 					<div>
 						<label class="label" for="exo-inst">{m.clients_label_exo_institution()}</label>
-						<select id="exo-inst" name="exo_institution" class="input" bind:value={f.exo_institution}>
+						<Select id="exo-inst" name="exo_institution" bind:value={f.exo_institution}>
 							<option value=""></option>
 							{#each EXEMPTION_INSTITUTIONS as institucion (institucion)}
 								<option value={institucion}>{exemptionInstitutionLabel(institucion)}</option>
 							{/each}
-						</select>
+						</Select>
 					</div>
 
 					{#if f.exo_institution === EXEMPTION_OTHER}

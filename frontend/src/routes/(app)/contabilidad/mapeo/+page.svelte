@@ -4,6 +4,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { eventLabel } from '$lib/ui/accounting';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -49,12 +50,12 @@
 									{m.accounting_mapping_on_purpose()}
 								</span>
 							{:else}
-								<select name="{fila.event}|{fila.role}" class="input" value={fila.account_id ?? ''}>
+								<Select name="{fila.event}|{fila.role}" value={fila.account_id ?? ''}>
 									<option value="">{m.accounting_mapping_missing()}</option>
 									{#each data.cuentas as cuenta (cuenta.id)}
 										<option value={cuenta.id}>{cuenta.code} · {cuenta.name}</option>
 									{/each}
-								</select>
+								</Select>
 							{/if}
 						</label>
 					{/each}

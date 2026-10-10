@@ -14,6 +14,7 @@
 	import { formatDateTime } from '$lib/ui/format';
 	import { DEFAULT_SETTINGS } from '$lib/domain/settings';
 	import type { LayoutData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, children }: { data: LayoutData; children: any } = $props();
 
@@ -60,6 +61,29 @@
 	// El menú del WinForms colapsaba a iconos; aquí se conserva ese gesto y la
 	// preferencia se recuerda, porque un cajero fijo siempre lo quiere igual.
 	let collapsed = $state(false);
+
+	/**
+	 * El menú de la sesión (T-933): la tarjeta del pie abre un panel hacia
+	 * arriba con la identidad y «Cerrar sesión». Se cierra con un clic afuera
+	 * o con Escape.
+	 */
+	let menuSesion = $state(false);
+	let cajaSesion = $state<HTMLDivElement | null>(null);
+	$effect(() => {
+		if (!menuSesion) return;
+		const afuera = (e: PointerEvent) => {
+			if (!cajaSesion?.contains(e.target as Node)) menuSesion = false;
+		};
+		const tecla = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') menuSesion = false;
+		};
+		document.addEventListener('pointerdown', afuera);
+		document.addEventListener('keydown', tecla);
+		return () => {
+			document.removeEventListener('pointerdown', afuera);
+			document.removeEventListener('keydown', tecla);
+		};
+	});
 	let mobileOpen = $state(false);
 
 	$effect(() => {
@@ -190,7 +214,7 @@
 						{data.user.company_name}
 					</p>
 					{#if data.user.branch_code && data.user.terminal_code}
-						<p class="truncate text-[10px] leading-tight text-[var(--text-subtle)]">
+						<p class="truncate text-[10px] leading-tight text-[var(--text-subtle)]" data-testid="session-terminal">
 							{m.nav_branch_terminal({
 								branch: data.user.branch_code,
 								terminal: data.user.terminal_code
@@ -198,6 +222,20 @@
 						</p>
 					{/if}
 				</div>
+				{#if data.user.terminals_available > 1}
+					<!--
+						Cambiar de caja (RN-102): abrir sesión de nuevo en otra, como el
+						idioma. Solo cuando hay otra a la que ir.
+					-->
+					<a
+						href="/compania?caja=1"
+						class="shrink-0 rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--surface-sunken)] hover:text-[var(--accent)]"
+						title={m.nav_switch_terminal()}
+						aria-label={m.nav_switch_terminal()}
+					>
+						<Icon name="wallet" size={13} />
+					</a>
+				{/if}
 				{#if data.user.companies_available > 1}
 					<!--
 						Solo aparece cuando hay a dónde ir (RN-25). Ofrecerle «cambiar de
@@ -246,17 +284,18 @@
 				compañía», el valor volvía a «inglés» solo, y el formulario mandaba el
 				idioma que ya estaba puesto.
 			-->
-			<select
+			<Select
 				id="nav-idioma-{donde}"
 				name="locale"
-				class="input h-8 min-w-0 py-0 text-xs {donde === 'header' ? 'w-36' : 'flex-1'}"
+				class="min-w-0 {donde === 'header' ? 'w-36' : 'flex-1'}"
+				selectClass="h-8 py-0 text-xs"
 			>
 				{#each IDIOMAS as opcion (opcion.value)}
 					<option value={opcion.value} selected={opcion.value === idiomaElegido}>
 						{opcion.label}
 					</option>
 				{/each}
-			</select>
+			</Select>
 			<button type="submit" class="btn btn-ghost h-8 px-2" aria-label={m.nav_language_apply()}>
 				<Icon name="check" size={14} />
 			</button>
@@ -396,31 +435,66 @@
 				</div>
 			{/if}
 
-			<div
-				class="flex items-center gap-2.5 rounded-lg px-2 py-2 {collapsed ? 'justify-center' : ''}"
-			>
-				<span
-					class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--surface-sunken)] text-xs font-bold text-[var(--text-muted)]"
-					title={data.user.name}
+			<!-- La tarjeta de la sesión y su menú (T-933). -->
+			<div class="relative" bind:this={cajaSesion}>
+				<button
+					type="button"
+					class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-[var(--surface-sunken)] {collapsed
+						? 'justify-center'
+						: ''} {menuSesion ? 'bg-[var(--surface-sunken)]' : ''}"
+					aria-haspopup="menu"
+					aria-expanded={menuSesion}
+					aria-label={m.nav_session_menu()}
+					data-testid="session-menu"
+					onclick={() => (menuSesion = !menuSesion)}
 				>
-					{initials(data.user.name)}
-				</span>
-				{#if !collapsed}
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-xs font-semibold text-[var(--text)]">{data.user.name}</p>
-						<p class="truncate text-[10px] text-[var(--text-subtle)]">
-							{roleLabel(data.user.role)}
-						</p>
+					<span
+						class="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
+						title={data.user.name}
+					>
+						{initials(data.user.name)}
+					</span>
+					{#if !collapsed}
+						<span class="min-w-0 flex-1">
+							<span class="block truncate text-xs font-semibold text-[var(--text)]">{data.user.name}</span>
+							<span class="block truncate text-[10px] text-[var(--text-subtle)]">{data.user.email}</span>
+						</span>
+						<Icon name={menuSesion ? 'down' : 'up'} size={14} class="shrink-0 text-[var(--text-subtle)]" />
+					{/if}
+				</button>
+
+				{#if menuSesion}
+					<div
+						role="menu"
+						class="absolute bottom-[calc(100%+0.5rem)] left-0 z-40 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] p-2 shadow-xl"
+					>
+						<div class="flex items-center gap-2.5 px-2 py-2">
+							<span
+								class="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[var(--accent-soft)] text-xs font-bold text-[var(--accent)]"
+								aria-hidden="true"
+							>
+								{initials(data.user.name)}
+							</span>
+							<span class="min-w-0 flex-1">
+								<span class="block truncate text-sm font-semibold text-[var(--text)]">{data.user.name}</span>
+								<span class="block truncate text-xs text-[var(--text-subtle)]">{data.user.email}</span>
+								<span class="block text-[10px] font-semibold tracking-wide text-[var(--text-subtle)] uppercase">
+									{roleLabel(data.user.role)}
+								</span>
+							</span>
+						</div>
+						<div class="my-1 border-t border-[var(--border)]"></div>
+						<form method="POST" action="/logout">
+							<button
+								type="submit"
+								role="menuitem"
+								class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-sunken)]"
+							>
+								<Icon name="logout" size={15} class="text-[var(--text-subtle)]" />
+								{m.nav_logout()}
+							</button>
+						</form>
 					</div>
-					<form method="POST" action="/logout">
-						<button
-							type="submit"
-							class="rounded-lg p-1.5 text-[var(--text-subtle)] hover:bg-[var(--negative-bg)] hover:text-[var(--negative)]"
-							aria-label={m.nav_logout()}
-						>
-							<Icon name="logout" size={15} />
-						</button>
-					</form>
 				{/if}
 			</div>
 		</div>

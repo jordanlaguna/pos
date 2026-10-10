@@ -206,6 +206,56 @@
 		cursor: not-allowed;
 	}
 
+	/*
+	 * La lista propia de `Select.svelte` (T-933). El botón se ve como `.input`
+	 * y el panel flota fijo a la ventana, por encima de los modales (z-50) y
+	 * por debajo de los avisos (z-100), para que ningún `overflow` lo recorte.
+	 */
+	.combo-boton {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		text-align: left;
+		cursor: pointer;
+	}
+	.combo-boton[aria-expanded='true'] {
+		border-color: var(--ring);
+	}
+	.combo-panel {
+		position: fixed;
+		z-index: 90;
+		overflow-y: auto;
+		padding: 0.25rem;
+		border: 1px solid var(--border);
+		border-radius: 0.75rem;
+		background-color: var(--surface-raised);
+		box-shadow: 0 12px 32px -8px rgb(0 0 0 / 0.3);
+	}
+	.combo-opcion {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--text);
+		cursor: pointer;
+		outline: none;
+	}
+	.combo-opcion.activa {
+		background-color: var(--surface-sunken);
+	}
+	.combo-opcion[aria-selected='true'] {
+		font-weight: 500;
+	}
+	.combo-opcion[aria-disabled='true'] {
+		color: var(--text-subtle);
+		cursor: not-allowed;
+	}
+
 	.label {
 		display: block;
 		font-size: 0.75rem;

@@ -6,6 +6,7 @@
 	import { auditActionLabel } from '$lib/ui/messages';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 </script>
@@ -20,26 +21,26 @@
 <form method="GET" class="card mb-4 flex flex-wrap items-end gap-3 p-3">
 	<div class="min-w-40 flex-1">
 		<label class="label" for="company_id">{m.admin_audit_company()}</label>
-		<select id="company_id" name="company_id" class="input">
+		<Select id="company_id" name="company_id">
 			<option value="" selected={data.filtro.companyId === ''}>{m.admin_audit_all()}</option>
 			{#each data.companies as c (c.id)}
 				<option value={c.id} selected={String(c.id) === data.filtro.companyId}>
 					{c.nombre}
 				</option>
 			{/each}
-		</select>
+		</Select>
 	</div>
 
 	<div class="min-w-40 flex-1">
 		<label class="label" for="accion">{m.admin_audit_action()}</label>
-		<select id="accion" name="accion" class="input">
+		<Select id="accion" name="accion">
 			<option value="" selected={data.filtro.accion === ''}>{m.admin_audit_all()}</option>
 			{#each data.acciones as accion (accion)}
 				<option value={accion} selected={accion === data.filtro.accion}>
 					{auditActionLabel(accion)}
 				</option>
 			{/each}
-		</select>
+		</Select>
 	</div>
 
 	<button type="submit" class="btn btn-ghost">

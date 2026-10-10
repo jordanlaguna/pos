@@ -34,6 +34,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Product } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -496,7 +497,7 @@
 			obligarían a elegir raíz para poder elegir subcategoría, y acá el uso
 			normal es «muéstrame Cervezas» sin pensar en dónde cuelga.
 		-->
-		<select id="inv-categoria" bind:value={categoryFilter} class="input w-52">
+		<Select id="inv-categoria" bind:value={categoryFilter} class="w-52">
 			<option value="todas">{m.common_all_f()}</option>
 			{#each tree as branch (branch.root.id)}
 				{#if branch.children.length === 0}
@@ -510,7 +511,7 @@
 					</optgroup>
 				{/if}
 			{/each}
-		</select>
+		</Select>
 	</div>
 
 	<label class="flex cursor-pointer items-center gap-2 pb-2 text-sm text-[var(--text-muted)]">
@@ -745,10 +746,9 @@
 		<div class="sm:col-span-2 rounded-xl border border-[var(--border)] p-3">
 			<div class="mb-4">
 				<label class="label" for="product-tax-code">{m.inventory_label_tax_code()}</label>
-				<select
+				<Select
 					id="product-tax-code"
 					name="tax_code"
-					class="input"
 					value={fTaxCode}
 					onchange={(e) => elegirCodigo(e.currentTarget.value)}
 				>
@@ -756,7 +756,7 @@
 					{#each SELLABLE_TAX_CODES as tarifa (tarifa.code)}
 						<option value={tarifa.code}>{taxCodeLabel(tarifa.code)}</option>
 					{/each}
-				</select>
+				</Select>
 				<p class="mt-1 text-xs text-[var(--text-subtle)]">{m.inventory_tax_code_hint()}</p>
 			</div>
 
@@ -851,9 +851,8 @@
 
 		<div>
 			<label class="label" for="product-category">{m.inventory_label_category_required()}</label>
-			<select
+			<Select
 				id="product-category"
-				class="input"
 				onchange={(e) => cambiarRaiz(e.currentTarget.value)}
 				aria-invalid={form?.errors?.category_id ? 'true' : undefined}
 			>
@@ -862,7 +861,7 @@
 						{root.name}
 					</option>
 				{/each}
-			</select>
+			</Select>
 			{#if form?.errors?.category_id}
 				<p class="mt-1 text-xs text-[var(--negative)]">{form.errors.category_id}</p>
 			{/if}
@@ -871,13 +870,13 @@
 		<div>
 			<label class="label" for="product-subcategory">{m.inventory_label_subcategory()}</label>
 			{#if subcategories.length > 0}
-				<select id="product-subcategory" class="input" onchange={(e) => (fSub = e.currentTarget.value)}>
+				<Select id="product-subcategory" onchange={(e) => (fSub = e.currentTarget.value)}>
 					{#each subcategories as child (child.id)}
 						<option value={String(child.id)} selected={String(child.id) === fSub}>
 							{child.name}
 						</option>
 					{/each}
-				</select>
+				</Select>
 			{:else}
 				<p class="input flex items-center text-[var(--text-subtle)]">
 					{m.inventory_no_subcategories()}

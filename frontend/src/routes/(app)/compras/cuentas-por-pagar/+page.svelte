@@ -11,6 +11,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PayablePurchase, PayableSupplier } from '$lib/domain/types';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -201,11 +202,11 @@
 
 			<div>
 				<label class="label" for="metodo-abono">{m.payment_label_method()}</label>
-				<select id="metodo-abono" name="method" bind:value={metodo} class="input">
+				<Select id="metodo-abono" name="method" bind:value={metodo}>
 					<option value="transfer">{m.payment_method_transfer()}</option>
 					<option value="cash">{m.payment_method_cash()}</option>
 					<option value="other">{m.payment_method_other()}</option>
-				</select>
+				</Select>
 				{#if metodo === 'cash'}
 					<!-- RN-56: el efectivo sale de la caja abierta o no sale. Vale
 					     decirlo antes de que el «no» lo diga después. -->

@@ -38,5 +38,7 @@
 	"$comentario_rol": "Los rótulos en minúscula son para cuando el rol va dentro de una frase: «le proponen entrar como cajero». En inglés no hay diferencia; en español y portugués sí.",
 	"role_admin_lower": "administrador",
 	"role_cashier_lower": "cajero",
-	"nav_payroll": "Planilla"
+	"nav_payroll": "Planilla",
+	"nav_switch_terminal": "Cambiar de caja",
+	"nav_session_menu": "Menú de la sesión"
 }

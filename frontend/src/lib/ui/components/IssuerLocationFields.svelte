@@ -19,6 +19,7 @@
 		type IssuerLocation
 	} from '$lib/domain/location';
 	import { m } from '$lib/paraglide/messages.js';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let {
 		location = $bindable(),
@@ -51,10 +52,9 @@
 		<label class="label" for="ubicacion-provincia">
 			{m.settings_province()}{#if required}<span class="text-[var(--negative)]" aria-hidden="true">*</span>{/if}
 		</label>
-		<select
+		<Select
 			id="ubicacion-provincia"
 			name="negocio_provincia"
-			class="input"
 			value={location.province}
 			onchange={elegirProvincia}
 			aria-invalid={errors.negocio_provincia ? 'true' : undefined}
@@ -63,7 +63,7 @@
 			{#each provincias as p (p.code)}
 				<option value={p.code}>{p.name}</option>
 			{/each}
-		</select>
+		</Select>
 		{#if errors.negocio_provincia}<p class="mt-1 text-xs text-[var(--negative)]">{errors.negocio_provincia}</p>{/if}
 	</div>
 
@@ -71,10 +71,9 @@
 		<label class="label" for="ubicacion-canton">
 			{m.settings_canton()}{#if required}<span class="text-[var(--negative)]" aria-hidden="true">*</span>{/if}
 		</label>
-		<select
+		<Select
 			id="ubicacion-canton"
 			name="negocio_canton"
-			class="input"
 			value={location.canton}
 			onchange={elegirCanton}
 			disabled={cantones.length === 0}
@@ -84,7 +83,7 @@
 			{#each cantones as c (c.code)}
 				<option value={c.code}>{c.name}</option>
 			{/each}
-		</select>
+		</Select>
 		{#if errors.negocio_canton}<p class="mt-1 text-xs text-[var(--negative)]">{errors.negocio_canton}</p>{/if}
 	</div>
 
@@ -92,10 +91,9 @@
 		<label class="label" for="ubicacion-distrito">
 			{m.settings_district()}{#if required}<span class="text-[var(--negative)]" aria-hidden="true">*</span>{/if}
 		</label>
-		<select
+		<Select
 			id="ubicacion-distrito"
 			name="negocio_distrito"
-			class="input"
 			bind:value={location.district}
 			disabled={distritos.length === 0}
 			aria-invalid={errors.negocio_distrito ? 'true' : undefined}
@@ -104,7 +102,7 @@
 			{#each distritos as d (d.code)}
 				<option value={d.code}>{d.name}</option>
 			{/each}
-		</select>
+		</Select>
 		{#if errors.negocio_distrito}<p class="mt-1 text-xs text-[var(--negative)]">{errors.negocio_distrito}</p>{/if}
 	</div>
 

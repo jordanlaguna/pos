@@ -5,6 +5,7 @@
 	import { initials } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { LayoutData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, children }: { data: LayoutData; children: any } = $props();
 
@@ -136,13 +137,13 @@
 			<form method="POST" action="/admin/idioma" class="flex items-center gap-1" data-idioma-panel>
 				<input type="hidden" name="redirectTo" value={page.url.pathname} />
 				<label class="sr-only" for="panel-idioma">{m.nav_language()}</label>
-				<select id="panel-idioma" name="locale" class="input h-8 w-32 min-w-0 py-0 text-xs">
+				<Select id="panel-idioma" name="locale" class="w-32 min-w-0" selectClass="h-8 py-0 text-xs">
 					{#each IDIOMAS as opcion (opcion.value)}
 						<option value={opcion.value} selected={opcion.value === data.support.locale}>
 							{opcion.label}
 						</option>
 					{/each}
-				</select>
+				</Select>
 				<button type="submit" class="btn btn-ghost h-8 px-2" aria-label={m.nav_language_apply()}>
 					<Icon name="check" size={14} />
 				</button>

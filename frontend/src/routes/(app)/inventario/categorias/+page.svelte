@@ -9,6 +9,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Category } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -337,7 +338,7 @@
 	>
 		<input type="hidden" name="id" value={moving?.id ?? ''} />
 		<label class="label" for="category-parent">{m.categories_label_parent()}</label>
-		<select id="category-parent" name="parent_id" bind:value={fParent} class="input">
+		<Select id="category-parent" name="parent_id" bind:value={fParent}>
 			<option value="">{m.categories_parent_root()}</option>
 			{#each roots as root (root.id)}
 				{#if root.id !== moving?.id}
@@ -346,7 +347,7 @@
 					</option>
 				{/if}
 			{/each}
-		</select>
+		</Select>
 		<p class="mt-2 text-xs text-[var(--text-subtle)]">{m.categories_move_hint()}</p>
 	</form>
 

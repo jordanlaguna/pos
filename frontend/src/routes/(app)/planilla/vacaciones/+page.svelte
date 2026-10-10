@@ -4,6 +4,7 @@
 	import { formatDate } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -17,8 +18,8 @@
 <p class="mb-3 text-sm text-[var(--text-muted)]">{m.payroll_vacations_description()}</p>
 
 <div class="mb-4 flex flex-wrap items-center gap-3">
-	<select
-		class="input w-auto"
+	<Select
+		class="w-auto"
 		aria-label={m.payroll_actions_f_employee()}
 		value={data.empleado ?? ''}
 		onchange={(ev) => goto(`/planilla/vacaciones?empleado=${(ev.currentTarget as HTMLSelectElement).value}`)}
@@ -27,7 +28,7 @@
 		{#each data.employees as e (e.id)}
 			<option value={e.id}>{employeeName(e)}</option>
 		{/each}
-	</select>
+	</Select>
 	{#if elegido}
 		<a href="/planilla/acciones?empleado={elegido.id}" class="btn btn-ghost">{m.payroll_vacations_register()}</a>
 	{/if}

@@ -9,6 +9,7 @@
 	import { formatDate } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -219,28 +220,28 @@
 	<form id="form-contrato" method="POST" action="?/contrato" use:enhance={submit({ onSuccess: () => (contratando = false) })} class="grid gap-4 sm:grid-cols-2">
 		<div>
 			<label class="label" for="contrato-jornada">{m.payroll_employee_f_schedule()}</label>
-			<select id="contrato-jornada" name="schedule_id" class="input" required>
+			<Select id="contrato-jornada" name="schedule_id" required>
 				{#each data.schedules.filter((s) => s.is_active) as s (s.id)}
 					<option value={s.id} selected={vigente?.schedule_id === s.id}>{s.name} · {m.payroll_frequency({ frequency: s.frequency })}</option>
 				{/each}
-			</select>
+			</Select>
 		</div>
 		<div>
 			<label class="label" for="contrato-puesto">{m.payroll_employee_f_position()}</label>
-			<select id="contrato-puesto" name="position_id" class="input" required>
+			<Select id="contrato-puesto" name="position_id" required>
 				{#each data.positions.filter((p) => p.is_active) as p (p.id)}
 					<option value={p.id} selected={vigente?.position_id === p.id}>{p.name}</option>
 				{/each}
-			</select>
+			</Select>
 		</div>
 		<div>
 			<label class="label" for="contrato-poliza">{m.payroll_employee_f_policy()}</label>
-			<select id="contrato-poliza" name="ins_policy_id" class="input">
+			<Select id="contrato-poliza" name="ins_policy_id">
 				<option value="">{m.payroll_employee_f_policy_default()}</option>
 				{#each data.policies as p (p.id)}
 					<option value={p.id}>{p.number}</option>
 				{/each}
-			</select>
+			</Select>
 		</div>
 		<Field label={m.payroll_employee_f_valid_from()} name="valid_from" type="date" value={vigente ? '' : e.hired_on} required />
 		<Field label={m.payroll_employee_f_period_salary()} name="period_salary" value={vigente ? String(vigente.period_salary) : ''} inputmode="decimal" required hint={m.payroll_employee_f_period_salary_hint()} />
@@ -264,11 +265,11 @@
 		<Field label={m.payroll_employee_f_terminated_on()} name="terminated_on" type="date" required />
 		<div>
 			<label class="label" for="baja-causa">{m.payroll_employee_f_cause()}</label>
-			<select id="baja-causa" name="cause" class="input">
+			<Select id="baja-causa" name="cause">
 				{#each TERMINATION_CAUSES as c (c)}
 					<option value={c}>{m.payroll_cause({ cause: c })}</option>
 				{/each}
-			</select>
+			</Select>
 		</div>
 	</form>
 	{#snippet footer()}

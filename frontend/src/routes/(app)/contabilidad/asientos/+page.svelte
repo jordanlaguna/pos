@@ -9,6 +9,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { entryKindLabel, entryTitle } from '$lib/ui/accounting';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -50,12 +51,12 @@
 		</label>
 		<label class="text-xs text-[var(--text-subtle)]">
 			{m.accounting_report_month()}
-			<select name="month" class="input mt-1 w-32" value={data.month ?? ''}>
+			<Select name="month" class="mt-1 w-32" value={data.month ?? ''}>
 				<option value="">{m.accounting_report_all_year()}</option>
 				{#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as mes (mes)}
 					<option value={mes}>{mes}</option>
 				{/each}
-			</select>
+			</Select>
 		</label>
 		<button type="submit" class="btn btn-ghost">{m.accounting_filter()}</button>
 	</form>
@@ -182,10 +183,10 @@
 </div>
 			<div>
 	<label class="label" for="kind">{m.accounting_entry_kind_manual()}</label>
-<select id="kind" name="kind" class="input">
+<Select id="kind" name="kind">
 					<option value="manual">{m.accounting_entry_kind_manual()}</option>
 					<option value="adjustment">{m.accounting_entry_kind_adjustment()}</option>
-				</select>
+				</Select>
 </div>
 		</div>
 
@@ -210,12 +211,12 @@
 					{#each filas as fila, i (i)}
 						<tr>
 							<td class="py-1 pr-2">
-								<select name="line_account" bind:value={fila.account} class="input">
+								<Select name="line_account" bind:value={fila.account}>
 									<option value=""></option>
 									{#each data.cuentas as cuenta (cuenta.id)}
 										<option value={cuenta.id}>{cuenta.code} · {cuenta.name}</option>
 									{/each}
-								</select>
+								</Select>
 							</td>
 							<td class="py-1 pr-2">
 								<input
@@ -277,11 +278,11 @@
 
 			<div>
 	<label class="label" for="account_id">{m.accounting_reclassify_account()}</label>
-<select id="account_id" name="account_id" class="input" required>
+<Select id="account_id" name="account_id" required>
 					{#each data.cuentas.filter((c) => c.code !== POR_CLASIFICAR) as cuenta (cuenta.id)}
 						<option value={cuenta.id}>{cuenta.code} · {cuenta.name}</option>
 					{/each}
-				</select>
+				</Select>
 </div>
 
 			<div>

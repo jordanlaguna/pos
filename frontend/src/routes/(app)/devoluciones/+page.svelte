@@ -96,7 +96,9 @@
 	description={m.returns_description()}
 />
 
-<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+<!-- La columna del resumen solo se reserva cuando hay resumen: sin venta elegida
+     la lista ocupa la pantalla entera, como cualquier otra pantalla. -->
+<div class="grid gap-4 {selected && selected.items.length ? 'lg:grid-cols-[minmax(0,1fr)_22rem]' : ''}">
 	<section class="min-w-0">
 		{#if !selected}
 			<div class="card p-4">

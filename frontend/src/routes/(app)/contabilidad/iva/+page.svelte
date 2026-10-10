@@ -3,6 +3,7 @@
 	import { formatMoney } from '$lib/domain/money';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -26,11 +27,11 @@
 	</label>
 	<label class="text-xs text-[var(--text-subtle)]">
 		{m.accounting_report_month()}
-		<select name="month" class="input mt-1 w-32" value={data.month}>
+		<Select name="month" class="mt-1 w-32" value={data.month}>
 			{#each [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as mes (mes)}
 				<option value={mes}>{mes}</option>
 			{/each}
-		</select>
+		</Select>
 	</label>
 	<button type="submit" class="btn btn-ghost">{m.accounting_filter()}</button>
 </form>

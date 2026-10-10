@@ -5,6 +5,7 @@
 	import { formatDate } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -37,11 +38,11 @@
 	</div>
 	<div>
 		<label class="label" for="archivos-month">{m.payroll_files_f_month()}</label>
-		<select id="archivos-month" name="month" class="input w-28" value={String(data.month)}>
+		<Select id="archivos-month" name="month" class="w-28" value={String(data.month)}>
 			{#each MESES as mes (mes)}
 				<option value={String(mes)}>{mes}</option>
 			{/each}
-		</select>
+		</Select>
 	</div>
 	<button type="submit" class="btn btn-ghost">{m.payroll_files_show()}</button>
 </form>

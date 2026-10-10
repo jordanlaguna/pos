@@ -9,6 +9,7 @@
 	import { formatDate } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -92,11 +93,11 @@
 	<form id="form-corrida" method="POST" action="?/crear" use:enhance={submit({ onRedirect: () => (creando = false) })} class="grid gap-4">
 		<div>
 			<label class="label" for="corrida-jornada">{m.payroll_runs_f_schedule()}</label>
-			<select id="corrida-jornada" name="schedule_id" class="input" required>
+			<Select id="corrida-jornada" name="schedule_id" required>
 				{#each data.schedules as s (s.id)}
 					<option value={s.id}>{s.name} · {m.payroll_frequency({ frequency: s.frequency })}</option>
 				{/each}
-			</select>
+			</Select>
 		</div>
 		<Field label={m.payroll_runs_f_cut_date()} name="cut_date" type="date" required hint={m.payroll_runs_f_cut_hint()} />
 		<Field label={m.payroll_runs_f_pay_date()} name="pay_date" type="date" />

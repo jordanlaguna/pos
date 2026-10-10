@@ -16,6 +16,7 @@
 	import { formatDate } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -165,11 +166,11 @@
 			<input type="hidden" name="id" value={editando.id || ''} />
 			<div>
 				<label class="label" for="emp-tipo">{m.payroll_employees_f_identification_type()}</label>
-				<select id="emp-tipo" name="identification_type" class="input" bind:value={editando.identification_type}>
+				<Select id="emp-tipo" name="identification_type" bind:value={editando.identification_type}>
 					{#each IDENTIFICATION_TYPES as t (t)}
 						<option value={t}>{m.payroll_id_type({ type: t })}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			<Field label={m.payroll_employees_f_identification()} name="identification" bind:value={editando.identification} required icon="idcard" />
 			<Field label={m.payroll_employees_f_first_name()} name="first_name" bind:value={editando.first_name} required />
@@ -180,19 +181,19 @@
 			<Field label={m.payroll_employees_f_hired_on()} name="hired_on" type="date" bind:value={editando.hired_on} required />
 			<div>
 				<label class="label" for="emp-genero">{m.payroll_employees_f_gender()}</label>
-				<select id="emp-genero" name="gender" class="input" bind:value={editando.gender}>
+				<Select id="emp-genero" name="gender" bind:value={editando.gender}>
 					{#each GENDERS as g (g)}
 						<option value={g}>{m.payroll_gender({ gender: g })}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			<div>
 				<label class="label" for="emp-civil">{m.payroll_employees_f_marital_status()}</label>
-				<select id="emp-civil" name="marital_status" class="input" bind:value={editando.marital_status}>
+				<Select id="emp-civil" name="marital_status" bind:value={editando.marital_status}>
 					{#each MARITAL_STATUSES as s (s)}
 						<option value={s}>{m.payroll_marital({ status: s })}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			<Field label={m.payroll_employees_f_nationality()} name="nationality" bind:value={editando.nationality} required />
 			<Field label={m.payroll_employees_f_phone()} name="phone" value={editando.phone ?? ''} icon="phone" />
@@ -227,28 +228,28 @@
 						{#if conContrato}
 							<div>
 								<label class="label" for="alta-jornada">{m.payroll_employee_f_schedule()}</label>
-								<select id="alta-jornada" name="schedule_id" class="input" required>
+								<Select id="alta-jornada" name="schedule_id" required>
 									{#each jornadasActivas as s (s.id)}
 										<option value={s.id}>{s.name} · {m.payroll_frequency({ frequency: s.frequency })}</option>
 									{/each}
-								</select>
+								</Select>
 							</div>
 							<div>
 								<label class="label" for="alta-puesto">{m.payroll_employee_f_position()}</label>
-								<select id="alta-puesto" name="position_id" class="input" required>
+								<Select id="alta-puesto" name="position_id" required>
 									{#each puestosActivos as p (p.id)}
 										<option value={p.id}>{p.name}</option>
 									{/each}
-								</select>
+								</Select>
 							</div>
 							<div>
 								<label class="label" for="alta-poliza">{m.payroll_employee_f_policy()}</label>
-								<select id="alta-poliza" name="ins_policy_id" class="input">
+								<Select id="alta-poliza" name="ins_policy_id">
 									<option value="">{m.payroll_employee_f_policy_default()}</option>
 									{#each data.policies as p (p.id)}
 										<option value={p.id}>{p.number}</option>
 									{/each}
-								</select>
+								</Select>
 							</div>
 							<Field label={m.payroll_employee_f_period_salary()} name="period_salary" inputmode="decimal" required hint={m.payroll_employee_f_period_salary_hint()} />
 							<Field label={m.payroll_employee_f_solidarista_rate()} name="solidarista_rate" inputmode="decimal" />

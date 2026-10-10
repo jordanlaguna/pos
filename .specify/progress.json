@@ -3343,6 +3343,35 @@
       "lo_que_ensena": [
         "Una sección nueva de la configuración tiene que entrar en `mergeSettings` **antes** de que la pantalla la guarde: el POS manda el objeto entero en cada guardado, y una sección que el tipo `Settings` no conoce se pierde al primer clic en «Guardar» —así se habría borrado el `inventory` que sembró la migración, con los lotes adentro—. Por eso `lotsEnabled` viaja de ida y vuelta aunque todavía nadie lo edite."
       ]
+    },
+    {
+      "fecha": "2026-10-10",
+      "titulo": "T-1505, primer tramo: la sesión elige su caja",
+      "hecho": [
+        "El segundo paso del login gana la caja (RN-102, plan §15.3): `CompanyOption.terminals` trae las cajas activas de cada compañía abierta con su sucursal —`terminales_de` en `crud_membership.py`, con la misma consulta `sin_filtro` que `sucursal_y_terminal`, porque se lee con el token de tránsito—; `POST /auth/company` acepta `terminal_id`, lo comprueba con `terminal_de` (de esa compañía y activa; si no, `terminal_not_found`, que ya existía) y devuelve con qué caja quedó la sesión.",
+        "`token_de_sesion` recibe `caja=(sucursal, terminal)`: la elegida en el login o la del token vigente cuando lo reemiten `/auth/locale` y `PUT /settings/locales`; sin ella, `sucursal_y_terminal` como siempre. El login entra directo solo con una compañía **y** una caja. `/users/me` gana `branch_id`, `terminal_id`, `terminal_name` y `terminals_available` (0 en una visita de soporte, como `companies_available`).",
+        "En el POS, `/compania` lista las cajas de cada compañía con más de una —un botón por caja, con la compañía escondida, en el mismo paso— y marca la actual; `?caja=1` la abre desde el menú aunque la compañía sea una sola; «Cambiar de caja» en el menú solo cuando hay otra a la que ir. El simulado calca las cuatro cosas (`cajasActivasDe`, `cajaPorOmision`, `cajaDelToken`; `/users/me` saca la caja del token y no de la compañía).",
+        "`tests/test_caja.py` (compañía propia con una segunda caja): el tránsito con las dos cajas, abrir en la elegida y sin elegir, la ajena y la apagada con su código, el idioma de la persona y el de la compañía que conservan la caja, y cambiar de caja desde la sesión. `tests/e2e/caja.spec.ts` lo recorre con una compañía propia dada de alta desde el panel, como `sucursales.spec.ts`: una segunda caja en el demo haría pasar a todas las demás pruebas por la pregunta. `elegirCompania` de `sesion.ts` toma el primer botón de la compañía por lo mismo.",
+        "Cifras: la batería entera del backend, 3 576 pruebas al 100 % contra la pila reconstruida (21 minutos); `npm run check` en 0 y 0; 1 013 pruebas del POS al 100 %; `caja.spec.ts`, `cambio-de-compania.spec.ts`, `login.spec.ts` e `idioma.spec.ts` de punta a punta en verde (21 pruebas)."
+      ],
+      "lo_que_ensena": [
+        "Un `npm run dev` encadenado con `| grep | head -5` muere solo: cuando `head` cierra, el siguiente mensaje de Vite se encuentra el tubo roto y el servidor sale sin decir nada. Un servidor de desarrollo que se lanza de fondo escribe a un archivo, no a un filtro."
+      ]
+    },
+    {
+      "fecha": "2026-10-10",
+      "titulo": "T-933: los combos, el menú de sesión y Devoluciones a lo ancho",
+      "hecho": [
+        "`Select.svelte` reescrito: después de hidratar esconde la lista nativa (`sr-only`, sigue en el formulario, la lee el lector y la eligen las pruebas con `selectOption`) y muestra un botón con el valor y un panel propio —resaltado, ✓ en la elegida, teclado (flechas, Enter, Escape, Inicio/Fin y escribir una letra), cierre al hacer clic afuera— que flota fijo a la ventana (z-90, entre los modales y los avisos) para que ningún `overflow` lo recorte. Hasta hidratar se ve la nativa, así que elegir antes de tiempo sigue funcionando. `name` pasó a ser opcional (los filtros no viajan) y el valor es genérico, para que `bind:value` acepte lo que la pantalla tenga.",
+        "Los 59 `<select>` sueltos de 28 pantallas pasan por el componente: 56 con un guion que reparte `class=\"input …\"` entre el contenedor (ancho, flex, rejilla) y la lista, y tres a mano. Se queda nativo el `multiple` de las acciones de planilla. `src/lib/ui/native-select.test.ts` tumba `npm test` si vuelve a aparecer uno suelto.",
+        "El pie del menú es una tarjeta (iniciales, nombre, correo, chevron) que abre un panel hacia arriba con la identidad, el rol y «Cerrar sesión»; se cierra con un clic afuera o con Escape. `salir()` de `sesion.ts` abre el menú antes de buscar el botón; en el panel de soporte sigue a la vista.",
+        "Devoluciones: la rejilla reserva la columna del resumen solo cuando hay resumen; sin venta elegida la lista ocupa el ancho de las demás pantallas.",
+        "Cifras: `npm run check` en 0 y 0; 1 015 pruebas del POS al 100 % (dos son el guardián nuevo); la batería entera de punta a punta, 100 pruebas en verde (15 minutos) sin tocar ningún `selectOption`."
+      ],
+      "lo_que_ensena": [
+        "Un guion que busca `<select` por texto encuentra también el que está escrito en un comentario —«el contenido de un `<select>` es su opción más larga»— y, al convertirlo, se come el cierre de la lista de verdad: la pantalla compila con un `</Select>` sin abrir. Lo que recorre marcado tiene que saltarse los comentarios, y la segunda pasada lo hace.",
+        "Un `until` que espera a que un puerto se libere no termina si el proceso que lo ocupa sobrevivió al cierre de su consola: en Windows, parar la tarea de fondo no para el `node` que lanzó. El `check` de la migración se quedó esperando sin arrancar hasta que se miró."
+      ]
     }
   ],
   "$reparto": {

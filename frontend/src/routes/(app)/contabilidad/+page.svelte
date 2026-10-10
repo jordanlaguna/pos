@@ -8,6 +8,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { entryTitle } from '$lib/ui/accounting';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -49,11 +50,11 @@
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="min-w-0">
 					<label class="label" for="template">{m.accounting_template()}</label>
-					<select id="template" name="template" class="input">
+					<Select id="template" name="template">
 						{#each data.status.templates as plantilla (plantilla)}
 							<option value={plantilla}>{m.accounting_template_commerce()}</option>
 						{/each}
-					</select>
+					</Select>
 					{#if form?.errors?.template}
 						<p class="mt-1 text-xs text-[var(--negative)]">{form?.errors?.template}</p>
 					{/if}
@@ -95,12 +96,12 @@
 							{#each filas as fila, i (i)}
 								<tr>
 									<td class="py-1 pr-2">
-										<select name="opening_code" bind:value={fila.code} class="input">
+										<Select name="opening_code" bind:value={fila.code}>
 											<option value=""></option>
 											{#each data.status.chart as cuenta (cuenta.code)}
 												<option value={cuenta.code}>{cuenta.code} · {cuenta.name}</option>
 											{/each}
-										</select>
+										</Select>
 									</td>
 									<td class="py-1 pr-2">
 										<input

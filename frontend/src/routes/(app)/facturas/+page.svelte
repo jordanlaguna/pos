@@ -12,6 +12,7 @@
 	import { knownState } from '$lib/domain/transmission';
 	import type { EmittedDocument } from '$lib/domain/types';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -134,12 +135,12 @@
 
 	<div>
 		<label class="label" for="factura-metodo">{m.invoices_payment_method()}</label>
-		<select id="factura-metodo" bind:value={method} class="input w-44">
+		<Select id="factura-metodo" bind:value={method} class="w-44">
 			<option value="">{m.invoices_all_methods()}</option>
 			{#each PAYMENT_METHODS as metodo}
 				<option value={metodo}>{paymentLabel(metodo)}</option>
 			{/each}
-		</select>
+		</Select>
 	</div>
 
 	<div>

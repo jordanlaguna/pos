@@ -14,6 +14,7 @@
 	import { formatDate } from '$lib/ui/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -67,11 +68,11 @@
 			</div>
 			<div>
 				<label class="label" for="accion-tipo">{m.payroll_actions_f_kind()}</label>
-				<select id="accion-tipo" name="kind" class="input" bind:value={kind}>
+				<Select id="accion-tipo" name="kind" bind:value={kind}>
 					{#each REGISTRABLE_KINDS as k (k)}
 						<option value={k}>{m.payroll_action_kind({ kind: k })}</option>
 					{/each}
-				</select>
+				</Select>
 			</div>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<Field label={m.payroll_actions_f_starts_on()} name="starts_on" type="date" required />
@@ -96,11 +97,11 @@
 				{#if campos.position}
 					<div>
 						<label class="label" for="accion-puesto">{m.payroll_actions_f_position()}</label>
-						<select id="accion-puesto" name="position_id" class="input" required>
+						<Select id="accion-puesto" name="position_id" required>
 							{#each data.positions as p (p.id)}
 								<option value={p.id}>{p.name}</option>
 							{/each}
-						</select>
+						</Select>
 					</div>
 				{/if}
 			</div>
@@ -120,8 +121,8 @@
 			<h3 class="font-semibold text-[var(--text)]">
 				{elegido ? m.payroll_actions_history_of({ name: employeeName(elegido) }) : m.payroll_actions_choose_employee()}
 			</h3>
-			<select
-				class="input w-auto"
+			<Select
+				class="w-auto"
 				aria-label={m.payroll_actions_f_employee()}
 				value={data.empleado ?? ''}
 				onchange={(ev) => goto(`/planilla/acciones?empleado=${(ev.currentTarget as HTMLSelectElement).value}`)}
@@ -130,7 +131,7 @@
 				{#each data.employees as e (e.id)}
 					<option value={e.id}>{employeeName(e)}</option>
 				{/each}
-			</select>
+			</Select>
 		</div>
 		{#if elegido && data.history.length === 0}
 			<p class="text-sm text-[var(--text-muted)]">{m.payroll_employee_history_empty()}</p>

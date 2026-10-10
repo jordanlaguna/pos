@@ -12,6 +12,7 @@
 	import { importMessage } from '$lib/ui/messages';
 	import type { ParsedLine, ParsedSupplier, Product } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -659,15 +660,14 @@
 										/>
 										<div>
 											<label class="label" for="cat-{linea.key}">{m.entry_label_category()}</label>
-											<select
+											<Select
 												id="cat-{linea.key}"
 												bind:value={linea.nuevaCategoria}
-												class="input"
 											>
 												{#each data.categories as category (category.id)}
 													<option value={String(category.id)}>{category.name}</option>
 												{/each}
-											</select>
+											</Select>
 										</div>
 									</div>
 								</td>
@@ -704,7 +704,7 @@
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 			<div>
 				<label class="label" for="proveedor">{m.entry_label_supplier_account()}</label>
-				<select id="proveedor" bind:value={supplierId} class="input" disabled={proveedorNuevo !== null}>
+				<Select id="proveedor" bind:value={supplierId} disabled={proveedorNuevo !== null}>
 					<!-- Sin proveedor esto es una entrada y no una compra (RN-52), y
 					     por eso la opción vacía existe y es la primera: recibir
 					     mercadería sin factura sigue siendo lo normal. -->
@@ -712,7 +712,7 @@
 					{#each data.suppliers.filter((p) => p.is_active) as proveedor (proveedor.id)}
 						<option value={String(proveedor.id)}>{proveedor.name}</option>
 					{/each}
-				</select>
+				</Select>
 				{#if proveedorNuevo}
 					<p class="mt-1 text-xs text-[var(--warning)]">
 						{m.entry_supplier_new({ name: proveedorNuevo.name })}
@@ -759,10 +759,10 @@
 
 				<div>
 					<label class="label" for="condicion">{m.entry_label_terms()}</label>
-					<select id="condicion" name="payment_terms" bind:value={paymentTerms} class="input">
+					<Select id="condicion" name="payment_terms" bind:value={paymentTerms}>
 						<option value="cash">{m.entry_terms_cash()}</option>
 						<option value="credit">{m.entry_terms_credit()}</option>
-					</select>
+					</Select>
 				</div>
 
 				{#if paymentTerms === 'credit'}
@@ -783,7 +783,7 @@
 				{:else}
 					<div>
 						<label class="label" for="metodo">{m.entry_label_payment_method()}</label>
-						<select id="metodo" name="payment_method" bind:value={paymentMethod} class="input">
+						<Select id="metodo" name="payment_method" bind:value={paymentMethod}>
 							<!-- Sin método la compra nace con saldo y se abona desde
 							     cuentas por pagar. No se adivina: «efectivo» descuadra un
 							     arqueo y «transferencia» inventa un movimiento bancario. -->
@@ -791,7 +791,7 @@
 							<option value="cash">{m.entry_payment_cash()}</option>
 							<option value="transfer">{m.entry_payment_transfer()}</option>
 							<option value="other">{m.entry_payment_other()}</option>
-						</select>
+						</Select>
 						{#if paymentMethod === 'cash'}
 							<!-- RN-56: el efectivo sale de la caja abierta o no sale, y
 							     acá la compra entera rebota. Vale avisarlo antes. -->

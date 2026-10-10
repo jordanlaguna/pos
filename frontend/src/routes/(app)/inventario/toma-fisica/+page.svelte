@@ -9,6 +9,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import type { Category, StockCount, StockCountStatus } from '$lib/domain/types';
 	import type { ActionData, PageData } from './$types';
+	import Select from '$lib/ui/components/Select.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -146,12 +147,12 @@
 			<span class="label">{m.counts_scope_label()}</span>
 			<!-- Sin `bind:value`: lo elegido antes de hidratar se perdería; la
 			     primera opción va marcada con `selected` (trampa conocida). -->
-			<select id="alcance" name="category_id" class="input">
+			<Select id="alcance" name="category_id">
 				<option value="" selected>{m.counts_scope_all()}</option>
 				{#each opciones as opcion (opcion.id)}
 					<option value={String(opcion.id)}>{opcion.label}</option>
 				{/each}
-			</select>
+			</Select>
 		</label>
 		<label class="block" for="notas">
 			<span class="label">{m.counts_notes_label()}</span>

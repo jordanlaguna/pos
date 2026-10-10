@@ -5801,6 +5801,28 @@ negocio.
       valorado total no cambia; una compañía migrada con dos sucursales
       reparte con traslados y no le queda ningún ajuste en el kárdex; con una
       sola terminal el login no pregunta nada.
+
+      **Avance del 2026-10-10 (primer tramo, la caja de la sesión).**
+      `CompanyOption.terminals` con las cajas activas y su sucursal
+      (`terminales_de`, en `crud_membership.py` junto a
+      `sucursal_y_terminal`); `POST /auth/company` acepta `terminal_id`,
+      lo comprueba con `terminal_de` —de esa compañía y activa, si no
+      `terminal_not_found`— y devuelve la caja; `token_de_sesion` recibe
+      `caja=(sucursal, terminal)` y los dos reemisores de idioma
+      (`/auth/locale`, `PUT /settings/locales`) le pasan la del token
+      vigente; el login entra directo solo con una compañía **y** una caja;
+      `/users/me` gana `branch_id`, `terminal_id`, `terminal_name` y
+      `terminals_available`. En el POS, `/compania` lista las cajas de cada
+      compañía con más de una —un botón por caja, en el mismo paso— y
+      `?caja=1` la abre desde el menú aunque la compañía sea una sola;
+      «Cambiar de caja» en el menú cuando hay más de una. El simulado
+      calca las cuatro cosas (`cajasActivasDe`, `cajaPorOmision`,
+      `cajaDelToken`). `tests/test_caja.py` prueba el tránsito con dos
+      cajas, abrir en la elegida, la ajena y la apagada, el idioma que la
+      conserva y cambiar de caja desde la sesión; `tests/e2e/caja.spec.ts`
+      lo recorre con una compañía propia. Falta el segundo tramo: el
+      inventario por sucursal, los traslados y la segunda sucursal del
+      simulado.
 - [ ] **T-1506** Valorado y rotación (punto 6; RN-103; RF-92). Las dos consultas, el
       saldo contable al lado del valorado, y los dos reportes en `/dashboard`.
 
@@ -6406,3 +6428,24 @@ y el guardián que los vigila.
       **Verificación:** `tests/e2e/configuracion.spec.ts`: guardar desde
       «Moneda e impuesto» deja abierta esa pestaña; sin pestaña en la
       dirección, o con una que no existe, abre Negocio.
+- [x] **T-933** Diseño: los combos, el menú de sesión y Devoluciones a lo
+      ancho (pedido el 2026-10-10). Los sesenta `<select>` sueltos del POS y
+      del panel se ven como el sistema operativo quiera; pasan todos por
+      `Select.svelte`, que después de hidratar esconde la lista nativa
+      (`sr-only`, sigue en el formulario y la siguen eligiendo las pruebas con
+      `selectOption`) y muestra un botón con el valor y un panel propio:
+      opciones con resaltado, ✓ en la elegida, teclado y cierre al hacer clic
+      afuera. El pie del menú pasa a ser una tarjeta (iniciales, nombre,
+      correo) que abre un panel hacia arriba con la identidad y «Cerrar
+      sesión»; «Notificaciones» no entra porque no hay nada detrás. La rejilla
+      de Devoluciones reserva la columna del resumen solo cuando hay resumen.
+
+      **Verificación:** ningún `<select>` fuera de `Select.svelte` salvo los
+      que lo necesitan nativos (`multiple`), con un guardián que lo tumbe;
+      `npm run check` en 0 y 0 y la batería de punta a punta entera en verde
+      sin tocar ningún `selectOption`; Devoluciones sin venta elegida ocupa
+      el ancho de las demás pantallas.
+
+      **Hecha el 2026-10-10.** `npm run check` en 0 y 0; 1 015 pruebas del POS al 100 % (dos son el guardián nuevo); la batería entera de punta a punta, 100 pruebas en verde (15 minutos) sin tocar ningún `selectOption`. El guardián es
+      `src/lib/ui/native-select.test.ts`; el único nativo que queda es el
+      `multiple` de las acciones de planilla.
