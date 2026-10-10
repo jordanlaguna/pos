@@ -5665,7 +5665,7 @@ negocio.
 - [x] **T-1501** Requisitos al spec y diseño al plan, con sus revisores.
       Escrito el 2026-10-03: spec §5.10 (RN-98 a RN-105), RF-87 a RF-94 y
       plan §15 (§15.1 a §15.8). Cinco pasadas de cada revisor; lo que cambió
-      por ellas está en `progress.json`, sesión 78.
+      por ellas está en `progress.json`, sesión 83.
 
       **Verificación:** `spec-reviewer` y `plan-reviewer` sin observaciones.
       **Hecha el 2026-10-03.**
@@ -5743,12 +5743,27 @@ negocio.
       activaran (los de planilla, F12), con la misma forma que la migración
       023 usa para los de inventario: lo que ya existe se salta. **Surgió en
       la revisión del plan el 2026-10-03** —ninguna migración lo hizo y esos
-      eventos hoy caen en «por clasificar»—; falta confirmarlo con el usuario
-      antes de construirlo. Es una corrección de F11/F12 sin RN propio: RN-59
+      eventos hoy caen en «por clasificar»— y **confirmada con el usuario el
+      2026-10-10**. Es una corrección de F11/F12 sin RN propio: RN-59
       («por clasificar») es lo que sostiene mientras tanto.
 
       **Verificación:** una compañía activada antes de F12 paga una planilla y
       el asiento no toca «por clasificar».
+- [ ] **T-1509** La herramienta de soporte que recalcula existencias desde el
+      kárdex (RF-95; plan §15.1 y §15.4, `RebuildStockLevels`):
+      `POST /support/companies/{id}/rebuild-stock-levels`, que fija la
+      compañía con `tenancy.compania(cid)` por el tiempo de la petición,
+      reescribe `stock_levels` y `products.stock` con la suma del kárdex y
+      deja en bitácora cuántas filas cambió; el botón en la ficha de la
+      compañía del panel; el simulado. Va después de T-1502, que es donde
+      nace el kárdex. Es la excepción escrita a RN-32 y la única escritura de
+      soporte sobre datos de negocio: `tests/test_soporte.py` tiene que
+      vigilar que siga siendo la única.
+
+      **Verificación:** con un nivel alterado a mano en la base, la acción lo
+      devuelve a la suma del kárdex, `products.stock` queda igual a la suma de
+      `stock_levels`, la bitácora dice cuántas filas cambió, y correrla sobre
+      una compañía cuadrada no cambia nada.
 
 **Decidido con el usuario el 2026-10-03:** entran los siete puntos, con las
 existencias por sucursal (punto 5) y con lote y vencimiento activables por

@@ -3233,7 +3233,7 @@ empleado lleva esos datos (RN-72) y el puesto sus dos códigos (RN-95).
 
 ## 15. Inventario (F15)
 
-> Spec §5.10 (RN-98 a RN-105) y RF-87 a RF-94. Va primera de las tres fases
+> Spec §5.10 (RN-98 a RN-105) y RF-87 a RF-95. Va primera de las tres fases
 > que quedan (§9): el kárdex y el mínimo por producto los consumen F13 y F14.
 > Todo es del módulo `inventory` que ya existe (§11): no hay bandera nueva en
 > `plans`.
@@ -3874,6 +3874,7 @@ GET  /inventory/exits · POST /inventory/exits              admin, módulo inven
 POST /inventory/exits/{id}/cancel                          admin · {reason}
 GET  /inventory/transfers · POST /inventory/transfers      admin, módulo inventory
 GET  /inventory/counts · POST /inventory/counts            admin, módulo inventory
+GET  /inventory/counts/{id}                                RF-89: la toma con lo que decía el sistema, lo contado y el ajuste
 PUT  /inventory/counts/{id}/lines                          contar; cajero o admin
 POST /inventory/counts/{id}/apply · /discard               admin
 GET  /brands · POST · PUT /{id}                            admin, módulo inventory
@@ -3888,13 +3889,14 @@ DELETE /products/delete_product/{id_product}                 `product_has_moveme
 POST /support/companies/{id}/rebuild-stock-levels          soporte: RebuildStockLevels
 ```
 
-Diecisiete rutas nuevas de negocio (veintidós pares método-ruta) más una de
+Dieciocho rutas nuevas de negocio (veintitrés pares método-ruta) más una de
 soporte, y seis que cambian. Las escrituras piden `require_module("inventory")`,
 que es el módulo que ya piden los productos y la entrada (§11). Las lecturas
 quedan libres (RN-50). Contar en una toma lo puede hacer un cajero: es quien
 está en el piso con el lector; abrir, aplicar y descartar, el administrador.
-En `test_aislamiento.py`: las seis rutas con `{id}` —`cancel`, `lines`,
-`apply`, `discard` y los dos `PUT`— van a `RUTAS_POR_ID` con su cuerpo; los
+En `test_aislamiento.py`: las siete rutas con `{id}` —el `GET` de la toma,
+`cancel`, `lines`, `apply`, `discard` y los dos `PUT`— van a `RUTAS_POR_ID`
+con su cuerpo; los
 cinco `GET` que devuelven filas con id (`reasons`, `exits`, `transfers`,
 `counts`, `brands`) a `LISTAS`; el kárdex, los niveles, los lotes y los tres
 reportes **a las dos cosas** que hoy tiene `/reports/low_stock`: una prueba en
@@ -3990,8 +3992,8 @@ una salida sin motivo, no un `exit_reason_required` nuevo.
   negativos los deja en cero y los lista antes, otra que sin administrador
   activo y aceptado se detiene **sin haber creado ninguna tabla**, y otra que
   correrla dos veces deja lo mismo que una.
-- `test_aislamiento.py`: diecisiete rutas nuevas más la de soporte, repartidas
-  como dice §15.5 (seis en `RUTAS_POR_ID`).
+- `test_aislamiento.py`: dieciocho rutas nuevas más la de soporte, repartidas
+  como dice §15.5 (siete en `RUTAS_POR_ID`).
 - `test_error_codes.py`: veintidós códigos, cuatro lugares cada uno; `terminal_not_found` se reutiliza.
 - `test_ports.py`: nueve puertos nuevos, `lock_for_sale` → `lock(product_ids)` en `ProductRepository`, dos
   métodos nuevos en `SettingsRepository`, `branch_id` en `SaleRequest`,
@@ -4018,7 +4020,7 @@ una salida sin motivo, no un `exit_reason_required` nuevo.
   terminal, la pantalla `/compania` con terminales, «Cambiar de caja», la
   prueba de que un cajero de una compañía con una sola terminal sigue entrando
   directo y la de que cambiar de idioma conserva la caja.
-- El simulado: diecisiete endpoints más el del login, una segunda sucursal con
+- El simulado: dieciocho endpoints más el del login, una segunda sucursal con
   su terminal en la primera compañía, motivos sembrados, una salida y una toma
   aplicada en el seed; `SEED_VERSION` sube.
 - Catálogo `inventory.json` crece; nace `kardex.json` **y** se declara en

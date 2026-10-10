@@ -80,6 +80,9 @@ gratis para siempre es lo peor que le puede pasar al negocio.
 (§3), así que su visita ve todo y no escribe nada. Si hay que cambiarle algo a
 un cliente se le pide a su administrador, o se le crea una membresía de verdad
 —que se ve en la lista de usuarios y no depende de que nadie se acuerde—.
+**Una sola excepción, escrita**: recalcular las existencias de una compañía
+desde su kárdex (RF-95), que no inventa ningún dato —vuelve a sumar lo que el
+kárdex ya dice— y queda en bitácora con cuántas filas cambió.
 
 ### Módulos
 
@@ -1414,6 +1417,10 @@ Son los campos sin los cuales hay negocios enteros que no se pueden facturar.
   ficha la muestra con su desglose por sucursal y un enlace al kárdex, y la
   existencia inicial de un producto nuevo entra como movimiento de apertura.
   RN-98.
+- **RF-95** Soporte puede recalcular las existencias de una compañía —por
+  sucursal y el total de cada producto— desde su kárdex, cuando las dos se
+  separaron; la acción queda en bitácora con cuántas filas cambió. Es la
+  excepción escrita a RN-32: no escribe nada que el kárdex no diga ya. RN-98.
 
 ---
 
@@ -1523,7 +1530,7 @@ se quitó el 2026-10-03, RN-9).
 
 **Por construir**: lo que queda abierto de F6 y F7 (`task.md`), de planilla
 **RF-55 a RF-64 y RF-82 a RF-86** (F12, en curso), y el inventario a fondo,
-**RF-87 a RF-94** (F15). Compras y contabilidad, **RF-39 a RF-54**, están
+**RF-87 a RF-95** (F15). Compras y contabilidad, **RF-39 a RF-54**, están
 construidos (F10 y F11, 2026-09). De RF-1 a RF-21 y
 RF-27 y RF-28 ya están construidos —F2 a F5 y F8—; el detalle de qué cerró
 cada fase está en `progress.json`.

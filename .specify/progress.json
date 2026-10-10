@@ -12,7 +12,7 @@
     "moneda": "CRC",
     "iva": 0.13
   },
-  "actualizado": "2026-10-03",
+  "actualizado": "2026-10-10",
   "estado": "Funcional de punta a punta como POS de un solo negocio. Cambió el rumbo: pasa a ser producto multiempresa por suscripción. El plan de ese giro está en .specify/ y manda sobre los pendientes de este archivo.",
   "$rumbo": {
     "documento": ".specify/spec.md, .specify/plan.md, .specify/task.md",
@@ -680,14 +680,14 @@
       "sintoma": "En un clon limpio `hacienda.test.ts` no arranca (ENOENT en `XML-Ejemplos/…0022.xml`) y `npm test` sale en rojo con 648 de 670",
       "causa": "El caso «ni contado ni crédito» leía un XML de `docs/hacienda/costa-rica/XML-Ejemplos/`, que `.gitignore` excluye a propósito por traer datos de un tercero.",
       "arreglo": "El caso usa la factura a crédito versionada de `normativa/protocolos/` pasada a `CondicionVenta` 03, con su `PlazoCredito` de 30 intacto: comprueba además que el plazo no crea deuda.",
-      "sesion": 71
+      "sesion": 82
     },
     {
       "defecto": "`lxml` faltaba en `requirements-dev.txt`",
       "sintoma": "Las 10 validaciones contra el XSD de Hacienda se saltan con «lxml no está instalado» y `pytest` sigue en verde",
       "causa": "La prueba decía que estaba en `requirements-dev.txt` y nunca se agregó; en la máquina donde se escribió estaba instalado a mano.",
       "arreglo": "`lxml>=5.0,<7.0` en `requirements-dev.txt`.",
-      "sesion": 71
+      "sesion": 82
     }
   ],
   "decisiones": [
@@ -1855,9 +1855,15 @@
     },
     {
       "tema": "La migración siembra cuentas y mapeos a quien ya tiene libro",
-      "decision": "La 023 inserta `6.3.01`, `4.9.02` y sus cinco mapeos en las compañías con contabilidad activa, saltando lo que exista. T-1508 (pendiente de confirmar) repara igual lo de planilla.",
+      "decision": "La 023 inserta `6.3.01`, `4.9.02` y sus cinco mapeos en las compañías con contabilidad activa, saltando lo que exista. T-1508 (confirmada el 2026-10-10) repara igual lo de planilla.",
       "porque": "Ninguna migración anterior lo hizo: las compañías activadas antes de F12 tienen los eventos de planilla cayendo en «por clasificar».",
       "fecha": "2026-10-03"
+    },
+    {
+      "tema": "Recalcular existencias desde soporte es la excepción escrita a RN-32",
+      "decision": "`RebuildStockLevels` entra al spec como RF-95 y a task.md como T-1509, en vez de salir del plan. RN-32 anota la excepción.",
+      "porque": "El plan la daba por hecha y ni el spec ni las tareas la tenían: sin RF no hay regla que la justifique ni prueba que vigile que siga siendo la única escritura de soporte. No inventa datos —suma lo que el kárdex ya dice— y queda en bitácora.",
+      "fecha": "2026-10-10"
     }
   ],
   "invariantes_verificados": {
@@ -2071,22 +2077,6 @@
     }
   ],
   "sesiones": [
-    {
-      "fecha": "2026-10-03",
-      "titulo": "Levantar la máquina después del merge y diseñar F15 (T-1501)",
-      "hecho": [
-        "Merge de `origin/main` en `Antony` con conflicto en `progress.json` resuelto conservando las dos partes. La base viva no tenía las columnas de las migraciones 014, 015, 016 y parte de la 021 y 022 (la trampa de `create_all` que ya está en CLAUDE.md); se aplicaron y el modelo quedó igual a la base.",
-        "`/configuracion` respondía 500 en Vite: `qrcode-generator` llegó en `package.json` con el merge y `node_modules` no lo tenía. `npm install` y reiniciar `vite dev`, que cachea la resolución fallida. Todas las pantallas del administrador en 200.",
-        "T-1501: spec §4, §5.10 (RN-98 a RN-105), RF-87 a RF-94, glosario y §10; plan §15 (§15.1 a §15.8) y tres riesgos en §10; task.md con las siete tareas precisadas y T-1508 nueva. Cinco pasadas de `spec-reviewer` y `plan-reviewer`.",
-        "Lo que las revisiones cambiaron del primer borrador: F15 es del módulo `inventory` existente; la sesión elige su terminal (nada en el diseño funcionaba sin eso); las reversiones van al costo del documento revertido, no al promedio; el kárdex guarda el promedio después de cada movimiento; un solo orden de candados por documento y por línea; la migración con guardas antes del DDL e idempotente; `company_id` también en los detalles; `terminal_not_found` ya existía; el reparto al migrar es con traslados."
-      ],
-      "lo_que_ensena": [
-        "Un diseño de inventario por sucursal no vale nada si la sesión no sabe en qué sucursal está. `sucursal_y_terminal` lo tenía anotado en su docstring desde F6 y nadie lo había leído con esa pregunta.",
-        "El `unit_cost` de un movimiento no es el promedio: en una entrada es el de la compra y en una reversión el histórico. Valorar a una fecha pasada con él da un número distinto al valorado de ese día. Hay que guardar el promedio aparte.",
-        "Las cinco pasadas de revisión no fueron de estilo: cada una encontró una ruta que no existe, un candado que se abraza o una guarda que corre después de lo que debía proteger. Conviene pasar el plan por el revisor antes de escribir una línea de código, no después.",
-        "Un `vite dev` que arrancó con un módulo ausente sigue respondiendo 500 después del `npm install`: hay que reiniciarlo. Y un `npm run dev &` dentro de un comando que termina sobrevive en Windows, así que el segundo arranque cae al 5174 y hay dos sirviendo lo mismo."
-      ]
-    },
     {
       "fecha": "2026-08-15",
       "titulo": "Migración completa de WinForms a SvelteKit",
@@ -3228,6 +3218,33 @@
         "Cifras: `npm run check` en 0 y 0, 670 pruebas del POS, 2 018 del backend con cobertura 100 % (2 008 en la corrida completa más las 10 del XSD una vez instalado `lxml`)."
       ],
       "lo_que_ensena": "**Una base de antes de una migración no se puede dejar arrancar con el backend nuevo.** `create_all` crea las tablas que faltan y no toca las que existen, así que el primer arranque deja la base a medio camino entre los dos esquemas, y la migración que la habría llevado al nuevo ya no corre porque sus `CREATE TABLE` chocan. La migración se aplica **antes** de levantar la API nueva, no después."
+    },
+    {
+      "fecha": "2026-10-03",
+      "titulo": "Levantar la máquina después del merge y diseñar F15 (T-1501)",
+      "hecho": [
+        "Merge de `origin/main` en `Antony` con conflicto en `progress.json` resuelto conservando las dos partes. La base viva no tenía las columnas de las migraciones 014, 015, 016 y parte de la 021 y 022 (la trampa de `create_all` que ya está en CLAUDE.md); se aplicaron y el modelo quedó igual a la base.",
+        "`/configuracion` respondía 500 en Vite: `qrcode-generator` llegó en `package.json` con el merge y `node_modules` no lo tenía. `npm install` y reiniciar `vite dev`, que cachea la resolución fallida. Todas las pantallas del administrador en 200.",
+        "T-1501: spec §4, §5.10 (RN-98 a RN-105), RF-87 a RF-94, glosario y §10; plan §15 (§15.1 a §15.8) y tres riesgos en §10; task.md con las siete tareas precisadas y T-1508 nueva. Cinco pasadas de `spec-reviewer` y `plan-reviewer`.",
+        "Lo que las revisiones cambiaron del primer borrador: F15 es del módulo `inventory` existente; la sesión elige su terminal (nada en el diseño funcionaba sin eso); las reversiones van al costo del documento revertido, no al promedio; el kárdex guarda el promedio después de cada movimiento; un solo orden de candados por documento y por línea; la migración con guardas antes del DDL e idempotente; `company_id` también en los detalles; `terminal_not_found` ya existía; el reparto al migrar es con traslados."
+      ],
+      "lo_que_ensena": [
+        "Un diseño de inventario por sucursal no vale nada si la sesión no sabe en qué sucursal está. `sucursal_y_terminal` lo tenía anotado en su docstring desde F6 y nadie lo había leído con esa pregunta.",
+        "El `unit_cost` de un movimiento no es el promedio: en una entrada es el de la compra y en una reversión el histórico. Valorar a una fecha pasada con él da un número distinto al valorado de ese día. Hay que guardar el promedio aparte.",
+        "Las cinco pasadas de revisión no fueron de estilo: cada una encontró una ruta que no existe, un candado que se abraza o una guarda que corre después de lo que debía proteger. Conviene pasar el plan por el revisor antes de escribir una línea de código, no después.",
+        "Un `vite dev` que arrancó con un módulo ausente sigue respondiendo 500 después del `npm install`: hay que reiniciarlo. Y un `npm run dev &` dentro de un comando que termina sobrevive en Windows, así que el segundo arranque cae al 5174 y hay dos sirviendo lo mismo."
+      ]
+    },
+    {
+      "fecha": "2026-10-10",
+      "titulo": "La rama de Antony a main, con el diseño de F15 revisado contra el código",
+      "hecho": [
+        "`origin/Antony` entró a `main` por avance directo: tres commits, el diseño de F15 (T-1501) y dos defectos de clon limpio (`lxml` sin declarar y una prueba que leía un XML no versionado).",
+        "El diseño de F15 se cotejó contra el código: todo lo que §15 da por existente existe con ese nombre (`adjust_stock`, `lock_for_sale`, `sucursal_y_terminal`, `token_de_sesion`, `CompanyOption`, `aceptada_el`, los códigos que reutiliza, la cuenta `1.2.01`); las cuentas `6.3.01` y `4.9.02` y los nombres de foráneas de la 023 están libres; las cifras del plan (once tablas, veintidós códigos, diecisiete rutas) cuadran.",
+        "Dos huecos cerrados: `RebuildStockLevels` estaba en el plan sin RF ni tarea (ahora RF-95, excepción escrita en RN-32 y T-1509), y a §15.5 le faltaba `GET /inventory/counts/{id}`, que RF-89 y la pantalla de la toma necesitan (dieciocho rutas). T-1508 confirmada.",
+        "Registro: la sesión de F15 estaba de primera en `sesiones` y dos defectos apuntaban a la sesión 71 de la rama de Antony; quedaron al final y en la 82."
+      ],
+      "lo_que_ensena": "Al traer una rama ajena los documentos se revisan igual que el código: una sesión fuera de orden o una referencia a un número de otra rama no rompe ninguna prueba y confunde a quien retome."
     }
   ],
   "$reparto": {
