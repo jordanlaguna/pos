@@ -27,6 +27,7 @@ from app.schemas.schemas_auth import (
     LocaleResponse,
     LoginRequest,
     LoginResponse,
+    TerminalOption,
 )
 from app.domain.locale import DEFAULT_LOCALE, effective_locale, normalize_locale
 from app.services import crud_membership, crud_session, crud_user
@@ -49,7 +50,21 @@ router = APIRouter()
 MINUTOS_DE_TRANSITO = 10
 
 
-def _opcion(uc, company) -> CompanyOption:
+def _cajas(db: Session, company_id: int) -> list[TerminalOption]:
+    return [
+        TerminalOption(
+            id=t.id,
+            codigo=t.codigo,
+            nombre=t.nombre,
+            branch_id=b.id,
+            branch_codigo=b.codigo,
+            branch_nombre=b.nombre,
+        )
+        for t, b in crud_membership.terminales_de(db, company_id)
+    ]
+
+
+def _opcion(db: Session, uc, company) -> CompanyOption:
     if uc.aceptada_el is None:
         # Invitación sin aceptar: se ve, pero no abre. No se mira siquiera el
         # estado de la suscripción —lo primero que falta es el consentimiento—.
@@ -67,6 +82,9 @@ def _opcion(uc, company) -> CompanyOption:
         rol=uc.rol,
         puede_entrar=puede,
         motivo=motivo,
+        # Solo las de una compañía abierta: a una bloqueada no se entra por
+        # ninguna caja, y listar las suyas sería contar lo que no se puede usar.
+        terminals=_cajas(db, company.id) if puede else [],
     )
 
 
@@ -107,13 +125,14 @@ def login(datos: LoginRequest, request: Request, db: Session = Depends(get_db)):
         return LoginResponse(access_token=token, tipo=TIPO_SOPORTE, user_id=user.id_user)
 
     membresias = crud_membership.companias_de(db, user.id_user)
-    opciones = [_opcion(uc, company) for uc, company in membresias]
+    opciones = [_opcion(db, uc, company) for uc, company in membresias]
     disponibles = [o for o in opciones if o.puede_entrar]
 
-    # Una sola disponible: se entra sin pantalla intermedia. Se mira
-    # `disponibles` y no `opciones` porque tener una compañía bloqueada y una
-    # activa tampoco es una elección.
-    if len(disponibles) == 1:
+    # Una sola disponible y con una sola caja: se entra sin pantalla
+    # intermedia. Se mira `disponibles` y no `opciones` porque tener una
+    # compañía bloqueada y una activa tampoco es una elección. Con varias cajas
+    # sí hay algo que decidir (RN-102), y es el mismo paso que elegir compañía.
+    if len(disponibles) == 1 and len(disponibles[0].terminals) <= 1:
         elegida = disponibles[0]
         company = next(c for _, c in membresias if c.id == elegida.id)
         # El token se arma **antes** del commit: después, SQLAlchemy expira los
@@ -208,7 +227,7 @@ def responder_invitacion(
     )
     db.commit()
 
-    return [_opcion(m, c) for m, c in crud_membership.companias_de(db, user.id_user)]
+    return [_opcion(db, m, c) for m, c in crud_membership.companias_de(db, user.id_user)]
 
 
 @router.get("/companies", response_model=list[CompanyOption])
@@ -218,7 +237,9 @@ def mis_companias(db: Session = Depends(get_db), user: User = Depends(get_identi
     Sirve para la pantalla de selección y para «cambiar de compañía» desde el
     menú, que es la misma lista vista desde adentro.
     """
-    return [_opcion(uc, company) for uc, company in crud_membership.companias_de(db, user.id_user)]
+    return [
+        _opcion(db, uc, company) for uc, company in crud_membership.companias_de(db, user.id_user)
+    ]
 
 
 @router.post("/company", response_model=ChooseCompanyResponse)
@@ -246,18 +267,29 @@ def elegir_compania(
         # saber qué hacer. El motivo es un código; la frase la arma el POS.
         raise api_error(403, "company_blocked", state=motivo)
 
+    # La caja (RN-102): la elegida, si es de esta compañía y está activa; si no
+    # vino, la de siempre. Elegir entre las propias no es elegir desde afuera
+    # (RN-14): lo que no se puede es inventarse una, y eso se decide acá.
+    caja = None
+    if datos.terminal_id is not None:
+        terminal = crud_membership.terminal_de(db, company.id, datos.terminal_id)
+        if terminal is None:
+            raise api_error(404, "terminal_not_found", terminal_id=datos.terminal_id)
+        caja = (terminal.branch_id, terminal.id)
+
     # Igual que en el login: el token se arma antes del commit, porque después
     # leer `company.locale` sería una relectura.
-    token = crud_session.token_de_sesion(db, user, company, uc.rol)
+    token = crud_session.token_de_sesion(db, user, company, uc.rol, caja=caja)
     company_id = company.id
     rol = uc.rol
+    terminal_id = caja[1] if caja else crud_membership.sucursal_y_terminal(db, company_id)[1]
 
     crud_membership.registrar(
         db,
         user_id=user.id_user,
         company_id=company_id,
         accion="elegir_compania",
-        detalle=f"rol {rol}",
+        detalle=f"rol {rol}, caja {terminal_id}",
         ip=_ip(request),
     )
     db.commit()
@@ -267,6 +299,7 @@ def elegir_compania(
         user_id=user.id_user,
         company_id=company_id,
         rol=rol,
+        terminal_id=terminal_id,
     )
 
 
@@ -297,7 +330,10 @@ def elegir_idioma(
         raise api_error(404, "membership_not_found")
 
     sesion.user.locale = elegido
-    token = crud_session.token_de_sesion(db, sesion.user, company, sesion.rol)
+    # El idioma conserva la caja (RN-102): se reemite con la del token vigente.
+    token = crud_session.token_de_sesion(
+        db, sesion.user, company, sesion.rol, caja=(sesion.branch_id, sesion.terminal_id)
+    )
     efectivo = effective_locale(elegido, company.locale)
 
     crud_membership.registrar(

@@ -85,7 +85,10 @@ def update_locales(
     company.locale = pantalla
     company.document_locale = documento
 
-    token = crud_session.token_de_sesion(db, current.user, company, current.rol)
+    # El idioma conserva la caja (RN-102): se reemite con la del token vigente.
+    token = crud_session.token_de_sesion(
+        db, current.user, company, current.rol, caja=(current.branch_id, current.terminal_id)
+    )
     efectivo = effective_locale(current.user.locale, pantalla)
 
     crud_membership.registrar(

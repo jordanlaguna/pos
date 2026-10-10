@@ -214,7 +214,11 @@ export async function resolveUser(token: string | null): Promise<SessionUser | n
 			company_name?: string | null;
 			branch_code?: string | null;
 			terminal_code?: string | null;
+			branch_id?: number | null;
+			terminal_id?: number | null;
+			terminal_name?: string | null;
 			companies_available?: number;
+			terminals_available?: number;
 			modules?: Partial<Modules> | null;
 			locale?: string;
 			user_locale?: string | null;
@@ -234,7 +238,12 @@ export async function resolveUser(token: string | null): Promise<SessionUser | n
 			company_name: me.company_name ?? null,
 			branch_code: me.branch_code ?? null,
 			terminal_code: me.terminal_code ?? null,
+			branch_id: me.branch_id ?? null,
+			terminal_id: me.terminal_id ?? null,
+			terminal_name: me.terminal_name ?? null,
 			companies_available: me.companies_available ?? 1,
+			// Un backend anterior a F15 no lo manda: una caja, como siempre.
+			terminals_available: me.terminals_available ?? 1,
 			/*
 			 * Lo que no venga queda apagado. Falla cerrado: contra un backend que
 			 * todavía no manda el campo, la navegación no ofrece módulos que el

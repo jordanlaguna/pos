@@ -32,6 +32,16 @@ export type CompanyState = (typeof COMPANY_STATES)[number];
  * `motivo` es un **código**, no una frase: el backend no escribe texto para
  * personas (RN-30) y la interfaz se traduce. Quien arma la oración es el POS.
  */
+/** Una caja en la que se puede abrir la sesión (RN-102, F15). */
+export interface TerminalOption {
+	id: number;
+	codigo: string;
+	nombre: string;
+	branch_id: number;
+	branch_codigo: string;
+	branch_nombre: string;
+}
+
 export interface CompanyOption {
 	id: number;
 	afiliado: number;
@@ -41,6 +51,12 @@ export interface CompanyOption {
 	rol: Role;
 	puede_entrar: boolean;
 	motivo: string | null;
+	/**
+	 * Las cajas activas (RN-102). Con una sola la pantalla no pregunta; con
+	 * varias las ofrece en el mismo paso que la compañía. Vacía en una
+	 * compañía bloqueada y en un backend anterior a F15.
+	 */
+	terminals?: TerminalOption[];
 	/**
 	 * Invitación sin aceptar (T-229). Viaja aparte de `puede_entrar` porque la
 	 * diferencia entre «no podés» y «todavía no dijiste que sí» es justo lo que
@@ -113,8 +129,14 @@ export interface SessionUser {
 	company_name: string | null;
 	branch_code: string | null;
 	terminal_code: string | null;
+	/** La caja de la sesión (RN-102), para marcarla al cambiar y nombrarla. */
+	branch_id: number | null;
+	terminal_id: number | null;
+	terminal_name: string | null;
 	/** Cuántas compañías tiene disponibles; con una sola no se ofrece cambiar. */
 	companies_available: number;
+	/** Cuántas cajas activas tiene la compañía; con una sola, tampoco. */
+	terminals_available: number;
 	/**
 	 * Los módulos que incluye el plan (RF-40, RN-49).
 	 *

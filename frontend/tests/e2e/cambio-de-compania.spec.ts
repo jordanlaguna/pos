@@ -20,8 +20,8 @@ test.describe('elegir compañía', () => {
 		await autenticar(page);
 		await expect(page).toHaveURL(/\/compania/);
 
-		await expect(page.getByRole('button', { name: new RegExp(CON_DATOS, 'i') })).toBeVisible();
-		await expect(page.getByRole('button', { name: new RegExp(VACIA, 'i') })).toBeVisible();
+		await expect(page.getByRole('button', { name: new RegExp(CON_DATOS, 'i') }).first()).toBeVisible();
+		await expect(page.getByRole('button', { name: new RegExp(VACIA, 'i') }).first()).toBeVisible();
 		await expect(page.getByText(/Afiliado 1 · Compañía 1/)).toBeVisible();
 		await expect(page.getByText(/Afiliado 1 · Compañía 2/)).toBeVisible();
 	});

@@ -50,6 +50,16 @@
 	}
 
 	const disponibles = $derived(data.companies.filter((c) => c.puede_entrar));
+
+	/** Las cajas que hay que ofrecer: más de una activa (RN-102); si no, ninguna. */
+	function cajas(c: CompanyOption) {
+		const lista = c.terminals ?? [];
+		return lista.length > 1 ? lista : [];
+	}
+
+	function esLaActual(c: CompanyOption, terminalId: number): boolean {
+		return c.id === data.actual && terminalId === data.actualTerminal;
+	}
 	const invitaciones = $derived(data.companies.filter((c) => c.pendiente));
 	const bloqueadas = $derived(data.companies.filter((c) => !c.puede_entrar && !c.pendiente));
 </script>
@@ -95,6 +105,76 @@
 
 		<div class="mt-6 grid gap-3">
 			{#each disponibles as c (c.id)}
+				{#if cajas(c).length}
+					<!--
+						Varias cajas (RN-102): se elige la compañía y la caja en el mismo
+						paso. Cada caja es un envío aparte, con la compañía escondida, para
+						que elegir siga siendo un clic.
+					-->
+					<div
+						class="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-4"
+						data-testid="company-terminals"
+					>
+						<div class="flex items-center gap-4">
+							<span
+								class="grid size-10 shrink-0 place-items-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent-text)]"
+							>
+								<Icon name="home" size={20} />
+							</span>
+							<span class="min-w-0 flex-1">
+								<span class="block truncate font-medium text-[var(--text)]">{c.nombre}</span>
+								<span class="block text-xs text-[var(--text-muted)]">
+									{m.company_row_detail({
+										affiliate: c.afiliado,
+										company: c.compania,
+										status: estado(c),
+										role: roleLabel(c.rol)
+									})}
+								</span>
+							</span>
+						</div>
+						<p class="mt-3 text-xs font-medium text-[var(--text-muted)]">{m.company_terminal_pick()}</p>
+						<div class="mt-2 grid gap-2 sm:grid-cols-2">
+							{#each cajas(c) as t (t.id)}
+								<form
+									method="POST"
+									action="?/elegir"
+									use:enhance={() => {
+										enviando = c.id;
+										cart.reset();
+										return async ({ update }) => {
+											await update();
+											enviando = null;
+										};
+									}}
+								>
+									<input type="hidden" name="company_id" value={c.id} />
+									<input type="hidden" name="terminal_id" value={t.id} />
+									<button
+										type="submit"
+										disabled={enviando !== null}
+										aria-label={m.company_terminal_option({ company: c.nombre, terminal: t.nombre })}
+										class="flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition hover:border-[var(--accent)] hover:bg-[var(--surface-sunken)] disabled:opacity-60 {esLaActual(c, t.id)
+											? 'border-[var(--accent)]'
+											: 'border-[var(--border)]'}"
+										data-terminal={t.codigo}
+									>
+										<span class="min-w-0 flex-1">
+											<span class="block truncate text-sm font-medium text-[var(--text)]">{t.nombre}</span>
+											<span class="block text-xs text-[var(--text-muted)]">
+												{m.company_terminal_row({ branch: t.branch_codigo, code: t.codigo, name: t.branch_nombre })}
+											</span>
+										</span>
+										{#if esLaActual(c, t.id)}
+											<span class="shrink-0 text-xs text-[var(--text-muted)]">{m.company_current()}</span>
+										{/if}
+										<Icon name="forward" size={16} />
+									</button>
+								</form>
+							{/each}
+						</div>
+					</div>
+				{:else}
 				<form
 					method="POST"
 					action="?/elegir"
@@ -146,6 +226,7 @@
 						{/if}
 					</button>
 				</form>
+				{/if}
 			{/each}
 		</div>
 

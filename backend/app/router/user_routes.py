@@ -62,6 +62,8 @@ def read_me(
     """
     company = crud_membership.compania(db, sesion.company_id)
     sucursal, terminal = crud_membership.codigos(db, sesion.branch_id, sesion.terminal_id)
+    cajas = crud_membership.terminales_de(db, sesion.company_id)
+    caja = next((t for t, _ in cajas if t.id == sesion.terminal_id), None)
 
     return CurrentUser(
         id_user=sesion.id_user,
@@ -73,11 +75,17 @@ def read_me(
         company_name=company.nombre if company else None,
         branch_code=sucursal,
         terminal_code=terminal,
+        branch_id=sesion.branch_id,
+        terminal_id=sesion.terminal_id,
+        terminal_name=caja.nombre if caja else None,
         # Una sesión suplantada no tiene membresías en esta compañía, así que la
         # cuenta daría 0 y el menú ofrecería «cambiar de compañía» a la nada.
         companies_available=(
             0 if sesion.suplantada else len(crud_membership.companias_de(db, sesion.id_user))
         ),
+        # Y una visita de soporte es de solo lectura: cambiar de caja no le
+        # sirve de nada (RN-102).
+        terminals_available=0 if sesion.suplantada else len(cajas),
         subscription=(
             SuscripcionOut.model_validate(sesion.suscripcion) if sesion.suscripcion else None
         ),

@@ -268,7 +268,9 @@ function opcionesDe(userId: number) {
 				rol: m.rol,
 				puede_entrar: !pendiente,
 				motivo: pendiente ? 'invitacion_pendiente' : null,
-				pendiente
+				pendiente,
+				// Las cajas (RN-102): solo de una compañía abierta.
+				terminals: pendiente ? [] : cajasActivasDe(empresa.id)
 			};
 		});
 }
@@ -299,13 +301,61 @@ function idiomaDeSesion(userId: number, companyId: number): string {
 	return user?.locale || company?.locale || 'es';
 }
 
-function tokenDeSesion(user: { id_user: number; email: string }, companyId: number, rol: string) {
+/**
+ * Las cajas activas de una compañía con su sucursal (RN-102), en el orden en
+ * que se ofrecen. Es `terminales_de` del backend.
+ */
+function cajasActivasDe(companyId: number) {
+	const db = getDb(companyId);
+	const sucursales = (db.branches ?? []).filter((b) => b.activa);
+	return (db.terminals ?? [])
+		.filter((t) => t.activa && sucursales.some((b) => b.id === t.branch_id))
+		.map((t) => {
+			const sucursal = sucursales.find((b) => b.id === t.branch_id)!;
+			return {
+				id: t.id,
+				codigo: t.codigo,
+				nombre: t.nombre,
+				branch_id: sucursal.id,
+				branch_codigo: sucursal.codigo,
+				branch_nombre: sucursal.nombre
+			};
+		})
+		.sort(
+			(a, b) =>
+				a.branch_codigo.localeCompare(b.branch_codigo) ||
+				a.branch_id - b.branch_id ||
+				a.codigo.localeCompare(b.codigo) ||
+				a.id - b.id
+		);
+}
+
+/** La caja de siempre: la primera activa. Es `sucursal_y_terminal`. */
+function cajaPorOmision(companyId: number): { bid: number; tid: number } {
+	const [primera] = cajasActivasDe(companyId);
+	return primera ? { bid: primera.branch_id, tid: primera.id } : { bid: 1, tid: 1 };
+}
+
+/** La caja del token vigente, para conservarla al reemitirlo (RN-102). */
+function cajaDelToken(token: string | null | undefined, companyId: number): { bid: number; tid: number } {
+	const payload = tokenPayload(token);
+	return typeof payload?.bid === 'number' && typeof payload?.tid === 'number'
+		? { bid: payload.bid, tid: payload.tid }
+		: cajaPorOmision(companyId);
+}
+
+function tokenDeSesion(
+	user: { id_user: number; email: string },
+	companyId: number,
+	rol: string,
+	caja: { bid: number; tid: number } = cajaPorOmision(companyId)
+) {
 	return makeToken({
 		id_user: user.id_user,
 		email: user.email,
 		cid: companyId,
-		bid: 1,
-		tid: 1,
+		bid: caja.bid,
+		tid: caja.tid,
 		rol,
 		loc: idiomaDeSesion(user.id_user, companyId),
 		tipo: 'sesion'
@@ -500,9 +550,10 @@ route('POST', '/auth/login', ({ body }) => {
 	const opciones = opcionesDe(user.id_user);
 	const disponibles = opciones.filter((o) => o.puede_entrar);
 
-	// Una sola disponible: se entra sin pantalla intermedia (RN-25). Es el caso
-	// de los cajeros del demo, que pertenecen solo a la primera compañía.
-	if (disponibles.length === 1) {
+	// Una sola disponible y con una sola caja: se entra sin pantalla intermedia
+	// (RN-25). Es el caso de los cajeros del demo, que pertenecen solo a la
+	// primera compañía. Con varias cajas hay algo que decidir (RN-102).
+	if (disponibles.length === 1 && disponibles[0].terminals.length <= 1) {
 		registrar(user.id_user, disponibles[0].id, 'login', 'compañía única');
 		return {
 			access_token: tokenDeSesion(user, disponibles[0].id, disponibles[0].rol),
@@ -555,14 +606,25 @@ route('POST', '/auth/company', ({ body, token }) => {
 	// 404 y no 403: un 403 confirmaría que esa compañía existe.
 	if (!user || !rol) fail(404, 'membership_not_found');
 
-	registrar(user.id_user, elegida, 'elegir_compania', `rol ${rol}`);
+	// La caja (RN-102): la elegida, si es de esta compañía y está activa; si no
+	// vino, la de siempre. Mismo «no» que el backend: `terminal_not_found`.
+	let caja = cajaPorOmision(elegida);
+	if (body?.terminal_id != null) {
+		const terminalId = Number(body.terminal_id);
+		const propia = cajasActivasDe(elegida).find((t) => t.id === terminalId);
+		if (!propia) fail(404, 'terminal_not_found', { terminal_id: terminalId });
+		caja = { bid: propia.branch_id, tid: propia.id };
+	}
+
+	registrar(user.id_user, elegida, 'elegir_compania', `rol ${rol}, caja ${caja.tid}`);
 	return {
-		access_token: tokenDeSesion(user, elegida, rol),
+		access_token: tokenDeSesion(user, elegida, rol, caja),
 		token_type: 'bearer',
 		tipo: 'sesion',
 		user_id: user.id_user,
 		company_id: elegida,
-		rol
+		rol,
+		terminal_id: caja.tid
 	};
 });
 
@@ -577,6 +639,9 @@ route('GET', '/users/me', ({ userId, companyId, token }) => {
 	// petición: la franja permanente se pinta con esto (RF-8).
 	const payload = tokenPayload(token);
 	const suplantada = payload?.tipo === 'suplantacion';
+	const caja = cajaDelToken(token, companyId);
+	const sucursalDeSesion = (getDb(companyId).branches ?? []).find((b) => b.id === caja.bid);
+	const cajaDeSesion = (getDb(companyId).terminals ?? []).find((t) => t.id === caja.tid);
 
 	return {
 		id_user: user.id_user,
@@ -586,11 +651,16 @@ route('GET', '/users/me', ({ userId, companyId, token }) => {
 		name: personName(user.id_user) ?? user.email,
 		company_id: companyId,
 		company_name: empresa?.nombre ?? null,
-		branch_code: empresa?.branch_code ?? null,
-		terminal_code: empresa?.terminal_code ?? null,
+		// La caja de la sesión sale del token (RN-102), como `codigos` en el backend.
+		branch_code: sucursalDeSesion?.codigo ?? empresa?.branch_code ?? null,
+		terminal_code: cajaDeSesion?.codigo ?? empresa?.terminal_code ?? null,
+		branch_id: sucursalDeSesion?.id ?? null,
+		terminal_id: cajaDeSesion?.id ?? null,
+		terminal_name: cajaDeSesion?.nombre ?? null,
 		companies_available: suplantada
 			? 0
 			: opcionesDe(user.id_user).filter((o) => o.puede_entrar).length,
+		terminals_available: suplantada ? 0 : cajasActivasDe(companyId).length,
 		// Los módulos del plan (RF-40). Igual que `crud_membership.modulos_de`:
 		// se leen acá, en cada petición, y no viajan en el token.
 		modules: modulosDelPlan(empresa?.plan_id),
@@ -4187,7 +4257,7 @@ export async function mockRequest<T>(request: MockRequest): Promise<T> {
  * Emite un token nuevo por la misma razón que el backend: el idioma vive en el
  * token, así que sin re-emitirlo el cambio no se vería hasta el siguiente login.
  */
-route('POST', '/auth/locale', ({ body, userId, companyId }) => {
+route('POST', '/auth/locale', ({ body, userId, companyId, token }) => {
 	if (userId == null) fail(401, 'unauthorized');
 	const raiz = getRoot();
 	const user = raiz.users.find((u) => u.id_user === userId);
@@ -4203,7 +4273,8 @@ route('POST', '/auth/locale', ({ body, userId, companyId }) => {
 
 	const rol = rolEn(user.id_user, companyId) ?? user.role;
 	return {
-		access_token: tokenDeSesion(user, companyId, rol),
+		// El idioma conserva la caja (RN-102).
+		access_token: tokenDeSesion(user, companyId, rol, cajaDelToken(token, companyId)),
 		token_type: 'bearer',
 		locale: pedido || empresa.locale || 'es',
 		user_locale: pedido,
@@ -4212,7 +4283,7 @@ route('POST', '/auth/locale', ({ body, userId, companyId }) => {
 });
 
 /** Los idiomas de la compañía: el de la pantalla y el del documento (T-810, T-811). */
-route('PUT', '/settings/locales', ({ body, userId, companyId }) => {
+route('PUT', '/settings/locales', ({ body, userId, companyId, token }) => {
 	if (userId == null) fail(401, 'unauthorized');
 	const raiz = getRoot();
 	const user = raiz.users.find((u) => u.id_user === userId);
@@ -4232,7 +4303,12 @@ route('PUT', '/settings/locales', ({ body, userId, companyId }) => {
 	persist();
 
 	return {
-		access_token: tokenDeSesion(user, companyId, rolEn(user.id_user, companyId) ?? user.role),
+		access_token: tokenDeSesion(
+			user,
+			companyId,
+			rolEn(user.id_user, companyId) ?? user.role,
+			cajaDelToken(token, companyId)
+		),
 		token_type: 'bearer',
 		locale: user.locale || pantalla,
 		user_locale: user.locale ?? null,

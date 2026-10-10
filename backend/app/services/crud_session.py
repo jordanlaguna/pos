@@ -35,12 +35,25 @@ MINUTOS_DE_SUPLANTACION = 30
 MOTIVO_EN_EL_TOKEN = 120
 
 
-def token_de_sesion(db: Session, user: User, company: Company, rol: str) -> str:
+def token_de_sesion(
+    db: Session,
+    user: User,
+    company: Company,
+    rol: str,
+    *,
+    caja: tuple[int | None, int | None] | None = None,
+) -> str:
     """El token de sesión: quién, dónde, con qué rol y en qué idioma.
 
     Sucursal y terminal viajan acá y no en cada petición porque son justo lo que
     el cliente no puede elegir (RN-14). Que estén en el token también es lo que
     permite que un cambio de compañía cambie de sucursal sin nada más.
+
+    `caja` es `(sucursal, terminal)`: la elegida en el login —ya comprobada por
+    `terminal_de`— o la del token vigente cuando se reemite por un cambio de
+    idioma (RN-102). Sin ella, la de siempre: la primera activa de la compañía.
+    Si no se conservara, cambiar de idioma devolvería a la cajera a la caja 1
+    sin aviso.
 
     El idioma va por el mismo camino y por la misma razón (plan §8.4): lo resuelve
     el servidor —lo de la persona, si no lo de la compañía, si no español— y así
@@ -51,7 +64,9 @@ def token_de_sesion(db: Session, user: User, company: Company, rol: str) -> str:
     `company.locale` dispararía una relectura que, sin compañía en el contexto,
     falla.
     """
-    sucursal, terminal = crud_membership.sucursal_y_terminal(db, company.id)
+    sucursal, terminal = (
+        caja if caja is not None else crud_membership.sucursal_y_terminal(db, company.id)
+    )
     return create_access_token(
         data={
             "id_user": user.id_user,

@@ -23,9 +23,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const companies = await api<CompanyOption[]>('/auth/companies', { token: locals.token });
 	const disponibles = companies.filter((c) => c.puede_entrar);
+	// «Cambiar de caja» desde el menú (RN-102): la misma pantalla, aunque la
+	// compañía sea una sola, porque lo que hay que elegir es la caja.
+	const cajas = disponibles.find((c) => c.id === locals.user?.company_id)?.terminals ?? [];
+	const cambiandoDeCaja = url.searchParams.get('caja') === '1' && cajas.length > 1;
 
 	// Una sola y ya se está adentro de esa: no hay nada que decidir.
-	if (locals.user && disponibles.length <= 1) {
+	if (locals.user && disponibles.length <= 1 && !cambiandoDeCaja) {
 		redirect(303, url.searchParams.get('redirectTo') ?? '/ventas');
 	}
 
@@ -33,6 +37,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		companies,
 		/** La actual, para marcarla cuando se llega desde el menú. */
 		actual: locals.user?.company_id ?? null,
+		/** Y la caja actual, por lo mismo. */
+		actualTerminal: locals.user?.terminal_id ?? null,
 		redirectTo: url.searchParams.get('redirectTo') ?? '/ventas'
 	};
 };
@@ -42,19 +48,31 @@ function companyIdDe(form: FormData): number | null {
 	return Number.isInteger(valor) && valor > 0 ? valor : null;
 }
 
+/** La caja elegida, si la pantalla ofreció varias; en blanco es «la de siempre». */
+function terminalIdDe(form: FormData): number | null {
+	const crudo = String(form.get('terminal_id') ?? '').trim();
+	if (!crudo) return null;
+	const valor = Number(crudo);
+	return Number.isInteger(valor) && valor > 0 ? valor : null;
+}
+
 export const actions: Actions = {
 	elegir: async ({ request, cookies, locals, url }) => {
 		if (!locals.token) redirect(303, '/login');
 
-		const companyId = companyIdDe(await request.formData());
+		const form = await request.formData();
+		const companyId = companyIdDe(form);
 		if (companyId === null) {
 			return fail(400, { message: m.company_choose_one() });
 		}
+		const terminalId = terminalIdDe(form);
 
 		try {
 			const elegida = await api<ChooseCompanyResponse>('/auth/company', {
 				method: 'POST',
-				body: { company_id: companyId },
+				// La caja va solo si se eligió: el servidor comprueba que sea de esa
+				// compañía y esté activa (RN-102), y sin ella abre en la de siempre.
+				body: terminalId === null ? { company_id: companyId } : { company_id: companyId, terminal_id: terminalId },
 				token: locals.token
 			});
 			// El token nuevo reemplaza al anterior, sea de tránsito o de otra

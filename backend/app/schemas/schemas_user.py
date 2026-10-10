@@ -51,9 +51,17 @@ class CurrentUser(BaseModel):
     company_name: str | None = None
     branch_code: str | None = None
     terminal_code: str | None = None
+    #: La caja de esta sesión por su id y su nombre (RN-102, F15), para marcarla
+    #: al cambiar de caja y para decir dónde se está con algo más que un código.
+    branch_id: int | None = None
+    terminal_id: int | None = None
+    terminal_name: str | None = None
     #: Cuántas compañías tiene disponibles. Si es una sola, el POS ni siquiera
     #: muestra la opción de cambiar (RN-25).
     companies_available: int = 1
+    #: Cuántas cajas activas tiene la compañía. Con una sola no se ofrece
+    #: cambiar de caja, por lo mismo.
+    terminals_available: int = 1
 
     #: Los módulos que incluye el plan de esta compañía (RF-40, RN-49). Las tres
     #: claves están siempre, también las apagadas: una clave ausente y una en

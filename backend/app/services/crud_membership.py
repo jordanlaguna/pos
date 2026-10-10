@@ -105,6 +105,41 @@ def sucursal_y_terminal(db: Session, company_id: int) -> tuple[int | None, int |
     return sucursal.id, (terminal.id if terminal else None)
 
 
+def terminales_de(db: Session, company_id: int) -> list[tuple[Terminal, Branch]]:
+    """Las cajas activas de una compañía, con su sucursal (RN-102, F15).
+
+    Es lo que la pantalla de selección ofrece cuando hay más de una. Va acá y
+    no en `/offices/terminals` porque se consulta **antes** de que exista
+    sesión —con el token de tránsito— y esa ruta exige administrador. Solo las
+    activas de sucursales activas: una caja apagada no es un lugar donde abrir.
+    """
+    return list(
+        sin_filtro(
+            db.query(Terminal, Branch)
+            .join(Branch, Branch.id == Terminal.branch_id)
+            .filter(
+                Terminal.company_id == company_id,
+                Terminal.activa.is_(True),
+                Branch.activa.is_(True),
+            )
+            .order_by(Branch.codigo, Branch.id, Terminal.codigo, Terminal.id)
+        ).all()
+    )
+
+
+def terminal_de(db: Session, company_id: int, terminal_id: int) -> Terminal | None:
+    """La caja elegida en el login, **si es de esa compañía y está activa**.
+
+    Elegir entre las propias no es elegir desde afuera (RN-14): lo que el
+    cliente no puede es inventarse una, y eso lo decide esta consulta. Nulo es
+    el «no está» de siempre, sin decir si existe en otra compañía.
+    """
+    return next(
+        (t for t, _ in terminales_de(db, company_id) if t.id == terminal_id),
+        None,
+    )
+
+
 def compania(db: Session, company_id: int) -> Company | None:
     """La compañía por su id, sin pasar por el filtro (es la raíz, no se filtra)."""
     return sin_filtro(db.query(Company).filter(Company.id == company_id)).first()

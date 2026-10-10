@@ -15,6 +15,17 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class TerminalOption(BaseModel):
+    """Una caja en la que se puede abrir la sesión (RN-102, F15)."""
+
+    id: int
+    codigo: str
+    nombre: str
+    branch_id: int
+    branch_codigo: str
+    branch_nombre: str
+
+
 class CompanyOption(BaseModel):
     """Una compañía a la que la persona podría entrar."""
 
@@ -35,6 +46,10 @@ class CompanyOption(BaseModel):
     #: «todavía no dijiste que sí» es lo único que la pantalla necesita saber
     #: para ofrecer un botón en vez de una explicación.
     pendiente: bool = False
+    #: Las cajas activas (RN-102). Con una sola el POS no pregunta; con varias
+    #: las ofrece en el mismo paso que la compañía. Viajan acá porque el token
+    #: de tránsito no tiene compañía y `/offices/terminals` exige administrador.
+    terminals: list[TerminalOption] = []
 
 
 class LoginResponse(BaseModel):
@@ -57,6 +72,9 @@ class LoginResponse(BaseModel):
 
 class ChooseCompanyRequest(BaseModel):
     company_id: int
+    #: La caja en la que se abre (RN-102). Sin ella, la primera activa de la
+    #: compañía, como siempre. El servidor comprueba que sea de esa compañía.
+    terminal_id: int | None = None
 
 
 class InvitationDecision(BaseModel):
@@ -74,6 +92,8 @@ class ChooseCompanyResponse(BaseModel):
     user_id: int
     company_id: int
     rol: str
+    #: La caja con la que quedó la sesión; nula solo si la compañía no tiene.
+    terminal_id: int | None = None
 
 
 class LocaleChoice(BaseModel):
