@@ -73,6 +73,7 @@ MIGRACIONES = [
     "migrations/020-transmision.sql",
     "migrations/021-exportacion-y-compra.sql",
     "migrations/022-paquetes-de-modulos.sql",
+    "migrations/023-inventario.sql",
 ]
 
 #: `persons` es la única tabla que nace solo de `create_all`, en los dos caminos:
@@ -160,6 +161,14 @@ _ADD_COLUMNA = re.compile(
     re.I | re.S,
 )
 _DROP_COLUMNA = re.compile(r"\bDROP\s+COLUMN\s+`?(\w+)`?", re.I)
+
+#: La cuarta forma de agregar una columna, y la que este lector no veía hasta
+#: F15: `CALL ventasys_add_column('tabla', 'columna', 'definición')`, que las
+#: migraciones 013 a 016 y la 023 usan para ser idempotentes. Sin esto, las
+#: columnas que entran por ahí no se comparaban con el modelo.
+_CALL_COLUMNA = re.compile(
+    r"CALL\s+ventasys_add_column\(\s*'(\w+)'\s*,\s*'(\w+)'\s*,\s*'([^']*)'\s*\)", re.I
+)
 
 #: Cambiar **solo** el valor por omisión, sin repetir el tipo. Es lo que hace la
 #: 007 dieciocho veces, y sin leerlo esta prueba seguiría viendo el defecto que
@@ -344,6 +353,12 @@ def leer_migraciones() -> Esquema:
             if quitado:
                 nombre, tabla = quitado.groups()
                 indices.setdefault(tabla, {}).pop(nombre, None)
+                continue
+
+            por_procedimiento = _CALL_COLUMNA.match(sentencia)
+            if por_procedimiento:
+                tabla, nombre, definicion = por_procedimiento.groups()
+                columnas.setdefault(tabla, {})[nombre] = _forma_de_la_columna(definicion)
                 continue
 
             creacion = _CREATE.match(sentencia)
@@ -636,6 +651,9 @@ def test_el_lector_de_columnas_encuentra_algo(esquema):
         "IFNULL(PARENT_ID,0)",
     ), "no leyó una columna generada"
     assert esquema.columnas["users"]["is_support"] == ("TINYINT(1)", False, "0", None)
+    assert esquema.columnas["products"]["min_stock"] == ("INT", True, None, None), (
+        "no leyó una columna agregada por CALL ventasys_add_column(...)"
+    )
 
     # Y que sepa cuáles tablas **crea** una migración: de esas se conoce el juego
     # completo de columnas y por eso se comparan en los dos sentidos.

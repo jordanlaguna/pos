@@ -188,6 +188,14 @@ CODES: frozenset[str] = frozenset(
         "entry_cancel_failed",
         # ------------------------------------------------------- catálogo
         "product_has_sales",
+        # F15 (RN-98): la existencia ya no se edita desde la ficha —se mueve
+        # con una entrada, una salida o una toma— y un producto con kárdex no
+        # se borra, se desactiva. `movements` dice cuántas filas lo sostienen.
+        "stock_not_editable",
+        "product_has_movements",
+        # El kárdex se lee por producto o por documento; sin ninguno de los dos
+        # no hay qué listar, y una lista vacía diría «nunca se movió».
+        "kardex_filter_required",
         "category_name_taken",
         # `tax_code` es el código que llegó. Los válidos son los once de la nota
         # 8.1 del anexo de Hacienda, y no se corrigen solos: un `"8"` puede ser

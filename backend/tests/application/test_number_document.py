@@ -33,6 +33,7 @@ from app.domain.fe_key import MAX_SEQUENCE, SITUATION_NORMAL
 from app.domain.money import Money
 from app.infrastructure.clock import FixedClock
 
+from .fakes import SUCURSAL, mover
 from .fakes import (
     FakeClientRepository,
     FakeDocumentNumbering,
@@ -143,6 +144,7 @@ def venta_con_numeracion(catalogo, issuer: FakeIssuerRepository | None = None, *
     uow = FakeUnitOfWork()
     caso = RegisterSale(
         products=catalogo,
+        stock=mover(catalogo)[0],
         sales=ventas,
         clients=FakeClientRepository({CLIENTE}),
         settings=FakeSettingsRepository(einvoicing=activa),
@@ -223,6 +225,7 @@ class TestLaDevolucion:
             returns=mundo.devoluciones,
             notes=mundo.notas,
             products=mundo.productos,
+            stock=mover(mundo.productos)[0],
             uow=mundo.uow,
             clock=mundo.reloj,
             numbering=numeracion,
@@ -233,6 +236,7 @@ class TestLaDevolucion:
             sale_id=mundo.id_venta,
             user_id=1,
             reason="venía dañado",
+            branch_id=SUCURSAL,
             lines=[RequestedReturnLine(1, 1)],
         )
         return ReturnRequest(**{**base, **cambios})
@@ -297,6 +301,7 @@ def test_sin_numeracion_conectada_la_venta_queda_pendiente(catalogo):
     # no son de esto: la venta con tipo y sin clave se imprime «pendiente».
     caso = RegisterSale(
         products=catalogo,
+        stock=mover(catalogo)[0],
         sales=FakeSaleRepository(),
         clients=FakeClientRepository({CLIENTE}),
         settings=FakeSettingsRepository(einvoicing=True),

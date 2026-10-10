@@ -60,14 +60,11 @@ class FakeProductRepository:
     def get_by_barcode(self, barcode: str) -> FakeProduct | None:  # pragma: no cover
         return next((p for p in self.productos.values() if p.name == barcode), None)
 
-    def lock_for_sale(self, product_ids: list[int]) -> dict[int, FakeProduct]:
+    def lock(self, product_ids: list[int]) -> dict[int, FakeProduct]:
         # Se anota qué se bloqueó y en qué orden: una prueba comprueba que se
         # piden ordenados, que es lo que evita el interbloqueo entre dos cajas.
         self.bloqueados.append(list(product_ids))
         return {i: self.productos[i] for i in product_ids if i in self.productos}
-
-    def adjust_stock(self, product_id: int, delta: int) -> None:
-        self.productos[product_id].stock += delta
 
     def update_cost(self, product_id: int, cost: Money) -> None:
         self.productos[product_id].cost = cost
@@ -82,6 +79,91 @@ class FakeProductRepository:
         self.creados.append((name, barcode, price, category_id, created_at))
         self._siguiente += 1
         return nuevo.id_product
+
+
+#: La sucursal de todas las pruebas que no son de sucursales (F15).
+SUCURSAL = 1
+
+
+class FakeStockLevelRepository:
+    """La existencia por sucursal, en memoria (T-1502).
+
+    Nace vacía y **se siembra sola** la primera vez que se bloquea un producto
+    en `SUCURSAL`: lo que el producto tenga en `stock` y no esté ya en otra
+    sucursal es lo que hay en la de siempre. Así las pruebas anteriores a F15
+    —que arman un catálogo con `stock=110` y nada más— siguen describiendo el
+    mismo mundo: un solo local con todo adentro. Cualquier otra sucursal nace
+    en cero, que es lo que RN-102 dice de un local al que nada ha entrado.
+    """
+
+    def __init__(self, productos: FakeProductRepository) -> None:
+        self._productos = productos
+        self.niveles: dict[tuple[int, int], int] = {}
+        #: En qué orden se bloquearon, para comprobar que el producto va antes.
+        self.bloqueados: list[tuple[int, int]] = []
+
+    def lock(self, product_id: int, branch_id: int) -> int:
+        self.bloqueados.append((product_id, branch_id))
+        if (product_id, branch_id) not in self.niveles:
+            en_otras = sum(q for (p, _), q in self.niveles.items() if p == product_id)
+            sembrado = self._productos.productos[product_id].stock - en_otras
+            self.niveles[(product_id, branch_id)] = sembrado if branch_id == SUCURSAL else 0
+        return self.niveles[(product_id, branch_id)]
+
+    def set(self, product_id: int, branch_id: int, quantity: int) -> None:
+        self.niveles[(product_id, branch_id)] = quantity
+
+    def levels_of(self, product_id: int) -> dict[int, int]:
+        return {b: q for (p, b), q in self.niveles.items() if p == product_id}
+
+    def levels_in(self, branch_id: int) -> dict[int, int]:
+        return {p: q for (p, b), q in self.niveles.items() if b == branch_id}
+
+    def add_to_total(self, product_id: int, delta: int) -> None:
+        self._productos.productos[product_id].stock += delta
+
+
+class FakeKardex:
+    """El kárdex en memoria: escribe y lee."""
+
+    def __init__(self) -> None:
+        self.movimientos: list = []
+
+    def record(self, movement) -> int:
+        from dataclasses import replace
+
+        anotado = replace(movement, id=len(self.movimientos) + 1)
+        self.movimientos.append(anotado)
+        return anotado.id
+
+    def of_product(self, product_id: int, *, branch_id=None, since=None, until=None) -> list:
+        return [
+            m
+            for m in reversed(self.movimientos)
+            if m.product_id == product_id
+            and (branch_id is None or m.branch_id == branch_id)
+            and (since is None or m.moved_at >= since)
+            and (until is None or m.moved_at <= until)
+        ]
+
+    def of_source(self, source_type: str, source_id: int) -> list:
+        return [
+            m for m in self.movimientos if m.source_type == source_type and m.source_id == source_id
+        ]
+
+
+def mover(productos: FakeProductRepository, kardex: FakeKardex | None = None):
+    """`MoveStock` armado con sus dobles, sobre ESTE catálogo.
+
+    Devuelve también los niveles y el kárdex, que es lo que las pruebas miran.
+    Las que no miran el inventario pasan solo el catálogo y se quedan con el
+    primer valor.
+    """
+    from app.application.use_cases.move_stock import MoveStock
+
+    niveles = FakeStockLevelRepository(productos)
+    bitacora = kardex or FakeKardex()
+    return MoveStock(products=productos, levels=niveles, kardex=bitacora), niveles, bitacora
 
 
 @dataclass
@@ -99,6 +181,8 @@ class FilaDeVenta:
     created_at: datetime
     lines: list
     document_type: str | None = None
+    #: Dónde se cobró (F15). La sucursal de siempre si la prueba no lo dice.
+    branch_id: int = SUCURSAL
 
 
 @dataclass
@@ -202,6 +286,8 @@ class FilaDeDevolucion:
     #: La nota de crédito (RN-89). Nulos cuando la venta no fue comprobante.
     document_type: str | None = None
     reference_code: str | None = None
+    #: Dónde se devolvió (F15): ahí se repone.
+    branch_id: int = SUCURSAL
 
 
 class FakeReturnRepository:
@@ -376,6 +462,8 @@ class FilaDeEntrada:
     tax: Money | None = None
     #: La factura de compra (T-728); nula en toda compra a un proveedor inscrito.
     document_type: str | None = None
+    #: A qué sucursal entró (F15): de ahí sale al anular.
+    branch_id: int = SUCURSAL
 
 
 class FakeStockEntryRepository:

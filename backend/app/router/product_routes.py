@@ -43,7 +43,8 @@ def register_product(
     existing = db.query(Product).filter(Product.barcode == product.barcode).first()
     if existing:
         raise api_error(400, "barcode_taken", barcode=product.barcode)
-    return crud_product.create_product(db=db, product=product)
+    # Quién abre la existencia inicial: queda en el kárdex (F15).
+    return crud_product.create_product(db=db, product=product, user_id=admin.user.id_user)
 
 
 # Los cajeros necesitan leer el catálogo para vender: solo escribir es de admin.

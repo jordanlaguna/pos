@@ -62,17 +62,24 @@ class ProductRepository(Protocol):
 
     def get_by_barcode(self, barcode: str) -> ProductSnapshot | None: ...
 
-    def lock_for_sale(self, product_ids: list[int]) -> dict[int, ProductSnapshot]:
+    def lock(self, product_ids: list[int]) -> dict[int, ProductSnapshot]:
         """
         Trae los productos y **los bloquea** hasta que termine la transacción.
 
         Es lo que impide que dos cajas vendan la última unidad a la vez. Devuelve
         solo los que existen; el caso de uso decide qué hacer con los que faltan.
-        """
-        ...
 
-    def adjust_stock(self, product_id: int, delta: int) -> None:
-        """Suma o resta existencias. Negativo al vender, positivo al devolver."""
+        Desde F15 lo llama **todo** documento que mueve existencias —la venta,
+        la entrada, su anulación, la salida, el traslado, la toma— con todos sus
+        productos de una vez, antes de tocar ninguno, y el adaptador los toma
+        **en orden de id**: una entrada [B, A] y una venta [A, B] que bloquearan
+        en el orden en que vienen se esperarían la una a la otra (plan §15.1).
+        Se llamaba `lock_for_sale`; un solo método para todos los caminos es lo
+        que hace que el orden sea uno.
+
+        Ya no existe `adjust_stock`: las existencias las mueve `MoveStock`, que
+        deja el kárdex, y nadie más (RN-98).
+        """
         ...
 
     def update_cost(self, product_id: int, cost: Money) -> None:
@@ -182,6 +189,10 @@ class StockEntryRepository(Protocol):
         total_cost: Money,
         created_at: datetime,
         lines: list,
+        #: A qué sucursal entró (F15, RN-102). Lo llena el router desde el
+        #: `bid` de la sesión —la aplicación no lee el `ContextVar`—, y es
+        #: donde la anulación repone, aunque la sesión que anula sea otra.
+        branch_id: int,
         #: Lo que convierte la entrada en compra (F10, RN-52). Todo en nulo es
         #: una entrada de las de siempre.
         supplier_id: int | None = None,
@@ -242,6 +253,9 @@ class SaleRepository(Protocol):
         change_given: Money,
         created_at: datetime,
         lines: list,
+        #: Dónde se cobró (RN-14). Del `bid` de la sesión, nunca del cliente;
+        #: desde F15 es también de dónde se descuenta (RN-102).
+        branch_id: int,
         #: `'01'` factura, `'04'` tiquete, nulo sin facturación electrónica
         #: (RN-85). Lo decide el dominio antes de llegar acá.
         document_type: str | None = None,
@@ -320,6 +334,9 @@ class ReturnRepository(Protocol):
         total: Money,
         created_at: datetime,
         lines: list,
+        #: Dónde se devuelve, que no tiene por qué ser donde se vendió: la
+        #: mercadería se repone en esta sucursal (RN-102).
+        branch_id: int,
         #: La nota de crédito (RN-89): `'03'` y el motivo de Hacienda, o los dos
         #: nulos cuando la venta no fue comprobante. Lo decide `fe_notes`.
         document_type: str | None = None,

@@ -494,6 +494,26 @@ class CannotCancel(DomainError):
         self.added = added
 
 
+class InvalidStockMovementKind(DomainError):
+    """Un movimiento del kárdex de un tipo que no existe (RN-98).
+
+    No es un «no» del negocio sino del programa: los tipos son los once de
+    `domain/inventory.KINDS` y nadie los teclea.
+    """
+
+    def __init__(self, kind: object) -> None:
+        super().__init__(f"tipo de movimiento no válido: {kind!r}")
+        self.kind = kind
+
+
+class InvalidStockSource(DomainError):
+    """Un movimiento del kárdex que dice venir de un documento que no existe."""
+
+    def __init__(self, source_type: object) -> None:
+        super().__init__(f"origen de movimiento no válido: {source_type!r}")
+        self.source_type = source_type
+
+
 class InvalidMovement(DomainError):
     """Un movimiento de caja mal formado: tipo desconocido, monto o motivo."""
 

@@ -44,6 +44,7 @@ from app.domain.money import Money
 from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
 
+from .fakes import SUCURSAL, mover
 from .fakes import (
     FakeCashRepository,
     FakeClientRepository,
@@ -138,6 +139,7 @@ def piezas_de_venta(libro, reloj, *, costo=Money(900)):
     uow = UowQueMira(libro)
     caso = RegisterSale(
         products=productos,
+        stock=mover(productos)[0],
         sales=ventas,
         clients=FakeClientRepository(),
         settings=FakeSettingsRepository(),
@@ -160,6 +162,7 @@ def peticion_de_venta(cantidad=3, metodo="Efectivo"):
         cash_received=Money(10000),
         change_given=Money(0),
         lines=[RequestedLine(1, cantidad)],
+        branch_id=SUCURSAL,
     )
 
 
@@ -211,6 +214,7 @@ class TestLaVenta:
         )
         caso = RegisterSale(
             products=productos,
+            stock=mover(productos)[0],
             sales=FakeSaleRepository(),
             clients=FakeClientRepository(),
             settings=FakeSettingsRepository(),
@@ -231,6 +235,7 @@ class TestLaVenta:
         )
         caso = RegisterSale(
             products=productos,
+            stock=mover(productos)[0],
             sales=FakeSaleRepository(),
             clients=FakeClientRepository(),
             settings=FakeSettingsRepository(),
@@ -276,6 +281,7 @@ class TestLaDevolucion:
             returns=FakeReturnRepository(),
             notes=FakeNoteRepository(),
             products=productos,
+            stock=mover(productos)[0],
             uow=UowQueMira(libro),
             clock=reloj,
             ledger=libro,
@@ -284,7 +290,7 @@ class TestLaDevolucion:
 
     def test_le_cuenta_al_libro_lo_que_se_devolvio(self, libro, reloj):
         caso = self._piezas(libro, reloj)
-        caso(ReturnRequest(1, CAJERO, "no servía", [RequestedReturnLine(1, 1)]))
+        caso(ReturnRequest(1, CAJERO, "no servía", [RequestedReturnLine(1, 1)], SUCURSAL))
 
         (_, devolucion, lineas) = libro.de("return")[0]
         assert devolucion.date == HOY
@@ -295,7 +301,7 @@ class TestLaDevolucion:
         # RN-63 del otro lado: con el costo de hoy, devolver algo que después se
         # compró más caro inventaría utilidad de la nada.
         caso = self._piezas(libro, reloj)
-        caso(ReturnRequest(1, CAJERO, "no servía", [RequestedReturnLine(1, 1)]))
+        caso(ReturnRequest(1, CAJERO, "no servía", [RequestedReturnLine(1, 1)], SUCURSAL))
 
         assert libro.de("return")[0][2][0].unit_cost == Money(900)
 
@@ -402,6 +408,7 @@ class TestLaCompra:
         )
         caso = RegisterStockEntry(
             products=productos,
+            stock=mover(productos)[0],
             entries=entradas,
             uow=FakeUnitOfWork(),
             clock=reloj,
@@ -429,6 +436,7 @@ class TestLaCompra:
             ],
             supplier_id=5,
             document_date=date(2026, 9, 10),
+            branch_id=SUCURSAL,
         )
         datos.update(cambios)
         return EntryRequest(**datos)

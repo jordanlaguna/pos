@@ -43,8 +43,9 @@ from app.models.model_return import Return, ReturnDetail
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.models.model_user import User
-from app.services import crud_accounting, crud_numbering
+from app.services import crud_accounting, crud_inventory, crud_numbering
 from app.utils.api_errors import api_error
+from app.utils.tenancy import sucursal_actual
 
 
 def _money(value) -> float:
@@ -157,12 +158,16 @@ def create_return(db: Session, payload) -> dict:
         products=SqlAlchemyProductRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        # El kárdex de la reposición, en la misma transacción (F15, RN-98).
+        stock=crud_inventory.mover(db),
         ledger=crud_accounting.libro(db, user_id=payload.user_id),
         numbering=crud_numbering.numerador(db),
     )
     peticion = ReturnRequest(
         sale_id=payload.sale_id,
         user_id=payload.user_id,
+        # Donde se devuelve, del token: ahí se repone (RN-102).
+        branch_id=sucursal_actual(),
         reason=payload.reason or "",
         lines=[RequestedReturnLine(i.id_product, i.quantity) for i in (payload.items or [])],
         annul=payload.annul,

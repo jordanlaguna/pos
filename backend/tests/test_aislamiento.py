@@ -418,6 +418,17 @@ class TestLosReportesNoSuman:
         ids = {p["id_product"] for p in api.ok("GET", "/reports/low_stock")}
         assert mundo_b["producto"]["id_product"] not in ids
 
+    def test_el_kardex_y_las_existencias_ajenas_no_se_ven(
+        self, api: Api, mundo_a: dict, mundo_b: dict
+    ):
+        """F15. El producto de B nació con existencia, así que tiene su apertura
+        en el kárdex y su nivel; con el token de A las dos lecturas vienen
+        vacías, igual que si el producto no existiera."""
+        ajeno = mundo_b["producto"]["id_product"]
+        assert api.ok("GET", f"/inventory/kardex?product_id={ajeno}") == []
+        assert api.ok("GET", f"/inventory/levels?product_id={ajeno}") == []
+        assert api.ok("GET", f"/inventory/kardex?source_type=product&source_id={ajeno}") == []
+
     def test_las_ventas_por_dia_no_acumulan_las_de_la_otra(
         self, api: Api, api_b: Api, mundo_a: dict, mundo_b: dict
     ):
@@ -759,6 +770,9 @@ FUERA_DE_LA_BATERIA = {
     "/reports/summary": "probado en TestLosReportesNoSuman",
     "/reports/top_products": "probado en TestLosReportesNoSuman",
     "/reports/low_stock": "probado en TestLosReportesNoSuman",
+    # F15. El id viaja en la consulta y no en la ruta, como en los reportes.
+    "/inventory/kardex": "probado en TestLosReportesNoSuman",
+    "/inventory/levels": "probado en TestLosReportesNoSuman",
     "/reports/sales_by_day": "probado en TestLosReportesNoSuman",
     "/reports/by_payment_method": "sin cobertura todavía",
     "/reports/purchases": "probado en TestLosReportesNoSuman",

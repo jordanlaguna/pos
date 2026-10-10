@@ -151,6 +151,9 @@
 	"api_entry_cancel_failed": "No se pudo anular la entrada. El stock quedó como estaba.",
 
 	"api_product_has_sales": "No se puede eliminar: el producto ya tiene ventas registradas.",
+	"api_stock_not_editable": "La existencia ya no se edita desde la ficha: regístrela con una entrada, una salida o una toma física.",
+	"api_product_has_movements": "No se puede eliminar: el producto tiene {movements} movimientos en el kárdex.",
+	"api_kardex_filter_required": "Indique un producto o un documento para ver el kárdex.",
 	"api_category_name_taken": "Ya hay una categoría llamada {name}.",
 	"api_invalid_tax_code": "El código de tarifa {tax_code} no está en el catálogo de Hacienda.",
 

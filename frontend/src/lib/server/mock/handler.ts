@@ -963,6 +963,9 @@ route('PUT', '/products/update_product/:id', ({ params, body, companyId }) => {
 	const id = Number(params[0]);
 	const product = db.products.find((p) => p.id_product === id);
 	if (!product) fail(404, 'product_not_found', { product_id: id });
+	// F15 (RN-98): la existencia se mueve con una entrada, una salida o una
+	// toma, nunca desde la ficha. Mismo código que `crud_product.py`.
+	if (body?.stock != null) fail(400, 'stock_not_editable', { product_id: id });
 	if (body?.barcode && db.products.some((p) => p.id_product !== id && p.barcode === body.barcode))
 		fail(400, 'barcode_taken', { barcode: String(body.barcode) });
 	// Mover de categoría pasa por la misma regla que crear (RN-6). Solo si de

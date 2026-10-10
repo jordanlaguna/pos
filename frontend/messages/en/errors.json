@@ -151,6 +151,9 @@
 	"api_entry_cancel_failed": "The entry could not be voided. The stock was left as it was.",
 
 	"api_product_has_sales": "It cannot be deleted: the product already has sales recorded.",
+	"api_stock_not_editable": "Stock is no longer edited from the product form: record an entry, an exit or a stock count.",
+	"api_product_has_movements": "It cannot be deleted: the product has {movements} stock movements.",
+	"api_kardex_filter_required": "Choose a product or a document to view the stock ledger.",
 	"api_category_name_taken": "There is already a category named {name}.",
 	"api_invalid_tax_code": "Tax rate code {tax_code} is not in the Hacienda catalogue.",
 

@@ -94,5 +94,6 @@
   "inventory_tax_code_10": "Isenta",
   "inventory_tax_code_11": "0 % sem direito a crédito",
   "inventory_label_tariff_heading": "Posição tarifária",
-  "inventory_tariff_heading_hint": "12 dígitos. Só é necessária para vender a um cliente do exterior, com fatura de exportação."
+  "inventory_tariff_heading_hint": "12 dígitos. Só é necessária para vender a um cliente do exterior, com fatura de exportação.",
+  "inventory_stock_readonly_hint": "O estoque se movimenta com uma entrada, uma saída ou um inventário físico, não pela ficha."
 }

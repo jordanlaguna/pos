@@ -23,6 +23,7 @@ from app.application.ports.repositories import (
     SupplierRepository,
     UnitOfWork,
 )
+from app.application.use_cases.move_stock import MoveStock
 from app.application.use_cases.number_document import SOURCE_PURCHASE, NumberDocument
 from app.application.use_cases.supplier_payment import PaymentRequest, PaySupplier
 from app.domain.errors import (
@@ -34,6 +35,7 @@ from app.domain.errors import (
     PurchaseHasPayments,
 )
 from app.domain.fe_document_type import check_purchase_issuer, purchase_document_type
+from app.domain.inventory import ENTRY, ENTRY_VOID
 from app.domain.ledger import PurchasedDocument, PurchasedLine
 from app.domain.money import Money
 from app.domain.purchases import due_date as fecha_de_vencimiento
@@ -123,6 +125,9 @@ class EntryRequest:
     user_id: int
     notes: str | None
     lines: list[RequestedEntryLine]
+    #: A qué sucursal entra (F15, RN-102). Por omisión la de la terminal de la
+    #: sesión; con más de una, la que se elija. Lo llena el router.
+    branch_id: int
 
     # ------------------------------------------------------- compra (F10)
     #
@@ -179,6 +184,7 @@ class RegisterStockEntry:
         entries: StockEntryRepository,
         uow: UnitOfWork,
         clock: Clock,
+        stock: MoveStock,
         suppliers: SupplierRepository | None = None,
         payer: PaySupplier | None = None,
         ledger: Ledger | None = None,
@@ -189,6 +195,7 @@ class RegisterStockEntry:
         self._entries = entries
         self._uow = uow
         self._clock = clock
+        self._stock = stock
         # Opcionales a propósito: una entrada sin proveedor no los necesita, y
         # las pruebas de lo que ya existía no tienen que aprender puertos nuevos.
         self._suppliers = suppliers
@@ -247,12 +254,27 @@ class RegisterStockEntry:
         ahora = self._clock.now()
 
         with self._uow:
+            # Todos los productos que ya existen, bloqueados de una y en orden
+            # de id, antes de tocar ninguno (plan §15.1): es el mismo candado de
+            # la venta, y tomarlos en otro orden desde una entrada [B, A] y una
+            # venta [A, B] es como se fabrica un abrazo mortal. De los retratos
+            # salen la existencia y el costo para el promedio; los que se crean
+            # abajo nacen en cero de las dos cosas.
+            retratos = self._products.lock(
+                [pedida.product_id for pedida in request.lines if pedida.product_id]
+            )
+            #: `{producto: (existencia, costo)}` según va avanzando la entrada:
+            #: si un producto aparece dos veces en la misma factura, el segundo
+            #: promedio tiene que ver lo que dejó el primero.
+            estado: dict[int, tuple[int, Money]] = {
+                pid: (retrato.stock, retrato.cost) for pid, retrato in retratos.items()
+            }
             lineas: list[EntryLine] = []
             creados = 0
 
             for indice, pedida in enumerate(request.lines, start=1):
                 if pedida.product_id:
-                    if self._products.get(pedida.product_id) is None:
+                    if pedida.product_id not in retratos:
                         raise ProductNotFoundInEntry(pedida.product_id)
                     product_id = pedida.product_id
 
@@ -272,6 +294,7 @@ class RegisterStockEntry:
                         category_id=nuevo.category_id,
                         created_at=ahora,
                     )
+                    estado[product_id] = (0, Money.zero())
                     creados += 1
 
                 else:
@@ -307,6 +330,7 @@ class RegisterStockEntry:
                 total_cost=total,
                 created_at=ahora,
                 lines=lineas,
+                branch_id=request.branch_id,
                 supplier_id=request.supplier_id,
                 document_key=request.document_key,
                 document_date=request.document_date,
@@ -318,22 +342,36 @@ class RegisterStockEntry:
             )
 
             # El costo **antes** que el stock, y las dos cosas en el mismo paso
-            # por línea: si un producto aparece dos veces en la misma factura, el
-            # segundo promedio tiene que ver las existencias que dejó el primero.
+            # por línea. No es solo por el producto repetido en la misma factura:
+            # `MoveStock` anota en el kárdex el promedio que el producto tiene
+            # al moverse, bajo el mismo candado, y para que ese sea el promedio
+            # DESPUÉS de esta entrada (RN-98) hay que haberlo escrito ya. El
+            # promedio se calcula sobre la existencia **total** del producto,
+            # no la de la sucursal: el costo es uno por producto (RN-54).
             #
             # Sin comprobar que el producto exista, a diferencia de la anulación:
             # acá o se validó arriba o se acaba de crear. Un `if` de más sería
             # una rama que ninguna prueba puede alcanzar, y eso es lo que la
             # cobertura al 100 % existe para no dejar pasar.
-            for linea in lineas:
-                producto = self._products.get(linea.product_id)
-                self._products.update_cost(
-                    linea.product_id,
-                    weighted_average_cost(
-                        producto.stock, producto.cost, linea.quantity, linea.unit_cost
-                    ),
+            for indice, linea in enumerate(lineas, start=1):
+                existencia, costo = estado[linea.product_id]
+                promedio = weighted_average_cost(
+                    existencia, costo, linea.quantity, linea.unit_cost
                 )
-                self._products.adjust_stock(linea.product_id, +linea.quantity)
+                self._products.update_cost(linea.product_id, promedio)
+                self._stock(
+                    product_id=linea.product_id,
+                    branch_id=request.branch_id,
+                    delta=+linea.quantity,
+                    kind=ENTRY,
+                    unit_cost=linea.unit_cost,
+                    source_type="stock_entry",
+                    source_id=id_entry,
+                    source_line=indice,
+                    user_id=request.user_id,
+                    moved_at=ahora,
+                )
+                estado[linea.product_id] = (existencia + linea.quantity, promedio)
 
             # Solo una **compra** deja asiento. Una entrada sin proveedor no
             # genera cuenta por pagar ni crédito fiscal (RN-52): es un ajuste de
@@ -494,23 +532,29 @@ class CancelStockEntry:
         products: ProductRepository,
         entries: StockEntryRepository,
         uow: UnitOfWork,
+        clock: Clock,
+        stock: MoveStock,
         payments: SupplierPaymentRepository | None = None,
     ) -> None:
         self._products = products
         self._entries = entries
         self._uow = uow
+        # El reloj y el escritor de existencias (F15): la reversión es un
+        # movimiento propio del kárdex, con su hora y con quién la hizo.
+        self._clock = clock
+        self._stock = stock
         # Opcional igual que en `RegisterStockEntry`: una entrada que no es
         # compra no puede tener abonos, y las pruebas de lo que ya existía no
         # tienen que aprender un puerto nuevo.
         self._payments = payments
 
-    def __call__(self, entry_id: int) -> CancelledEntry:
+    def __call__(self, entry_id: int, *, user_id: int) -> CancelledEntry:
         with self._uow:
-            anulada = self.apply(entry_id)
+            anulada = self.apply(entry_id, user_id=user_id)
             self._uow.commit()
         return anulada
 
-    def apply(self, entry_id: int) -> CancelledEntry:
+    def apply(self, entry_id: int, *, user_id: int) -> CancelledEntry:
         """La anulación comprobada y escrita, **sin confirmar**.
 
         Separado del `__call__` para que la anotación de bitácora entre en la
@@ -526,16 +570,35 @@ class CancelStockEntry:
 
         lineas = self._entries.lines_of(entry_id)
 
+        # Todos los productos de la entrada bloqueados de una, en orden de id,
+        # antes de tocar ninguno (plan §15.1). Los que ya no existen no vienen:
+        # no hay stock que devolver, y tampoco nada que impida anular.
+        retratos = self._products.lock([linea.product_id for linea in lineas])
         for linea in lineas:
-            producto = self._products.get(linea.product_id)
-            # Si el producto ya no existe no hay stock que devolver, y tampoco
-            # hay nada que impida anular.
-            if producto is not None:
-                check_cancellable(linea.product_id, producto.stock, linea.quantity)
+            if linea.product_id in retratos:
+                check_cancellable(
+                    linea.product_id, retratos[linea.product_id].stock, linea.quantity
+                )
 
-        for linea in lineas:
-            if self._products.get(linea.product_id) is not None:
-                self._products.adjust_stock(linea.product_id, -linea.quantity)
+        # La reversión es un movimiento propio con signo contrario, no una
+        # edición de lo que anuló (RN-98), **en la sucursal a la que entró** —que
+        # desde RN-102 puede no ser la de quien anula— y al costo de la entrada.
+        # El promedio no se deshace: la siguiente compra lo corrige sola.
+        momento = self._clock.now()
+        for indice, linea in enumerate(lineas, start=1):
+            if linea.product_id in retratos:
+                self._stock(
+                    product_id=linea.product_id,
+                    branch_id=entrada.branch_id,
+                    delta=-linea.quantity,
+                    kind=ENTRY_VOID,
+                    unit_cost=Money(linea.unit_cost),
+                    source_type="stock_entry",
+                    source_id=entry_id,
+                    source_line=indice,
+                    user_id=user_id,
+                    moved_at=momento,
+                )
         self._entries.mark_cancelled(entry_id)
 
         return CancelledEntry(

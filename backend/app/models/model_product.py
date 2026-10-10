@@ -84,6 +84,16 @@ class Product(TenantMixin, Base):
     created_at = Column(DateTime, nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
 
+    # F15 (migración 023). El mínimo propio (RN-101): NULL usa el general de
+    # Configuración. Y la marca del producto (RN-104), que no es la del negocio.
+    #
+    # `stock` sigue acá y desde F15 es **la suma de las sucursales**
+    # (`stock_levels`), mantenida por `MoveStock` con un `UPDATE … stock + :delta`
+    # en la misma transacción que el kárdex. Se conserva porque la grilla de
+    # ventas la lee cinco mil veces al día (RNF-3); ya no la escribe nadie más.
+    min_stock = Column(Integer, nullable=True)
+    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True)
+
     # Antes solo tenía índice. Ahora es único POR COMPAÑÍA, que es lo que el
     # escáner necesita —una lectura, un producto— sin impedir que dos negocios
     # vendan el mismo artículo. Los nulos no chocan entre sí en MySQL, así que

@@ -44,6 +44,7 @@ from app.domain.sale import SaleLine
 from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
 
+from .fakes import SUCURSAL, mover
 from .fakes import (
     FakeCashRepository,
     FakeNoteRepository,
@@ -114,6 +115,7 @@ class Mundo:
             returns=self.devoluciones,
             notes=self.notas,
             products=self.productos,
+            stock=mover(self.productos)[0],
             uow=self.uow,
             clock=self.reloj,
         )
@@ -220,6 +222,7 @@ class TestLaNotaDeCreditoPorMonto:
             ReturnRequest(
                 sale_id=mundo.id_venta,
                 user_id=ADMIN,
+                branch_id=SUCURSAL,
                 reason="no era",
                 lines=[RequestedReturnLine(1, 1)],
             )
@@ -280,6 +283,7 @@ class TestLaDevolucionDespuesDeUnaNota:
             ReturnRequest(
                 sale_id=mundo.id_venta,
                 user_id=ADMIN,
+                branch_id=SUCURSAL,
                 reason="no era",
                 lines=[RequestedReturnLine(p, c) for p, c in lineas],
                 **cambios,

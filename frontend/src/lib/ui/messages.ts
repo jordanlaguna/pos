@@ -336,6 +336,10 @@ export const API_CODES = [
 	'entry_cancel_failed',
 	// catálogo
 	'product_has_sales',
+	// F15 (RN-98): la existencia se mueve, no se edita; y con kárdex no se borra.
+	'stock_not_editable',
+	'product_has_movements',
+	'kardex_filter_required',
 	'category_name_taken',
 	'invalid_tax_code',
 	// categorías de dos niveles (F4)
@@ -939,6 +943,12 @@ function frase(code: ApiCode, d: Failure['data']): string {
 		// ---------------------------------------------------------- catálogo
 		case 'product_has_sales':
 			return m.api_product_has_sales();
+		case 'stock_not_editable':
+			return m.api_stock_not_editable();
+		case 'product_has_movements':
+			return m.api_product_has_movements({ movements: numero(d.movements) });
+		case 'kardex_filter_required':
+			return m.api_kardex_filter_required();
 		case 'category_name_taken':
 			return m.api_category_name_taken({ name: texto(d.name) });
 		case 'invalid_tax_code':

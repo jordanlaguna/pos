@@ -33,6 +33,7 @@ from app.domain.sale import SaleLine
 from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
 
+from .fakes import SUCURSAL, mover
 from .fakes import (
     FakeNoteRepository,
     FakeProduct,
@@ -81,6 +82,7 @@ def montar(tasa_de_la_venta=IVA, tipo=None):
         returns=devoluciones,
         notes=FakeNoteRepository(),
         products=catalogo,
+        stock=mover(catalogo)[0],
         uow=uow,
         clock=FixedClock(MOMENTO),
     )
@@ -91,6 +93,7 @@ def peticion(lineas, sale_id=1, motivo="producto dañado", anular=False):
     return ReturnRequest(
         sale_id=sale_id,
         user_id=1,
+        branch_id=SUCURSAL,
         reason=motivo,
         lines=[RequestedReturnLine(pid, cant) for pid, cant in lineas],
         annul=anular,
@@ -339,6 +342,7 @@ class TestTarifasMezcladas:
             returns=devoluciones,
             notes=FakeNoteRepository(),
             products=catalogo,
+            stock=mover(catalogo)[0],
             uow=FakeUnitOfWork(),
             clock=FixedClock(MOMENTO),
         )

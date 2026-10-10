@@ -84,7 +84,7 @@ class SqlAlchemyProductRepository:
         fila = self._db.query(Product).filter(Product.barcode == barcode).first()
         return _a_producto(fila) if fila else None
 
-    def lock_for_sale(self, product_ids: list[int]) -> dict[int, ProductData]:
+    def lock(self, product_ids: list[int]) -> dict[int, ProductData]:
         """
         Trae los productos con `SELECT ... FOR UPDATE`.
 
@@ -92,7 +92,13 @@ class SqlAlchemyProductRepository:
         vez: la segunda espera a que la primera termine y entonces ve el stock
         ya descontado. Se piden **ordenados** para que dos transacciones que
         compiten tomen los candados en la misma secuencia; en orden distinto se
-        traban una a la otra.
+        traban una a la otra. Desde F15 lo toma todo documento que mueve
+        existencias, y `MoveStock` lo vuelve a pedir por línea: con la
+        transacción ya dueña de la fila no espera nada, y el retrato que
+        devuelve es el fresco —con el costo que la entrada acaba de escribir—.
+
+        Ya no hay `adjust_stock`: la suma de la ficha la mantiene
+        `SqlAlchemyStockLevelRepository.add_to_total`, con un UPDATE atómico.
         """
         if not product_ids:
             return {}
@@ -105,11 +111,6 @@ class SqlAlchemyProductRepository:
             .all()
         )
         return {fila.id_product: _a_producto(fila) for fila in filas}
-
-    def adjust_stock(self, product_id: int, delta: int) -> None:
-        fila = self._db.query(Product).filter(Product.id_product == product_id).first()
-        if fila is not None:
-            fila.stock += delta
 
     def update_cost(self, product_id: int, cost: Money) -> None:
         fila = self._db.query(Product).filter(Product.id_product == product_id).first()
@@ -215,6 +216,7 @@ class SqlAlchemyStockEntryRepository:
         total_cost: Money,
         created_at: datetime,
         lines: list,
+        branch_id: int,
         supplier_id: int | None = None,
         document_key: str | None = None,
         document_date: date | None = None,
@@ -225,10 +227,11 @@ class SqlAlchemyStockEntryRepository:
         document_type: str | None = None,
     ) -> int:
         entrada = StockEntry(
-            # A qué sucursal entró. Sale del token, no del cuerpo de la
-            # petición: si el cliente pudiera decirlo, podría cargarle
-            # mercadería a la bodega de otra sucursal (RN-14).
-            branch_id=sucursal_actual(),
+            # A qué sucursal entró. Desde F15 llega en la petición del caso de
+            # uso, que el router llena desde el token —no desde el cuerpo que
+            # manda el cliente, que podría cargarle mercadería a la bodega de
+            # otra sucursal (RN-14)— y es la misma del kárdex de cada línea.
+            branch_id=branch_id,
             document_number=document_number,
             supplier=supplier,
             source=source,
@@ -344,13 +347,16 @@ class SqlAlchemySaleRepository:
         change_given: Money,
         created_at: datetime,
         lines: list,
+        branch_id: int,
         document_type: str | None = None,
     ) -> int:
         venta = Sale(
             # Dónde y en qué caja se cobró. Del token, nunca del cliente: una
             # venta que eligiera su terminal podría cuadrar el arqueo de otra
-            # con plata que jamás pasó por esa gaveta (RN-14).
-            branch_id=sucursal_actual(),
+            # con plata que jamás pasó por esa gaveta (RN-14). La sucursal
+            # viene en la petición desde F15 —el router la llena del token— y es
+            # la misma de la que el kárdex descuenta.
+            branch_id=branch_id,
             terminal_id=terminal_actual(),
             sale_number=sale_number,
             client_id=client_id,
@@ -493,13 +499,15 @@ class SqlAlchemyReturnRepository:
         total: Money,
         created_at: datetime,
         lines: list,
+        branch_id: int,
         document_type: str | None = None,
         reference_code: str | None = None,
     ) -> int:
         registro = Return(
             # La devolución se sella donde ocurre, que no tiene por qué ser
-            # donde se vendió: se puede devolver en otra sucursal.
-            branch_id=sucursal_actual(),
+            # donde se vendió: se puede devolver en otra sucursal, y ahí es
+            # donde el kárdex repone (RN-102).
+            branch_id=branch_id,
             terminal_id=terminal_actual(),
             sale_id=sale_id,
             user_id=user_id,

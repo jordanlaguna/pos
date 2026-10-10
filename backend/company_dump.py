@@ -61,6 +61,7 @@ import app.models.model_categories  # noqa: F401
 import app.models.model_client  # noqa: F401
 import app.models.model_company  # noqa: F401
 import app.models.model_fe  # noqa: F401
+import app.models.model_inventory  # noqa: F401
 import app.models.model_note  # noqa: F401
 import app.models.model_payroll  # noqa: F401
 import app.models.model_person  # noqa: F401
@@ -86,6 +87,11 @@ TABLAS_DE_COMPANIA = [
     "user_companies",
     "categories",
     "clients",
+    # Inventario (F15). Las marcas y los motivos antes de `products`, que
+    # desde la 023 apunta a una marca; el resto va más abajo, después de las
+    # entradas y las sucursales que referencia.
+    "brands",
+    "stock_reasons",
     "products",
     "sales",
     "sale_details",
@@ -105,6 +111,20 @@ TABLAS_DE_COMPANIA = [
     # Y los abonos al final de todo: referencian la compra y el movimiento de
     # caja, que para entonces ya están.
     "supplier_payments",
+    # Inventario (F15), en orden de claves: los lotes después de los productos;
+    # los niveles, las salidas, los traslados y las tomas después del lote, la
+    # sucursal, el motivo y la categoría que nombran; y el kárdex al final,
+    # porque referencia a casi todo. Sin él una compañía restaurada tendría
+    # existencias sin explicación, que es justo lo que F15 vino a quitar.
+    "stock_lots",
+    "stock_levels",
+    "stock_exits",
+    "stock_exit_details",
+    "stock_transfers",
+    "stock_transfer_details",
+    "stock_counts",
+    "stock_count_lines",
+    "stock_movements",
     # Contabilidad (F11). El orden adentro es el de sus claves: las cuentas antes
     # del mapeo que las usa, el periodo antes del asiento que le cuelga, y el
     # asiento antes de sus líneas. Sin las cinco, restaurar una compañía dejaría

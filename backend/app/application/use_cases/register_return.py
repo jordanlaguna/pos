@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from app.application.ports.clock import Clock
 from app.application.ports.ledger import Ledger, NullLedger
 from app.application.ports.numbering import NumberedDocument
+from app.application.use_cases.move_stock import MoveStock
 from app.application.use_cases.number_document import SOURCE_RETURN, NumberDocument
 from app.application.ports.repositories import (
     NoteRepository,
@@ -40,6 +41,7 @@ from app.domain.errors import (
     ReturnAfterCreditNote,
 )
 from app.domain.fe_notes import check_annul, credit_note_for_return
+from app.domain.inventory import RETURN, SALE_VOID
 from app.domain.ledger import ReturnDocument, SoldLine
 from app.domain.money import Money
 from app.domain.returns import (
@@ -79,6 +81,9 @@ class ReturnRequest:
     user_id: int
     reason: str
     lines: list[RequestedReturnLine]
+    #: Dónde se devuelve, que no tiene por qué ser donde se vendió: la
+    #: mercadería se repone acá (F15, RN-102). Del `bid` de la sesión.
+    branch_id: int
     #: Anular el comprobante en vez de devolver mercadería (RN-89). Exige que
     #: la venta no tenga devoluciones y que se devuelva entera.
     annul: bool = False
@@ -107,6 +112,7 @@ class RegisterReturn:
         products: ProductRepository,
         uow: UnitOfWork,
         clock: Clock,
+        stock: MoveStock,
         ledger: Ledger | None = None,
         numbering: NumberDocument | None = None,
     ) -> None:
@@ -116,6 +122,7 @@ class RegisterReturn:
         self._products = products
         self._uow = uow
         self._clock = clock
+        self._stock = stock
         self._ledger = ledger or NullLedger()
         self._numbering = numbering
 
@@ -215,12 +222,29 @@ class RegisterReturn:
                 total=totales.total,
                 created_at=momento,
                 lines=lineas,
+                branch_id=request.branch_id,
                 document_type=nota.document_type if nota else None,
                 reference_code=nota.reference_code if nota else None,
             )
-            for linea in lineas:
-                # Lo que el sistema original no hacía: reponer.
-                self._products.adjust_stock(linea.product_id, +linea.quantity)
+            # Lo que el sistema original no hacía: reponer. Desde F15 con su
+            # fila en el kárdex, **al costo con que salió** (RN-98, RN-63): lo
+            # que se vendió a 100 vuelve a 100 aunque hoy el promedio sea 120,
+            # porque devolverlo a 120 inventaría utilidad. Una venta anterior a
+            # F11 no tiene costo y repone a cero, que es «no se sabe». Anular
+            # se ve como anulación, no como devolución.
+            for indice, linea in enumerate(lineas, start=1):
+                self._stock(
+                    product_id=linea.product_id,
+                    branch_id=request.branch_id,
+                    delta=+linea.quantity,
+                    kind=SALE_VOID if request.annul else RETURN,
+                    unit_cost=costos.get(linea.product_id, Money.zero()),
+                    source_type="return",
+                    source_id=id_return,
+                    source_line=indice,
+                    user_id=request.user_id,
+                    moved_at=momento,
+                )
 
             # La NC lleva su propia serie, la `03` (nota 3), y se numera con la
             # devolución: si esto falla, no queda ni la devolución ni el número.

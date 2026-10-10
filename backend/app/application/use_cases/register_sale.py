@@ -31,6 +31,7 @@ from app.application.ports.repositories import (
     SettingsRepository,
     UnitOfWork,
 )
+from app.application.use_cases.move_stock import MoveStock
 from app.application.use_cases.number_document import SOURCE_SALE, NumberDocument
 from app.domain.errors import (
     DomainError,
@@ -41,6 +42,7 @@ from app.domain.errors import (
 from app.domain.fe_document_type import EXPORT_INVOICE, document_type_for
 from app.domain.fe_export import ExportLine, check_export_lines, check_foreign_address
 from app.domain.hacienda import is_foreign
+from app.domain.inventory import SALE
 from app.domain.ledger import SoldDocument, SoldLine
 from app.domain.money import Money
 from app.domain.tax import GENERAL_RATE
@@ -104,6 +106,10 @@ class SaleRequest:
     cash_received: Money
     change_given: Money
     lines: list[RequestedLine]
+    #: Dónde se cobra y de dónde se descuenta (F15, RN-102). Lo llena el router
+    #: desde el `bid` de la sesión, como `user_id`: la aplicación no lee el
+    #: `ContextVar` y el cliente no lo puede elegir (RN-14).
+    branch_id: int
     #: El comprobante que eligió el cajero (RN-85). Nulo es «el que sugiere el
     #: receptor», que es lo que manda una pantalla que no sabe elegir.
     document_type: str | None = None
@@ -134,6 +140,7 @@ class RegisterSale:
         settings: SettingsRepository,
         uow: UnitOfWork,
         clock: Clock,
+        stock: MoveStock,
         ledger: Ledger | None = None,
         numbering: NumberDocument | None = None,
     ) -> None:
@@ -143,6 +150,8 @@ class RegisterSale:
         self._settings = settings
         self._uow = uow
         self._clock = clock
+        # El único que mueve existencias (F15): deja el kárdex por cada línea.
+        self._stock = stock
         # Con contabilidad apagada —que es el caso de casi todas las compañías—
         # el libro es el nulo y no hace nada. El caso de uso no pregunta si está
         # activa: siempre cuenta lo que pasó (RN-59).
@@ -222,9 +231,7 @@ class RegisterSale:
         with self._uow:
             # Se bloquean todos de una: pedirlos uno por uno en distinto orden
             # desde dos cajas es como se fabrica un interbloqueo.
-            disponibles = self._products.lock_for_sale(
-                [line.product_id for line in request.lines]
-            )
+            disponibles = self._products.lock([line.product_id for line in request.lines])
 
             # El respaldo de los productos que no tienen tarifa propia es la
             # general del IVA (RN-9). Ya no se configura (QA-05): con la tarifa
@@ -332,11 +339,27 @@ class RegisterSale:
                 # sella este mismo backend: dos relojes no se pueden comparar.
                 created_at=momento,
                 lines=lineas,
+                branch_id=request.branch_id,
                 document_type=document_type,
             )
 
-            for linea in lineas:
-                self._products.adjust_stock(linea.product_id, -linea.quantity)
+            # Cada línea deja su fila en el kárdex (RN-98), valorada al promedio
+            # del momento, que es el costo que la línea acaba de congelar; sin
+            # costo —un producto que nunca se compró— se anota cero, y el
+            # valorado lo cuenta como causa de diferencia (RN-103).
+            for indice, linea in enumerate(lineas, start=1):
+                self._stock(
+                    product_id=linea.product_id,
+                    branch_id=request.branch_id,
+                    delta=-linea.quantity,
+                    kind=SALE,
+                    unit_cost=linea.unit_cost or Money.zero(),
+                    source_type="sale",
+                    source_id=id_sale,
+                    source_line=indice,
+                    user_id=request.user_id,
+                    moved_at=momento,
+                )
 
             # El número y la clave, en la misma transacción que la venta (plan
             # §7.2): si algo de acá abajo falla, la serie no queda con un hueco.

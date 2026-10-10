@@ -36,6 +36,19 @@ from app.models.model_fe import (  # noqa: F401
     FeDocumentEvent,
     FeSequence,
 )
+from app.models.model_inventory import (  # noqa: F401
+    Brand,
+    StockCount,
+    StockCountLine,
+    StockExit,
+    StockExitDetail,
+    StockLevel,
+    StockLot,
+    StockMovement,
+    StockReason,
+    StockTransfer,
+    StockTransferDetail,
+)
 from app.models.model_note import SaleNote, SaleNoteLine  # noqa: F401
 from app.models.model_person import Person  # noqa: F401
 from app.models.model_payroll import (  # noqa: F401
@@ -71,6 +84,7 @@ from app.router import (
     categories_routes,
     client_routes,
     fe_routes,
+    inventory_routes,
     note_routes,
     office_routes,
     payable_routes,
@@ -161,6 +175,8 @@ app.include_router(report_routes.router, prefix="/reports", tags=["Reports"])
 app.include_router(
     stock_entry_routes.router, prefix="/inventory", tags=["Inventory entries"]
 )
+# El kárdex y las existencias por sucursal (F15), bajo el mismo prefijo.
+app.include_router(inventory_routes.router, prefix="/inventory", tags=["Inventory"])
 app.include_router(supplier_routes.router, prefix="/suppliers", tags=["Suppliers"])
 app.include_router(purchase_routes.router, prefix="/purchases", tags=["Purchases"])
 app.include_router(payable_routes.router, prefix="/payables", tags=["Payables"])

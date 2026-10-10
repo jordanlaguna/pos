@@ -59,11 +59,13 @@ from app.models.model_user import User
 from app.services import (
     crud_accounting,
     crud_categories,
+    crud_inventory,
     crud_membership,
     crud_numbering,
     crud_supplier_payment,
 )
 from app.utils.api_errors import api_error
+from app.utils.tenancy import sucursal_actual
 
 
 def _money(value) -> float:
@@ -146,6 +148,8 @@ def create_entry(db: Session, payload) -> dict:
         entries=entradas,
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        # El kárdex de cada línea, en la misma transacción (F15, RN-98).
+        stock=crud_inventory.mover(db),
         suppliers=SqlAlchemySupplierRepository(db),
         # Para el abono de una compra de contado, que entra en la misma
         # transacción que la mercadería: son el mismo hecho.
@@ -180,6 +184,9 @@ def create_entry(db: Session, payload) -> dict:
         source=payload.source,
         user_id=payload.user_id,
         notes=payload.notes,
+        # A qué sucursal entra: la de la sesión (RN-14). Elegir otra es de
+        # T-1505, cuando la sesión sepa en cuál está.
+        branch_id=sucursal_actual(),
         supplier_id=payload.supplier_id,
         document_key=payload.document_key,
         document_date=payload.document_date,
@@ -319,13 +326,16 @@ def cancel_entry(
         products=productos,
         entries=SqlAlchemyStockEntryRepository(db),
         uow=uow,
+        clock=SystemClock(),
+        # La reversión deja su propia fila en el kárdex (F15, RN-98).
+        stock=crud_inventory.mover(db),
         payments=SqlAlchemySupplierPaymentRepository(db),
     )
     motivo = (reason or "").strip()
 
     try:
         with uow:
-            anulada = caso.apply(entry_id)
+            anulada = caso.apply(entry_id, user_id=user_id)
 
             # El motivo es obligatorio para una compra (RF-46) y no para una
             # entrada, que nunca lo pidió. Se comprueba después de `apply` a

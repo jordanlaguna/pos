@@ -51,8 +51,9 @@ from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
 from app.models.model_sales import Sale
 from app.schemas.schemas_sales import SaleRegister, SaleRegisterSuccess
-from app.services import crud_accounting, crud_numbering
+from app.services import crud_accounting, crud_inventory, crud_numbering
 from app.utils.api_errors import api_error
+from app.utils.tenancy import sucursal_actual
 
 
 def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
@@ -64,6 +65,8 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
         settings=SqlAlchemySettingsRepository(db),
         uow=SqlAlchemyUnitOfWork(db),
         clock=SystemClock(),
+        # El kárdex, línea por línea, en la misma transacción (F15, RN-98).
+        stock=crud_inventory.mover(db),
         # El asiento, en la misma transacción (RN-59). Con contabilidad apagada
         # —casi todas las compañías— esto es el libro nulo y no hace nada.
         ledger=crud_accounting.libro(db, user_id=sale.user_id),
@@ -75,6 +78,9 @@ def create_sale(db: Session, sale: SaleRegister) -> SaleRegisterSuccess:
         sale_number=sale.sale_number,
         client_id=sale.client_id,
         user_id=sale.user_id,
+        # Del token, como `user_id` del cuerpo ya validado: la aplicación no
+        # lee el `ContextVar`, y el cliente no elige dónde cobra (RN-14).
+        branch_id=sucursal_actual(),
         subtotal=Money(sale.subtotal),
         tax=Money(sale.tax),
         total=Money(sale.total),

@@ -644,14 +644,28 @@
 			required
 			error={form?.errors?.price}
 		/>
-		<Field
-			label={m.inventory_label_stock()}
-			name="stock"
-			bind:value={fStock}
-			inputmode="numeric"
-			required
-			error={form?.errors?.stock}
-		/>
+		<!-- La existencia solo se escribe al crear: es la apertura del kárdex
+		     (RF-94). Al editar se muestra y no se manda: desde F15 se mueve con
+		     una entrada, una salida o una toma física, nunca desde la ficha
+		     (RN-98), y el servidor rechaza el campo si llega. -->
+		{#if editing}
+			<Field
+				label={m.inventory_label_stock()}
+				name="stock_actual"
+				value={fStock}
+				readonly
+				hint={m.inventory_stock_readonly_hint()}
+			/>
+		{:else}
+			<Field
+				label={m.inventory_label_stock()}
+				name="stock"
+				bind:value={fStock}
+				inputmode="numeric"
+				required
+				error={form?.errors?.stock}
+			/>
+		{/if}
 
 		<div class="sm:col-span-2">
 			<Field

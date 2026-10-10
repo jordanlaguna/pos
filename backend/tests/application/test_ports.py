@@ -23,6 +23,7 @@ from app.application.ports import (
     clock,
     documents,
     fe_documents,
+    inventory,
     numbering,
     payroll,
     repositories,
@@ -39,8 +40,10 @@ PUERTOS = [
         {
             "get",
             "get_by_barcode",
-            "lock_for_sale",
-            "adjust_stock",
+            # Desde F15 se llama `lock` y lo usa todo documento que mueve
+            # existencias, no solo la venta: un solo candado, un solo orden.
+            # `adjust_stock` ya no está: las mueve `MoveStock` (RN-98).
+            "lock",
             # Desde F10: el promedio ponderado lo calcula el dominio y acá solo
             # se guarda (RN-54).
             "update_cost",
@@ -48,6 +51,14 @@ PUERTOS = [
             "create",
         },
     ),
+    # F15: el inventario (T-1502). Tres puertos por tres razones de cambio:
+    # dónde está cada cosa, anotar lo que pasó, y leerlo.
+    (
+        inventory.StockLevelRepository,
+        {"lock", "set", "levels_of", "levels_in", "add_to_total"},
+    ),
+    (inventory.KardexWriter, {"record"}),
+    (inventory.KardexReader, {"of_product", "of_source"}),
     (repositories.SupplierRepository, {"get"}),
     (
         repositories.StockEntryRepository,
@@ -294,6 +305,7 @@ def test_los_puertos_no_conocen_la_persistencia_ni_HTTP():
         clock,
         documents,
         fe_documents,
+        inventory,
         payroll,
         repositories,
         secrets,

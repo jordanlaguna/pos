@@ -43,13 +43,19 @@ function readTaxRate(v: Validator, form: FormData): number | null {
 	return rateFromPercent(v.decimal('tax_rate', F.taxRate(), { min: 0, max: 100 }));
 }
 
-/** Campos comunes al alta y la edición de un producto. */
-function readProduct(v: Validator, form: FormData) {
+/**
+ * Campos comunes al alta y la edición de un producto.
+ *
+ * La existencia solo al crear: es la apertura del kárdex (RF-94). Al editar no
+ * se manda —el servidor la rechaza con `stock_not_editable` (RN-98)—: desde F15
+ * se mueve con una entrada, una salida o una toma física, nunca desde la ficha.
+ */
+function readProduct(v: Validator, form: FormData, { withStock }: { withStock: boolean }) {
 	return {
 		name: v.text('name', F.name(), { max: 100 }),
 		description: v.text('description', F.description(), { max: 255 }),
 		price: v.decimal('price', F.price(), { min: 0 }),
-		stock: v.integer('stock', F.stock(), { min: 0 }),
+		...(withStock ? { stock: v.integer('stock', F.stock(), { min: 0 }) } : {}),
 		barcode: v.text('barcode', F.barcode(), { min: 3, max: 100 }),
 		category_id: v.integer('category_id', F.category(), { min: 1 }),
 		// Sin clasificar es un estado legítimo: el catálogo heredado llega así y
@@ -83,7 +89,7 @@ export const actions: Actions = {
 		requireAdmin(locals, url.pathname);
 		const form = await request.formData();
 		const v = new Validator(form);
-		const product = readProduct(v, form);
+		const product = readProduct(v, form, { withStock: true });
 		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), action: 'crear' });
 
 		try {
@@ -103,7 +109,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const v = new Validator(form);
 		const id = v.integer('id_product', F.product(), { min: 1 });
-		const product = readProduct(v, form);
+		const product = readProduct(v, form, { withStock: false });
 		if (!v.ok) return fail(400, { errors: validationErrors(v.errors), action: 'actualizar' });
 
 		try {

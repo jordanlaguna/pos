@@ -1864,10 +1864,30 @@
       "decision": "`RebuildStockLevels` entra al spec como RF-95 y a task.md como T-1509, en vez de salir del plan. RN-32 anota la excepción.",
       "porque": "El plan la daba por hecha y ni el spec ni las tareas la tenían: sin RF no hay regla que la justifique ni prueba que vigile que siga siendo la única escritura de soporte. No inventa datos —suma lo que el kárdex ya dice— y queda en bitácora.",
       "fecha": "2026-10-10"
+    },
+    {
+      "tema": "La migración 023 se escribe entera desde el primer tramo de T-1502",
+      "decision": "Las once tablas y sus once modelos entran con el núcleo del kárdex, aunque T-1502 use cuatro; las cuentas 6.3.01 y 4.9.02 y sus mapeos también, y `chart.py` los aprende con las salidas.",
+      "porque": "`test_esquema.py` exige que modelo y migración digan lo mismo, y una 023a/023b dejaría dos esquemas según cuándo la aplique cada quien. Una compañía migrada hoy queda con dos cuentas de más hasta el siguiente tramo, que es inocuo; lo contrario —una migración partida— no.",
+      "fecha": "2026-10-10"
+    },
+    {
+      "tema": "La ficha abre la existencia por `MoveStock` antes de que exista `RegisterProduct`",
+      "decision": "`crud_product.create_product` crea el producto en cero y mueve la existencia inicial como `opening` por `MoveStock`; el PUT rechaza `stock` con `stock_not_editable` y el DELETE de un producto con kárdex responde `product_has_movements`. Mover el CRUD a casos de uso queda para el segundo tramo, con su caracterización.",
+      "porque": "Sin la apertura, un producto creado con existencia desde la ficha no tenía fila en `stock_levels` y la primera venta fallaba por nivel cero aunque la ficha dijera 10. La regla de un solo escritor se cumple desde ya; el reparto en capas, después.",
+      "fecha": "2026-10-10"
     }
   ],
   "invariantes_verificados": {
     "$comentario": "Números de referencia. Si alguno cambia, hay una regresión.",
+    "kardex_de_un_producto": {
+      "nace_con": "existencia 10 → una fila `opening` (0, +10, 10) a costo 0, origen `product`",
+      "venta_3": "`sale` (10, −3, 7), origen `sale` con la línea 1",
+      "devolucion_1": "`return` (7, +1, 8)",
+      "entrada_24_a_1200": "`entry` (8, +24, 32), costo 1200, promedio después 900",
+      "anulacion_de_la_entrada": "`entry_void` (32, −24, 8) al costo de la entrada, 1200",
+      "al_final": "cinco filas del más reciente al más viejo, y en cada paso products.stock == suma de stock_levels (tests/test_inventario.py)"
+    },
     "venta_3x1450": {
       "subtotal": 4350,
       "iva": 565.5,
@@ -3245,6 +3265,24 @@
         "Registro: la sesión de F15 estaba de primera en `sesiones` y dos defectos apuntaban a la sesión 71 de la rama de Antony; quedaron al final y en la 82."
       ],
       "lo_que_ensena": "Al traer una rama ajena los documentos se revisan igual que el código: una sesión fuera de orden o una referencia a un número de otra rama no rompe ninguna prueba y confunde a quien retome."
+    },
+    {
+      "fecha": "2026-10-10",
+      "titulo": "F15 arranca: el núcleo del kárdex (T-1502, primer tramo)",
+      "hecho": [
+        "`domain/inventory.py` con `move` y `Movement` (once tipos, siete orígenes); los puertos `StockLevelRepository`, `KardexWriter` y `KardexReader`; y `MoveStock`, el único escritor de existencias: bloquea el producto, después el nivel —que nace con el candado—, mantiene `products.stock` con un UPDATE atómico y deja la fila con antes y después y el promedio del momento.",
+        "La venta, la devolución, la entrada y su anulación pasan por `MoveStock` con su tipo, su sucursal, su origen y su línea; `lock_for_sale` pasó a `lock` y `adjust_stock` desapareció; las tres peticiones ganan `branch_id`, que los servicios llenan del token. La entrada bloquea todos sus productos antes de tocar ninguno y la anulación revierte en la sucursal de la entrada, al costo de la entrada.",
+        "Migración 023 completa con `model_inventory.py` (once tablas) y `products.min_stock` / `brand_id`; `test_esquema.py` aprendió a leer `CALL ventasys_add_column(...)` y con eso vigila también las columnas de la 013 a la 016. `company_dump.py` clasifica las once.",
+        "`GET /inventory/kardex` (por producto, con sucursal y periodo, o por documento) y `GET /inventory/levels`; en `test_aislamiento.py` con las dos compañías.",
+        "La ficha: la existencia inicial entra como `opening` por `MoveStock`; el PUT con `stock` responde `stock_not_editable`; el DELETE de un producto con kárdex, `product_has_movements`. En el POS, los tres códigos en los catálogos y `messages.ts`, el simulado rechaza `stock` en el PUT, y la ficha muestra la existencia como solo lectura con su pista.",
+        "`tests/test_inventario.py`: el recorrido completo contra la pila, comparando `products.stock` con la suma de `stock_levels` después de cada documento; `tests/domain/test_inventory.py` y `tests/application/test_move_stock.py`.",
+        "Cifras: 3 350 pruebas del backend con cobertura 100 % (16 minutos la batería entera), `npm run check` en 0 y 0, 986 del POS."
+      ],
+      "lo_que_ensena": [
+        "Un doble que se siembra solo es lo que permite cambiar el puerto sin reescribir cuarenta pruebas: las baterías anteriores a F15 arman un catálogo con `stock=110` y nada más, y el nivel de la sucursal 1 nace de ahí la primera vez que alguien lo bloquea.",
+        "`docker compose up --build` no altera tablas: la base de pruebas siguió con `products` sin `min_stock` hasta aplicar la 023 a mano, como dice CLAUDE.md. Y el guion que corre dentro del contenedor —`company_dump.py`— necesita otro `--build` después de editarlo.",
+        "Un guion que edita en bloque las baterías tiene que listar lo que tocó: cubrió 26 de 27 constructores y el que se le escapó era el único escrito en una línea."
+      ]
     }
   ],
   "$reparto": {

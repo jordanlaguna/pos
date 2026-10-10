@@ -42,6 +42,7 @@ from app.domain.money import Money
 from app.domain.tax import GENERAL_RATE, TaxRate
 from app.infrastructure.clock import FixedClock
 
+from .fakes import SUCURSAL, mover
 from .fakes import (
     FakeClient,
     FakeClientRepository,
@@ -76,6 +77,7 @@ def escenario(catalogo):
     uow = FakeUnitOfWork()
     caso = RegisterSale(
         products=catalogo,
+        stock=mover(catalogo)[0],
         sales=ventas,
         clients=FakeClientRepository({CLIENTE}),
         settings=FakeSettingsRepository(),
@@ -108,6 +110,7 @@ def peticion(lineas, **cambios):
         cash_received=total,
         change_given=Money(0),
         lines=[RequestedLine(pid, cant) for pid, cant in lineas],
+        branch_id=SUCURSAL,
     )
     base.update(cambios)
     return SaleRequest(**base)
@@ -155,9 +158,11 @@ class TestVentaBuena:
         caso, catalogo, _, _ = escenario
         caso(peticion([(2, 1), (1, 1)]))
 
-        # Todos de una sola vez: pedirlos uno por uno desde dos cajas en distinto
-        # orden es como se fabrica un interbloqueo.
-        assert catalogo.bloqueados == [[2, 1]]
+        # Todos de una sola vez, ANTES de nada: pedirlos uno por uno desde dos
+        # cajas en distinto orden es como se fabrica un interbloqueo. Después
+        # `MoveStock` vuelve a pedir cada uno por línea —no espera nada, la
+        # transacción ya los tiene— para leer el retrato fresco (plan §15.1).
+        assert catalogo.bloqueados == [[2, 1], [2], [1]]
 
 
 class TestVentaRechazada:
@@ -270,6 +275,7 @@ class TestLaPlataLaCalculaElServidor:
         ventas = FakeSaleRepository()
         caso = RegisterSale(
             products=catalogo,
+            stock=mover(catalogo)[0],
             sales=ventas,
             clients=FakeClientRepository(),
             settings=FakeSettingsRepository(),
@@ -364,6 +370,7 @@ def con_facturacion(catalogo, *, activa: bool = True, encendidos=None):
     ventas = FakeSaleRepository()
     caso = RegisterSale(
         products=catalogo,
+        stock=mover(catalogo)[0],
         sales=ventas,
         clients=FakeClientRepository({CLIENTE}),
         settings=FakeSettingsRepository(einvoicing=activa, document_types=encendidos),
@@ -476,6 +483,7 @@ def _escenario_con(catalogo):
     uow = FakeUnitOfWork()
     caso = RegisterSale(
         products=catalogo,
+        stock=mover(catalogo)[0],
         sales=ventas,
         clients=FakeClientRepository({CLIENTE}),
         settings=FakeSettingsRepository(),
@@ -511,6 +519,7 @@ def exportando(catalogo, *, direccion="12 Main St, Miami", encendidos=CON_EXPORT
     uow = FakeUnitOfWork()
     caso = RegisterSale(
         products=catalogo,
+        stock=mover(catalogo)[0],
         sales=ventas,
         clients=FakeClientRepository(
             {CLIENTE},

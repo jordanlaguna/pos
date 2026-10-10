@@ -35,6 +35,7 @@ from app.domain.errors import (
 from app.domain.money import Money
 from app.infrastructure.clock import FixedClock
 
+from .fakes import SUCURSAL, mover
 from .fakes import (
     FakeProduct,
     FakeProductRepository,
@@ -62,7 +63,11 @@ def escenario(catalogo):
     entradas = FakeStockEntryRepository()
     uow = FakeUnitOfWork()
     caso = RegisterStockEntry(
-        products=catalogo, entries=entradas, uow=uow, clock=FixedClock(MOMENTO)
+        products=catalogo,
+        entries=entradas,
+        uow=uow,
+        clock=FixedClock(MOMENTO),
+        stock=mover(catalogo)[0],
     )
     return caso, catalogo, entradas, uow
 
@@ -75,6 +80,7 @@ def entrada(lineas, **cambios):
         user_id=1,
         notes=None,
         lines=lineas,
+        branch_id=SUCURSAL,
     )
     base.update(cambios)
     return EntryRequest(**base)
@@ -170,7 +176,7 @@ class TestEntradaRechazada:
         # Es como se repite una carga que salió mal.
         caso, catalogo, entradas, uow = escenario
         caso(entrada([linea(1, 24, 1200)]))
-        CancelStockEntry(products=catalogo, entries=entradas, uow=uow)(1)
+        CancelStockEntry(products=catalogo, entries=entradas, uow=uow, clock=FixedClock(MOMENTO), stock=mover(catalogo)[0])(1, user_id=1)
 
         caso(entrada([linea(1, 24, 1200)]))
         assert len(entradas.entradas) == 2
@@ -246,26 +252,26 @@ class TestAnular:
     def _con_entrada(self, escenario):
         caso, catalogo, entradas, uow = escenario
         caso(entrada([linea(1, 24, 1200)]))
-        return CancelStockEntry(products=catalogo, entries=entradas, uow=uow), catalogo, entradas
+        return CancelStockEntry(products=catalogo, entries=entradas, uow=uow, clock=FixedClock(MOMENTO), stock=mover(catalogo)[0]), catalogo, entradas
 
     def test_devuelve_el_stock(self, escenario):
         anular, catalogo, entradas = self._con_entrada(escenario)
         assert catalogo.get(1).stock == 134
 
-        anular(1)
+        anular(1, user_id=1)
         assert catalogo.get(1).stock == 110
         assert entradas.get(1).status == "anulada"
 
     def test_no_se_anula_dos_veces(self, escenario):
         anular, _, _ = self._con_entrada(escenario)
-        anular(1)
+        anular(1, user_id=1)
         with pytest.raises(AlreadyCancelled):
-            anular(1)
+            anular(1, user_id=1)
 
     def test_una_entrada_que_no_existe(self, escenario):
         anular, _, _ = self._con_entrada(escenario)
         with pytest.raises(EntryNotFound):
-            anular(999)
+            anular(999, user_id=1)
 
     def test_no_se_anula_si_ya_se_vendio(self, escenario):
         """
@@ -276,7 +282,7 @@ class TestAnular:
         catalogo.productos[1].stock = 5  # se vendió casi todo
 
         with pytest.raises(CannotCancel) as e:
-            anular(1)
+            anular(1, user_id=1)
 
         assert (e.value.available, e.value.added) == (5, 24)
         assert catalogo.get(1).stock == 5, "se tocó el stock pese al fallo"
@@ -289,9 +295,9 @@ class TestAnular:
         caso(entrada([linea(1, 10, 100), linea(2, 8, 200)]))
         catalogo.productos[2].stock = 1
 
-        anular = CancelStockEntry(products=catalogo, entries=entradas, uow=uow)
+        anular = CancelStockEntry(products=catalogo, entries=entradas, uow=uow, clock=FixedClock(MOMENTO), stock=mover(catalogo)[0])
         with pytest.raises(CannotCancel):
-            anular(1)
+            anular(1, user_id=1)
 
         assert catalogo.get(1).stock == 120, "se revirtió una línea de una anulación que falló"
 
@@ -299,5 +305,5 @@ class TestAnular:
         anular, catalogo, entradas = self._con_entrada(escenario)
         del catalogo.productos[1]
 
-        anular(1)
+        anular(1, user_id=1)
         assert entradas.get(1).status == "anulada"

@@ -40,6 +40,9 @@ from app.database.database import Base
 # `app/main.py` los importa todos antes de crear el esquema.
 import app.models.model_accounting  # noqa: F401
 import app.models.model_fe  # noqa: F401
+# F15: `products.brand_id` apunta a `brands`, y sin este módulo `create_all`
+# no encuentra la tabla a la que apunta la foránea.
+import app.models.model_inventory  # noqa: F401
 import app.models.model_note  # noqa: F401
 import app.models.model_supplier  # noqa: F401
 from app.models.model_cash import CashMovement, CashSession  # noqa: F401

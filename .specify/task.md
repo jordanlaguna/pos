@@ -5685,6 +5685,24 @@ negocio.
       aparecen en el kárdex del producto con antes y después, la existencia
       final es la suma, y `products.stock` coincide con `stock_levels` en toda
       la batería. Editar la existencia desde la ficha ya no es posible.
+
+      **Avance del 2026-10-10 (el núcleo).** Hecho: la migración 023 entera
+      con sus once modelos (`model_inventory.py`); `domain/inventory.py` con
+      `move` y `Movement`; los puertos `StockLevelRepository`, `KardexWriter`
+      y `KardexReader`; `MoveStock` reemplazando a `adjust_stock` en la venta,
+      la devolución, la entrada y su anulación, con `lock_for_sale` → `lock`
+      y `branch_id` en las tres peticiones; `GET /inventory/kardex` y
+      `GET /inventory/levels`; la apertura de un producto nuevo por el kárdex,
+      `stock_not_editable` en el PUT y `product_has_movements` en el DELETE,
+      con la ficha del POS mostrando la existencia sin editarla;
+      `tests/test_inventario.py`, que compara `products.stock` con la suma de
+      `stock_levels` después de cada documento. **Falta:** las salidas con
+      motivo (`RegisterStockExit`, `CancelStockExit`, su asiento y
+      `/inventario/salidas`), el catálogo de motivos, mover el alta y la
+      edición de productos a `RegisterProduct` y `UpdateProduct` (hoy la
+      apertura sale de `crud_product.py` pasando por `MoveStock`), las
+      pantallas `/inventario/kardex/[id]` y `/inventario/motivos`, y el
+      simulado de los dos `GET` nuevos.
 - [ ] **T-1503** Toma física (punto 3; RN-100; RF-89). `stock_counts` y sus líneas
       con `system_qty` al contar; abrir, contar, aplicar y descartar; el
       asiento de la diferencia; `/inventario/toma-fisica`.

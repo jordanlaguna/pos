@@ -34,6 +34,7 @@ from app.domain.errors import DuplicateDocument, PurchaseHasPayments
 from app.domain.money import Money
 from app.domain.tax import TaxRate
 from app.infrastructure.clock import FixedClock
+from tests.application.fakes import SUCURSAL, mover
 from tests.application.fakes import (
     FakeCashRepository,
     FakeNoteRepository,
@@ -82,6 +83,7 @@ def mundo():
     )
     caso = RegisterStockEntry(
         products=productos,
+        stock=mover(productos)[0],
         entries=entradas,
         uow=FakeUnitOfWork(),
         clock=FixedClock(HOY),
@@ -130,6 +132,7 @@ def mundo_pagable() -> MundoPagable:
     return MundoPagable(
         comprar=RegisterStockEntry(
             products=productos,
+            stock=mover(productos)[0],
             entries=entradas,
             uow=uow,
             clock=reloj,
@@ -156,7 +159,7 @@ def mundo_pagable() -> MundoPagable:
             ),
         ),
         anular=CancelStockEntry(
-            products=productos, entries=entradas, uow=uow, payments=abonos
+            products=productos, entries=entradas, uow=uow, clock=reloj, stock=mover(productos)[0], payments=abonos
         ),
         productos=productos,
         entradas=entradas,
@@ -173,6 +176,7 @@ def compra(**cambios) -> EntryRequest:
         "source": "xml",
         "user_id": 1,
         "notes": None,
+        "branch_id": SUCURSAL,
         "supplier_id": 7,
         "document_date": date(2026, 9, 10),
         "payment_terms": "credit",
@@ -211,6 +215,7 @@ def mundo_que_factura(*, encendidos=CON_COMPRA, activa: bool = True):
     numeracion, contador = numerador()
     caso = RegisterStockEntry(
         products=productos,
+        stock=mover(productos)[0],
         entries=entradas,
         uow=FakeUnitOfWork(),
         clock=FixedClock(HOY),
@@ -279,6 +284,7 @@ class TestLaFacturaDeCompra:
         numeracion, contador = numerador()
         caso = RegisterStockEntry(
             products=productos,
+            stock=mover(productos)[0],
             entries=entradas,
             uow=FakeUnitOfWork(),
             clock=FixedClock(HOY),
@@ -304,6 +310,7 @@ class TestLaFacturaDeCompra:
         numeracion, _ = numerador(issuer=FakeIssuerRepository(None))
         caso = RegisterStockEntry(
             products=productos,
+            stock=mover(productos)[0],
             entries=entradas,
             uow=FakeUnitOfWork(),
             clock=FixedClock(HOY),
@@ -605,7 +612,7 @@ class TestAnularUnaCompra:
         entrada = m.comprar(compra()).id_entry
         antes = m.productos.productos[1].stock
 
-        resultado = m.anular(entrada)
+        resultado = m.anular(entrada, user_id=1)
 
         assert m.productos.productos[1].stock == antes - 10
         assert m.entradas.get(entrada).status == "anulada"
@@ -625,7 +632,7 @@ class TestAnularUnaCompra:
         entrada = m.comprar(compra()).id_entry
         assert m.productos.productos[1].cost == Money(110)
 
-        m.anular(entrada)
+        m.anular(entrada, user_id=1)
 
         assert m.productos.productos[1].cost == Money(110)
 
@@ -644,7 +651,7 @@ class TestAnularUnaCompra:
         )
 
         with pytest.raises(PurchaseHasPayments) as excepcion:
-            m.anular(entrada)
+            m.anular(entrada, user_id=1)
 
         # Cuántos: deshacer uno o siete no es la misma tarea.
         assert excepcion.value.payments == 1
@@ -659,7 +666,7 @@ class TestAnularUnaCompra:
         ).id_entry
 
         with pytest.raises(PurchaseHasPayments):
-            m.anular(entrada)
+            m.anular(entrada, user_id=1)
 
     def test_una_entrada_sin_proveedor_se_anula_igual(self, mundo_pagable):
         # Nunca pudo tener abonos, así que la regla no la toca. Es lo que sigue
@@ -669,7 +676,7 @@ class TestAnularUnaCompra:
             compra(supplier_id=None, payment_terms="cash", source="manual")
         ).id_entry
 
-        resultado = m.anular(entrada)
+        resultado = m.anular(entrada, user_id=1)
 
         assert resultado.supplier_id is None
         assert m.entradas.get(entrada).status == "anulada"
@@ -686,7 +693,7 @@ class TestAnularUnaCompra:
         )
 
         with pytest.raises(PurchaseHasPayments):
-            m.anular(entrada)
+            m.anular(entrada, user_id=1)
 
         assert m.productos.productos[1].stock == despues_de_comprar
 
@@ -701,6 +708,7 @@ class TestSinProveedoresConfigurados:
         productos = FakeProductRepository([FakeProduct(1, "Arroz", Money(1500), stock=0)])
         caso = RegisterStockEntry(
             products=productos,
+            stock=mover(productos)[0],
             entries=FakeStockEntryRepository(),
             uow=FakeUnitOfWork(),
             clock=FixedClock(HOY),

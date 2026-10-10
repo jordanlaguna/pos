@@ -1,15 +1,22 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.domain.errors import InvalidTariffHeading
+from app.domain.errors import InsufficientStock, InvalidTariffHeading
 from app.domain.fe_export import check_tariff_heading
 from app.domain.fe_tax_codes import InvalidTaxCode, check_code, rate_for, suggested_code
+from app.domain.inventory import OPENING
+from app.domain.money import Money
 from app.domain.tax import TaxRate
+from app.infrastructure.clock import SystemClock
 from app.models.model_categories import Category
+from app.models.model_inventory import StockMovement
 from app.models.model_product import Product
 from app.models.model_sale_details import SaleDetail
 from app.schemas.schemas_product import ProdcutRegisterSuccess, ProductRegister
+from app.services import crud_inventory
 from app.services.crud_categories import check_category_for_product
 from app.utils.api_errors import api_error
+from app.utils.tenancy import current_branch
 
 
 def codigo_y_tarifa(codigo: object) -> tuple[str, float]:
@@ -39,11 +46,17 @@ def partida_arancelaria(valor: object) -> str | None:
         raise api_error(400, "invalid_tariff_heading", tariff_heading=str(valor)) from None
 
 
-def create_product(db: Session, product: ProductRegister):
+def create_product(db: Session, product: ProductRegister, *, user_id: int):
     # RN-6: el producto va en la hoja del árbol. Con la categoría convertida en
     # raíz de una rama, colgarle un producto lo dejaría fuera de la grilla de
     # ventas —que en una raíz con hijas muestra fichas, no productos—.
     check_category_for_product(db, product.category_id)
+
+    # La existencia inicial es un movimiento de apertura (F15, RF-94, RN-98) y
+    # va a la sucursal de la sesión. Sin sucursal no hay dónde ponerla: se dice
+    # antes de crear nada, y sin existencia el producto entra igual.
+    if product.stock and current_branch.get() is None:
+        raise api_error(404, "branch_not_found")
 
     # Con código de Hacienda la tarifa sale de él; sin código, de lo que mande
     # el POS (RN-76).
@@ -55,7 +68,9 @@ def create_product(db: Session, product: ProductRegister):
         name=product.name,
         description=product.description,
         price=product.price,
-        stock=product.stock,
+        # Nace en cero y la apertura de abajo le pone lo suyo, por la misma vía
+        # que cualquier otro movimiento: desde F15 nadie escribe `stock` a mano.
+        stock=0,
         barcode=product.barcode,
         category_id=product.category_id,
         created_at=product.created_at,
@@ -73,6 +88,35 @@ def create_product(db: Session, product: ProductRegister):
         **({"unit_of_measure": product.unit_of_measure} if product.unit_of_measure else {}),
     )
     db.add(db_product)
+    # `flush` y no `commit`: el id sin cerrar la transacción, para que la
+    # apertura entre con la ficha o no entre ninguna de las dos.
+    db.flush()
+
+    if product.stock:
+        try:
+            crud_inventory.mover(db)(
+                product_id=db_product.id_product,
+                branch_id=current_branch.get(),
+                delta=product.stock,
+                kind=OPENING,
+                # A costo cero: no se conoce hasta la primera compra (RN-54).
+                unit_cost=Money.zero(),
+                source_type="product",
+                source_id=db_product.id_product,
+                user_id=user_id,
+                moved_at=SystemClock().now(),
+            )
+        except InsufficientStock as e:
+            # Una existencia inicial negativa: lo que no hay no se abre.
+            db.rollback()
+            raise api_error(
+                400,
+                "insufficient_stock",
+                product_id=e.product_id,
+                product=product.name,
+                available=e.available,
+                requested=e.requested,
+            ) from None
     db.commit()
     db.refresh(db_product)
 
@@ -121,6 +165,12 @@ def update_product_information(db: Session, id_product: int, product_data: dict)
     db_product = db.query(Product).filter(Product.id_product == id_product).first()
     if not db_product:
         return None
+
+    # La existencia ya no se edita desde la ficha (F15, RN-98): se mueve con
+    # una entrada, una salida o una toma física, que dejan su fila en el kárdex.
+    # Un cliente viejo que la mande recibe el código que le dice por dónde sí.
+    if product_data.get("stock") is not None:
+        raise api_error(400, "stock_not_editable", product_id=id_product)
 
     # Un código de barras repetido rompe el escaneo: dos productos distintos
     # responderían al mismo pitido del lector.
@@ -230,6 +280,19 @@ def delete_product(db: Session, id_product: int):
     sold = db.query(SaleDetail).filter(SaleDetail.product_id == id_product).first()
     if sold:
         raise api_error(400, "product_has_sales")
+
+    # Y uno con kárdex tampoco (F15): la foránea lo impediría de todos modos,
+    # con un 500. Mejor un código que diga cuántas filas lo sostienen. Se
+    # cuenta con `func.count`, que sí pasa por el filtro de compañía.
+    movimientos = (
+        db.query(func.count(StockMovement.id))
+        .filter(StockMovement.product_id == id_product)
+        .scalar()
+    )
+    if movimientos:
+        raise api_error(
+            400, "product_has_movements", product_id=id_product, movements=movimientos
+        )
 
     db.delete(db_product)
     db.commit()
